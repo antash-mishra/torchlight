@@ -1,0 +1,5 @@
+# Focus on correctness; style is enforced by compiler flags and clang-format.
+# Linux does not implement optional Annex K functions. utf8proc uses enum flags.
+Checks: '-*,clang-analyzer-*,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,-clang-analyzer-optin.core.EnumCastOutOfRange,bugprone-sizeof-expression,bugprone-suspicious-memory-comparison,bugprone-suspicious-memset-usage'
+WarningsAsErrors: '*'
+HeaderFilterRegex: 'include/torchlight/.*'

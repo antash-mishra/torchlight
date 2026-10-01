@@ -1,0 +1,3 @@
+# Generated binaries, dependency files and machine-specific dependency settings.
+/build/
+/machine.mk

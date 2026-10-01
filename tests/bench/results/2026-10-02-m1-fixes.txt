@@ -1,0 +1,13 @@
+# M1 review fixes (component-scoped parent matching), 2026-10-02.
+# Intel i7-8700K, 32033 MiB RAM, Mint 22.2, Linux 6.8.0-139-generic, x86_64.
+# GCC 13.3.0; -std=c17 -O3 -DNDEBUG; SQLite 3.45.1; utf8proc 2.9.0.
+# Synthetic paths; no model. Warm engine timing excludes CLI/store loading.
+# Shared host, unpinned. Peak RSS includes index construction.
+./build/bench_lexical 50000
+paths=50000 mean_path_bytes=44.0 build_s=0.317 first_ms=4.068
+warm_ms p50=4.397 p95=10.848 p99=15.350 labeled_checks=240/240
+peak_rss_kib=72832
+./build/bench_lexical 500000
+paths=500000 mean_path_bytes=44.0 build_s=4.238 first_ms=22.270
+warm_ms p50=47.678 p95=93.948 p99=103.274 labeled_checks=240/240
+peak_rss_kib=709120
