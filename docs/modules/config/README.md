@@ -1,6 +1,6 @@
 # config
 
-> **Status:** Implemented (M1): XDG data paths and configuration file
+> **Status:** Implemented (M1/M2): XDG paths, configuration and canonical database identity
 > **Source:** `src/core/config.c` · **Header:** `include/torchlight/config.h`
 > **Tests:** `tests/unit/test_config.c`, `tests/test_cli.py`
 
@@ -12,7 +12,9 @@ returns owned settings.
 **Database.** A valid absolute `XDG_DATA_HOME` wins; otherwise `HOME` plus
 `.local/share`. Default directories are created with mode 0700, and the default
 state directory is canonicalized so the crawler can always exclude it. An
-explicit database path is copied without creating its parents.
+explicit database path is canonicalized without creating its parents. Existing
+file symlinks resolve to the same identity; new files use their canonical parent.
+This keeps daemon/offline singleton locks consistent across path spellings.
 
 **File.** `file_override`, else `$XDG_CONFIG_HOME/<application>/config`, else
 `~/.config/<application>/config` when it exists (a missing default file is not

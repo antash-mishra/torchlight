@@ -7,13 +7,15 @@ extraction is a possible later extension.
 
 ## Implementation progress
 
-M2 has started (ADR 0010): the `catalog` module publishes immutable lexical
-snapshots, leases preallocated reader workspaces, bounds retained views and
-reclaims retired views outside the lifecycle lock. SQLite loads rows and
-`catalog_gen` in one read transaction; sealed indexes resolve exact byte paths by
-file id. Tests cover concurrent readers/publication and commits during loading.
-The resident executable, socket protocol, async writer/history, inotify and
-reconciliation are still pending; M2 acceptance remains open.
+M2's functional scope is implemented (ADRs 0010/0011): `torchlightd` serves saved
+resident snapshots over bounded Unix-socket IPC; the CLI is a socket client
+unless `--db` selects local mode. A background writer coalesces inotify changes,
+reconciles roots, prepares/commits/publishes immutable `catalog_gen`s, recovers
+publication failures, and writes optional search/open history asynchronously.
+Status, byte-safe resolve, rename identity, watch fallback, singleton locking and
+clean/crash restart are covered by integration and injected-failure tests.
+Full engine rebuilds are the initial update strategy. The 500k / 5 ms latency
+gate remains open; daemon benchmarks also record full-rebuild update lag/RSS.
 
 M1's features are implemented; its 500k latency gate is not yet met. The first
 increment implemented the Makefile/checks, XDG data paths, physical crawler, SQLite schema v1 and atomic root refreshes, approved
@@ -391,9 +393,10 @@ rules are in [`docs/evaluation.md`](docs/evaluation.md).
 ## Build
 
 - Build with C17 and a plain Makefile. Planned dependencies: SQLite first,
-  cJSON for IPC, GTK4 for the popup, and ONNX Runtime if the selected backend
+  GTK4 for the popup, and ONNX Runtime if the selected backend
   needs it. Evaluate utf8proc for the normalization contract; ncurses is
-  optional. Discuss additions before implementation, following `AGENTS.md`.
+  optional. IPC uses the bounded core JSON codec rather than adding cJSON.
+  Discuss additions before implementation, following `AGENTS.md`.
 - Run sanitizers, unit/integration checks, lint, and relevant benchmarks as
   milestones introduce code. Planning changes require document consistency.
 

@@ -2,16 +2,16 @@
 
 ## Current implementation
 
-M1 runs locally: `index` wires config -> crawl -> store (configured roots,
-allowlists, root deduplication, one transaction per run); `query` loads the
-catalog into a sealed lexical engine (prefix, subsequence, trigram and typo
-channels over basenames, interned parent directories via `dirtree`), creates
-bounded scratch, and searches. The CLI is not yet a socket client and rebuilds
-the engine per query. M2's `catalog` module now owns immutable lexical views,
-preallocated reader leases, synchronized publication and background reclamation;
-`store_load_catalog` loads rows and `catalog_gen` consistently. These APIs are
-tested concurrently but not yet wired into a daemon. The daemon, worker threads,
-watcher, semantics, history and UI described below remain the target architecture.
+M2 runs as a resident lexical daemon. `torchlight query` uses Unix-socket IPC;
+explicit `--db` retains the M1 local query mode. Offline `index` still wires
+config -> crawl -> store, under the same database singleton lock as the daemon.
+The poll loop searches immutable catalog leases, encodes one terminal response
+and releases the lease before sending. Its worker owns SQLite, inotify,
+reconciliation, full-engine staging/publication and asynchronous history.
+Saved entries serve before background reconciliation. Status and restart/failure
+recovery are implemented. Semantics, personalization ranking and desktop UI below
+remain the target architecture. See ADR 0011 for the full-rebuild baseline and
+structural bounds; the 500k latency target remains open.
 
 ## Components
 
@@ -29,10 +29,12 @@ watcher, semantics, history and UI described below remain the target architectur
 ## Dependency direction
 
 ```
-bin/, ui/  →  ipc/, fs/, storage/, index/  →  core/
+bin/, ui/  →  service/  →  ipc/, fs/, storage/, index/  →  core/
 ```
 
 Modules only depend downward. `core/` depends on nothing in Torchlight.
+IPC clients can also be used directly by bin/UI callers. Service orchestration
+depends on the lower modules; filesystem and index modules never call storage.
 
 ## Indexing flow
 
@@ -86,6 +88,9 @@ RSS. Time both phases from request acceptance, including queue wait. All
 performance numbers in `PLAN.md` are targets until benchmarked.
 
 ## Threads
+
+M2 uses the main/query thread and one writer thread, including crawl/watch and
+history. The expanded split below is the semantic target architecture.
 
 | Thread | Work | Blocks on |
 |---|---|---|

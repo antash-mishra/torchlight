@@ -3,6 +3,8 @@
 int main(void) {
     test_config();
     test_core();
+    test_json();
+    test_ipc();
     test_tokenize();
     test_prefix();
     test_subseq();
@@ -14,6 +16,8 @@ int main(void) {
     test_catalog();
     test_store();
     test_crawl();
+    test_watch();
+    test_writer();
     puts("All module tests passed.");
     return 0;
 }

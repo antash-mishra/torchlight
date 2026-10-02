@@ -6,7 +6,7 @@
 typedef struct tl_config tl_config;
 /** Create owned configuration for application (a single safe path component).
  *
- * Database: copy database_override when provided (its parent must exist);
+ * Database: canonicalize database_override when provided (its parent must exist);
  * otherwise create XDG_DATA_HOME/application or HOME/.local/share/application
  * with mode 0700 and select catalog.db there.
  *

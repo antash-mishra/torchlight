@@ -77,8 +77,30 @@ static tl_status default_database(const char *application, char **out) {
 static tl_status select_database(tl_config *config, const char *application,
                                  const char *database_override) {
     if (database_override != NULL) {
-        config->database = strdup(database_override);
-        return config->database == NULL ? TL_NOMEM : TL_OK;
+        config->database = realpath(database_override, NULL);
+        if (config->database != NULL)
+            return TL_OK;
+        if (errno == ENOMEM)
+            return TL_NOMEM;
+        char *copy = strdup(database_override);
+        if (copy == NULL)
+            return TL_NOMEM;
+        char *slash = strrchr(copy, '/');
+        const char *name = slash == NULL ? copy : slash + 1;
+        char *parent = NULL;
+        if (slash == NULL)
+            parent = realpath(".", NULL);
+        else {
+            *slash = 0;
+            parent = realpath(copy[0] == 0 ? "/" : copy, NULL);
+        }
+        const char *parts[] = {parent, parent != NULL && strcmp(parent, "/") == 0 ? "" : "/", name};
+        tl_status status = parent == NULL ? TL_IO
+                           : name[0] == 0 ? TL_INVALID
+                                          : join(parts, 3, &config->database);
+        free(parent);
+        free(copy);
+        return status;
     }
     tl_status status = default_database(application, &config->database);
     if (status != TL_OK)
@@ -87,7 +109,21 @@ static tl_status select_database(tl_config *config, const char *application,
     *slash = 0;
     config->state_directory = realpath(config->database, NULL);
     *slash = '/';
-    return config->state_directory == NULL ? TL_IO : TL_OK;
+    if (config->state_directory == NULL)
+        return TL_IO;
+    free(config->database);
+    config->database = NULL;
+    const char *parts[] = {config->state_directory, "/catalog.db"};
+    status = join(parts, 2, &config->database);
+    if (status == TL_OK) {
+        char *canonical = realpath(config->database, NULL);
+        if (canonical != NULL) {
+            free(config->database);
+            config->database = canonical;
+        } else if (errno == ENOMEM)
+            status = TL_NOMEM;
+    }
+    return status;
 }
 /* Pick the file to read: the override (must exist), or the default if any. */
 static tl_status select_file(tl_config *config, const char *application,

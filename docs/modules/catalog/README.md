@@ -1,7 +1,7 @@
 # catalog
 
 > **Status:** Implemented (first M2 increment): resident snapshot lifecycle;
-> daemon/writer integration planned
+> integrated with the M2 daemon/writer
 > **Source:** `src/index/catalog.c` · **Header:** `include/torchlight/catalog.h`
 > **Tests:** `tests/unit/test_catalog.c`
 
@@ -9,7 +9,7 @@
 
 Wrap sealed lexical engines in immutable resident views identified by
 `catalog_gen`. This module depends on the lexical engine and platform pthreads;
-it performs no storage or filesystem operations. The future background writer
+it performs no storage or filesystem operations. The background writer
 supplies committed views and the query loop leases them.
 
 `catalog_snapshot_create` prepares all reader workspaces before publication and
@@ -48,9 +48,10 @@ unleased retired views makes room for retry. Updating a nonempty registry needs
 capacity of at least two.
 
 These are count bounds, not a total RSS budget: a candidate being built is also
-caller-owned, and every view currently rebuilds the full engine. The future
-writer must limit staging to one candidate, account for its memory, and enforce
-client deadlines. Shared index blocks and a byte budget remain future work.
+caller-owned, and every view currently rebuilds the full engine. The M2 writer
+limits staging to one candidate and bounds entries/path bytes; the daemon
+enforces client/output deadlines. Shared index blocks and a hard process RSS
+budget remain future work.
 Scratch/cache contents are tied to one immutable engine, so publication cannot
 reuse old subsequence membership for a changed catalog.
 

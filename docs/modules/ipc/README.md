@@ -1,63 +1,50 @@
 # ipc
 
-> **Status:** Planned
-> **Source:** `src/ipc/ipc.c` · **Header:** `include/torchlight/ipc.h`
-> **Tests:** `tests/unit/test_ipc.c`
+> **Status:** Implemented (M2): strict versioned JSON-lines and Unix sockets
+> **Source:** `src/ipc/ipc.c`, `src/ipc/client.c`
+> **Headers:** `include/torchlight/ipc.h`, `include/torchlight/client.h`
+> **Tests:** `tests/unit/test_ipc.c`, `tests/unit/test_json.c`, `tests/test_daemon.py`
 
-## Purpose
-Unix domain socket protocol between the daemon and CLI/GTK clients; TUI optional.
+The default socket is `$XDG_RUNTIME_DIR/torchlight.sock`; its directory must be
+owned by the current user without group/other write access. Explicit socket paths
+must be absolute and have an existing parent. The listener verifies same-uid
+peers, creates a mode-0600 socket and uses a persistent adjacent lock file.
+Only an owned stale socket can be replaced; foreign files, symlinks and regular
+files are rejected. The database has its own canonical-path singleton lock shared
+by offline indexing. Client calls have a five-second total deadline.
 
-## Responsibilities
-_TODO after implementation._
+Requests are flat version-1 JSON objects, at most 8 KiB including newline.
+Common fields are integer `version: 1`, string `request_id` (1–64 UTF-8 bytes)
+and `op`. Unknown/duplicate fields, invalid UTF-8, decoded NUL and wrong types
+are rejected. The generic parser bounds depth to eight and tokens to 32 here.
 
-## Public API
-_TODO after implementation: functions and pointer ownership rules._
+| op | Additional fields |
+|---|---|
+| `query` | required `query` (0–256 UTF-8 bytes), optional integer `limit` (1–1000, default 10) |
+| `status` | none |
+| `resolve` | required `file_id` (nonzero decimal string, at most INT64_MAX) |
+| `open` | required `file_id`, `event_id` (1–128 bytes), optional `search_id` (up to 128 bytes) |
+| `reconcile` | none |
+| `history_clear` | none |
 
-## Design
-- Socket: `$XDG_RUNTIME_DIR/torchlight.sock`.
-- Versioned JSON-line requests and responses; input/output sizes are bounded.
-- Query requests carry request ids; responses carry request/search ids,
-  `catalog_gen`, indexing status, a `phase` (`lexical` or `final`), and results.
-- Assign search ids before first response and enqueue history once per query.
-  Both phases use the same pinned `catalog_gen`/`emb_gen` pair. Request ids are
-  scoped to a connection; reject duplicate active ids.
-- **Two-phase responses:** lexical results are sent immediately; when semantic
-  search is enabled, a `final` response with fused results follows for the same
-  request id. Lexical-only mode sends one `final` response.
-- Disabled/unavailable/failed/timed-out semantics returns a terminal lexical
-  fallback with status/reason. Every active uncancelled request must finish.
-- **Paths:** each result has `display` (valid UTF-8, invalid bytes replaced with
-  U+FFFD). Also carry exact unnormalized `path` for UTF-8 paths or `path_b64`
-  otherwise; display is never an action path. File ids use decimal strings to
-  preserve 64-bit precision. Reject decoded paths containing NUL.
-- Resolve requests validate ids against the current catalog before launching;
-  return current paths or stale-result errors. Open-recording requests carry
-  file/search ids and a unique launch-event id; recording is asynchronous and
-  retries are deduplicated.
-- Escape queries/paths, including newlines. Cancel queued obsolete queries and
-  let clients suppress stale responses while typing.
-- Discard queued obsolete work; ignore already-running obsolete inference, since
-  backend preemption is not assumed. Cancellation is per client/request.
-- Nonblocking I/O, bounded output queues and timeouts prevent slow clients from
-  blocking queries or retaining pinned snapshots indefinitely.
-- Socket access is restricted to the current user.
+Responses include `version`, `request_id`, `search_id`, `catalog_gen`,
+`emb_gen: null`, `phase: final`, `status`, `reason`, `indexing`, `history` and
+bounded `results`. Query success uses `reason: lexical_only`; semantics/two-phase
+execution arrive in M4. Query frames superseded by newer buffered frames receive
+`status: cancelled`; active duplicate ids receive
+`reason: duplicate_active_request_id`. Malformed requests without a valid decoded
+envelope receive an empty request id and the connection closes after the error.
 
-## Data flow
-_TODO after implementation._
+Results encode ids as decimal strings and have a valid UTF-8 `display` plus
+exact `path` for valid UTF-8, or canonical `path_b64` for other bytes. JSON escapes
+embedded controls/newlines. Display never supplies an action target. Resolve
+returns the current exact path or `stale_result`; open records only an accepted
+history request. Responses release catalog leases before queuing socket output.
+The daemon bounds clients, four active ids and 1 MiB total output per client.
 
-## Invariants
-_TODO after implementation._
+`client_request` validates terminal envelopes, prints JSON, safe plain paths or
+original NUL-delimited paths, and returns a failure for server errors. It may
+allocate in the CLI; daemon request decoding/result encoding do not allocate.
 
-## Performance
-_TODO: complexity, memory use, `make bench` numbers with date._
-
-## Testing
-_TODO after implementation._
-
-## Gotchas
-_TODO after implementation._
-
-## Related
-- [daemon](../daemon/README.md)
-- [cli](../cli/README.md)
-- [ui](../ui/README.md)
+See [daemon](../daemon/README.md), [core JSON](../core/README.md) and
+[ADR 0011](../../adr/0011-m2-daemon-writer-and-reconciliation.md).

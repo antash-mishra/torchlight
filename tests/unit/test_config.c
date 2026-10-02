@@ -42,6 +42,24 @@ static void file_parsing(void) {
     CHECK(unlink(file) == 0);
     CHECK(config_create("torchlight", "/tmp/c.db", file, &line, &config) == TL_IO);
 }
+static void database_identity(void) {
+    char directory[] = "/tmp/torchlight-config-path-XXXXXX";
+    CHECK(mkdtemp(directory) != NULL);
+    char database[256], alias[256], spelling[256];
+    CHECK(snprintf(database, sizeof(database), "%s/catalog.db", directory) > 0);
+    CHECK(snprintf(alias, sizeof(alias), "%s/alias.db", directory) > 0);
+    CHECK(snprintf(spelling, sizeof(spelling), "%s/./catalog.db", directory) > 0);
+    tl_config *config = NULL;
+    CHECK(config_create("torchlight", spelling, "/dev/null", NULL, &config) == TL_OK);
+    CHECK(strcmp(config_database(config), database) == 0);
+    config_destroy(config);
+    write_file(database, "");
+    CHECK(symlink(database, alias) == 0);
+    CHECK(config_create("torchlight", alias, "/dev/null", NULL, &config) == TL_OK);
+    CHECK(strcmp(config_database(config), database) == 0);
+    config_destroy(config);
+    CHECK(unlink(alias) == 0 && unlink(database) == 0 && rmdir(directory) == 0);
+}
 void test_config(void) {
     tl_config *config = NULL;
     CHECK(config_create("..", "/tmp/catalog.db", NULL, NULL, &config) == TL_INVALID);
@@ -55,4 +73,5 @@ void test_config(void) {
     config_destroy(config);
     config_destroy(NULL);
     file_parsing();
+    database_identity();
 }

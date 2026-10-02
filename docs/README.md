@@ -13,11 +13,13 @@ Start here. Read in this order:
 
 ## Implementation status
 
-M2 has started with the resident [catalog](modules/catalog/README.md) lifecycle:
-immutable views, bounded reader workspaces, safe publication and background
-reclamation, coherent SQLite catalog loads, and file-id resolution. The daemon,
-socket protocol, asynchronous writer/history and watcher remain planned. See
-[0010](adr/0010-m2-resident-catalog-snapshots.md).
+M2's resident [daemon](modules/daemon/README.md) is implemented: bounded Unix
+socket clients, lexical-only terminal responses, immutable catalog snapshots,
+asynchronous [writer/history](modules/writer/README.md), inotify and reconciliation,
+file-id resolution, status, clean shutdown and crash/restart recovery. Integration
+and injected-failure tests cover the milestone scenarios. Large catalogs still
+miss the 5 ms latency target and updates rebuild whole engines; see
+[evaluation](evaluation.md) and [0011](adr/0011-m2-daemon-writer-and-reconciliation.md).
 
 M1's lexical engine and CLI are implemented: prefix, subsequence, trigram and
 typo channels with edit scoring, interned parent directories, incremental
@@ -31,7 +33,7 @@ The 5 ms p95 latency gate is met at 50k paths but not yet at 500k; see
 
 | Layer | Module | Doc |
 |---|---|---|
-| core | Utilities (vec, hashmap; arena and log planned) | [core](modules/core/README.md) |
+| core | Utilities (vec, hashmap, JSON/base64, byte scopes; arena/log planned) | [core](modules/core/README.md) |
 | core | Configuration | [config](modules/config/README.md) |
 | index | Path tokenizer | [tokenize](modules/tokenize/README.md) |
 | index | Lexical candidate orchestrator | [lexical](modules/lexical/README.md) |
@@ -49,7 +51,8 @@ The 5 ms p95 latency gate is met at 50k paths but not yet at 500k; see
 | fs | Crawler | [crawl](modules/crawl/README.md) |
 | fs | inotify watcher | [watch](modules/watch/README.md) |
 | ipc | Socket protocol | [ipc](modules/ipc/README.md) |
-| bin | Daemon | [daemon](modules/daemon/README.md) |
+| service | Resident daemon | [daemon](modules/daemon/README.md) |
+| service | Background writer/history | [writer](modules/writer/README.md) |
 | bin | CLI client | [cli](modules/cli/README.md) |
 | ui | GTK4 popup & optional TUI | [ui](modules/ui/README.md) |
 
@@ -72,6 +75,8 @@ The 5 ms p95 latency gate is met at 50k paths but not yet at 500k; see
   preserves unavailable aliases and rolls back storage failures during refresh.
 - [0010: M2 resident catalog snapshots](adr/0010-m2-resident-catalog-snapshots.md)
   establishes bounded leases, publication, reclamation and coherent catalog loads.
+- [0011: M2 daemon, writer and reconciliation](adr/0011-m2-daemon-writer-and-reconciliation.md)
+  completes resident IPC, live updates, asynchronous history and recovery.
 
 ## Keeping docs current
 

@@ -63,4 +63,31 @@ tl_status store_load_catalog(tl_store *store, tl_store_callback callback, void *
 /** Stream registered roots in byte order. Callback errors propagate, plus
  * TL_INVALID/TL_IO/TL_NOMEM. No queries may run on this connection meanwhile. */
 tl_status store_roots(tl_store *store, tl_store_root_callback callback, void *context);
+/** Stream the pending scan view and next catalog_gen before commit. Requires
+ * an active write transaction. Same callback lifetime as store_load_catalog;
+ * discard partial output on errors. TL_INVALID/STATE/IO/LIMIT plus callback
+ * errors. Prepares a resident candidate without publishing uncommitted data. */
+tl_status store_prepare_catalog(tl_store *store, tl_store_callback callback, void *context,
+                                uint64_t *out_catalog_gen);
+/** Report whether files/roots changed in the active scan, excluding temporary
+ * membership and sequence bookkeeping. TL_INVALID/STATE; no ownership. */
+tl_status store_catalog_changed(tl_store *store, bool *out);
+/** Move an exact byte path and descendants in an active transaction, preserving
+ * ids, replacing destination rows and invalidating embeddings. Paths must be
+ * absolute, distinct and neither within the other; caller validates eligibility
+ * using crawl policy. Missing source is a no-op. TL_INVALID/STATE/IO/NOMEM/LIMIT. */
+tl_status store_move(tl_store *store, const char *old_path, const char *new_path);
+/** Persist a search id/query at Unix timestamp. Idempotent for the same id;
+ * conflicting retries return TL_STATE. Borrowed nonempty UTF-8 strings. History
+ * operations require no active catalog transaction and never advance catalog_gen.
+ * TL_INVALID/STATE/IO/LIMIT. */
+tl_status store_search(tl_store *store, const char *id, const char *query, int64_t timestamp);
+/** Persist an accepted open event exactly once. Missing/deleted file returns
+ * TL_STATE. Absent retained search is recorded as NULL. Conflicting retries
+ * return TL_STATE; TL_INVALID/STATE/IO/LIMIT. All strings borrowed. */
+tl_status store_open_event(tl_store *store, const char *event_id, uint64_t file_id,
+                           const char *search_id, int64_t timestamp);
+/** Delete history older than cutoff, or all history when clear is true. Applies
+ * to opens and searches, never catalog rows/gen. TL_INVALID/STATE/IO. */
+tl_status store_history_prune(tl_store *store, int64_t cutoff, bool clear);
 #endif

@@ -1,4 +1,5 @@
 /* Local index/query CLI; domain algorithms live in reusable modules. */
+#include "torchlight/client.h"
 #include "torchlight/config.h"
 #include "torchlight/crawl.h"
 #include "torchlight/lexical.h"
@@ -9,10 +10,10 @@
 #include <stdlib.h>
 #include <string.h>
 struct options {
-    const char *command, *database, *config;
+    const char *command, *database, *config, *socket_path;
     const char **paths; /* positional arguments, borrowed from argv */
     size_t path_count, limit;
-    bool null_output;
+    bool null_output, json_output;
 };
 /* Owned root/allow paths; unresolved absolute spellings are not canonical. */
 struct path_list {
@@ -32,6 +33,10 @@ struct scan_context {
 static void usage(void) {
     fputs("Usage: torchlight index [--db PATH] [--config PATH] [ROOT...]\n"
           "       torchlight query [--db PATH] [--limit 1..1000] [--null] QUERY\n"
+          "       torchlight query [--socket PATH] [--json | --null] [--limit N] QUERY\n"
+          "       torchlight status|reconcile|history-clear [--socket PATH]\n"
+          "       torchlight resolve [--socket PATH] [--json | --null] FILE_ID\n"
+          "       torchlight record [--socket PATH] FILE_ID EVENT_ID [SEARCH_ID]\n"
           "Without ROOT, index syncs the catalog to the configured roots.\n",
           stderr);
 }
@@ -50,7 +55,10 @@ static tl_status parse(int argc, char **argv, struct options *options) {
         return TL_INVALID;
     *options = (struct options){.command = argv[1], .limit = 10};
     bool index = strcmp(options->command, "index") == 0;
-    if (!index && strcmp(options->command, "query") != 0)
+    if (!index && strcmp(options->command, "query") != 0 &&
+        strcmp(options->command, "status") != 0 && strcmp(options->command, "resolve") != 0 &&
+        strcmp(options->command, "record") != 0 && strcmp(options->command, "reconcile") != 0 &&
+        strcmp(options->command, "history-clear") != 0)
         return TL_INVALID;
     options->paths = calloc((size_t)argc, sizeof(char *));
     if (options->paths == NULL)
@@ -67,6 +75,10 @@ static tl_status parse(int argc, char **argv, struct options *options) {
             options->config = argv[++i];
         else if (!positional && !index && strcmp(arg, "--null") == 0)
             options->null_output = true;
+        else if (!positional && !index && strcmp(arg, "--json") == 0)
+            options->json_output = true;
+        else if (!positional && !index && strcmp(arg, "--socket") == 0 && has_value)
+            options->socket_path = argv[++i];
         else if (!positional && !index && strcmp(arg, "--limit") == 0 && has_value) {
             if (!parse_limit(argv[++i], &options->limit))
                 return TL_INVALID;
@@ -75,7 +87,84 @@ static tl_status parse(int argc, char **argv, struct options *options) {
         else
             return TL_INVALID;
     }
-    return index || options->path_count == 1 ? TL_OK : TL_INVALID;
+    if (options->json_output && options->null_output)
+        return TL_INVALID;
+    if (options->database != NULL && (options->socket_path != NULL || options->json_output ||
+                                      (!index && strcmp(options->command, "query") != 0)))
+        return TL_INVALID;
+    if (index)
+        return TL_OK;
+    if (strcmp(options->command, "record") == 0)
+        return options->path_count >= 2 && options->path_count <= 3 ? TL_OK : TL_INVALID;
+    size_t expected =
+        strcmp(options->command, "query") == 0 || strcmp(options->command, "resolve") == 0 ? 1U
+                                                                                           : 0U;
+    return options->path_count == expected ? TL_OK : TL_INVALID;
+}
+static tl_status socket_command(const struct options *options) {
+    tl_ipc_request request = {.limit = options->limit};
+    memcpy(request.request_id, "cli", 4);
+    if (strcmp(options->command, "query") == 0)
+        request.operation = IPC_QUERY;
+    else if (strcmp(options->command, "status") == 0)
+        request.operation = IPC_STATUS;
+    else if (strcmp(options->command, "resolve") == 0)
+        request.operation = IPC_RESOLVE;
+    else if (strcmp(options->command, "record") == 0)
+        request.operation = IPC_OPEN;
+    else if (strcmp(options->command, "reconcile") == 0)
+        request.operation = IPC_RECONCILE;
+    else
+        request.operation = IPC_HISTORY_CLEAR;
+    if (request.operation == IPC_QUERY) {
+        if (options->path_count != 1 || options->paths[0] == NULL)
+            return TL_INVALID;
+        size_t length = strlen(options->paths[0]);
+        if (length > LEXICAL_QUERY_BYTES || !json_utf8(options->paths[0]))
+            return TL_INVALID;
+        memcpy(request.query, options->paths[0], length + 1);
+    }
+    if (request.operation == IPC_RESOLVE || request.operation == IPC_OPEN) {
+        if (options->path_count == 0 || options->paths[0] == NULL)
+            return TL_INVALID;
+        const char *text = options->paths[0];
+        uint64_t value = 0;
+        for (size_t i = 0; text[i] != 0; i++) {
+            if (text[i] < '0' || text[i] > '9' ||
+                value > ((uint64_t)INT64_MAX - (uint64_t)(text[i] - '0')) / 10)
+                return TL_INVALID;
+            value = value * 10 + (uint64_t)(text[i] - '0');
+        }
+        if (value == 0)
+            return TL_INVALID;
+        request.file_id = value;
+    }
+    if (request.operation == IPC_OPEN) {
+        if (options->path_count < 2 || options->paths[1] == NULL)
+            return TL_INVALID;
+        size_t length = strlen(options->paths[1]);
+        if (length == 0 || length > IPC_HISTORY_ID_BYTES)
+            return TL_INVALID;
+        memcpy(request.event_id, options->paths[1], length + 1);
+        if (options->path_count == 3) {
+            length = strlen(options->paths[2]);
+            if (length > IPC_HISTORY_ID_BYTES)
+                return TL_INVALID;
+            memcpy(request.search_id, options->paths[2], length + 1);
+        }
+    }
+    char *default_socket = NULL;
+    const char *socket_path = options->socket_path;
+    tl_status status = TL_OK;
+    if (socket_path == NULL) {
+        status = ipc_default_path(&default_socket);
+        socket_path = default_socket;
+    }
+    if (status == TL_OK)
+        status = client_request(socket_path, &request, options->json_output, options->null_output,
+                                stdout);
+    ipc_path_destroy(default_socket);
+    return status;
 }
 /* ---- paths ---------------------------------------------------------------- */
 static void free_paths(struct path_list *list) {
@@ -147,7 +236,8 @@ static tl_status save_entry(void *context, const tl_crawl_entry *entry) {
     /* Custom databases may live inside roots; also skip WAL/SHM sidecars. */
     if (strncmp(entry->path, scan->database, length) == 0 &&
         (entry->path[length] == 0 || strcmp(entry->path + length, "-wal") == 0 ||
-         strcmp(entry->path + length, "-shm") == 0))
+         strcmp(entry->path + length, "-shm") == 0 ||
+         strcmp(entry->path + length, ".daemon.lock") == 0))
         return TL_OK;
     tl_status status = store_put(scan->store, entry);
     scan->callback_status = status;
@@ -332,13 +422,21 @@ int main(int argc, char **argv) {
     }
     tl_config *config = NULL;
     tl_store *store = NULL;
-    status = open_config(&options, &config);
-    if (status == TL_OK)
+    bool socket_mode = strcmp(options.command, "index") != 0 && options.database == NULL;
+    int database_lock = -1;
+    if (socket_mode)
+        status = socket_command(&options);
+    else
+        status = open_config(&options, &config);
+    if (!socket_mode && status == TL_OK && strcmp(options.command, "index") == 0)
+        status = ipc_database_lock(config_database(config), &database_lock);
+    if (!socket_mode && status == TL_OK)
         status = store_create(config_database(config), &store);
-    if (status == TL_OK)
+    if (!socket_mode && status == TL_OK)
         status = strcmp(options.command, "index") == 0 ? index_roots(store, &options, config)
                                                        : query_catalog(store, &options);
     store_destroy(store);
+    ipc_unlock(database_lock);
     config_destroy(config);
     free(options.paths);
     if (status != TL_OK) {

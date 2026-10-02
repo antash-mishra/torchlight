@@ -21,6 +21,14 @@ static inline tl_tokenized *test_text(const char *path) {
 void test_config(void);
 /** Run isolated core utility checks, aborting on failure. */
 void test_core(void);
+/** Run strict JSON, Unicode/base64 and component-aware scope checks. */
+void test_json(void);
+/** Run protocol and singleton socket lifecycle checks. */
+void test_ipc(void);
+/** Run rename, relocated-watch, overflow and exhaustion checks. */
+void test_watch(void);
+/** Run writer publication recovery, history saturation and overflow acceptance. */
+void test_writer(void);
 /** Run byte/Unicode normalization checks, aborting on failure. */
 void test_tokenize(void);
 /** Run prefix-channel checks, aborting on failure. */

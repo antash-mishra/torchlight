@@ -1,7 +1,6 @@
 # store
 
-> **Status:** Implemented (M1 catalog/root management, M2 coherent snapshot loads);
-> async writer/history APIs planned
+> **Status:** Implemented (M1/M2): catalog/roots, coherent loads, pending views, byte renames and history
 > **Source:** `src/storage/store.c` · **Header:** `include/torchlight/store.h`
 > **Tests:** `tests/unit/test_store.c`
 
@@ -12,7 +11,8 @@ All SQL lives in this source file, is constant, and is prepared before execution
 Migration v1 creates PLAN.md's files/searches/opens/meta schema and a BLOB-keyed
 `roots` table so empty queries can identify indexed roots. `PRAGMA user_version`
 controls migrations; `meta.schema_version` records the same version. Unknown
-schema versions are rejected. No embedding/history behavior is claimed yet.
+schema versions are rejected. Embedding search remains planned; M2 writes optional
+search/open history through the service writer. No schema change was needed.
 
 `store_begin/put/prune/commit` form one refresh of one or more roots. A temporary BLOB
 `seen` table records visits. Upserts preserve stable AUTOINCREMENT ids; successful
@@ -49,8 +49,22 @@ view. It refuses an active scan and rolls back callback failures; callers must
 discard partial builder output then. Tests commit concurrently during loading
 and verify that the subsequent load alone sees the new rows and catalog_gen.
 
-Whole-root transactions are an initial throughput baseline; M2 adds bounded
-batches, async writing, reconciliation and snapshot publication.
+`store_prepare_catalog` streams pending transaction rows with the next
+`catalog_gen`, so candidate construction can fail before commit. A per-connection
+change hook tracks files/roots, excluding temporary membership and sequence
+bookkeeping; unchanged daemon scans roll back without rebuilding or advancing
+`catalog_gen`. Transactions are bounded by the writer's entry/path-byte limits.
+
+`store_move` preserves ids for exact paths and descendants, replaces destination
+rows, refreshes the moved basename/extension, and clears path embeddings. SQLite
+concatenation is explicitly cast back to BLOB. Late moves also remap temporary
+seen/kept membership before pruning. Rename tests cover files and directory trees.
+
+History APIs persist idempotent searches and unique launch events independently
+of catalog transactions. Missing retained searches become NULL; missing file ids
+and conflicting retries return TL_STATE. Retention/clear transactions affect both
+history tables and never catalog_gen. The async writer preserves FIFO ordering;
+integration tests verify disabled history, deduplication and clear.
 
 ## Related
 

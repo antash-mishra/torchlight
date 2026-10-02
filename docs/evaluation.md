@@ -191,3 +191,55 @@ capacity exhaustion, and a separate WAL writer committing during catalog load.
 These establish lifecycle behavior, not update throughput or daemon round-trip
 latency. M2 still needs socket, writer/history, filesystem-watch and recovery
 integration acceptance tests.
+
+### 2026-10-02: M2 resident daemon (ADR 0011)
+
+`make bench-daemon` runs the release daemon with the M1 synthetic corpus (seed 42)
+and the same 1,200 held-out queries (seed 2). Fixture SQL deduplicates paths and
+stores them under an unavailable synthetic root; the daemon retains those saved
+rows. A separate real root has 100 files, then receives 101 new files to measure
+reconciliation/publication while queries run. This measures real socket traffic
+and whole-engine rebuild cost, not crawling 500k physical files. History is
+disabled. One persistent client requests ten results at a time; each whole query
+is sent independently. It does not measure typing-prefix latency.
+
+Reference: Intel Core i7-8700K, 32,033 MiB RAM, Linux 6.8.0-139, C17 `-O3
+-DNDEBUG`; load average started at 2.12/2.65/3.02. Warm engine timing is the
+daemon's `timing.engine_us` around lexical search alone. Round-trip timing starts
+before send and ends after receiving the terminal newline, including queue wait,
+leases, encoding and sockets (Python JSON parsing follows the timer).
+
+| Requested / actual catalog paths | Startup (ms) | First query round trip (ms) | Warm engine p50 / p95 / p99 (ms) | Warm round trip p50 / p95 / p99 (ms) |
+|---:|---:|---:|---:|---:|
+| 50k / 49,569 | 306 | 0.706 | 0.604 / 1.578 / 2.847 | 0.688 / 1.733 / 3.045 |
+| 500k / 494,362 | 3,275 | 8.437 | 8.367 / 19.113 / 26.550 | 8.485 / 19.282 / 26.792 |
+
+| Paths | Round trip during rebuild p50 / p95 / p99 (ms) | Update publication lag (ms) | Update reconciliation (ms) | Initial RSS / peak RSS during update (KiB) |
+|---:|---:|---:|---:|---:|
+| ~50k | 0.589 / 1.470 / 2.130 (254 samples) | 402 | 301 | 31,876 / 71,084 |
+| ~500k | 6.679 / 20.048 / 37.943 (264 samples) | 3,705 | 3,592 | 250,720 / 641,176 |
+
+The empty/small daemon's initial 100-file crawl/SQL/build cycle took 3–4 ms.
+Large saved-catalog startup includes SQLite load, engine construction and scratch;
+it does not wait for a full filesystem crawl. Update lag includes coalescing,
+scan, private build, commit, publication and the observing query. RSS comes from
+the daemon's `/proc` status; peak includes old/staged engines and builder buffers.
+After update, RSS was 53,424 / 552,036 KiB at the two sizes; allocator retention
+means reclamation does not necessarily return pages to the OS immediately.
+
+The **5 ms p95 target remains unmet at ~500k**. Full rebuilds also make a small
+update take about 3.7 seconds there and raise peak RSS to about 626 MiB. Shared
+index blocks/incremental updates and lexical scan improvements remain performance
+work; M2's functional acceptance does not claim those targets were reached.
+Raw output: [daemon benchmark](../tests/bench/results/2026-10-02-m2-daemon.txt).
+
+M2 acceptance now includes sanitizer integration for create/delete/rename,
+directory moves, byte paths/newlines, exact ids, concurrent queries/updates,
+SQLite lock isolation, failed-write rollback, unreadable/offline scopes,
+watch exhaustion, restart repair, asynchronous/deduplicated/disabled history,
+malformed and oversized inputs, cancelled/duplicate ids and client deadlines.
+Unit fault injection validates old-view service after committed publication
+failure, gating later catalog batches, history saturation and deterministic
+overflow reconciliation. The regular lexical benchmark remains separate from
+socket timing; its output is recorded in
+[M2 lexical check](../tests/bench/results/2026-10-02-m2-complete-lexical.txt).

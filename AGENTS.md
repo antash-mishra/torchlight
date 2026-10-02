@@ -17,6 +17,7 @@ src/index/            tokenize, dirtree, lexical (prefix, trigram, subseq, typo)
 src/storage/          store.c, the ONLY place SQL lives
 src/fs/               crawl, watch
 src/ipc/              socket protocol
+src/service/          resident daemon loop and background writer orchestration
 src/bin/              thin executables that wire modules together, no algorithms
 ui/                   gtk/ popup, optional tui/ (daemon communication via ipc only)
 tests/                unit/test_<module>.c, test_cli.py, bench/, fixtures/

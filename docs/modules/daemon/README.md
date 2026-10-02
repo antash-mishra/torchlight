@@ -1,62 +1,41 @@
 # daemon
 
-> **Status:** Planned
-> **Source:** `src/bin/torchlightd.c` · **Header:** `—`
-> **Tests:** `tests/unit/test_daemon.c`
+> **Status:** Implemented (M2): resident lexical service and bounded clients
+> **Source:** `src/service/daemon.c`, `src/bin/torchlightd.c`
+> **Header:** `include/torchlight/daemon.h`
+> **Tests:** `tests/test_daemon.py`, `tests/unit/test_catalog.c`, `tests/unit/test_writer.c`
 
-## Purpose
-`torchlightd`: wires all modules together, owns threads, serves queries.
+`torchlightd` loads the saved catalog and begins serving before its worker's
+background reconciliation finishes. `daemon_create/run/destroy` own the poll
+loop, catalog, writer, client buffers, socket/database singleton locks and signal
+descriptor. Configuration outlives the daemon. SIGINT/SIGTERM are blocked before
+creating the worker and consumed through signalfd; destruction joins the worker
+and restores the creating thread's signal mask.
 
-The resident executable is still planned. Its first prerequisite is implemented
-in [catalog](../catalog/README.md): immutable lexical views, bounded reader
-leases, publication and background reclamation. `store_load_catalog` provides
-coherent committed views for startup/recovery. See [ADR 0010](../../adr/0010-m2-resident-catalog-snapshots.md).
+The query loop leases a resident immutable catalog, searches, encodes results
+and releases its lease before sending. It performs no SQLite calls, filesystem
+reads or heap allocation. One query runs at a time; sixteen clients can remain
+connected. Inputs are 8 KiB, total queued output is 1 MiB per client, and four
+request ids may be active. Slow/partial clients expire after five seconds and
+cannot pin old catalogs. Superseded query frames already in the input buffer
+receive cancelled completion; duplicate active ids are rejected.
 
-## Responsibilities
-_TODO after implementation._
+Every M2 request ends with `phase: final`; query completion uses
+`reason: lexical_only`. Each accepted query receives a random-session/sequence
+search id before one optional history enqueue. Resolve leases the current view;
+stale ids return `stale_result`. Open recording is asynchronous and validates the
+current catalog id, without launching an external application.
 
-## Public API
-_TODO after implementation: functions and pointer ownership rules._
+Status includes active indexing, degraded/recovering state, offline roots,
+unreadable scopes, watch coverage and loss counters, history pending/drop/failure
+counts, and last reconciliation duration. `timing.engine_us` measures lexical
+search only; IPC acceptance, encoding and socket queues belong to round-trip
+timing. See [evaluation](../../evaluation.md) for benchmarks and limitations.
 
-## Design
-- Startup loads the saved catalog, serves it, and reconciles in the background.
-- Writer prepares private deltas, commits catalog batches, then publishes
-  immutable `catalog_gen`s. Failed publication after commit requires reload/rebuild
-  before later writes, with degraded status while old snapshots serve queries.
-- Queries pin one consistent catalog generation (`catalog_gen`); old blocks are reclaimed after release.
-- Pin acquisition and reclamation share a short lifecycle lock or validated
-  epoch protocol; pointer load followed by reference increment alone is unsafe.
-  Free retired blocks in the background outside the lifecycle lock.
-- Assign search ids in memory before responding and enqueue history once per query.
-- Reply with lexical results first; run query embedding/vector search and send
-  the fused `final` response afterwards. Cancel it if a newer request arrives.
-- Both phases pin the same snapshot pair. Lexical-only/error/deadline fallback
-  supplies a terminal response; M2 runs lexical-only, M4 adds semantic execution.
-- Bound clients, scratch, caches, in-flight inference, pinned snapshots, and output
-  queues. Use nonblocking I/O; a slow client cannot stall other clients.
-- Cancellation is per client/request; queued stale inference is discarded and
-  already-running stale output ignored. Prioritize interactive semantic work
-  over background path embedding.
-- Query thread never waits on SQLite or background index construction. Embedding
-  compute/allocations are measured separately from lexical/ranking guarantees.
-- Serialize daemon instances, report indexing state, and shut down/restart cleanly.
+Tests exercise live changes/moves, raw paths/newlines, stable/stale ids, concurrent
+clients/updates, SQL lock isolation, failure rollback, restart reconciliation,
+unavailable roots, watch exhaustion, disabled/deduplicated history, malformed
+requests, cancellation, duplicate ids, size bounds and client deadlines.
 
-## Data flow
-_TODO after implementation._
-
-## Invariants
-_TODO after implementation._
-
-## Performance
-_TODO: complexity, memory use, `make bench` numbers with date._
-
-## Testing
-_TODO after implementation._
-
-## Gotchas
-_TODO after implementation._
-
-## Related
-- [ipc](../ipc/README.md)
-- [store](../store/README.md)
-- [rank](../rank/README.md)
+See [writer](../writer/README.md), [IPC](../ipc/README.md) and
+[ADR 0011](../../adr/0011-m2-daemon-writer-and-reconciliation.md).

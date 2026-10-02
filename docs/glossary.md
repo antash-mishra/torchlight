@@ -41,6 +41,10 @@
 | **Known-item query** | A benchmark query generated from one target entry (exact, prefix, abbreviation, typo, partial typo or parent + name) and judged by whether that entry is retrieved. |
 | **Kept scope** | A path whose saved entries (itself and everything below it) a scan must not prune: an unreadable path, or a registered root nested in the scanned root that the scan did not visit. |
 | **Reconciliation** | A successful filesystem scan used to repair the catalog after missed events, startup, or watch exhaustion. |
+| **Recovering** | A catalog batch committed but could not publish; the writer must reload committed SQLite before accepting later catalog batches. |
+| **Move cookie** | inotify identifier pairing a source and destination rename event so catalog ids can survive the move. |
+| **Singleton lock** | Persistent adjacent advisory lock file preventing duplicate daemons or an offline index writer from racing a daemon. |
+| **History queue** | Bounded FIFO of copied search/open/clear events written off the query thread; saturation increments a drop counter. |
 | **Candidate recall** | Fraction of labeled targets surviving retrieval before final scoring. |
 | **Recall@10** | Fraction of relevant labeled results returned in the first ten results. |
 | **p95 latency** | Query duration at or below which 95% of measured requests finish. |

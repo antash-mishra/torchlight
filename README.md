@@ -7,10 +7,11 @@ parent-folder context. The 5 ms p95 latency target is met at 50k paths but not
 yet at 500k; see [evaluation](docs/evaluation.md), [PLAN.md](PLAN.md) and
 [docs](docs/README.md).
 
-M2 has started with [resident catalog snapshots](docs/modules/catalog/README.md),
-safe concurrent publication, bounded reader workspaces, and file-id resolution.
-The daemon executable, sockets, asynchronous writer/history and inotify remain
-the next work; current CLI usage below is unchanged.
+M2 provides a [resident daemon](docs/modules/daemon/README.md), bounded Unix-socket
+IPC, asynchronous catalog/history writing, live inotify updates, reconciliation,
+file-id resolution and status. Startup serves the saved catalog before scanning.
+GTK popup/service integration is next in M3. Full index rebuilds and the 500k
+latency target remain performance work; see [evaluation](docs/evaluation.md).
 
 ## Build and use
 
@@ -20,13 +21,39 @@ were approved for this implementation. No third-party source is vendored.
 
 ```sh
 make
-./build/torchlight index                      # sync the configured roots ($HOME by default)
-./build/torchlight index "$HOME/Documents"    # or refresh specific roots
+./build/torchlightd                          # keep running in this terminal
+```
+
+In another terminal:
+
+```sh
 ./build/torchlight query "prjnts"             # abbreviation -> projectNotes.md
 ./build/torchlight query "raedme"             # one-edit typo -> README.md
 ./build/torchlight query --limit 20 "work notes"
 ./build/torchlight query --null "report"      # exact paths, NUL-separated
+./build/torchlight query --json "report"      # ids, exact paths and status
+./build/torchlight status
+./build/torchlight reconcile                 # request a background refresh
+./build/torchlight history-clear             # clear persisted search/open history
 ```
+
+The default socket is `$XDG_RUNTIME_DIR/torchlight.sock`; `--socket PATH` selects
+another socket on both commands. SIGINT/SIGTERM shut down cleanly. The daemon
+accepts `--no-history`, `--history-days N` (default 30), `--rescan-ms N` (default
+30000), `--watch-capacity N`, `--max-entries N` and `--max-path-bytes N`.
+`resolve FILE_ID` retrieves a current path; `record FILE_ID EVENT_ID [SEARCH_ID]`
+queues an accepted open record. Desktop opening/reveal actions arrive in M3.
+
+When the daemon is stopped, offline commands remain available:
+
+```sh
+./build/torchlight index                     # sync the configured roots
+./build/torchlight index "$HOME/Documents"   # or refresh specific roots
+./build/torchlight query --db "$HOME/.local/share/torchlight/catalog.db" "prjnts"
+```
+
+Offline indexing and the daemon share a database lock. Explicit `query --db`
+uses a local engine; queries without `--db` use the resident daemon.
 
 The catalog is `$XDG_DATA_HOME/torchlight/catalog.db` (or
 `~/.local/share/torchlight/catalog.db`); `--db PATH` selects another one whose
@@ -66,14 +93,16 @@ benchmark measures; the M2 daemon keeps it resident.
 ## Checks
 
 ```sh
-make test    # ASan + UBSan + leak checks, unit and CLI integration tests
+make test    # ASan + UBSan + leak checks, unit, CLI and daemon integration tests
 make lint    # clang-tidy and cppcheck, warnings fail the build
 make format
 make bench   # release engine: latency and labeled ranking quality, 50k/500k paths
+make bench-daemon # release daemon: startup, IPC, indexing load, update lag and RSS
 ```
 
 Measurements and limitations are recorded in [evaluation](docs/evaluation.md).
-The benchmark excludes SQLite loading and CLI startup. To add a real corpus:
+The engine benchmark excludes SQLite loading and CLI startup; the daemon
+benchmark measures startup separately. To add a real corpus to the engine benchmark:
 
 ```sh
 ./scripts/make_corpus.sh /usr /tmp/usr.paths   # NUL-separated path list; keep it private

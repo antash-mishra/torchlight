@@ -1,5 +1,7 @@
 /* Durable BLOB-path catalog, prepared migration statements and atomic scans. */
 #include "torchlight/store.h"
+#include "torchlight/json.h"
+#include "torchlight/path.h"
 #include <limits.h>
 #include <sqlite3.h>
 #include <stdlib.h>
@@ -8,8 +10,17 @@ struct tl_store {
     sqlite3 *db;
     /* Per-entry statements are prepared once; a scan runs them for every entry. */
     sqlite3_stmt *put, *mark_seen, *keep;
-    bool transaction, reading;
+    bool transaction, reading, changed;
 };
+static void catalog_change(void *context, int operation, const char *database, const char *table,
+                           sqlite3_int64 row) {
+    tl_store *store = context;
+    (void)operation;
+    (void)row;
+    if (strcmp(database, "main") == 0 &&
+        (strcmp(table, "files") == 0 || strcmp(table, "roots") == 0))
+        store->changed = true;
+}
 static const char PUT_SQL[] =
     "INSERT INTO files(path,name,ext,is_dir,mtime,size) VALUES(?1,?2,?3,?4,?5,?6) "
     "ON CONFLICT(path) DO UPDATE SET "
@@ -134,6 +145,8 @@ tl_status store_create(const char *path, tl_store **out) {
         status = execute(store, "CREATE TEMP TABLE kept(path BLOB PRIMARY KEY)");
     if (status == TL_OK)
         status = prepare_statements(store);
+    if (status == TL_OK)
+        sqlite3_update_hook(store->db, catalog_change, store);
     if (status != TL_OK) {
         store_destroy(store);
         return status;
@@ -163,6 +176,7 @@ tl_status store_begin(tl_store *store) {
     if (status != TL_OK)
         return status;
     store->transaction = true;
+    store->changed = false;
     status = execute(store, "DELETE FROM seen");
     if (status == TL_OK)
         status = execute(store, "DELETE FROM kept");
@@ -459,4 +473,167 @@ tl_status store_roots(tl_store *store, tl_store_root_callback callback, void *co
     if (status == TL_OK && code != SQLITE_DONE)
         status = TL_IO;
     return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
+}
+tl_status store_prepare_catalog(tl_store *store, tl_store_callback callback, void *context,
+                                uint64_t *out_catalog_gen) {
+    if (out_catalog_gen == NULL)
+        return TL_INVALID;
+    *out_catalog_gen = 0;
+    if (store == NULL || callback == NULL)
+        return TL_INVALID;
+    if (!store->transaction || store->reading)
+        return TL_STATE;
+    uint64_t catalog_gen = 0;
+    tl_status status = read_catalog_gen(store, &catalog_gen);
+    if (status == TL_OK && catalog_gen == INT64_MAX)
+        status = TL_LIMIT;
+    if (status == TL_OK)
+        status = store_load(store, callback, context);
+    if (status == TL_OK)
+        *out_catalog_gen = catalog_gen + 1;
+    return status;
+}
+tl_status store_catalog_changed(tl_store *store, bool *out) {
+    if (store == NULL || out == NULL)
+        return TL_INVALID;
+    if (!store->transaction)
+        return TL_STATE;
+    *out = store->changed;
+    return TL_OK;
+}
+static tl_status move_statement(tl_store *store, const char *sql, const char *old_path,
+                                const char *new_path) {
+    sqlite3_stmt *statement = NULL;
+    if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
+        return TL_IO;
+    tl_status status = bind_blob(statement, 1, old_path, strlen(old_path));
+    if (status == TL_OK)
+        status = bind_blob(statement, 2, new_path, strlen(new_path));
+    const char *name = strrchr(new_path, '/') + 1, *ext = strrchr(name, '.');
+    if (status == TL_OK && sqlite3_bind_parameter_count(statement) >= 3)
+        status = bind_blob(statement, 3, name, strlen(name));
+    if (status == TL_OK && sqlite3_bind_parameter_count(statement) >= 4 && ext != NULL &&
+        ext != name && ext[1] != 0)
+        status = bind_blob(statement, 4, ext + 1, strlen(ext + 1));
+    if (status == TL_OK && sqlite3_step(statement) != SQLITE_DONE)
+        status = TL_IO;
+    return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
+}
+tl_status store_move(tl_store *store, const char *old_path, const char *new_path) {
+    if (store == NULL || old_path == NULL || new_path == NULL || old_path[0] != '/' ||
+        new_path[0] != '/' || path_within(old_path, new_path) || path_within(new_path, old_path))
+        return TL_INVALID;
+    if (!store->transaction)
+        return TL_STATE;
+    /* SQLite concatenation produces TEXT even for BLOB operands; cast before
+     * writing so byte paths never acquire a second TEXT identity. */
+    static const char DELETE_DEST[] =
+        "DELETE FROM files WHERE (path=?2 OR (substr(path,1,length(?2))=?2 AND "
+        "substr(path,length(?2)+1,1)=X'2F')) AND EXISTS(SELECT 1 FROM files WHERE path=?1)";
+    static const char MOVE[] =
+        "UPDATE files SET path=CAST(?2 || substr(path,length(?1)+1) AS BLOB),"
+        "name=CASE WHEN path=?1 THEN ?3 ELSE name END,"
+        "ext=CASE WHEN path=?1 THEN CASE WHEN is_dir=1 THEN NULL ELSE ?4 END ELSE ext END,"
+        "emb_version=NULL,emb_bin=NULL,emb_i8=NULL,emb_scale=NULL "
+        "WHERE path=?1 OR (substr(path,1,length(?1))=?1 AND substr(path,length(?1)+1,1)=X'2F')";
+    tl_status status = move_statement(store, DELETE_DEST, old_path, new_path);
+    if (status == TL_OK)
+        status = move_statement(store, MOVE, old_path, new_path);
+    if (status == TL_OK && sqlite3_changes(store->db) != 0) {
+        const char *temporary[] = {
+            "UPDATE OR REPLACE seen SET path=CAST(?2 || substr(path,length(?1)+1) AS BLOB) WHERE "
+            "path=?1 OR (substr(path,1,length(?1))=?1 AND substr(path,length(?1)+1,1)=X'2F')",
+            "UPDATE OR REPLACE kept SET path=CAST(?2 || substr(path,length(?1)+1) AS BLOB) WHERE "
+            "path=?1 OR (substr(path,1,length(?1))=?1 AND substr(path,length(?1)+1,1)=X'2F')"};
+        for (size_t i = 0; i < 2 && status == TL_OK; i++)
+            status = move_statement(store, temporary[i], old_path, new_path);
+    }
+    return status;
+}
+static tl_status history_ready(const tl_store *store, const char *id) {
+    if (store == NULL || id == NULL || id[0] == 0 || !json_utf8(id))
+        return TL_INVALID;
+    if (strlen(id) > 128)
+        return TL_LIMIT;
+    return store->transaction || store->reading ? TL_STATE : TL_OK;
+}
+tl_status store_search(tl_store *store, const char *id, const char *query, int64_t timestamp) {
+    tl_status status = history_ready(store, id);
+    if (status != TL_OK)
+        return status;
+    if (query == NULL || !json_utf8(query) || timestamp < 0)
+        return TL_INVALID;
+    if (strlen(query) > 256)
+        return TL_LIMIT;
+    sqlite3_stmt *statement = NULL;
+    const char *sql = "INSERT INTO searches VALUES(?1,?2,?3) ON CONFLICT(id) DO UPDATE SET "
+                      "id=excluded.id WHERE searches.query=excluded.query";
+    if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
+        return TL_IO;
+    if (sqlite3_bind_text(statement, 1, id, -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+        sqlite3_bind_text(statement, 2, query, -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+        sqlite3_bind_int64(statement, 3, timestamp) != SQLITE_OK ||
+        sqlite3_step(statement) != SQLITE_DONE)
+        status = TL_IO;
+    else if (sqlite3_changes(store->db) != 1)
+        status = TL_STATE;
+    return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
+}
+tl_status store_open_event(tl_store *store, const char *event_id, uint64_t file_id,
+                           const char *search_id, int64_t timestamp) {
+    tl_status status = history_ready(store, event_id);
+    if (status != TL_OK)
+        return status;
+    if (file_id == 0 || file_id > INT64_MAX || timestamp < 0 ||
+        (search_id != NULL && (!json_utf8(search_id) || strlen(search_id) > 128)))
+        return TL_INVALID;
+    sqlite3_stmt *statement = NULL;
+    const char *sql = "INSERT INTO opens(event_id,file_id,search_id,ts) SELECT ?1,?2,(SELECT id "
+                      "FROM searches WHERE id=?3),?4 WHERE EXISTS(SELECT 1 FROM files WHERE id=?2) "
+                      "ON CONFLICT(event_id) DO UPDATE SET event_id=excluded.event_id WHERE "
+                      "opens.file_id=excluded.file_id AND opens.search_id IS excluded.search_id";
+    if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
+        return TL_IO;
+    if (sqlite3_bind_text(statement, 1, event_id, -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+        sqlite3_bind_int64(statement, 2, (sqlite3_int64)file_id) != SQLITE_OK ||
+        (search_id != NULL &&
+         sqlite3_bind_text(statement, 3, search_id, -1, SQLITE_TRANSIENT) != SQLITE_OK) ||
+        sqlite3_bind_int64(statement, 4, timestamp) != SQLITE_OK ||
+        sqlite3_step(statement) != SQLITE_DONE)
+        status = TL_IO;
+    else if (sqlite3_changes(store->db) != 1)
+        status = TL_STATE;
+    return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
+}
+tl_status store_history_prune(tl_store *store, int64_t cutoff, bool clear) {
+    if (store == NULL || cutoff < 0)
+        return TL_INVALID;
+    if (store->transaction || store->reading)
+        return TL_STATE;
+    const char *steps[] = {"DELETE FROM opens WHERE ?1 OR ts<?2",
+                           "DELETE FROM searches WHERE ?1 OR ts<?2"};
+    tl_status status = execute(store, "BEGIN IMMEDIATE");
+    if (status != TL_OK)
+        return status;
+    for (size_t i = 0; i < 2 && status == TL_OK; i++) {
+        sqlite3_stmt *statement = NULL;
+        if (sqlite3_prepare_v2(store->db, steps[i], -1, &statement, NULL) != SQLITE_OK) {
+            status = TL_IO;
+            break;
+        }
+        if (sqlite3_bind_int(statement, 1, clear ? 1 : 0) != SQLITE_OK ||
+            sqlite3_bind_int64(statement, 2, cutoff) != SQLITE_OK ||
+            sqlite3_step(statement) != SQLITE_DONE)
+            status = TL_IO;
+        if (sqlite3_finalize(statement) != SQLITE_OK)
+            status = TL_IO;
+    }
+    if (status == TL_OK)
+        status = execute(store, "COMMIT");
+    if (status != TL_OK) {
+        tl_status rollback = execute(store, "ROLLBACK");
+        if (rollback != TL_OK)
+            status = rollback;
+    }
+    return status;
 }

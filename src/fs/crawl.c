@@ -1,6 +1,7 @@
 /* fts-based physical scans: default exclusions, allowlist traversal, and
  * unreadable scopes reported separately from excluded trees. */
 #include "torchlight/crawl.h"
+#include "torchlight/path.h"
 #include <errno.h>
 #include <fts.h>
 #include <stdlib.h>
@@ -48,14 +49,6 @@ void crawl_destroy(tl_crawl *crawler) {
     free(crawler->exclude);
     free(crawler);
 }
-/* Byte-wise: path is scope or below it ("/a/b" is within "/a", "/ab" is not). */
-static bool within(const char *path, const char *scope) {
-    if (scope == NULL)
-        return false;
-    size_t length = strlen(scope);
-    return strncmp(path, scope, length) == 0 &&
-           (path[length] == 0 || path[length] == '/' || (length == 1 && scope[0] == '/'));
-}
 static bool ignored_name(const char *name) {
     return name[0] == '.' || strcmp(name, "node_modules") == 0 || strcmp(name, "target") == 0 ||
            strcmp(name, "build") == 0 || strcmp(name, "__pycache__") == 0;
@@ -70,7 +63,7 @@ static bool allowed_exactly(const tl_crawl *crawler, const char *path) {
 /* Whether an allowlisted directory lies strictly below path. */
 static bool leads_to_allowed(const tl_crawl *crawler, const char *path) {
     for (size_t i = 0; i < crawler->allow_count; i++) {
-        if (strcmp(crawler->allow[i], path) != 0 && within(crawler->allow[i], path))
+        if (strcmp(crawler->allow[i], path) != 0 && path_within(crawler->allow[i], path))
             return true;
     }
     return false;
@@ -81,7 +74,7 @@ static bool leads_to_allowed(const tl_crawl *crawler, const char *path) {
  * the way to one. Allowlisted directories apply the defaults below them. */
 static enum scope classify(const tl_crawl *crawler, const char *path, const char *name, bool is_dir,
                            bool parent_transit) {
-    if (within(path, crawler->exclude))
+    if (path_within(path, crawler->exclude))
         return SCOPE_SKIP;
     if (is_dir && allowed_exactly(crawler, path))
         return SCOPE_INDEX;
@@ -117,10 +110,11 @@ static tl_status visit(tl_crawl *crawler, FTS *walk, FTSENT *entry, tl_crawl_cal
         return TL_OK;
     /* The root is always walked (explicit roots override name defaults), but
      * the excluded scope wins even there. */
-    enum scope scope = entry->fts_level == 0
-                           ? (within(entry->fts_path, crawler->exclude) ? SCOPE_SKIP : SCOPE_INDEX)
-                           : classify(crawler, entry->fts_path, entry->fts_name, directory(entry),
-                                      entry->fts_parent->fts_number == SCOPE_TRANSIT);
+    enum scope scope =
+        entry->fts_level == 0
+            ? (path_within(entry->fts_path, crawler->exclude) ? SCOPE_SKIP : SCOPE_INDEX)
+            : classify(crawler, entry->fts_path, entry->fts_name, directory(entry),
+                       entry->fts_parent->fts_number == SCOPE_TRANSIT);
     if (scope == SCOPE_SKIP) {
         if (entry->fts_info == FTS_D && fts_set(walk, entry, FTS_SKIP) != 0)
             return TL_IO;
@@ -173,8 +167,8 @@ tl_status crawl_run(tl_crawl *crawler, const char *root, tl_crawl_callback callb
     return status;
 }
 bool crawl_covers(const tl_crawl *crawler, const char *outer, const char *inner) {
-    if (crawler == NULL || outer == NULL || inner == NULL || !within(inner, outer) ||
-        within(outer, crawler->exclude))
+    if (crawler == NULL || outer == NULL || inner == NULL || !path_within(inner, outer) ||
+        path_within(outer, crawler->exclude))
         return false;
     size_t length = strlen(inner);
     char *path = strdup(inner);

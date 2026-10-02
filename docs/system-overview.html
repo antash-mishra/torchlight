@@ -70,11 +70,11 @@
     <header>
       <p class="eyebrow">Torchlight · project overview</p>
       <h1>Find your files. Fast.</h1>
-      <p class="intro">A Linux launcher that finds files and folders by their names and paths. The search tools work today. The background service and popup come next.</p>
+      <p class="intro">A Linux launcher that finds files and folders by their names and paths. The resident background service keeps search ready and follows file changes. The popup comes next.</p>
       <div class="badges" aria-label="Project status">
         <span class="badge built">M1 features built</span>
         <span class="badge open">Large-list speed target still open</span>
-        <span class="badge planned">Next: M2 background service</span>
+        <span class="badge built">M2 service built</span><span class="badge planned">Next: M3 popup</span>
       </div>
     </header>
 
@@ -83,7 +83,7 @@
       <p class="section-note">Green boxes are built. Blue dashed boxes are planned.</p>
       <div class="tabs" role="tablist" aria-label="System view">
         <button id="today-tab" role="tab" aria-selected="true" aria-controls="today" tabindex="0">Built today</button>
-        <button id="future-tab" role="tab" aria-selected="false" aria-controls="future" tabindex="-1">Planned system</button>
+        <button id="future-tab" role="tab" aria-selected="false" aria-controls="future" tabindex="-1">Desktop system</button>
       </div>
 
       <div id="today" role="tabpanel" aria-labelledby="today-tab">
@@ -97,28 +97,28 @@
           <span class="arrow" aria-hidden="true">→</span>
           <div class="node"><strong>Saved file list</strong><small>SQLite keeps the list on disk.</small><span class="badge built">Built</span></div>
         </div>
-        <p class="caption">The terminal command <code>index</code> refreshes this list. Files in folders we cannot read stay in the saved list.</p>
+        <p class="caption">The background service watches and refreshes this list. The <code>index</code> command also refreshes it offline. Unreadable folders keep their saved entries.</p>
         <p class="flow-label">2. Search that list</p>
         <div class="flow" aria-label="Terminal query to saved list to search engine to results">
           <div class="node"><strong>Terminal query</strong><small>Type a name, part of a name, or a small typo.</small><span class="badge built">Built</span></div>
           <span class="arrow" aria-hidden="true">→</span>
-          <div class="node"><strong>Load the saved list</strong><small>Prepare the search engine for this query.</small><span class="badge built">Built</span></div>
+          <div class="node"><strong>Resident service</strong><small>Search the list already held in memory.</small><span class="badge built">Built</span></div>
           <span class="arrow" aria-hidden="true">→</span>
           <div class="node"><strong>Name search</strong><small>Find matches and put the best ones first.</small><span class="badge built">Built</span></div>
           <span class="arrow" aria-hidden="true">→</span>
           <div class="node"><strong>File paths</strong><small>Show the results in the terminal.</small><span class="badge built">Built</span></div>
         </div>
-        <p class="caption">Today, each <code>query</code> command loads and builds the engine again. M2 will keep it ready in memory.</p>
+        <p class="caption">The service loads saved names at startup and searches them over a local connection. Explicit <code>query --db</code> remains available offline.</p>
       </div>
 
       <div id="future" role="tabpanel" aria-labelledby="future-tab" hidden>
         <p class="flow-label">Search without loading the list again</p>
         <div class="flow" aria-label="Terminal or popup to local connection to background service to search engine">
-          <div class="node future"><strong>Terminal or popup</strong><small>The popup arrives in M3.</small><span class="badge planned">M2 / M3</span></div>
+          <div class="node future"><strong>Terminal or popup</strong><small>The popup arrives in M3.</small><span class="badge planned">Popup: M3</span></div>
           <span class="arrow" aria-hidden="true">↔</span>
-          <div class="node future"><strong>Local connection</strong><small>Send a query and receive results.</small><span class="badge planned">M2</span></div>
+          <div class="node"><strong>Local connection</strong><small>Send a query and receive results.</small><span class="badge built">Built</span></div>
           <span class="arrow" aria-hidden="true">↔</span>
-          <div class="node future"><strong>Background service</strong><small>Keep search ready while the app is running.</small><span class="badge planned">M2</span></div>
+          <div class="node"><strong>Background service</strong><small>Keep search ready while the app is running.</small><span class="badge built">Built</span></div>
           <span class="arrow" aria-hidden="true">↔</span>
           <div class="node"><strong>Name search</strong><small>The existing engine stays in memory.</small><span class="badge built">Engine built</span></div>
         </div>
@@ -127,13 +127,13 @@
         <div class="flow" aria-label="Folders to scanner and watcher to background writer to saved list">
           <div class="node"><strong>Your folders</strong><small>Files may be added, moved or removed.</small></div>
           <span class="arrow" aria-hidden="true">→</span>
-          <div class="node future"><strong>Scanner + watcher</strong><small>Scanner is built. Automatic watching comes next.</small><span class="badge planned">Watcher: M2</span></div>
+          <div class="node"><strong>Scanner + watcher</strong><small>Follow file changes and repair missed updates.</small><span class="badge built">Built</span></div>
           <span class="arrow" aria-hidden="true">→</span>
-          <div class="node future"><strong>Background writer</strong><small>Save changes while searches keep working.</small><span class="badge planned">M2</span></div>
+          <div class="node"><strong>Background writer</strong><small>Save changes while searches keep working.</small><span class="badge built">Built</span></div>
           <span class="arrow" aria-hidden="true">→</span>
           <div class="node"><strong>Saved file list</strong><small>Use the existing SQLite store.</small><span class="badge built">Store built</span></div>
         </div>
-        <p class="caption">The writer will also update the search engine safely. Meaning-based search comes in M4; results based on your habits come in M5.</p>
+        <p class="caption">The writer updates the search engine safely. Meaning-based search comes in M4; results based on your habits come in M5.</p>
       </div>
     </section>
 
@@ -146,35 +146,36 @@
           <li>Search by exact name, beginning of a name, short forms, small typos and parent folders.</li>
           <li>Support for names in other languages and unusual file names.</li>
           <li>Safe refreshes: unavailable folders keep saved entries; write failures undo the whole refresh.</li>
+          <li>Resident search, automatic file watching, restart recovery and status.</li>
+          <li>Optional search/open history with clear and retention controls.</li>
           <li>Automated checks and speed tests at 50,000 and 500,000 paths.</li>
         </ul>
       </section>
       <section class="panel" aria-labelledby="remaining-title">
         <h2 id="remaining-title">What is left</h2>
         <ul>
-          <li>Keep search running in the background.</li>
-          <li>Update the list automatically when files change.</li>
+          <li>Improve large-list latency and how quickly changes appear.</li>
           <li>Build the popup, shortcut and open-file actions.</li>
           <li>Add optional search by meaning.</li>
           <li>Learn from your file-opening habits, with history controls.</li>
         </ul>
-        <p class="notice"><strong>M1 still has speed work.</strong> The 5 ms search target is met at 50,000 paths, but not yet at 500,000. M1 features are built, but M1 is not fully finished yet. Typos in unfinished words also need better results.</p>
+        <p class="notice"><strong>Large-list performance remains open.</strong> The 5 ms search target is met at 50,000 paths, but not yet at 500,000. Very large lists can take seconds to show file changes. Typos in unfinished words also need better results.</p>
       </section>
     </div>
 
     <section aria-labelledby="roadmap-title">
       <h2 id="roadmap-title">The next steps</h2>
-      <p class="section-note">Build the service first, then the visible app.</p>
+      <p class="section-note">The service works; build the visible app next.</p>
       <div class="roadmap">
-        <article class="step next"><span class="badge planned">M2 · Next</span><h3 style="margin-top: 12px">Stay ready</h3><p>Background service, local connection, file watching, safe updates, saved history and status.</p></article>
-        <article class="step"><span class="badge planned">M3 · GUI</span><h3 style="margin-top: 12px">Use the popup</h3><p>GTK4 window, keyboard shortcut, live results, open or reveal files, and start at login.</p></article>
+        <article class="step"><span class="badge built">M2 · Built</span><h3 style="margin-top: 12px">Stay ready</h3><p>Background service, local connection, file watching, safe updates, saved history and status.</p></article>
+        <article class="step next"><span class="badge planned">M3 · Next</span><h3 style="margin-top: 12px">Use the popup</h3><p>GTK4 window, keyboard shortcut, live results, open or reveal files, and start at login.</p></article>
         <article class="step"><span class="badge planned">M4</span><h3 style="margin-top: 12px">Search by meaning</h3><p>Optional model-based matches using file names and folder names.</p></article>
-        <article class="step"><span class="badge planned">M5</span><h3 style="margin-top: 12px">Fit your habits</h3><p>Boost useful results based on what you open. Add controls to disable, clear and limit history.</p></article>
+        <article class="step"><span class="badge planned">M5</span><h3 style="margin-top: 12px">Fit your habits</h3><p>Boost useful results based on what you open. Use the existing history controls and compare personalized ranking.</p></article>
       </div>
     </section>
 
     <footer>
-      <span>Status: 2 October 2026 · M1 fixes: <code>5e9be6f</code></span>
+      <span>Status: 2 October 2026 · M2 features built; large-list performance open</span>
       <nav aria-label="More details"><a href="../PLAN.md">Full plan</a><a href="architecture.md">Architecture</a><a href="evaluation.md">Speed results</a></nav>
     </footer>
   </main>
