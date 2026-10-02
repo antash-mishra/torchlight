@@ -27,6 +27,34 @@ def catalog_snapshot(database):
     with sqlite3.connect(database) as connection:
         return tuple(connection.iterdump())
 
+def schema_v1_migration(temporary):
+    """Migration keeps legacy IDs/history and adopts identity on the first scan."""
+    home = Path(temporary) / "migration"
+    home.mkdir()
+    file = home / "saved.txt"
+    file.write_bytes(b"saved")
+    database = home / "catalog.db"
+    run("index", "--db", str(database), str(home))
+    with sqlite3.connect(database) as connection:
+        original = connection.execute("SELECT id FROM files WHERE path=?", (os.fsencode(file),)).fetchone()[0]
+        before = connection.execute("SELECT value FROM meta WHERE key='catalog_gen'").fetchone()[0]
+        connection.execute("INSERT INTO searches VALUES('legacy-search','saved',1)")
+        connection.execute("INSERT INTO opens VALUES('legacy-open',?,'legacy-search',1)", (original,))
+        # Remove the additive v2 column to recreate the exact legacy layout.
+        connection.execute("ALTER TABLE files DROP COLUMN identity")
+        connection.execute("PRAGMA user_version=1")
+        connection.execute("UPDATE meta SET value='1' WHERE key='schema_version'")
+    run("query", "--db", str(database), "saved.txt")
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert connection.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == "2"
+        assert connection.execute("SELECT value FROM meta WHERE key='catalog_gen'").fetchone()[0] == before
+        assert connection.execute("SELECT identity FROM files WHERE id=?", (original,)).fetchone() == (None,)
+    run("index", "--db", str(database), str(home))
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT id,length(identity) FROM files WHERE path=?", (os.fsencode(file),)).fetchone() == (original, 29)
+        assert connection.execute("SELECT file_id,search_id FROM opens WHERE event_id='legacy-open'").fetchone() == (original, "legacy-search")
+
 def unavailable_root_aliases(temporary):
     """An unresolved spelling must never turn a configured root into deletion."""
     for number, spelling in enumerate(["a/", "a/./", "a/../a", "alias/"]):
@@ -234,6 +262,7 @@ with tempfile.TemporaryDirectory(prefix="torchlight-cli-") as temporary:
     unavailable_root_aliases(temporary)
     storage_failure_rolls_back(temporary)
     catalog_gen_failures_roll_back(temporary)
+    schema_v1_migration(temporary)
     for invalid in ["0", "-1", "1001", "1x", "999999999999999999999"]:
         run("query", "--db", str(database), "--limit", invalid, "x", success=False)
     run("query", "--db", str(database), "x" * 257, success=False)

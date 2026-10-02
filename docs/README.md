@@ -13,6 +13,12 @@ Start here. Read in this order:
 
 ## Implementation status
 
+Both findings from the [M2 review](m2-review.md) are fixed and covered by sanitizer
+regressions: filesystem incarnation checks retire replacement ids, and inotify
+instance failure permits scan-only reconciliation. See
+[ADR 0012](adr/0012-filesystem-incarnations-and-watch-fallback.md) for migration
+and fallback behavior. Large-catalog performance remains open.
+
 M2's resident [daemon](modules/daemon/README.md) is implemented: bounded Unix
 socket clients, lexical-only terminal responses, immutable catalog snapshots,
 asynchronous [writer/history](modules/writer/README.md), inotify and reconciliation,
@@ -77,6 +83,8 @@ The 5 ms p95 latency gate is met at 50k paths but not yet at 500k; see
   establishes bounded leases, publication, reclamation and coherent catalog loads.
 - [0011: M2 daemon, writer and reconciliation](adr/0011-m2-daemon-writer-and-reconciliation.md)
   completes resident IPC, live updates, asynchronous history and recovery.
+- [0012: filesystem incarnations and watch fallback](adr/0012-filesystem-incarnations-and-watch-fallback.md)
+  retires replacement ids and keeps reconciliation working without inotify.
 
 ## Keeping docs current
 

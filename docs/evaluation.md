@@ -243,3 +243,19 @@ failure, gating later catalog batches, history saturation and deterministic
 overflow reconciliation. The regular lexical benchmark remains separate from
 socket timing; its output is recorded in
 [M2 lexical check](../tests/bench/results/2026-10-02-m2-complete-lexical.txt).
+
+### 2026-10-03: M2 review regressions (ADR 0012)
+
+The [two reproduced M2 findings](m2-review.md) are fixed. ASan/UBSan module and
+integration coverage now includes coalesced file/directory replacement,
+same-inode/different-birth identity, retirement of descendant ids, failed-write
+rollback/retry with open-history restoration, replacement during downtime,
+schema-v1 migration, periodic scans with no inotify instance, restored watch
+coverage and retention of the previous watch set on a later factory failure.
+Clang-tidy and cppcheck pass.
+
+Rerunning the original reproductions with the fixed sanitizer build gives a
+fresh replacement id and `stale_result` for the old id. With inotify_init1
+forced to fail, the new file is indexed, reconciliations continue, and status
+reports degraded/unavailable watching. No query-path change was made; recorded
+release performance tables above remain the pre-fix measurements.

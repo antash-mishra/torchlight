@@ -276,7 +276,7 @@ static tl_status scan_entry(void *context, const tl_crawl_entry *entry) {
         return writer->callback_status = TL_LIMIT;
     if (entry->unreadable)
         writer->unreadable_scopes++;
-    if (entry->is_dir && !entry->unreadable) {
+    if (entry->is_dir && !entry->unreadable && writer->building_watch != NULL) {
         tl_status watched = watch_add(writer->building_watch, entry->path);
         if (watched != TL_OK && watched != TL_IO && watched != TL_LIMIT)
             return writer->callback_status = watched;
@@ -335,6 +335,22 @@ static void update_watch_stats(tl_writer *writer, const tl_watch *watch) {
     writer->stats.watch_unavailable += stats.unavailable;
     unlock_writer(writer);
 }
+static tl_status prepare_watch(tl_writer *writer) {
+    tl_status status =
+        writer->options.create_watch == NULL
+            ? watch_create(writer->options.watch_capacity, &writer->building_watch)
+            : writer->options.create_watch(writer->options.watch_context,
+                                           writer->options.watch_capacity, &writer->building_watch);
+    if (status != TL_IO)
+        return status;
+    /* Instance exhaustion cannot be a prerequisite for periodic repair. Keep
+     * the existing watcher live, and retry creation on the next scan. */
+    lock_writer(writer);
+    writer->stats.watch_degraded = true;
+    writer->stats.watch_unavailable++;
+    unlock_writer(writer);
+    return TL_OK;
+}
 static tl_status reconcile(tl_writer *writer) {
     tl_catalog_stats catalog;
     catalog_reclaim(writer->options.catalog);
@@ -345,7 +361,7 @@ static tl_status reconcile(tl_writer *writer) {
     writer->applied_renames = 0;
     status = prepare_paths(writer);
     if (status == TL_OK)
-        status = watch_create(writer->options.watch_capacity, &writer->building_watch);
+        status = prepare_watch(writer);
     if (status == TL_OK)
         status = store_begin(writer->store);
     bool transaction = status == TL_OK;
@@ -379,10 +395,12 @@ static tl_status reconcile(tl_writer *writer) {
             if (status != TL_OK)
                 writer->reload = true;
         }
-        watch_destroy(writer->watch);
-        writer->watch = writer->building_watch;
-        writer->building_watch = NULL;
-        update_watch_stats(writer, writer->watch);
+        if (writer->building_watch != NULL) {
+            watch_destroy(writer->watch);
+            writer->watch = writer->building_watch;
+            writer->building_watch = NULL;
+            update_watch_stats(writer, writer->watch);
+        }
     }
     catalog_snapshot_destroy(snapshot);
     watch_destroy(writer->building_watch);
@@ -443,8 +461,8 @@ static void scan_cycle(tl_writer *writer) {
     writer->stats.indexing = false;
     writer->stats.offline_roots = writer->offline_roots;
     writer->stats.unreadable_scopes = writer->unreadable_scopes;
-    writer->stats.degraded =
-        status != TL_OK || writer->offline_roots != 0 || writer->unreadable_scopes != 0;
+    writer->stats.degraded = status != TL_OK || writer->offline_roots != 0 ||
+                             writer->unreadable_scopes != 0 || writer->stats.watch_degraded;
     writer->stats.recovering = writer->reload;
     writer->stats.last_scan_ms = milliseconds() - start;
     if (status == TL_OK)

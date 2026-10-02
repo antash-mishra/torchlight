@@ -325,6 +325,69 @@ def watch_exhaustion_and_disabled_history(service):
         service.stop()
 
 
+def rapid_replacements(service):
+    """A coalesced replacement retires stale selections and rolls back on failure."""
+    file = service.root / "same.txt"
+    folder = service.root / "tree"
+    child = folder / "child.txt"
+    file.write_bytes(b"old")
+    folder.mkdir()
+    child.write_bytes(b"old")
+    service.start()
+    try:
+        original, folder_id, child_id = (service.indexed(path) for path in (file, folder, child))
+        query = service.call("query", query="same.txt")
+        assert service.call("open", file_id=original, search_id=query["search_id"],
+                            event_id="replaced-open")["status"] == "ok"
+        def history_recorded():
+            with sqlite3.connect(service.database) as connection:
+                return connection.execute("SELECT count(*) FROM opens WHERE event_id='replaced-open'").fetchone()[0] == 1
+        wait_for(history_recorded)
+        # Keep the old inode allocated, making replacement deterministic even
+        # on filesystems that cannot report a birth timestamp.
+        with file.open("rb"), sqlite3.connect(service.database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("CREATE TRIGGER fail_replace BEFORE INSERT ON files WHEN NEW.name=X'73616d652e747874' BEGIN SELECT RAISE(FAIL,'injected replacement failure'); END")
+            connection.commit()
+            connection.execute("BEGIN IMMEDIATE")
+            before = connection.execute("SELECT value FROM meta WHERE key='catalog_gen'").fetchone()[0]
+            file.unlink()
+            file.write_bytes(b"replacement")
+            connection.rollback()
+            wait_for(lambda: service.call("status")["indexing"]["degraded"])
+            assert service.paths()[os.fsencode(file)] == original
+            assert connection.execute("SELECT value FROM meta WHERE key='catalog_gen'").fetchone()[0] == before
+            assert connection.execute("SELECT count(*) FROM opens WHERE event_id='replaced-open'").fetchone()[0] == 1
+            connection.execute("DROP TRIGGER fail_replace")
+            connection.commit()
+            wait_for(lambda: service.paths().get(os.fsencode(file)) != original)
+        assert service.call("resolve", file_id=original)["reason"] == "stale_result"
+        assert service.call("open", file_id=original, event_id="stale-replacement")["reason"] == "stale_result"
+        with sqlite3.connect(service.database) as connection:
+            assert connection.execute("SELECT count(*) FROM opens WHERE event_id='replaced-open'").fetchone()[0] == 0
+        with child.open("rb"), sqlite3.connect(service.database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            child.unlink()
+            folder.rmdir()
+            folder.mkdir()
+            child.write_bytes(b"replacement")
+            connection.rollback()
+            wait_for(lambda: service.paths().get(os.fsencode(child)) != child_id)
+        assert service.indexed(folder) != folder_id
+        assert service.call("resolve", file_id=child_id)["reason"] == "stale_result"
+        # Replacements made while stopped must also be detected by startup repair.
+        current = service.indexed(file)
+        service.stop(crash=True)
+        with file.open("rb"):
+            file.unlink()
+            file.write_bytes(b"restart replacement")
+            service.start()
+            wait_for(lambda: service.paths().get(os.fsencode(file)) != current)
+        assert service.call("resolve", file_id=current)["reason"] == "stale_result"
+    finally:
+        service.stop()
+
+
 def large_ids_and_retention(service):
     path = service.root / "precise.txt"
     path.write_bytes(b"")
@@ -387,6 +450,9 @@ with tempfile.TemporaryDirectory(prefix="torchlight-daemon-") as temporary:
     primary = Path(temporary) / "primary"
     primary.mkdir(mode=0o700)
     live_catalog(Service(primary))
+    replacements = Path(temporary) / "replacements"
+    replacements.mkdir(mode=0o700)
+    rapid_replacements(Service(replacements))
     fallback = Path(temporary) / "fallback"
     fallback.mkdir(mode=0o700)
     watch_exhaustion_and_disabled_history(Service(fallback, "--watch-capacity", "1", "--no-history"))

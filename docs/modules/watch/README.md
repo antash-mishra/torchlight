@@ -18,6 +18,8 @@ reconciliation signal; bounded draining processes at most 256 KiB per turn.
 
 Directory capacity/kernel watch exhaustion returns a counted unavailable status;
 the writer continues scanning with periodic reconciliation for reduced coverage.
+Instance creation failure also permits scan-only operation: the writer reports
+degradation, retains an existing watch set and retries setup on later scans.
 Ignored/deleted watches schedule repair. The worker keeps the old watch set live
 while installing its replacement during a scan, then drains it before pruning.
 Events on the new set drive subsequent reconciliation. Offline/unreadable
@@ -27,6 +29,7 @@ directories never establish deletion.
 Tests cover real file/directory cookies, relocated descendant watches, malformed
 buffers, overflow, capacity exhaustion, and writer-level overflow repair of an
 unwatched subtree. Integration tests cover unavailable scopes and restart repair.
+Writer factory-failure tests cover complete instance exhaustion and recovery.
 
 See [writer](../writer/README.md), [crawl](../crawl/README.md) and
 [ADR 0011](../../adr/0011-m2-daemon-writer-and-reconciliation.md).

@@ -7,6 +7,12 @@ extraction is a possible later extension.
 
 ## Implementation progress
 
+The two findings from the [M2 implementation review](docs/m2-review.md) are fixed
+(ADR 0012): schema v2 persists filesystem incarnations so replacement files and
+directories receive fresh ids; inotify instance failure permits periodic and
+explicit scans with degraded watch status. Sanitizer regressions cover rollback,
+history, restart replacement, migration and watcher exhaustion/recovery.
+
 M2's functional scope is implemented (ADRs 0010/0011): `torchlightd` serves saved
 resident snapshots over bounded Unix-socket IPC; the CLI is a socket client
 unless `--db` selects local mode. A background writer coalesces inotify changes,
@@ -272,6 +278,9 @@ CREATE TABLE files (
   is_dir      INTEGER NOT NULL CHECK (is_dir IN (0, 1)),
   mtime       INTEGER,
   size        INTEGER,
+  -- Schema v2: canonical device/inode + birth timestamp (ctime fallback).
+  identity    BLOB CHECK (identity IS NULL OR
+                         (typeof(identity) = 'blob' AND length(identity) = 29)),
   emb_version TEXT,
   emb_bin     BLOB,
   emb_i8      BLOB,
@@ -306,7 +315,7 @@ CREATE TABLE meta (
 
 Use prepared statements, migrations, and batched transactions. Always bind
 paths, names and extensions with `sqlite3_bind_blob`. `meta` records
-the schema version, `catalog_gen`, and the active `emb_gen` configuration. The
+the schema version (currently 2), `catalog_gen`, and the active `emb_gen` configuration. The
 initial schema covers one active `emb_gen`; M4 adds staging storage for model
 replacement.
 Assign search ids in memory, using a unique session id generated at startup.
@@ -355,7 +364,7 @@ when mtime is unchanged. Catalog writes continue when history is disabled.
   Arrow keys select, Enter opens, Escape dismisses. Actions use exact path bytes.
   Ctrl+Enter reveals through the file manager's D-Bus interface, falling back to opening the parent.
   Spawn open commands with argv, without shell interpolation. History records
-  accepted launch requests, not guaranteed success in external applications.
+accepted launch requests, not guaranteed success in external applications.
 - **Service:** systemd user unit, status reporting, clean shutdown/restart,
   and a single daemon instance. A TUI is optional after the popup works.
 

@@ -15,9 +15,11 @@ int main(void) {
     test_lexical();
     test_catalog();
     test_store();
+    test_identity();
     test_crawl();
     test_watch();
     test_writer();
+    test_writer_fallback();
     puts("All module tests passed.");
     return 0;
 }

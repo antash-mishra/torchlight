@@ -11,7 +11,8 @@ typedef struct {
 typedef tl_status (*tl_store_callback)(void *context, const tl_store_entry *entry);
 /** Receive one registered root path, borrowed until the callback returns. */
 typedef tl_status (*tl_store_root_callback)(void *context, const char *root);
-/** Open/create owned catalog at path, enabling WAL/foreign keys and schema v1.
+/** Open/create owned catalog at path, enabling WAL/foreign keys and schema v2.
+ * Migrate v1 atomically, retaining ids/history; legacy identities start unknown.
  * out NULL on error: TL_INVALID, TL_NOMEM, TL_IO or TL_STATE (unknown schema).
  * Parent directory must exist. Connections are serialized by their caller. */
 tl_status store_create(const char *path, tl_store **out);
@@ -21,7 +22,11 @@ void store_destroy(tl_store *store);
  * active; TL_INVALID for NULL, TL_IO on SQL error. */
 tl_status store_begin(tl_store *store);
 /** Record a visited entry. With stat data, upsert borrowed entry bytes,
- * preserving the id and invalidating embeddings when metadata changed; without
+ * preserving the id for the same filesystem incarnation and invalidating
+ * embeddings when metadata changed. A changed identity retires the row and
+ * descendants, allocating fresh ids; unknown legacy identities are adopted.
+ * Birth time detects reused inodes; ctime fallback conservatively retires ids
+ * on metadata changes too. Without
  * it, leave any saved row as is. An unreadable entry also keeps every saved
  * entry at or below its path from store_prune in this scan. Only inside a
  * transaction. TL_INVALID for malformed entries, TL_IO for SQL, TL_LIMIT for

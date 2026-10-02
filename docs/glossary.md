@@ -3,6 +3,7 @@
 | Term | Meaning |
 |---|---|
 | **Path entry** | A file or directory known to the index (`files` row). |
+| **Filesystem incarnation** | Device/inode plus birth timestamp identifying the observed object at a path; ctime is the conservative fallback without birth time. A changed incarnation retires the old file id and descendants during reconciliation. |
 | **Trigram** | A 3-byte substring of a normalized name, used as an index key. |
 | **Posting list** | File ids containing a given trigram. |
 | **Lexical channel** | One candidate source: `prefix`, `trigram`, `subseq` or `typo`. `lexical` merges them. |

@@ -1,8 +1,8 @@
 # store
 
-> **Status:** Implemented (M1/M2): catalog/roots, coherent loads, pending views, byte renames and history
+> **Status:** Implemented (M1/M2): schema v2, incarnation-aware ids, snapshots, renames and history
 > **Source:** `src/storage/store.c` · **Header:** `include/torchlight/store.h`
-> **Tests:** `tests/unit/test_store.c`
+> **Tests:** `tests/unit/test_store.c`, `tests/unit/test_identity.c`, CLI/daemon integration
 
 ## Behavior and ownership
 
@@ -10,17 +10,33 @@
 All SQL lives in this source file, is constant, and is prepared before execution.
 Migration v1 creates PLAN.md's files/searches/opens/meta schema and a BLOB-keyed
 `roots` table so empty queries can identify indexed roots. `PRAGMA user_version`
-controls migrations; `meta.schema_version` records the same version. Unknown
-schema versions are rejected. Embedding search remains planned; M2 writes optional
-search/open history through the service writer. No schema change was needed.
+controls migrations; `meta.schema_version` records the same version. Migration
+v2 adds a nullable 29-byte BLOB identity, preserving legacy ids and history.
+Unknown schema versions are rejected. Embedding search remains planned; M2 writes optional
+search/open history through the service writer.
 
 `store_begin/put/prune/commit` form one refresh of one or more roots. A temporary BLOB
-`seen` table records visits. Upserts preserve stable AUTOINCREMENT ids; successful
-scope pruning is byte-aware and distinguishes `/root` from `/root2`. Metadata
+`seen` table records visits. Upserts preserve AUTOINCREMENT ids for unchanged
+filesystem incarnations; successful scope pruning is byte-aware and distinguishes
+`/root` from `/root2`. Metadata
 changes clear embedding columns. Commit validates decimal catalog_gen metadata
 and rejects malformed/missing values or exhaustion at INT64_MAX, then increments
 it. Rollback or connection destruction discards partial work. Callers must not prune a failed
 scan. Root registration and catalog changes commit together.
+
+A prepared path lookup compares the crawler's device/inode and birth timestamp
+before upserting. A changed identity retires the row and descendants even if a
+replacement has the same path, size or mtime. Temporary seen/kept membership is
+cleared for that scope; fresh ids and cascading open-history deletion commit
+atomically. Rollback restores the old ids and history. NULL legacy identities
+are adopted on the first successful scan, which cannot identify replacements
+that predate the initial identity observation.
+
+Birth timestamps preserve ids during ordinary metadata changes. Without birth
+time, ctime changes conservatively retire ids/history, including descendants for
+directory changes. Paired renames retain device/inode and defer adoption of the
+new ctime stamp; a different object key still retires the id. The encoding and
+fallback tradeoffs are in [ADR 0012](../../adr/0012-filesystem-incarnations-and-watch-fallback.md).
 
 A temporary `kept` table holds kept scopes: unreadable entries reported by the
 crawler, plus registered roots nested in the pruned root that this scan did not

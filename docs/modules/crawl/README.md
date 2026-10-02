@@ -1,6 +1,6 @@
 # crawl
 
-> **Status:** Implemented (M1): physical crawl, allowlist, root coverage; watches/reconciliation planned
+> **Status:** Implemented (M1/M2): physical crawl, allowlist, roots and filesystem identity
 > **Source:** `src/fs/crawl.c` · **Header:** `include/torchlight/crawl.h`
 > **Tests:** `tests/unit/test_crawl.c`, `tests/test_cli.py`
 
@@ -10,6 +10,13 @@ The opaque crawler copies an excluded state scope and an allowlist, and walks
 with fts using FTS_PHYSICAL|FTS_NOCHDIR. Roots are canonicalized, symlink entries
 are reported, and directory symlinks are never traversed. A callback borrows each
 path/stat record; callback errors propagate and walking closes its resources.
+
+Stat records now include device/inode and a birth timestamp where `statx`
+supports it. A fresh statx observation supplies both identity and metadata,
+without following symlinks. Missing birth time falls back to ctime; unsupported
+statx uses the fts stat. Other lookup failures mark the scope unreadable so the
+store cannot mistake failed observation for replacement. The store decides
+whether a changed incarnation must retire an id; crawl never calls storage.
 
 **Scopes.** One decision function (`classify`) is shared by walks and coverage
 checks:
@@ -43,12 +50,13 @@ Unit tests cover invalid roots, callback propagation, unreadable directories,
 allowlist traversal (indexed, traversed and skipped paths) and coverage/selection.
 CLI fixtures cover symlink cycles, hidden files/directories, explicit hidden
 roots, state exclusion, raw bytes and configured allowlists. Watches and periodic
-recovery are planned for M2. Scan cost is proportional to visited entries;
-storage policy stays outside crawl.
+recovery are implemented by the M2 writer. Scan cost is proportional to visited
+entries; storage policy stays outside crawl.
 
 ## Related
 
 - [Partial scans ADR](../../adr/0007-partial-scans-and-component-parent-matching.md)
 - [M1 completion ADR](../../adr/0008-m1-completion-channels-directories-config.md)
+- [Filesystem identity ADR](../../adr/0012-filesystem-incarnations-and-watch-fallback.md)
 - [Evaluation](../../evaluation.md)
 - Public headers document parameters, lifetimes and error contracts.

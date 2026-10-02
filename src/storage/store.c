@@ -6,10 +6,15 @@
 #include <sqlite3.h>
 #include <stdlib.h>
 #include <string.h>
+#define STORE_SCHEMA_VERSION 2
+#define IDENTITY_BYTES 29
+#define IDENTITY_OBJECT_BYTES 16
+#define IDENTITY_RENAMED 2
+#define NANOSECONDS_PER_SECOND 1000000000U
 struct tl_store {
     sqlite3 *db;
     /* Per-entry statements are prepared once; a scan runs them for every entry. */
-    sqlite3_stmt *put, *mark_seen, *keep;
+    sqlite3_stmt *put, *mark_seen, *keep, *identity;
     bool transaction, reading, changed;
 };
 static void catalog_change(void *context, int operation, const char *database, const char *table,
@@ -22,13 +27,14 @@ static void catalog_change(void *context, int operation, const char *database, c
         store->changed = true;
 }
 static const char PUT_SQL[] =
-    "INSERT INTO files(path,name,ext,is_dir,mtime,size) VALUES(?1,?2,?3,?4,?5,?6) "
+    "INSERT INTO files(path,name,ext,is_dir,mtime,size,identity) VALUES(?1,?2,?3,?4,?5,?6,?7) "
     "ON CONFLICT(path) DO UPDATE SET "
     "name=excluded.name,ext=excluded.ext,is_dir=excluded.is_dir,"
-    "mtime=excluded.mtime,size=excluded.size,"
+    "mtime=excluded.mtime,size=excluded.size,identity=COALESCE(excluded.identity,files.identity),"
     "emb_version=NULL,emb_bin=NULL,emb_i8=NULL,emb_scale=NULL "
     "WHERE files.mtime IS NOT excluded.mtime OR files.size IS NOT excluded.size "
-    "OR files.is_dir IS NOT excluded.is_dir";
+    "OR files.is_dir IS NOT excluded.is_dir "
+    "OR (excluded.identity IS NOT NULL AND files.identity IS NOT excluded.identity)";
 static const char MARK_SEEN_SQL[] = "INSERT OR IGNORE INTO seen VALUES(?1)";
 static const char KEEP_SQL[] = "INSERT OR IGNORE INTO kept VALUES(?1)";
 static tl_status execute(tl_store *store, const char *sql) {
@@ -77,12 +83,24 @@ static tl_status create_schema(tl_store *store) {
     }
     return TL_OK;
 }
+static tl_status migrate_identity(tl_store *store) {
+    const char *steps[] = {
+        "ALTER TABLE files ADD COLUMN identity BLOB "
+        "CHECK(identity IS NULL OR (typeof(identity)='blob' AND length(identity)=29))",
+        "UPDATE meta SET value='2' WHERE key='schema_version'", "PRAGMA user_version=2"};
+    for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
+        tl_status status = execute(store, steps[i]);
+        if (status != TL_OK)
+            return status;
+    }
+    return TL_OK;
+}
 static tl_status migrate(tl_store *store) {
     int version = 0;
     tl_status status = schema_version(store, &version);
-    if (status != TL_OK || version == 1)
+    if (status != TL_OK || version == STORE_SCHEMA_VERSION)
         return status;
-    if (version != 0)
+    if (version < 0 || version > STORE_SCHEMA_VERSION)
         return TL_STATE;
     status = execute(store, "BEGIN IMMEDIATE");
     if (status != TL_OK)
@@ -90,12 +108,18 @@ static tl_status migrate(tl_store *store) {
     /* Another process may have migrated between the read above and BEGIN, so
      * re-read under the write lock before creating anything. */
     status = schema_version(store, &version);
-    if (status == TL_OK && version == 0)
+    if (status == TL_OK && version == 0) {
         status = create_schema(store);
-    else if (status == TL_OK && version != 1)
+        version = 1;
+    }
+    if (status == TL_OK && version == 1)
+        status = migrate_identity(store);
+    else if (status == TL_OK && version != STORE_SCHEMA_VERSION)
         status = TL_STATE;
     if (status == TL_OK)
-        return execute(store, "COMMIT");
+        status = execute(store, "COMMIT");
+    if (status == TL_OK)
+        return TL_OK;
     tl_status rollback = execute(store, "ROLLBACK");
     return rollback == TL_OK ? status : rollback;
 }
@@ -116,7 +140,9 @@ static tl_status enable_wal(tl_store *store) {
 static tl_status prepare_statements(tl_store *store) {
     if (sqlite3_prepare_v2(store->db, PUT_SQL, -1, &store->put, NULL) != SQLITE_OK ||
         sqlite3_prepare_v2(store->db, MARK_SEEN_SQL, -1, &store->mark_seen, NULL) != SQLITE_OK ||
-        sqlite3_prepare_v2(store->db, KEEP_SQL, -1, &store->keep, NULL) != SQLITE_OK)
+        sqlite3_prepare_v2(store->db, KEEP_SQL, -1, &store->keep, NULL) != SQLITE_OK ||
+        sqlite3_prepare_v2(store->db, "SELECT identity FROM files WHERE path=?1", -1,
+                           &store->identity, NULL) != SQLITE_OK)
         return TL_IO;
     return TL_OK;
 }
@@ -160,6 +186,7 @@ void store_destroy(tl_store *store) {
     sqlite3_finalize(store->put);
     sqlite3_finalize(store->mark_seen);
     sqlite3_finalize(store->keep);
+    sqlite3_finalize(store->identity);
     if (store->db != NULL) {
         /* Closing the connection rolls back any unfinished transaction. */
         int code = sqlite3_close_v2(store->db);
@@ -201,6 +228,47 @@ static tl_status run_cached(sqlite3_stmt *statement, const char *path) {
     sqlite3_clear_bindings(statement);
     return status;
 }
+/* Canonical little-endian encoding is independent of C struct padding/ABI.
+ * Kind 0 is ctime, 1 is birth time, 2 retains only a paired rename's object key. */
+static void identity_number(unsigned char *out, size_t bytes, uint64_t value) {
+    for (size_t i = 0; i < bytes; i++)
+        out[i] = (unsigned char)(value >> (i * 8));
+}
+static void encode_identity(const tl_crawl_entry *entry, unsigned char out[IDENTITY_BYTES]) {
+    out[0] = entry->identity_birth ? 1 : 0;
+    identity_number(out + 1, 8, entry->device);
+    identity_number(out + 9, 8, entry->inode);
+    identity_number(out + 17, 8, (uint64_t)entry->identity_sec);
+    identity_number(out + 25, 4, entry->identity_nsec);
+}
+static tl_status identity_changed(tl_store *store, const tl_crawl_entry *entry, bool *changed) {
+    *changed = false;
+    if (!entry->has_identity)
+        return TL_OK;
+    unsigned char incoming[IDENTITY_BYTES];
+    encode_identity(entry, incoming);
+    sqlite3_stmt *statement = store->identity;
+    tl_status status = bind_blob(statement, 1, entry->path, strlen(entry->path));
+    if (status == TL_OK) {
+        int code = sqlite3_step(statement);
+        if (code == SQLITE_ROW && sqlite3_column_type(statement, 0) != SQLITE_NULL) {
+            const unsigned char *saved = sqlite3_column_blob(statement, 0);
+            if (saved == NULL || sqlite3_column_type(statement, 0) != SQLITE_BLOB ||
+                sqlite3_column_bytes(statement, 0) != IDENTITY_BYTES || saved[0] > IDENTITY_RENAMED)
+                status = TL_IO;
+            else
+                *changed =
+                    memcmp(saved + 1, incoming + 1, IDENTITY_OBJECT_BYTES) != 0 ||
+                    (saved[0] != IDENTITY_RENAMED && memcmp(saved, incoming, IDENTITY_BYTES) != 0);
+        } else if (code != SQLITE_ROW && code != SQLITE_DONE)
+            status = TL_IO;
+    }
+    if (sqlite3_reset(statement) != SQLITE_OK)
+        status = TL_IO;
+    sqlite3_clear_bindings(statement);
+    return status;
+}
+static tl_status retire_scope(tl_store *store, const char *path);
 static tl_status bind_entry(sqlite3_stmt *statement, const tl_crawl_entry *entry) {
     const char *name = strrchr(entry->path, '/');
     name = name == NULL ? entry->path : name + 1;
@@ -218,10 +286,22 @@ static tl_status bind_entry(sqlite3_stmt *statement, const tl_crawl_entry *entry
         sqlite3_bind_int64(statement, 5, entry->mtime) != SQLITE_OK ||
         sqlite3_bind_int64(statement, 6, entry->size) != SQLITE_OK)
         return TL_IO;
+    if (entry->has_identity) {
+        unsigned char identity[IDENTITY_BYTES];
+        encode_identity(entry, identity);
+        if (sqlite3_bind_blob(statement, 7, identity, IDENTITY_BYTES, SQLITE_TRANSIENT) !=
+            SQLITE_OK)
+            return TL_IO;
+    }
     return TL_OK;
 }
 static tl_status upsert(tl_store *store, const tl_crawl_entry *entry) {
-    tl_status status = bind_entry(store->put, entry);
+    bool replaced = false;
+    tl_status status = identity_changed(store, entry, &replaced);
+    if (status == TL_OK && replaced)
+        status = retire_scope(store, entry->path);
+    if (status == TL_OK)
+        status = bind_entry(store->put, entry);
     if (status == TL_OK && sqlite3_step(store->put) != SQLITE_DONE)
         status = TL_IO;
     if (sqlite3_reset(store->put) != SQLITE_OK)
@@ -231,7 +311,9 @@ static tl_status upsert(tl_store *store, const tl_crawl_entry *entry) {
 }
 tl_status store_put(tl_store *store, const tl_crawl_entry *entry) {
     if (store == NULL || entry == NULL || entry->path == NULL || entry->path[0] != '/' ||
-        entry->size < 0)
+        entry->size < 0 ||
+        (entry->has_identity &&
+         (!entry->has_stat || entry->identity_nsec >= NANOSECONDS_PER_SECOND)))
         return TL_INVALID;
     if (!store->transaction)
         return TL_STATE;
@@ -298,6 +380,12 @@ static tl_status run_scoped(tl_store *store, const char *const *statements, size
         status = run_statement(store, statements[i], root, prefix);
     free(prefix);
     return status;
+}
+static tl_status retire_scope(tl_store *store, const char *path) {
+    const char *steps[] = {"DELETE FROM files WHERE path=?1 OR substr(path,1,length(?2))=?2",
+                           "DELETE FROM seen WHERE path=?1 OR substr(path,1,length(?2))=?2",
+                           "DELETE FROM kept WHERE path=?1 OR substr(path,1,length(?2))=?2"};
+    return run_scoped(store, steps, sizeof(steps) / sizeof(steps[0]), path);
 }
 tl_status store_prune(tl_store *store, const char *root) {
     return run_scoped(store, PRUNE_SQL, sizeof(PRUNE_SQL) / sizeof(PRUNE_SQL[0]), root);
@@ -534,7 +622,11 @@ tl_status store_move(tl_store *store, const char *old_path, const char *new_path
         "UPDATE files SET path=CAST(?2 || substr(path,length(?1)+1) AS BLOB),"
         "name=CASE WHEN path=?1 THEN ?3 ELSE name END,"
         "ext=CASE WHEN path=?1 THEN CASE WHEN is_dir=1 THEN NULL ELSE ?4 END ELSE ext END,"
-        "emb_version=NULL,emb_bin=NULL,emb_i8=NULL,emb_scale=NULL "
+        "emb_version=NULL,emb_bin=NULL,emb_i8=NULL,emb_scale=NULL,"
+        /* Rename changes ctime. Kind 2 retains device/inode so the following
+         * scan can adopt its new fallback stamp without losing paired ids. */
+        "identity=CASE WHEN substr(identity,1,1)=X'00' "
+        "THEN CAST(X'02' || substr(identity,2,16) || zeroblob(12) AS BLOB) ELSE identity END "
         "WHERE path=?1 OR (substr(path,1,length(?1))=?1 AND substr(path,length(?1)+1,1)=X'2F')";
     tl_status status = move_statement(store, DELETE_DEST, old_path, new_path);
     if (status == TL_OK)

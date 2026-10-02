@@ -22,6 +22,10 @@ typedef struct {
     tl_status (*drain)(void *context, tl_watch *watch, tl_watch_callback callback,
                        void *callback_context);
     void *drain_context;
+    /* Optional watcher factory for deterministic instance-exhaustion tests.
+     * Same ownership/errors as watch_create; TL_IO permits scan-only fallback. */
+    tl_status (*create_watch)(void *context, size_t capacity, tl_watch **out);
+    void *watch_context;
 } tl_writer_options;
 typedef struct {
     bool indexing, degraded, history_enabled, watch_degraded, recovering;
@@ -33,6 +37,8 @@ typedef struct {
  * its worker. config and catalog must outlive it; catalog needs capacity two,
  * with the writer as its only publisher. Config accepts root/allow;
  * missing roots are retained and retried. Options are copied, socket path copied.
+ * Unavailable inotify instances retain the old watcher if any, continue scans
+ * with degraded watch status, and retry watch creation at later reconciliations.
  * Snapshot builds enforce entry/path-byte limits and at most one staged engine.
  * TL_INVALID/NOMEM/IO/STATE/LIMIT; out NULL on error. SQLite owned by worker
  * after startup; caller must hold the daemon's database singleton lock. */

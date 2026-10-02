@@ -3,10 +3,12 @@
 #include "torchlight/crawl.h"
 #include "torchlight/path.h"
 #include <errno.h>
+#include <fcntl.h>
 #include <fts.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 struct tl_crawl {
     char *exclude;
     char **allow;
@@ -91,6 +93,43 @@ static bool failed(const FTSENT *entry) {
 static bool directory(const FTSENT *entry) {
     return entry->fts_info == FTS_D || entry->fts_info == FTS_DNR || entry->fts_info == FTS_DC;
 }
+static void file_identity(const FTSENT *entry, tl_crawl_entry *record) {
+    const struct stat *info = entry->fts_statp;
+    record->has_identity = true;
+    record->device = (uint64_t)info->st_dev;
+    record->inode = (uint64_t)info->st_ino;
+    record->identity_sec = (int64_t)info->st_ctim.tv_sec;
+    record->identity_nsec = (uint32_t)info->st_ctim.tv_nsec;
+    struct statx identity;
+    int code = statx(AT_FDCWD, entry->fts_path, AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT,
+                     STATX_BASIC_STATS | STATX_BTIME, &identity);
+    if (code != 0) {
+        if (errno != ENOSYS && errno != EINVAL && errno != EOPNOTSUPP) {
+            record->has_stat = false;
+            record->has_identity = false;
+            record->unreadable = true;
+        }
+        return;
+    }
+    /* Use one fresh statx observation for metadata and identity, rather than
+     * combining an earlier fts stat with a replacement's birth time. */
+    if ((identity.stx_mask & STATX_BASIC_STATS) != STATX_BASIC_STATS ||
+        identity.stx_size > INT64_MAX) {
+        record->has_stat = false;
+        record->has_identity = false;
+        record->unreadable = true;
+        return;
+    }
+    record->device = (uint64_t)makedev(identity.stx_dev_major, identity.stx_dev_minor);
+    record->inode = identity.stx_ino;
+    record->is_dir = S_ISDIR(identity.stx_mode);
+    record->mtime = identity.stx_mtime.tv_sec;
+    record->size = (int64_t)identity.stx_size;
+    record->identity_birth = (identity.stx_mask & STATX_BTIME) != 0;
+    struct statx_timestamp stamp = record->identity_birth ? identity.stx_btime : identity.stx_ctime;
+    record->identity_sec = stamp.tv_sec;
+    record->identity_nsec = stamp.tv_nsec;
+}
 static tl_status report(const FTSENT *entry, bool has_stat, tl_crawl_callback callback,
                         void *context) {
     if (has_stat && entry->fts_statp == NULL)
@@ -102,6 +141,8 @@ static tl_status report(const FTSENT *entry, bool has_stat, tl_crawl_callback ca
                              .has_stat = has_stat,
                              .mtime = has_stat ? (int64_t)entry->fts_statp->st_mtime : 0,
                              .size = has_stat ? (int64_t)entry->fts_statp->st_size : 0};
+    if (has_stat)
+        file_identity(entry, &record);
     return callback(context, &record);
 }
 static tl_status visit(tl_crawl *crawler, FTS *walk, FTSENT *entry, tl_crawl_callback callback,

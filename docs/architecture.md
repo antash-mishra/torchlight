@@ -13,6 +13,11 @@ recovery are implemented. Semantics, personalization ranking and desktop UI belo
 remain the target architecture. See ADR 0011 for the full-rebuild baseline and
 structural bounds; the 500k latency target remains open.
 
+ADR 0012 adds filesystem incarnation checks during scans and schema v2 identity
+storage. Replacements retire old ids and descendants before publication, with
+rollback restoring history. Inotify instance failure degrades watch coverage
+while periodic/explicit reconciliation continues and retries setup.
+
 ## Components
 
 ```
@@ -38,7 +43,8 @@ depends on the lower modules; filesystem and index modules never call storage.
 
 ## Indexing flow
 
-1. `crawl` walks the roots and emits `(path, is_dir, mtime, size)`.
+1. `crawl` walks roots and emits path/stat data with device/inode and birth time
+   (ctime fallback). `store` retires changed incarnations before upserting.
 2. The writer validates catalog changes and prepares private index deltas.
 3. `tokenize` normalizes raw path bytes and retains boundary metadata. `prefix`,
    `trigram`, `subseq` (character masks) and `typo` build their structures privately.

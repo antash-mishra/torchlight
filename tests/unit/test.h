@@ -29,6 +29,8 @@ void test_ipc(void);
 void test_watch(void);
 /** Run writer publication recovery, history saturation and overflow acceptance. */
 void test_writer(void);
+/** Run periodic scan and watcher recovery checks under instance exhaustion. */
+void test_writer_fallback(void);
 /** Run byte/Unicode normalization checks, aborting on failure. */
 void test_tokenize(void);
 /** Run prefix-channel checks, aborting on failure. */
@@ -49,6 +51,8 @@ void test_lexical(void);
 void test_catalog(void);
 /** Run transactional catalog checks, aborting on failure. */
 void test_store(void);
+/** Run filesystem incarnation, descendant retirement and fallback identity checks. */
+void test_identity(void);
 /** Run physical crawler checks, aborting on failure. */
 void test_crawl(void);
 #endif

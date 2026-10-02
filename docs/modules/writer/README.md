@@ -1,8 +1,8 @@
 # writer
 
-> **Status:** Implemented (M2): async reconciliation, publication and history
+> **Status:** Implemented (M2): async reconciliation, scan-only fallback, publication and history
 > **Source:** `src/service/writer.c` · **Header:** `include/torchlight/writer.h`
-> **Tests:** `tests/unit/test_writer.c`, `tests/test_daemon.py`
+> **Tests:** `tests/unit/test_writer.c`, `tests/unit/test_writer_fallback.c`, `tests/test_daemon.py`
 
 The writer owns one SQLite connection and worker thread. Creation loads/publishes
 the saved catalog before starting the worker. Configuration and the catalog
@@ -17,6 +17,17 @@ scopes. Unreadable subtrees and unresolved root aliases retain saved rows.
 The old watcher stays live until the scan finishes; events during crawling
 schedule another pass. Periodic reconciliation defaults to 30 seconds and repairs
 unwatched scopes, overflow, missed events and restart changes.
+
+Failure to create an inotify instance no longer blocks reconciliation. TL_IO
+increments watch-unavailable status, marks coverage degraded and continues
+scanning without a replacement watcher. Any existing watcher stays live.
+Later periodic/explicit scans retry setup; a successful replacement restores
+watch coverage. Memory or invalid-input failures still roll back the batch.
+
+Scans compare persisted filesystem incarnations before upserting paths, so a
+replacement retires stale ids even when notifications were coalesced or missed.
+Directory replacement retires descendants; failed batches restore ids/history.
+Paired moves retain ids subject to validation of the filesystem object key.
 
 Catalog changes are private: scan/upsert/prune, build and validate a candidate
 from the pending transaction, commit, then publish its `catalog_gen`. Preparation
@@ -48,5 +59,10 @@ candidate before failed publication, query the old view, exhaust history slots,
 gate subsequent catalog writes, recover by reload and repair an unwatched subtree
 after replayed overflow.
 
+The watcher factory adapter additionally validates periodic publication with no
+inotify instance, replacement identity without notifications, restoration of
+watching, and preservation of the old watch set on later factory failures.
+
 See [ADR 0011](../../adr/0011-m2-daemon-writer-and-reconciliation.md),
+[ADR 0012](../../adr/0012-filesystem-incarnations-and-watch-fallback.md),
 [store](../store/README.md), [watch](../watch/README.md), [catalog](../catalog/README.md).

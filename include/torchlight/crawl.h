@@ -15,6 +15,13 @@ typedef struct {
      * directories that are only traversed (see crawl_run) have no stat. */
     bool has_stat;
     int64_t mtime, size;
+    /* Filesystem incarnation, valid only with has_stat and has_identity.
+     * Birth time distinguishes reused inodes; ctime is the conservative
+     * fallback when the filesystem/kernel cannot supply birth time. */
+    bool has_identity, identity_birth;
+    uint64_t device, inode;
+    int64_t identity_sec;
+    uint32_t identity_nsec;
 } tl_crawl_entry;
 typedef tl_status (*tl_crawl_callback)(void *context, const tl_crawl_entry *entry);
 /** Create a crawler. exclude (optional) is a scope never crawled, not even
@@ -40,7 +47,9 @@ void crawl_destroy(tl_crawl *crawler);
  * saved entries instead of pruning them. A directory is first reported
  * normally and, if listing it then fails, again as unreadable. A missing or
  * unreadable root, or a walk failure, returns TL_IO. Callback failures
- * propagate. No deletion is performed. */
+ * propagate. Stat records include device/inode and birth time where available,
+ * otherwise ctime; symlink identity belongs to the link itself. No deletion is
+ * performed. Identity/stat lookup failures keep the scope unreadable. */
 tl_status crawl_run(tl_crawl *crawler, const char *root, tl_crawl_callback callback, void *context);
 /** Return whether crawl_run(outer) would index directory inner itself (both
  * absolute and canonical): inner is outer or below it, and no excluded,
