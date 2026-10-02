@@ -7,6 +7,14 @@ extraction is a possible later extension.
 
 ## Implementation progress
 
+M2 has started (ADR 0010): the `catalog` module publishes immutable lexical
+snapshots, leases preallocated reader workspaces, bounds retained views and
+reclaims retired views outside the lifecycle lock. SQLite loads rows and
+`catalog_gen` in one read transaction; sealed indexes resolve exact byte paths by
+file id. Tests cover concurrent readers/publication and commits during loading.
+The resident executable, socket protocol, async writer/history, inotify and
+reconciliation are still pending; M2 acceptance remains open.
+
 M1's features are implemented; its 500k latency gate is not yet met. The first
 increment implemented the Makefile/checks, XDG data paths, physical crawler, SQLite schema v1 and atomic root refreshes, approved
 utf8proc normalization, prefix/initials/subsequence matching, greedy fuzzy

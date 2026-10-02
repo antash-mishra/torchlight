@@ -7,6 +7,11 @@ parent-folder context. The 5 ms p95 latency target is met at 50k paths but not
 yet at 500k; see [evaluation](docs/evaluation.md), [PLAN.md](PLAN.md) and
 [docs](docs/README.md).
 
+M2 has started with [resident catalog snapshots](docs/modules/catalog/README.md),
+safe concurrent publication, bounded reader workspaces, and file-id resolution.
+The daemon executable, sockets, asynchronous writer/history and inotify remain
+the next work; current CLI usage below is unchanged.
+
 ## Build and use
 
 On Debian/Ubuntu/Mint, install `build-essential`, `pkg-config`, `libsqlite3-dev`,

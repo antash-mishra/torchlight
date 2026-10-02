@@ -133,6 +133,33 @@ def config_sync(temporary):
     assert b"mystery" in result.stderr
     assert catalog() == before
 
+def catalog_gen_failures_roll_back(temporary):
+    """Malformed metadata and exhausted counters cannot reuse a catalog_gen."""
+    home = Path(temporary) / "catalog-gen"
+    home.mkdir()
+    database = home / "catalog.db"
+    (home / "original.txt").write_bytes(b"original")
+    arguments = ("index", "--db", str(database), str(home))
+    run(*arguments)
+    for value in ["broken", "1junk", "-1", "", None, "9223372036854775808",
+                  "9223372036854775807", "1\0junk"]:
+        with sqlite3.connect(database) as connection:
+            connection.execute("UPDATE meta SET value=? WHERE key='catalog_gen'", (value,))
+        before = catalog_snapshot(database)
+        (home / "new.txt").write_bytes(b"new")
+        run(*arguments, success=False)
+        assert catalog_snapshot(database) == before
+    with sqlite3.connect(database) as connection:
+        connection.execute("DELETE FROM meta WHERE key='catalog_gen'")
+    before = catalog_snapshot(database)
+    run(*arguments, success=False)
+    assert catalog_snapshot(database) == before
+    with sqlite3.connect(database) as connection:
+        connection.execute("INSERT INTO meta VALUES('catalog_gen','41')")
+    run(*arguments)
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT value FROM meta WHERE key='catalog_gen'").fetchone() == ("42",)
+
 with tempfile.TemporaryDirectory(prefix="torchlight-cli-") as temporary:
     root = Path(temporary) / "root"
     root.mkdir()
@@ -206,6 +233,7 @@ with tempfile.TemporaryDirectory(prefix="torchlight-cli-") as temporary:
     config_sync(temporary)
     unavailable_root_aliases(temporary)
     storage_failure_rolls_back(temporary)
+    catalog_gen_failures_roll_back(temporary)
     for invalid in ["0", "-1", "1001", "1x", "999999999999999999999"]:
         run("query", "--db", str(database), "--limit", invalid, "x", success=False)
     run("query", "--db", str(database), "x" * 257, success=False)

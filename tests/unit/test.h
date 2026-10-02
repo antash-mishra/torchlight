@@ -37,6 +37,8 @@ void test_dirtree(void);
 void test_fuzzy(void);
 /** Run orchestrator/ordering/workspace checks, aborting on failure. */
 void test_lexical(void);
+/** Run resident snapshot lifetime, capacity and concurrent-publication checks. */
+void test_catalog(void);
 /** Run transactional catalog checks, aborting on failure. */
 void test_store(void);
 /** Run physical crawler checks, aborting on failure. */

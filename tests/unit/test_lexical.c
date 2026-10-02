@@ -16,7 +16,15 @@ static void complete_scan_regression(void) {
     CHECK(lexical_create(&engine) == TL_OK);
     CHECK(lexical_add(engine, 1, "/a/alpha.txt", false) == TL_OK);
     CHECK(lexical_add(engine, 2, "/z/alphaZebra.txt", false) == TL_OK);
+    const char *resolved = NULL;
+    CHECK(lexical_resolve(engine, 1, &resolved) == TL_STATE && resolved == NULL);
     CHECK(lexical_finish(engine) == TL_OK);
+    CHECK(lexical_resolve(engine, 1, &resolved) == TL_OK && strcmp(resolved, "/a/alpha.txt") == 0);
+    CHECK(lexical_resolve(engine, 2, &resolved) == TL_OK &&
+          strcmp(resolved, "/z/alphaZebra.txt") == 0);
+    CHECK(lexical_resolve(engine, 3, &resolved) == TL_STATE && resolved == NULL);
+    CHECK(lexical_resolve(engine, 0, &resolved) == TL_INVALID && resolved == NULL);
+    CHECK(lexical_resolve(engine, UINT64_MAX, &resolved) == TL_STATE && resolved == NULL);
     CHECK(lexical_workspace_create(engine, &workspace) == TL_OK);
     tl_result result[1];
     size_t count = 0;
@@ -28,6 +36,7 @@ static void complete_scan_regression(void) {
     lexical_destroy(engine);
     CHECK(lexical_create(&engine) == TL_OK);
     CHECK(lexical_finish(engine) == TL_OK);
+    CHECK(lexical_resolve(engine, 1, &resolved) == TL_STATE && resolved == NULL);
     CHECK(lexical_workspace_create(engine, &workspace) == TL_OK);
     CHECK(lexical_query(engine, workspace, "abc", result, 1, &count) == TL_OK && count == 0);
     CHECK(lexical_query(engine, workspace, "", result, 1, &count) == TL_OK && count == 0);
@@ -205,6 +214,8 @@ void test_lexical(void) {
     CHECK(lexical_add(engine, 1, "bad", false) == TL_INVALID);
     CHECK(lexical_finish(engine) == TL_OK);
     CHECK(lexical_add(engine, 100, "bad", false) == TL_STATE);
+    const char *resolved = NULL;
+    CHECK(lexical_resolve(engine, 7, &resolved) == TL_OK && strcmp(resolved, paths[6]) == 0);
     CHECK(lexical_workspace_create(engine, &workspace) == TL_OK);
     CHECK(lexical_workspace_create(engine, &cold) == TL_OK);
     expect(engine, workspace, "", paths[0]);

@@ -10,7 +10,12 @@
 The opaque engine copies exact paths and owns everything built from them. Add
 absolute paths with monotonically increasing nonzero ids, then seal with
 `lexical_finish`. An allocation failure poisons the builder. The caller destroys
-an engine only when no workspaces remain. M2 adds `catalog_gen` snapshots.
+an engine only when no workspaces remain. M2's [catalog](../catalog/README.md)
+owns sealed engines and leases workspaces across `catalog_gen` publication.
+
+`lexical_resolve` binary-searches the monotonically ordered file ids in a sealed
+engine and returns its exact borrowed path, with no I/O or allocation. Absent
+ids return `TL_STATE`; no filesystem existence check is performed.
 
 **Layout.** Entries are a struct of arrays (ids, raw-path offsets, basename
 symbols/boundaries, masks, parent directory node) so scans read only the columns

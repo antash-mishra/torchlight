@@ -42,7 +42,8 @@ tl_status store_keep(tl_store *store, const char *path);
  * Same errors as store_prune; the transaction remains active. */
 tl_status store_forget_root(tl_store *store, const char *root);
 /** Commit catalog changes and increment persisted catalog_gen; TL_STATE outside
- * transaction, TL_IO on failure (transaction remains available for rollback). */
+ * transaction, TL_IO on failure, TL_LIMIT when catalog_gen reaches INT64_MAX
+ * (transaction remains available for rollback). Metadata must be valid decimal. */
 tl_status store_commit(tl_store *store);
 /** Roll back active transaction; TL_INVALID/STATE/IO on errors. */
 tl_status store_rollback(tl_store *store);
@@ -50,6 +51,15 @@ tl_status store_rollback(tl_store *store);
  * copy it if retaining. Callback errors propagate, plus TL_INVALID/IO/NOMEM.
  * No queries may be active on this connection during callback. */
 tl_status store_load(tl_store *store, tl_store_callback callback, void *context);
+/** Stream committed rows and their catalog_gen from one SQLite read snapshot.
+ * out_catalog_gen is zero on error, including callback errors; partial callback
+ * output must be discarded then. Same borrowed-path contract as store_load.
+ * TL_STATE during a scan/read transaction; TL_IO for corrupt/missing metadata,
+ * plus TL_INVALID/NOMEM. Callback must not use this connection. Other
+ * connections may commit meanwhile; rows and catalog_gen stay consistent.
+ * No schema change; intended for background resident snapshot construction. */
+tl_status store_load_catalog(tl_store *store, tl_store_callback callback, void *context,
+                             uint64_t *out_catalog_gen);
 /** Stream registered roots in byte order. Callback errors propagate, plus
  * TL_INVALID/TL_IO/TL_NOMEM. No queries may run on this connection meanwhile. */
 tl_status store_roots(tl_store *store, tl_store_root_callback callback, void *context);

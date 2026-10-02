@@ -173,6 +173,27 @@ tl_status lexical_add(tl_lexical *engine, uint64_t id, const char *path, bool is
 size_t lexical_count(const tl_lexical *engine) {
     return engine == NULL ? 0 : engine->count;
 }
+tl_status lexical_resolve(const tl_lexical *engine, uint64_t id, const char **out) {
+    if (out == NULL)
+        return TL_INVALID;
+    *out = NULL;
+    if (engine == NULL || id == 0)
+        return TL_INVALID;
+    if (!engine->finished || engine->failed)
+        return TL_STATE;
+    size_t low = 0, high = engine->count;
+    while (low < high) {
+        size_t middle = low + (high - low) / 2;
+        if (engine->columns.ids[middle] < id)
+            low = middle + 1;
+        else
+            high = middle;
+    }
+    if (low == engine->count || engine->columns.ids[low] != id)
+        return TL_STATE;
+    *out = engine->columns.paths + engine->columns.path_offsets[low];
+    return TL_OK;
+}
 /* Intern each root's own directory, then mark directories strictly above all
  * roots unusable as parent context, unless they are inside another root. */
 static tl_status build_usable(tl_lexical *engine) {

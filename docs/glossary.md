@@ -20,6 +20,8 @@
 | **Frecency** | A score combining how frequently and how recently a path was opened. |
 | **Open** | An accepted launch request, optionally logged to `opens`; does not confirm external application success. |
 | **Catalog generation (`catalog_gen`)** | An immutable, consistent resident view of paths, indexes, vectors, and usage summaries pinned by queries. |
+| **Reader lease** | Exclusive preallocated query workspace that pins one immutable catalog view until release. |
+| **Retired snapshot** | A catalog view replaced by publication, retained until all reader leases release it and background reclamation frees it. |
 | **Embedding generation (`emb_gen`)** | Vectors sharing a model revision, tokenizer/preprocessing, dimension, and quantization format. |
 | **Generation** | Never used alone in code or docs: always `catalog_gen` or `emb_gen`. |
 | **Two-phase response** | A `lexical` result set sent immediately, followed by a fused `final` set for the same request. |

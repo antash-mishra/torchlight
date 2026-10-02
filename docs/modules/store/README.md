@@ -1,6 +1,7 @@
 # store
 
-> **Status:** Implemented (M1 catalog, root management); async writer/history APIs planned
+> **Status:** Implemented (M1 catalog/root management, M2 coherent snapshot loads);
+> async writer/history APIs planned
 > **Source:** `src/storage/store.c` · **Header:** `include/torchlight/store.h`
 > **Tests:** `tests/unit/test_store.c`
 
@@ -16,8 +17,9 @@ schema versions are rejected. No embedding/history behavior is claimed yet.
 `store_begin/put/prune/commit` form one refresh of one or more roots. A temporary BLOB
 `seen` table records visits. Upserts preserve stable AUTOINCREMENT ids; successful
 scope pruning is byte-aware and distinguishes `/root` from `/root2`. Metadata
-changes clear embedding columns. Commit increments catalog_gen; rollback or
-connection destruction discards partial work. Callers must not prune a failed
+changes clear embedding columns. Commit validates decimal catalog_gen metadata
+and rejects malformed/missing values or exhaustion at INT64_MAX, then increments
+it. Rollback or connection destruction discards partial work. Callers must not prune a failed
 scan. Root registration and catalog changes commit together.
 
 A temporary `kept` table holds kept scopes: unreadable entries reported by the
@@ -41,6 +43,12 @@ roots, rollback,
 reopen durability, and callback failure propagation through integration.
 Per-entry statements are prepared once per connection. The migration re-reads
 `user_version` under its write lock, and opening fails if WAL cannot be enabled.
+`store_load_catalog` streams rows and persisted catalog_gen under one read
+transaction, so another WAL connection's commit cannot mislabel the resident
+view. It refuses an active scan and rolls back callback failures; callers must
+discard partial builder output then. Tests commit concurrently during loading
+and verify that the subsequent load alone sees the new rows and catalog_gen.
+
 Whole-root transactions are an initial throughput baseline; M2 adds bounded
 batches, async writing, reconciliation and snapshot publication.
 

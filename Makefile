@@ -6,6 +6,8 @@ DEPS_PREFIX ?=
 CPPFLAGS += -Iinclude -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -D_DEFAULT_SOURCE
 WARNINGS = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror
 CFLAGS ?= -std=c17 -O0 -g3
+CFLAGS += -pthread
+LDLIBS += -pthread
 ifeq ($(strip $(DEPS_PREFIX)),)
 CPPFLAGS += $(shell $(PKG_CONFIG) --cflags sqlite3 libutf8proc)
 LDLIBS += $(shell $(PKG_CONFIG) --libs sqlite3 libutf8proc)
@@ -17,7 +19,7 @@ endif
 SOURCES = src/core/common.c src/core/vec.c src/core/hashmap.c src/core/config.c \
           src/index/tokenize.c src/index/prefix.c src/index/subseq.c src/index/fuzzy.c \
           src/index/trigram.c src/index/typo.c src/index/dirtree.c src/index/lexical.c \
-          src/index/lexical_query.c src/fs/crawl.c src/storage/store.c
+          src/index/lexical_query.c src/index/catalog.c src/fs/crawl.c src/storage/store.c
 OBJECTS = $(SOURCES:%.c=build/%.o)
 HEADERS = $(wildcard include/torchlight/*.h) $(wildcard src/*/*.h)
 TEST_SOURCES = $(wildcard tests/unit/test_*.c)

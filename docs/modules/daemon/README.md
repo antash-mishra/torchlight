@@ -7,6 +7,11 @@
 ## Purpose
 `torchlightd`: wires all modules together, owns threads, serves queries.
 
+The resident executable is still planned. Its first prerequisite is implemented
+in [catalog](../catalog/README.md): immutable lexical views, bounded reader
+leases, publication and background reclamation. `store_load_catalog` provides
+coherent committed views for startup/recovery. See [ADR 0010](../../adr/0010-m2-resident-catalog-snapshots.md).
+
 ## Responsibilities
 _TODO after implementation._
 

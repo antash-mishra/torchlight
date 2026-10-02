@@ -13,6 +13,12 @@ Start here. Read in this order:
 
 ## Implementation status
 
+M2 has started with the resident [catalog](modules/catalog/README.md) lifecycle:
+immutable views, bounded reader workspaces, safe publication and background
+reclamation, coherent SQLite catalog loads, and file-id resolution. The daemon,
+socket protocol, asynchronous writer/history and watcher remain planned. See
+[0010](adr/0010-m2-resident-catalog-snapshots.md).
+
 M1's lexical engine and CLI are implemented: prefix, subsequence, trigram and
 typo channels with edit scoring, interned parent directories, incremental
 narrowing, configuration with allowlists, root deduplication and sync, and a
@@ -29,6 +35,7 @@ The 5 ms p95 latency gate is met at 50k paths but not yet at 500k; see
 | core | Configuration | [config](modules/config/README.md) |
 | index | Path tokenizer | [tokenize](modules/tokenize/README.md) |
 | index | Lexical candidate orchestrator | [lexical](modules/lexical/README.md) |
+| index | Resident catalog snapshots | [catalog](modules/catalog/README.md) |
 | index | Exact/prefix channel | [prefix](modules/prefix/README.md) |
 | index | Trigram channel | [trigram](modules/trigram/README.md) |
 | index | Subsequence channel | [subseq](modules/subseq/README.md) |
@@ -63,6 +70,8 @@ The 5 ms p95 latency gate is met at 50k paths but not yet at 500k; see
   completes M1's lexical engine and configuration.
 - [0009: unresolved root identities and refresh failures](adr/0009-unresolved-roots-and-refresh-failures.md)
   preserves unavailable aliases and rolls back storage failures during refresh.
+- [0010: M2 resident catalog snapshots](adr/0010-m2-resident-catalog-snapshots.md)
+  establishes bounded leases, publication, reclamation and coherent catalog loads.
 
 ## Keeping docs current
 

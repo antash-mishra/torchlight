@@ -87,6 +87,51 @@ static void forgotten_roots(tl_store *store) {
     CHECK(store_roots(store, count_root, &after_roots) == TL_OK && after_roots == roots - 2);
     CHECK(count_entries(store) == before - 2); /* "/f" and "/f/b" */
 }
+struct concurrent_load {
+    tl_store *writer;
+    size_t count;
+    bool saw_new;
+};
+/* Commit on another WAL connection while the reader's snapshot is pinned. */
+static tl_status commit_during_load(void *context, const tl_store_entry *entry) {
+    struct concurrent_load *load = context;
+    if (load->count == 0) {
+        CHECK(store_begin(load->writer) == TL_OK);
+        put_path(load->writer, "/new-during-load", false, true);
+        CHECK(store_commit(load->writer) == TL_OK);
+    }
+    load->count++;
+    load->saw_new |= strcmp(entry->path, "/new-during-load") == 0;
+    return TL_OK;
+}
+static tl_status reject_load(void *context, const tl_store_entry *entry) {
+    (void)context;
+    (void)entry;
+    return TL_LIMIT;
+}
+static void consistent_catalog_load(tl_store *reader, const char *database) {
+    tl_store *writer = NULL;
+    CHECK(store_create(database, &writer) == TL_OK);
+    struct loaded before = {0};
+    uint64_t before_gen = 0, during_gen = 0, after_gen = 0;
+    CHECK(store_load_catalog(reader, observe, &before, &before_gen) == TL_OK);
+    CHECK(before_gen > 0);
+    struct concurrent_load during = {.writer = writer};
+    CHECK(store_load_catalog(reader, commit_during_load, &during, &during_gen) == TL_OK);
+    CHECK(during_gen == before_gen && during.count == before.count && !during.saw_new);
+    struct loaded after = {0};
+    CHECK(store_load_catalog(reader, observe, &after, &after_gen) == TL_OK);
+    CHECK(after_gen == before_gen + 1 && after.count == before.count + 1);
+    CHECK(store_begin(reader) == TL_OK);
+    after_gen = 99;
+    CHECK(store_load_catalog(reader, observe, &after, &after_gen) == TL_STATE && after_gen == 0);
+    CHECK(store_rollback(reader) == TL_OK);
+    CHECK(store_load_catalog(reader, reject_load, NULL, &after_gen) == TL_LIMIT && after_gen == 0);
+    /* A failed load must close its read transaction before the next write. */
+    CHECK(store_begin(reader) == TL_OK && store_rollback(reader) == TL_OK);
+    CHECK(store_load_catalog(NULL, observe, &after, &after_gen) == TL_INVALID && after_gen == 0);
+    store_destroy(writer);
+}
 void test_store(void) {
     char database[] = "/tmp/torchlight-store-XXXXXX";
     int fd = mkstemp(database);
@@ -94,6 +139,10 @@ void test_store(void) {
     CHECK(close(fd) == 0);
     tl_store *store = NULL;
     CHECK(store_create(database, &store) == TL_OK);
+    uint64_t empty_gen = 99;
+    struct loaded empty = {0};
+    CHECK(store_load_catalog(store, observe, &empty, &empty_gen) == TL_OK);
+    CHECK(empty_gen == 0 && empty.count == 0);
     tl_crawl_entry a = {.path = "/root/a\xff", .has_stat = true, .size = 1},
                    b = {.path = "/root2/b", .has_stat = true, .size = 2};
     CHECK(store_put(store, &a) == TL_STATE);
@@ -133,6 +182,7 @@ void test_store(void) {
     CHECK(store_create(database, &store) == TL_OK);
     after = (struct loaded){0};
     CHECK(store_load(store, observe, &after) == TL_OK && after.count == 12);
+    consistent_catalog_load(store, database);
     store_destroy(store);
     CHECK(unlink(database) == 0);
 }

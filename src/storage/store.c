@@ -8,7 +8,7 @@ struct tl_store {
     sqlite3 *db;
     /* Per-entry statements are prepared once; a scan runs them for every entry. */
     sqlite3_stmt *put, *mark_seen, *keep;
-    bool transaction;
+    bool transaction, reading;
 };
 static const char PUT_SQL[] =
     "INSERT INTO files(path,name,ext,is_dir,mtime,size) VALUES(?1,?2,?3,?4,?5,?6) "
@@ -157,7 +157,7 @@ void store_destroy(tl_store *store) {
 tl_status store_begin(tl_store *store) {
     if (store == NULL)
         return TL_INVALID;
-    if (store->transaction)
+    if (store->transaction || store->reading)
         return TL_STATE;
     tl_status status = execute(store, "BEGIN IMMEDIATE");
     if (status != TL_OK)
@@ -298,13 +298,54 @@ tl_status store_keep(tl_store *store, const char *path) {
         return TL_STATE;
     return run_cached(store->keep, path);
 }
+/* Validate the whole decimal value: SQLite's CAST silently accepts malformed
+ * text and saturates at INT64_MAX, which could reuse a catalog_gen. */
+static tl_status read_catalog_gen(tl_store *store, uint64_t *out) {
+    sqlite3_stmt *statement = NULL;
+    if (sqlite3_prepare_v2(store->db, "SELECT value FROM meta WHERE key='catalog_gen'", -1,
+                           &statement, NULL) != SQLITE_OK)
+        return TL_IO;
+    tl_status status = TL_IO;
+    if (sqlite3_step(statement) == SQLITE_ROW && sqlite3_column_type(statement, 0) == SQLITE_TEXT) {
+        const unsigned char *value = sqlite3_column_text(statement, 0);
+        int length = sqlite3_column_bytes(statement, 0);
+        uint64_t number = 0;
+        status = value != NULL && length > 0 ? TL_OK : TL_IO;
+        for (int i = 0; i < length && status == TL_OK; i++) {
+            if (value[i] < '0' || value[i] > '9' ||
+                number > ((uint64_t)INT64_MAX - (uint64_t)(value[i] - '0')) / 10) {
+                status = TL_IO;
+                break;
+            }
+            number = number * 10 + (uint64_t)(value[i] - '0');
+        }
+        if (status == TL_OK)
+            *out = number;
+    }
+    return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
+}
+static tl_status advance_catalog_gen(tl_store *store) {
+    uint64_t catalog_gen = 0;
+    tl_status status = read_catalog_gen(store, &catalog_gen);
+    if (status != TL_OK)
+        return status;
+    if (catalog_gen == INT64_MAX)
+        return TL_LIMIT;
+    sqlite3_stmt *statement = NULL;
+    if (sqlite3_prepare_v2(store->db, "UPDATE meta SET value=?1 WHERE key='catalog_gen'", -1,
+                           &statement, NULL) != SQLITE_OK)
+        return TL_IO;
+    if (sqlite3_bind_int64(statement, 1, (sqlite3_int64)(catalog_gen + 1)) != SQLITE_OK ||
+        sqlite3_step(statement) != SQLITE_DONE || sqlite3_changes(store->db) != 1)
+        status = TL_IO;
+    return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
+}
 tl_status store_commit(tl_store *store) {
     if (store == NULL)
         return TL_INVALID;
     if (!store->transaction)
         return TL_STATE;
-    tl_status status =
-        execute(store, "UPDATE meta SET value=CAST(value AS INTEGER)+1 WHERE key='catalog_gen'");
+    tl_status status = advance_catalog_gen(store);
     if (status == TL_OK)
         status = execute(store, "COMMIT");
     if (status == TL_OK)
@@ -359,6 +400,35 @@ tl_status store_load(tl_store *store, tl_store_callback callback, void *context)
         status = TL_IO;
     int finalized = sqlite3_finalize(statement);
     return finalized == SQLITE_OK ? status : TL_IO;
+}
+tl_status store_load_catalog(tl_store *store, tl_store_callback callback, void *context,
+                             uint64_t *out_catalog_gen) {
+    if (out_catalog_gen == NULL)
+        return TL_INVALID;
+    *out_catalog_gen = 0;
+    if (store == NULL || callback == NULL)
+        return TL_INVALID;
+    if (store->transaction || store->reading)
+        return TL_STATE;
+    tl_status status = execute(store, "BEGIN");
+    if (status != TL_OK)
+        return status;
+    store->reading = true;
+    uint64_t catalog_gen = 0;
+    status = read_catalog_gen(store, &catalog_gen);
+    if (status == TL_OK)
+        status = store_load(store, callback, context);
+    if (status == TL_OK)
+        status = execute(store, "COMMIT");
+    if (status != TL_OK) {
+        tl_status rollback = execute(store, "ROLLBACK");
+        if (rollback != TL_OK)
+            status = rollback;
+    }
+    store->reading = false;
+    if (status == TL_OK)
+        *out_catalog_gen = catalog_gen;
+    return status;
 }
 tl_status store_roots(tl_store *store, tl_store_root_callback callback, void *context) {
     if (store == NULL || callback == NULL)

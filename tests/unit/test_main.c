@@ -11,6 +11,7 @@ int main(void) {
     test_typo();
     test_dirtree();
     test_lexical();
+    test_catalog();
     test_store();
     test_crawl();
     puts("All module tests passed.");

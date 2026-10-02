@@ -162,3 +162,32 @@ Partial typos stay weak, because typo lookup only corrects complete tokens:
 prefix typo correction remains a later extension. Raising the parent-folder
 prefix tier (ADR 0008) lifted real parent Recall@10 from 0.355 to 0.475 without
 lowering other kinds. All nine synthetic fixtures pass at 50k and 500k.
+
+### 2026-10-02: M2 resident snapshot foundation (ADR 0010)
+
+Same reference machine and release flags. `make bench` now also transfers the
+sealed engine into a catalog snapshot with one preallocated reader workspace and
+times acquisition, whole-query search, and release over the 1,200 held-out
+queries. Construction/publication, SQLite, IPC, and concurrent indexing are
+excluded. The direct and leased measurements are sequential runs with different
+initial workspace cache contents; their difference is not an isolated estimate
+of mutex overhead. The daemon is not implemented yet.
+
+| Paths | Build + scratch (s) | Typing p50 / p95 / p99 (ms) | Direct whole query p95 (ms) | Leased whole query p50 / p95 / p99 (ms) | Peak RSS (KiB) |
+|---:|---:|---:|---:|---:|---:|
+| 50,000 | 0.294 | 0.055 / 1.043 / 1.988 | 1.827 | 0.703 / 2.010 / 3.077 | 44,332 |
+| 500,000 | 3.822 | 0.953 / 16.686 / 25.163 | 22.406 | 9.577 / 23.964 / 32.333 | 392,392 |
+
+All nine synthetic fixtures pass at both sizes. Held-out all-kind Recall@10 is
+0.615 at 50k and 0.531 at 500k; candidate recall@1000 is 0.920 and 0.825.
+Ranking is unchanged. Peak RSS covers the entire benchmark process, including
+corpus/build allocations; it does not measure multiple retained snapshots or
+daemon steady-state memory. The 5 ms p95 gate remains unmet at 500k.
+Raw output: [M2 snapshot benchmark](../tests/bench/results/2026-10-02-m2-snapshots.txt).
+
+ASan/UBSan tests additionally cover four readers pinned through 24 publications,
+acquisition/query/release racing publication and reclamation, reader/view
+capacity exhaustion, and a separate WAL writer committing during catalog load.
+These establish lifecycle behavior, not update throughput or daemon round-trip
+latency. M2 still needs socket, writer/history, filesystem-watch and recovery
+integration acceptance tests.

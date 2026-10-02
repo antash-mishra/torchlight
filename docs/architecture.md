@@ -7,8 +7,11 @@ allowlists, root deduplication, one transaction per run); `query` loads the
 catalog into a sealed lexical engine (prefix, subsequence, trigram and typo
 channels over basenames, interned parent directories via `dirtree`), creates
 bounded scratch, and searches. The CLI is not yet a socket client and rebuilds
-the engine per query. The daemon, threads, snapshot publication, semantics,
-history and UI described below remain the target architecture.
+the engine per query. M2's `catalog` module now owns immutable lexical views,
+preallocated reader leases, synchronized publication and background reclamation;
+`store_load_catalog` loads rows and `catalog_gen` consistently. These APIs are
+tested concurrently but not yet wired into a daemon. The daemon, worker threads,
+watcher, semantics, history and UI described below remain the target architecture.
 
 ## Components
 

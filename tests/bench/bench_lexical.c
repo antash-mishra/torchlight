@@ -7,6 +7,7 @@
  *   bench_lexical --paths FILE [--limit COUNT]   (NUL-separated paths) */
 #include "corpus.h"
 #include "queries.h"
+#include "torchlight/catalog.h"
 #include "torchlight/lexical.h"
 #include <errno.h>
 #include <stdio.h>
@@ -231,6 +232,40 @@ static tl_status measure_latency(const tl_lexical *engine, tl_lexical_workspace 
     free(whole.samples);
     return status;
 }
+/* Include lease acquisition/release around the same held-out whole queries.
+ * Construction and publication remain outside the timed query path. */
+static tl_status measure_catalog(tl_lexical **engine, const bench_query *queries, size_t count) {
+    tl_catalog *catalog = NULL;
+    tl_catalog_snapshot *snapshot = NULL;
+    struct latency latency = {0};
+    tl_status status = catalog_create(2, &catalog);
+    if (status == TL_OK)
+        status = catalog_snapshot_create(engine, 1, 1, &snapshot);
+    if (status == TL_OK)
+        status = catalog_publish(catalog, &snapshot);
+    for (size_t q = 0; q < count && status == TL_OK; q++) {
+        double start = 0, end = 0;
+        size_t found = 0;
+        tl_result results[BENCH_LIMIT];
+        tl_catalog_reader *reader = NULL;
+        status = now(&start);
+        if (status == TL_OK)
+            status = catalog_acquire(catalog, &reader);
+        if (status == TL_OK)
+            status = catalog_query(reader, queries[q].text, results, BENCH_LIMIT, &found);
+        catalog_release(reader);
+        if (status == TL_OK)
+            status = now(&end);
+        if (status == TL_OK)
+            status = record(&latency, (end - start) * 1e3);
+    }
+    if (status == TL_OK)
+        report_latency("catalog_query", &latency);
+    free(latency.samples);
+    catalog_snapshot_destroy(snapshot);
+    tl_status destroyed = catalog_destroy(catalog);
+    return destroyed == TL_OK ? status : destroyed;
+}
 static tl_status run(const bench_corpus *corpus, bool synthetic) {
     tl_lexical *engine = NULL;
     tl_lexical_workspace *workspace = NULL;
@@ -252,6 +287,10 @@ static tl_status run(const bench_corpus *corpus, bool synthetic) {
         status = evaluate(corpus, engine, workspace, "held_out", held_out, held_out_count, results);
     if (status == TL_OK && synthetic)
         status = check_fixtures(engine, workspace);
+    lexical_workspace_destroy(workspace);
+    workspace = NULL;
+    if (status == TL_OK)
+        status = measure_catalog(&engine, held_out, held_out_count);
     struct rusage usage;
     if (getrusage(RUSAGE_SELF, &usage) == 0)
         printf("peak_rss_kib=%ld\n", usage.ru_maxrss);

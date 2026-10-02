@@ -48,4 +48,8 @@ tl_status lexical_query(const tl_lexical *engine, tl_lexical_workspace *workspac
                         const char *query, tl_result *results, size_t capacity, size_t *out_count);
 /** Return number of entries; zero for NULL, no errors. */
 size_t lexical_count(const tl_lexical *engine);
+/** Resolve a nonzero file id in a sealed engine by binary search. Borrow exact
+ * raw path until engine destruction, out NULL on error. TL_INVALID for NULL/0,
+ * TL_STATE for unsealed engine or absent id. No I/O/heap allocation. */
+tl_status lexical_resolve(const tl_lexical *engine, uint64_t id, const char **out);
 #endif
