@@ -27,6 +27,11 @@ by about two thirds. The 5 ms p95 lexical gate is met at 50k paths but not at
 500k on the (heavily loaded) reference machine, so M1 acceptance stays open on
 that gate; see `docs/evaluation.md`.
 
+Review fixes (ADR 0009) preserve registered roots when an unavailable configured
+spelling cannot establish their canonical identity, and roll back the entire
+refresh on a storage callback failure. Regression tests cover root aliases,
+ancestor pruning, recovery and injected SQLite write failures.
+
 ## Goals and acceptance criteria
 
 - Search ~500k paths from a resident daemon. Target warm lexical-phase p95

@@ -1,6 +1,7 @@
 """End-to-end CLI/catalog fixtures including raw bytes and failed refreshes."""
 import os
 import shutil
+import sqlite3
 from pathlib import Path
 import subprocess
 import sys
@@ -20,6 +21,72 @@ def run_full(*args, success=True, env=None):
 
 def run(*args, success=True, env=None):
     return run_full(*args, success=success, env=env).stdout
+
+def catalog_snapshot(database):
+    """Include IDs, metadata, roots and catalog_gen when checking rollback."""
+    with sqlite3.connect(database) as connection:
+        return tuple(connection.iterdump())
+
+def unavailable_root_aliases(temporary):
+    """An unresolved spelling must never turn a configured root into deletion."""
+    for number, spelling in enumerate(["a/", "a/./", "a/../a", "alias/"]):
+        home = Path(temporary) / f"unavailable-{number}"
+        (home / "a").mkdir(parents=True)
+        (home / "b").mkdir()
+        (home / "a/saved.txt").write_bytes(b"saved")
+        (home / "b/other.txt").write_bytes(b"other")
+        (home / "alias").symlink_to(home / "a", target_is_directory=True)
+        database, config = home / "catalog.db", home / "config"
+        config.write_text(f"root = {home}/{spelling}\nroot = {home}/b\n")
+        arguments = ("index", "--db", str(database), "--config", str(config))
+        run(*arguments)
+        saved = run("query", "--db", str(database), "--null", "saved")
+        assert saved == os.fsencode(home / "a/saved.txt") + b"\0"
+        (home / "a").rename(home / ".offline-a")
+        result = run_full(*arguments)
+        assert b"root unavailable" in result.stderr
+        assert run("query", "--db", str(database), "--null", "saved") == saved
+        assert os.fsencode(home / "a") + b"\0" in run(
+            "query", "--db", str(database), "--null", "")
+        # A scanned ancestor must also preserve an unresolved symlink's target.
+        config.write_text(f"root = {home}/{spelling}\nroot = {home}\n")
+        run(*arguments)
+        assert run("query", "--db", str(database), "--null", "saved") == saved
+        # Deferred removals finish once the configured root resolves again.
+        (home / ".offline-a").rename(home / "a")
+        config.write_text(f"root = {home}/{spelling}\n")
+        run(*arguments)
+        assert run("query", "--db", str(database), "--null", "other.txt") == b""
+
+def storage_failure_rolls_back(temporary):
+    """A callback TL_IO must fail the whole refresh, even with another good root."""
+    home = Path(temporary) / "storage-failure"
+    for name in ["a", "b"]:
+        (home / name).mkdir(parents=True)
+        (home / name / "old.txt").write_bytes(b"old")
+    database, config = home / "catalog.db", home / "config"
+    config.write_text(f"root = {home}/a\nroot = {home}/b\n")
+    arguments = ("index", "--db", str(database), "--config", str(config))
+    run(*arguments)
+    with sqlite3.connect(database) as connection:
+        # Fixture-only SQL injects a write failure; production SQL stays in store.c.
+        connection.execute("CREATE TRIGGER fail_test_write BEFORE INSERT ON files "
+                           "WHEN NEW.name = X'626c6f636b65642e747874' "
+                           "BEGIN SELECT RAISE(FAIL, 'injected write failure'); END")
+    before = catalog_snapshot(database)
+    (home / "a/blocked.txt").write_bytes(b"fail")
+    (home / "b/new.txt").write_bytes(b"new")
+    (home / "a/old.txt").write_bytes(b"changed metadata")
+    # Exercise failures both before and after a healthy root has been written.
+    for roots in [("a", "b"), ("b", "a")]:
+        config.write_text("".join(f"root = {home}/{root}\n" for root in roots))
+        result = run_full(*arguments, success=False)
+        assert b"root unavailable" not in result.stderr
+        assert catalog_snapshot(database) == before
+    with sqlite3.connect(database) as connection:
+        connection.execute("DROP TRIGGER fail_test_write")
+    run(*arguments)
+    assert run("query", "--db", str(database), "new.txt") != b""
 
 def config_sync(temporary):
     """`index` without roots syncs the catalog to the configuration file."""
@@ -137,6 +204,8 @@ with tempfile.TemporaryDirectory(prefix="torchlight-cli-") as temporary:
     state_db = root / "state" / "torchlight" / "catalog.db"
     assert b"/state/torchlight" not in run("query", "--db", str(state_db), "--null", "--limit", "1000", "/")
     config_sync(temporary)
+    unavailable_root_aliases(temporary)
+    storage_failure_rolls_back(temporary)
     for invalid in ["0", "-1", "1001", "1x", "999999999999999999999"]:
         run("query", "--db", str(database), "--limit", invalid, "x", success=False)
     run("query", "--db", str(database), "x" * 257, success=False)

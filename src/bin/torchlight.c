@@ -14,16 +14,20 @@ struct options {
     size_t path_count, limit;
     bool null_output;
 };
-/* Canonical root/allow paths owned by the CLI for one index run. */
+/* Owned root/allow paths; unresolved absolute spellings are not canonical. */
 struct path_list {
     char **paths;
     bool *keep, *scanned;
     size_t count;
+    bool has_unresolved_paths;
 };
 struct scan_context {
     tl_store *store;
     const char *database;
     size_t count, unreadable;
+    /* crawl_run also returns TL_IO for filesystem failures, so retain the
+     * callback's error separately to avoid treating SQL failures as offline roots. */
+    tl_status callback_status;
 };
 static void usage(void) {
     fputs("Usage: torchlight index [--db PATH] [--config PATH] [ROOT...]\n"
@@ -82,12 +86,17 @@ static void free_paths(struct path_list *list) {
     free(list->scanned);
     *list = (struct path_list){0};
 }
-/* Canonical form of path; a missing absolute path is kept as given so an
- * unavailable root keeps its saved entries instead of failing the run. */
+/* Retain an unresolved absolute spelling for diagnostics and a later retry.
+ * It cannot establish that a differently spelled registered root was removed:
+ * resolving trailing slashes, dot components or symlinks may have changed it. */
 static tl_status add_path(struct path_list *list, const char *path) {
     char *canonical = realpath(path, NULL);
-    if (canonical == NULL && path[0] == '/')
+    if (canonical == NULL && errno == ENOMEM)
+        return TL_NOMEM;
+    if (canonical == NULL && path[0] == '/') {
+        list->has_unresolved_paths = true;
         canonical = strdup(path);
+    }
     if (canonical == NULL)
         return path[0] == '/' ? TL_NOMEM : TL_INVALID;
     list->paths[list->count++] = canonical;
@@ -141,6 +150,7 @@ static tl_status save_entry(void *context, const tl_crawl_entry *entry) {
          strcmp(entry->path + length, "-shm") == 0))
         return TL_OK;
     tl_status status = store_put(scan->store, entry);
+    scan->callback_status = status;
     if (status == TL_OK && entry->unreadable)
         scan->unreadable++;
     else if (status == TL_OK)
@@ -160,6 +170,8 @@ static tl_status scan_roots(tl_store *store, tl_crawl *crawler, struct path_list
         if (!roots->keep[i])
             continue;
         tl_status status = crawl_run(crawler, roots->paths[i], save_entry, scan);
+        if (scan->callback_status != TL_OK)
+            return scan->callback_status;
         if (status == TL_IO) {
             warn_path("root unavailable, keeping saved entries", roots->paths[i]);
             status = store_keep(store, roots->paths[i]);
@@ -180,9 +192,10 @@ static tl_status remember_root(void *context, const char *root) {
     registered->paths[registered->count] = strdup(root);
     return registered->paths[registered->count++] == NULL ? TL_NOMEM : TL_OK;
 }
-/* Forget registered roots that are no longer configured. */
-static tl_status forget_stale_roots(tl_store *store, const struct path_list *roots,
-                                    size_t *forgotten) {
+/* Unresolved spellings may refer to any unmatched registered root. Keep those
+ * scopes through ancestor pruning, then retry their removal on a resolved sync. */
+static tl_status sync_registered_roots(tl_store *store, const struct path_list *roots,
+                                       size_t *forgotten, size_t *deferred) {
     struct path_list registered = {0};
     tl_status status = store_roots(store, remember_root, &registered);
     for (size_t i = 0; i < registered.count && status == TL_OK; i++) {
@@ -190,8 +203,13 @@ static tl_status forget_stale_roots(tl_store *store, const struct path_list *roo
         for (size_t j = 0; j < roots->count && !configured; j++)
             configured = strcmp(registered.paths[i], roots->paths[j]) == 0;
         if (!configured) {
-            status = store_forget_root(store, registered.paths[i]);
-            *forgotten += status == TL_OK;
+            if (roots->has_unresolved_paths) {
+                status = store_keep(store, registered.paths[i]);
+                *deferred += status == TL_OK;
+            } else {
+                status = store_forget_root(store, registered.paths[i]);
+                *forgotten += status == TL_OK;
+            }
         }
     }
     free_paths(&registered);
@@ -199,7 +217,7 @@ static tl_status forget_stale_roots(tl_store *store, const struct path_list *roo
 }
 static tl_status refresh(tl_store *store, tl_crawl *crawler, struct path_list *roots,
                          bool sync_config, struct scan_context *scan) {
-    size_t forgotten = 0, scanned = 0;
+    size_t forgotten = 0, deferred = 0, scanned = 0;
     tl_status status = store_begin(store);
     if (status == TL_OK)
         status = scan_roots(store, crawler, roots, scan);
@@ -209,7 +227,7 @@ static tl_status refresh(tl_store *store, tl_crawl *crawler, struct path_list *r
     if (status == TL_OK && scanned == 0)
         status = TL_IO;
     if (status == TL_OK && sync_config)
-        status = forget_stale_roots(store, roots, &forgotten);
+        status = sync_registered_roots(store, roots, &forgotten, &deferred);
     for (size_t i = 0; i < roots->count && status == TL_OK; i++) {
         if (roots->scanned[i])
             status = store_prune(store, roots->paths[i]);
@@ -225,6 +243,9 @@ static tl_status refresh(tl_store *store, tl_crawl *crawler, struct path_list *r
         fprintf(stderr, "Kept saved entries for %zu unreadable paths.\n", scan->unreadable);
     if (forgotten != 0)
         fprintf(stderr, "Forgot %zu roots no longer configured.\n", forgotten);
+    if (deferred != 0)
+        fprintf(stderr, "Deferred removal of %zu roots until configured paths resolve.\n",
+                deferred);
     return TL_OK;
 }
 static tl_status index_roots(tl_store *store, const struct options *options,
@@ -240,7 +261,7 @@ static tl_status index_roots(tl_store *store, const struct options *options,
                               allow.count, &crawler);
     if (status == TL_OK) {
         crawl_select_roots(crawler, (const char *const *)roots.paths, roots.count, roots.keep);
-        struct scan_context scan = {store, database, 0, 0};
+        struct scan_context scan = {.store = store, .database = database};
         status = refresh(store, crawler, &roots, options->path_count == 0, &scan);
     }
     crawl_destroy(crawler);

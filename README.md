@@ -45,6 +45,11 @@ roots that were only ever indexed from the command line). Hidden directories and
 hidden files remain searchable; symlinks are indexed without following
 directory symlinks. Torchlight's own state directory is never indexed.
 
+When a configured root cannot be resolved, removal of unmatched saved roots is
+deferred until a later sync resolves every root, preserving unavailable aliases.
+Accessible roots still refresh. Storage write failures roll back the entire run
+and return an error.
+
 Multiword queries need every word to match the file name or one of its folder
 names (`work notes`); a word containing `/` may match across the whole path.
 Use `--` before a query beginning with a dash. An empty query lists indexed

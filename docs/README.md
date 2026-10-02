@@ -58,6 +58,8 @@ The 5 ms p95 latency gate is met at 50k paths but not yet at 500k; see
   refines 0006 after the first M1 review.
 - [0008: M1 completion: channels, directory interning, bounded scans and configuration](adr/0008-m1-completion-channels-directories-config.md)
   completes M1's lexical engine and configuration.
+- [0009: unresolved root identities and refresh failures](adr/0009-unresolved-roots-and-refresh-failures.md)
+  preserves unavailable aliases and rolls back storage failures during refresh.
 
 ## Keeping docs current
 
