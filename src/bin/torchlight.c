@@ -1,4 +1,4 @@
-/* Local M1 index/query CLI; domain algorithms live in reusable modules. */
+/* Local index/query CLI; domain algorithms live in reusable modules. */
 #include "torchlight/config.h"
 #include "torchlight/crawl.h"
 #include "torchlight/lexical.h"
@@ -9,52 +9,129 @@
 #include <stdlib.h>
 #include <string.h>
 struct options {
-    const char *command, *database, *argument;
-    size_t limit;
+    const char *command, *database, *config;
+    const char **paths; /* positional arguments, borrowed from argv */
+    size_t path_count, limit;
     bool null_output;
 };
-static void usage(void) {
-    fputs("Usage: torchlight index [--db PATH] ROOT\n"
-          "       torchlight query [--db PATH] [--limit 1..1000] [--null] QUERY\n",
-          stderr);
-}
-static tl_status parse(int argc, char **argv, struct options *options) {
-    if (argc < 3)
-        return TL_INVALID;
-    *options = (struct options){.command = argv[1], .limit = 10};
-    if (strcmp(options->command, "index") != 0 && strcmp(options->command, "query") != 0)
-        return TL_INVALID;
-    bool positional = false;
-    for (int i = 2; i < argc; i++) {
-        if (!positional && strcmp(argv[i], "--") == 0) {
-            positional = true;
-            continue;
-        }
-        if (!positional && strcmp(argv[i], "--db") == 0 && i + 1 < argc)
-            options->database = argv[++i];
-        else if (!positional && strcmp(argv[i], "--null") == 0)
-            options->null_output = true;
-        else if (!positional && strcmp(argv[i], "--limit") == 0 && i + 1 < argc) {
-            char *end = NULL;
-            const char *value = argv[++i];
-            errno = 0;
-            unsigned long limit = strtoul(value, &end, 10);
-            if (errno != 0 || value[0] < '0' || value[0] > '9' || *end != 0 || limit == 0 ||
-                limit > LEXICAL_MAX_RESULTS)
-                return TL_INVALID;
-            options->limit = (size_t)limit;
-        } else if (options->argument == NULL && (positional || argv[i][0] != '-'))
-            options->argument = argv[i];
-        else
-            return TL_INVALID;
-    }
-    return options->argument == NULL ? TL_INVALID : TL_OK;
-}
+/* Canonical root/allow paths owned by the CLI for one index run. */
+struct path_list {
+    char **paths;
+    bool *keep, *scanned;
+    size_t count;
+};
 struct scan_context {
     tl_store *store;
     const char *database;
     size_t count, unreadable;
 };
+static void usage(void) {
+    fputs("Usage: torchlight index [--db PATH] [--config PATH] [ROOT...]\n"
+          "       torchlight query [--db PATH] [--limit 1..1000] [--null] QUERY\n"
+          "Without ROOT, index syncs the catalog to the configured roots.\n",
+          stderr);
+}
+static bool parse_limit(const char *value, size_t *out) {
+    char *end = NULL;
+    errno = 0;
+    unsigned long limit = strtoul(value, &end, 10);
+    if (errno != 0 || value[0] < '0' || value[0] > '9' || *end != 0 || limit == 0 ||
+        limit > LEXICAL_MAX_RESULTS)
+        return false;
+    *out = (size_t)limit;
+    return true;
+}
+static tl_status parse(int argc, char **argv, struct options *options) {
+    if (argc < 2)
+        return TL_INVALID;
+    *options = (struct options){.command = argv[1], .limit = 10};
+    bool index = strcmp(options->command, "index") == 0;
+    if (!index && strcmp(options->command, "query") != 0)
+        return TL_INVALID;
+    options->paths = calloc((size_t)argc, sizeof(char *));
+    if (options->paths == NULL)
+        return TL_NOMEM;
+    bool positional = false;
+    for (int i = 2; i < argc; i++) {
+        const char *arg = argv[i];
+        bool has_value = i + 1 < argc;
+        if (!positional && strcmp(arg, "--") == 0)
+            positional = true;
+        else if (!positional && strcmp(arg, "--db") == 0 && has_value)
+            options->database = argv[++i];
+        else if (!positional && index && strcmp(arg, "--config") == 0 && has_value)
+            options->config = argv[++i];
+        else if (!positional && !index && strcmp(arg, "--null") == 0)
+            options->null_output = true;
+        else if (!positional && !index && strcmp(arg, "--limit") == 0 && has_value) {
+            if (!parse_limit(argv[++i], &options->limit))
+                return TL_INVALID;
+        } else if (positional || arg[0] != '-')
+            options->paths[options->path_count++] = arg;
+        else
+            return TL_INVALID;
+    }
+    return index || options->path_count == 1 ? TL_OK : TL_INVALID;
+}
+/* ---- paths ---------------------------------------------------------------- */
+static void free_paths(struct path_list *list) {
+    for (size_t i = 0; i < list->count; i++)
+        free(list->paths[i]);
+    free(list->paths);
+    free(list->keep);
+    free(list->scanned);
+    *list = (struct path_list){0};
+}
+/* Canonical form of path; a missing absolute path is kept as given so an
+ * unavailable root keeps its saved entries instead of failing the run. */
+static tl_status add_path(struct path_list *list, const char *path) {
+    char *canonical = realpath(path, NULL);
+    if (canonical == NULL && path[0] == '/')
+        canonical = strdup(path);
+    if (canonical == NULL)
+        return path[0] == '/' ? TL_NOMEM : TL_INVALID;
+    list->paths[list->count++] = canonical;
+    return TL_OK;
+}
+static tl_status allocate_paths(struct path_list *list, size_t capacity) {
+    size_t slots = capacity == 0 ? 1 : capacity;
+    list->paths = calloc(slots, sizeof(char *));
+    list->keep = calloc(slots, sizeof(bool));
+    list->scanned = calloc(slots, sizeof(bool));
+    return list->paths == NULL || list->keep == NULL || list->scanned == NULL ? TL_NOMEM : TL_OK;
+}
+/* Collect config values of key; reports unknown keys as TL_INVALID. */
+static tl_status config_paths(const tl_config *config, const char *key, struct path_list *list) {
+    size_t entries = config_entry_count(config);
+    tl_status status = allocate_paths(list, entries);
+    for (size_t i = 0; i < entries && status == TL_OK; i++) {
+        const char *entry_key = NULL, *value = NULL;
+        status = config_entry(config, i, &entry_key, &value);
+        if (status == TL_OK && strcmp(entry_key, "root") != 0 && strcmp(entry_key, "allow") != 0) {
+            fprintf(stderr, "torchlight: unknown configuration key \"%s\"\n", entry_key);
+            status = TL_INVALID;
+        }
+        if (status == TL_OK && strcmp(entry_key, key) == 0)
+            status = add_path(list, value);
+    }
+    return status;
+}
+/* Roots from the command line, else the configuration, else HOME. */
+static tl_status select_roots(const struct options *options, const tl_config *config,
+                              struct path_list *roots) {
+    if (options->path_count != 0) {
+        tl_status status = allocate_paths(roots, options->path_count);
+        for (size_t i = 0; i < options->path_count && status == TL_OK; i++)
+            status = add_path(roots, options->paths[i]);
+        return status;
+    }
+    tl_status status = config_paths(config, "root", roots);
+    const char *home = getenv("HOME");
+    if (status == TL_OK && roots->count == 0)
+        status = home == NULL || home[0] != '/' ? TL_INVALID : add_path(roots, home);
+    return status;
+}
+/* ---- index ---------------------------------------------------------------- */
 static tl_status save_entry(void *context, const tl_crawl_entry *entry) {
     struct scan_context *scan = context;
     size_t length = strlen(scan->database);
@@ -70,38 +147,109 @@ static tl_status save_entry(void *context, const tl_crawl_entry *entry) {
         scan->count++;
     return status;
 }
-static tl_status index_root(tl_store *store, const struct options *options,
-                            const char *state_directory) {
-    char *root = realpath(options->argument, NULL), *database = realpath(options->database, NULL);
-    tl_crawl *crawler = NULL;
-    tl_status status =
-        root == NULL || database == NULL ? TL_IO : crawl_create(state_directory, &crawler);
-    if (status != TL_OK)
-        goto cleanup;
-    struct scan_context scan = {store, database, 0, 0};
-    status = store_begin(store);
-    if (status != TL_OK)
-        goto cleanup;
-    status = crawl_run(crawler, root, save_entry, &scan);
+static void warn_path(const char *message, const char *path) {
+    char *display = NULL;
+    if (tokenize_display_create(path, &display) == TL_OK)
+        fprintf(stderr, "torchlight: %s: %s\n", message, display);
+    tokenize_display_destroy(display);
+}
+/* Scan every kept root; an unavailable root keeps its saved entries. */
+static tl_status scan_roots(tl_store *store, tl_crawl *crawler, struct path_list *roots,
+                            struct scan_context *scan) {
+    for (size_t i = 0; i < roots->count; i++) {
+        if (!roots->keep[i])
+            continue;
+        tl_status status = crawl_run(crawler, roots->paths[i], save_entry, scan);
+        if (status == TL_IO) {
+            warn_path("root unavailable, keeping saved entries", roots->paths[i]);
+            status = store_keep(store, roots->paths[i]);
+        } else if (status == TL_OK) {
+            roots->scanned[i] = true;
+        }
+        if (status != TL_OK)
+            return status;
+    }
+    return TL_OK;
+}
+static tl_status remember_root(void *context, const char *root) {
+    struct path_list *registered = context;
+    char **paths = realloc(registered->paths, (registered->count + 1) * sizeof(char *));
+    if (paths == NULL)
+        return TL_NOMEM;
+    registered->paths = paths;
+    registered->paths[registered->count] = strdup(root);
+    return registered->paths[registered->count++] == NULL ? TL_NOMEM : TL_OK;
+}
+/* Forget registered roots that are no longer configured. */
+static tl_status forget_stale_roots(tl_store *store, const struct path_list *roots,
+                                    size_t *forgotten) {
+    struct path_list registered = {0};
+    tl_status status = store_roots(store, remember_root, &registered);
+    for (size_t i = 0; i < registered.count && status == TL_OK; i++) {
+        bool configured = false;
+        for (size_t j = 0; j < roots->count && !configured; j++)
+            configured = strcmp(registered.paths[i], roots->paths[j]) == 0;
+        if (!configured) {
+            status = store_forget_root(store, registered.paths[i]);
+            *forgotten += status == TL_OK;
+        }
+    }
+    free_paths(&registered);
+    return status;
+}
+static tl_status refresh(tl_store *store, tl_crawl *crawler, struct path_list *roots,
+                         bool sync_config, struct scan_context *scan) {
+    size_t forgotten = 0, scanned = 0;
+    tl_status status = store_begin(store);
     if (status == TL_OK)
-        status = store_prune(store, root);
+        status = scan_roots(store, crawler, roots, scan);
+    for (size_t i = 0; i < roots->count; i++)
+        scanned += roots->scanned[i];
+    /* With no root available nothing was learned: fail and change nothing. */
+    if (status == TL_OK && scanned == 0)
+        status = TL_IO;
+    if (status == TL_OK && sync_config)
+        status = forget_stale_roots(store, roots, &forgotten);
+    for (size_t i = 0; i < roots->count && status == TL_OK; i++) {
+        if (roots->scanned[i])
+            status = store_prune(store, roots->paths[i]);
+    }
     if (status == TL_OK)
         status = store_commit(store);
     if (status != TL_OK) {
         tl_status rollback = store_rollback(store);
-        if (rollback != TL_OK)
-            status = rollback;
-    } else if (fprintf(stderr, "Indexed %zu entries.\n", scan.count) < 0 ||
-               (scan.unreadable != 0 &&
-                fprintf(stderr, "Kept saved entries for %zu unreadable paths.\n", scan.unreadable) <
-                    0))
-        status = TL_IO;
-cleanup:
+        return rollback == TL_OK || rollback == TL_STATE ? status : rollback;
+    }
+    fprintf(stderr, "Indexed %zu entries.\n", scan->count);
+    if (scan->unreadable != 0)
+        fprintf(stderr, "Kept saved entries for %zu unreadable paths.\n", scan->unreadable);
+    if (forgotten != 0)
+        fprintf(stderr, "Forgot %zu roots no longer configured.\n", forgotten);
+    return TL_OK;
+}
+static tl_status index_roots(tl_store *store, const struct options *options,
+                             const tl_config *config) {
+    struct path_list roots = {0}, allow = {0};
+    tl_crawl *crawler = NULL;
+    char *database = realpath(config_database(config), NULL);
+    tl_status status = database == NULL ? TL_IO : config_paths(config, "allow", &allow);
+    if (status == TL_OK)
+        status = select_roots(options, config, &roots);
+    if (status == TL_OK)
+        status = crawl_create(config_state_directory(config), (const char *const *)allow.paths,
+                              allow.count, &crawler);
+    if (status == TL_OK) {
+        crawl_select_roots(crawler, (const char *const *)roots.paths, roots.count, roots.keep);
+        struct scan_context scan = {store, database, 0, 0};
+        status = refresh(store, crawler, &roots, options->path_count == 0, &scan);
+    }
     crawl_destroy(crawler);
+    free_paths(&roots);
+    free_paths(&allow);
     free(database);
-    free(root);
     return status;
 }
+/* ---- query ---------------------------------------------------------------- */
 static tl_status load_entry(void *context, const tl_store_entry *entry) {
     return lexical_add(context, entry->id, entry->path, entry->is_root);
 }
@@ -138,35 +286,40 @@ static tl_status query_catalog(tl_store *store, const struct options *options) {
     size_t count = 0;
     if (status == TL_OK)
         status =
-            lexical_query(engine, workspace, options->argument, results, options->limit, &count);
+            lexical_query(engine, workspace, options->paths[0], results, options->limit, &count);
     if (status == TL_OK)
         status = print_results(results, count, options->null_output);
     lexical_workspace_destroy(workspace);
     lexical_destroy(engine);
     return status;
 }
+static tl_status open_config(const struct options *options, tl_config **config) {
+    size_t line = 0;
+    tl_status status =
+        config_create("torchlight", options->database, options->config, &line, config);
+    if (status == TL_INVALID && line != 0)
+        fprintf(stderr, "torchlight: invalid configuration line %zu\n", line);
+    return status;
+}
 int main(int argc, char **argv) {
     struct options options = {0};
     tl_status status = parse(argc, argv, &options);
     if (status != TL_OK) {
+        free(options.paths);
         usage();
         return 2;
     }
     tl_config *config = NULL;
     tl_store *store = NULL;
-    status = config_create("torchlight", options.database, &config);
-    if (status != TL_OK)
-        goto cleanup;
-    options.database = config_database(config);
-    status = store_create(options.database, &store);
-    if (status != TL_OK)
-        goto cleanup;
-    status = strcmp(options.command, "index") == 0
-                 ? index_root(store, &options, config_state_directory(config))
-                 : query_catalog(store, &options);
-cleanup:
+    status = open_config(&options, &config);
+    if (status == TL_OK)
+        status = store_create(config_database(config), &store);
+    if (status == TL_OK)
+        status = strcmp(options.command, "index") == 0 ? index_roots(store, &options, config)
+                                                       : query_catalog(store, &options);
     store_destroy(store);
     config_destroy(config);
+    free(options.paths);
     if (status != TL_OK) {
         fprintf(stderr, "torchlight: %s\n", tl_status_string(status));
         return 1;

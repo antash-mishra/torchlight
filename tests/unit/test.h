@@ -27,6 +27,12 @@ void test_tokenize(void);
 void test_prefix(void);
 /** Run pure subsequence checks, aborting on failure. */
 void test_subseq(void);
+/** Run trigram-channel checks, aborting on failure. */
+void test_trigram(void);
+/** Run typo-channel checks, aborting on failure. */
+void test_typo(void);
+/** Run directory-tree checks, aborting on failure. */
+void test_dirtree(void);
 /** Run scorer checks, aborting on failure. */
 void test_fuzzy(void);
 /** Run orchestrator/ordering/workspace checks, aborting on failure. */

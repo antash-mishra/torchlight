@@ -7,8 +7,8 @@ extraction is a possible later extension.
 
 ## Implementation progress
 
-M1 is in progress. The first increment implements the Makefile/checks, XDG data
-paths, physical crawler, SQLite schema v1 and atomic root refreshes, approved
+M1's features are implemented; its 500k latency gate is not yet met. The first
+increment implemented the Makefile/checks, XDG data paths, physical crawler, SQLite schema v1 and atomic root refreshes, approved
 utf8proc normalization, prefix/initials/subsequence matching, greedy fuzzy
 scoring, and local index/query CLI. The synthetic warm-engine benchmark covers
 50k/500k paths. See `docs/evaluation.md` for measured limits.
@@ -17,11 +17,15 @@ Review fixes (ADR 0007) keep unreadable scopes and unvisited nested roots during
 pruning instead of failing or deleting them, and confine parent subsequence
 matches to one directory name.
 
-Remaining M1 work: trigram overlap retrieval, deletion-neighbourhood typo lookup
-and edit scoring; strict parent-token matching and ranking evaluation; complete
-subsequence membership narrowing; config/hidden allowlists/root deduplication;
-and latency/memory improvements with representative labeled/held-out corpora.
-M1 is not complete and its latency target is not met by the first baseline.
+The M1 feature set is implemented (ADR 0008): trigram overlap retrieval,
+deletion-neighbourhood typo lookup with bounded edit scoring, parent matching
+per directory name below the indexed roots, complete subsequence membership
+narrowing, a configuration file with roots and hidden allowlists, root
+deduplication and configuration sync, and a benchmark with labeled tuning and
+held-out queries over synthetic and real path corpora. Memory at 500k paths fell
+by about two thirds. The 5 ms p95 lexical gate is met at 50k paths but not at
+500k on the (heavily loaded) reference machine, so M1 acceptance stays open on
+that gate; see `docs/evaluation.md`.
 
 ## Goals and acceptance criteria
 

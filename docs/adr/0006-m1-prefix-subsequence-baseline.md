@@ -1,6 +1,6 @@
 # 0006. First M1 prefix/subsequence baseline
 
-- **Status:** Accepted
+- **Status:** Accepted; the unreadable-scope rollback rule is refined by 0007
 - **Date:** 2026-10-02
 - **Refines:** 0003, 0004 and 0005
 

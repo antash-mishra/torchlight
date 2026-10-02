@@ -2,11 +2,13 @@
 
 ## Current implementation
 
-The first M1 increment runs locally: `index` wires config -> crawl -> store;
-`query` loads a durable catalog into a sealed lexical engine, creates bounded
-scratch, and searches through prefix/subsequence scoring. The CLI is not yet a
-socket client. The daemon, threads, snapshot publication, trigram/typo channels,
-semantics, history and UI described below remain the target architecture.
+M1 runs locally: `index` wires config -> crawl -> store (configured roots,
+allowlists, root deduplication, one transaction per run); `query` loads the
+catalog into a sealed lexical engine (prefix, subsequence, trigram and typo
+channels over basenames, interned parent directories via `dirtree`), creates
+bounded scratch, and searches. The CLI is not yet a socket client and rebuilds
+the engine per query. The daemon, threads, snapshot publication, semantics,
+history and UI described below remain the target architecture.
 
 ## Components
 

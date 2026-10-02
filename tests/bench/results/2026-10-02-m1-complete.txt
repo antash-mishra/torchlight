@@ -1,0 +1,64 @@
+# M1 completion (ADR 0008), 2026-10-02.
+# Intel i7-8700K, 32033 MiB RAM, Mint 22.2, Linux 6.8.0-139-generic, x86_64.
+# GCC 13.3.0; -std=c17 -O3 -DNDEBUG; SQLite 3.45.1; utf8proc 2.9.0.
+# Host heavily loaded during all runs: load average 5-9 on 12 threads, swap full,
+# iowait 28-37%; a trivial 500k-element loop took 1.4-2.3 ms (normally ~0.3 ms).
+# Warm engine timing excludes CLI/store loading. Quality lines: held-out seed 2
+# (tuning seed 1 lines omitted). Real corpus: first 500k paths of `find /usr -xdev`.
+
+## make bench (synthetic)
+ 04:35:38 up 26 days, 16:43,  1 user,  load average: 5.77, 5.75, 6.21
+paths=50000 mean_path_bytes=71.4 build_s=0.295 engine_rss_kib=30396
+typing_ms n=12406 p50=0.052 p95=1.048 p99=2.066 max=7.353
+whole_query_ms n=1200 p50=0.656 p95=2.021 p99=3.009 max=4.080
+quality held_out/exact n=200 recall@1=0.970 recall@10=1.000 mrr@10=0.980 candidate_recall@1000=1.000
+quality held_out/prefix n=200 recall@1=0.245 recall@10=0.430 mrr@10=0.309 candidate_recall@1000=1.000
+quality held_out/abbreviation n=200 recall@1=0.475 recall@10=0.730 mrr@10=0.552 candidate_recall@1000=0.965
+quality held_out/typo n=200 recall@1=0.755 recall@10=0.850 mrr@10=0.791 candidate_recall@1000=0.990
+quality held_out/partial_typo n=200 recall@1=0.015 recall@10=0.035 mrr@10=0.022 candidate_recall@1000=0.570
+quality held_out/parent n=200 recall@1=0.280 recall@10=0.645 mrr@10=0.373 candidate_recall@1000=0.995
+quality held_out/all n=1200 recall@1=0.457 recall@10=0.615 mrr@10=0.504 candidate_recall@1000=0.920
+fixtures=9/9
+peak_rss_kib=44348
+paths=500000 mean_path_bytes=79.6 build_s=3.437 engine_rss_kib=235672
+typing_ms n=12477 p50=0.795 p95=15.930 p99=25.674 max=47.267
+whole_query_ms n=1200 p50=9.531 p95=25.398 p99=33.143 max=49.164
+quality held_out/exact n=200 recall@1=0.980 recall@10=1.000 mrr@10=0.987 candidate_recall@1000=1.000
+quality held_out/prefix n=200 recall@1=0.145 recall@10=0.395 mrr@10=0.210 candidate_recall@1000=0.925
+quality held_out/abbreviation n=200 recall@1=0.255 recall@10=0.570 mrr@10=0.345 candidate_recall@1000=0.890
+quality held_out/typo n=200 recall@1=0.570 recall@10=0.830 mrr@10=0.665 candidate_recall@1000=0.995
+quality held_out/partial_typo n=200 recall@1=0.005 recall@10=0.005 mrr@10=0.005 candidate_recall@1000=0.190
+quality held_out/parent n=200 recall@1=0.220 recall@10=0.385 mrr@10=0.270 candidate_recall@1000=0.950
+quality held_out/all n=1200 recall@1=0.362 recall@10=0.531 mrr@10=0.414 candidate_recall@1000=0.825
+fixtures=9/9
+peak_rss_kib=392356
+ 04:37:15 up 26 days, 16:45,  1 user,  load average: 5.16, 5.42, 6.05
+
+## Real corpus: ./build/bench_lexical --paths usr.paths --limit 500000
+paths=500000 mean_path_bytes=58.4 build_s=3.367 engine_rss_kib=231416
+typing_ms n=13181 p50=0.229 p95=6.718 p99=16.336 max=41.919
+whole_query_ms n=1200 p50=4.138 p95=15.648 p99=26.960 max=40.535
+quality held_out/exact n=200 recall@1=0.990 recall@10=1.000 mrr@10=0.994 candidate_recall@1000=1.000
+quality held_out/prefix n=200 recall@1=0.470 recall@10=0.705 mrr@10=0.537 candidate_recall@1000=0.990
+quality held_out/abbreviation n=200 recall@1=0.435 recall@10=0.610 mrr@10=0.477 candidate_recall@1000=0.975
+quality held_out/typo n=200 recall@1=0.775 recall@10=0.910 mrr@10=0.828 candidate_recall@1000=0.975
+quality held_out/partial_typo n=200 recall@1=0.060 recall@10=0.135 mrr@10=0.082 candidate_recall@1000=0.455
+quality held_out/parent n=200 recall@1=0.285 recall@10=0.475 mrr@10=0.329 candidate_recall@1000=0.905
+quality held_out/all n=1200 recall@1=0.502 recall@10=0.639 mrr@10=0.541 candidate_recall@1000=0.883
+peak_rss_kib=366892
+ 04:25:49 up 26 days, 16:33,  1 user,  load average: 5.95, 6.70, 6.67
+
+
+## Original engine (commit cdd55ba) with this harness, same 50k synthetic corpus
+paths=50000 mean_path_bytes=71.4 build_s=0.723 engine_rss_kib=83020
+typing_ms n=12406 p50=12.735 p95=26.690 p99=35.753 max=55.510
+whole_query_ms n=1200 p50=10.316 p95=23.669 p99=30.028 max=40.116
+quality held_out/exact n=200 recall@1=0.970 recall@10=1.000 mrr@10=0.980 candidate_recall@1000=1.000
+quality held_out/prefix n=200 recall@1=0.270 recall@10=0.440 mrr@10=0.330 candidate_recall@1000=1.000
+quality held_out/abbreviation n=200 recall@1=0.425 recall@10=0.700 mrr@10=0.517 candidate_recall@1000=0.965
+quality held_out/typo n=200 recall@1=0.210 recall@10=0.255 mrr@10=0.227 candidate_recall@1000=0.315
+quality held_out/partial_typo n=200 recall@1=0.005 recall@10=0.015 mrr@10=0.008 candidate_recall@1000=0.345
+quality held_out/parent n=200 recall@1=0.300 recall@10=0.590 mrr@10=0.386 candidate_recall@1000=0.990
+quality held_out/all n=1200 recall@1=0.363 recall@10=0.500 mrr@10=0.408 candidate_recall@1000=0.769
+fixtures=9/9
+peak_rss_kib=110016

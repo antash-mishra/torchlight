@@ -14,11 +14,16 @@ CPPFLAGS += -I$(DEPS_PREFIX)/include
 LDFLAGS += -L$(DEPS_PREFIX)/lib/x86_64-linux-gnu -Wl,-rpath,$(DEPS_PREFIX)/lib/x86_64-linux-gnu
 LDLIBS += -lsqlite3 -lutf8proc
 endif
-SOURCES = src/core/common.c src/core/vec.c src/core/config.c src/index/tokenize.c src/index/prefix.c \
-          src/index/subseq.c src/index/fuzzy.c src/index/lexical.c src/fs/crawl.c src/storage/store.c
+SOURCES = src/core/common.c src/core/vec.c src/core/hashmap.c src/core/config.c \
+          src/index/tokenize.c src/index/prefix.c src/index/subseq.c src/index/fuzzy.c \
+          src/index/trigram.c src/index/typo.c src/index/dirtree.c src/index/lexical.c \
+          src/index/lexical_query.c src/fs/crawl.c src/storage/store.c
 OBJECTS = $(SOURCES:%.c=build/%.o)
-HEADERS = $(wildcard include/torchlight/*.h)
+HEADERS = $(wildcard include/torchlight/*.h) $(wildcard src/*/*.h)
 TEST_SOURCES = $(wildcard tests/unit/test_*.c)
+BENCH_SOURCES = $(wildcard tests/bench/*.c)
+# Optional NUL-separated real path list for `make bench` (see scripts/make_corpus.sh).
+BENCH_PATHS ?=
 SAN_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie
 CLANG_TIDY ?= clang-tidy
 CPPCHECK ?= cppcheck
@@ -41,16 +46,17 @@ test: build/tests build/torchlight-sanitized
 lint:
 	@command -v $(CLANG_TIDY) >/dev/null || { echo 'clang-tidy is required'; exit 1; }
 	@command -v $(CPPCHECK) >/dev/null || { echo 'cppcheck is required'; exit 1; }
-	$(CLANG_TIDY) $(SOURCES) src/bin/torchlight.c $(TEST_SOURCES) tests/bench/bench_lexical.c --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
-	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -Iinclude $(SOURCES) src/bin/torchlight.c $(TEST_SOURCES) tests/bench/bench_lexical.c
+	$(CLANG_TIDY) $(SOURCES) src/bin/torchlight.c $(TEST_SOURCES) $(BENCH_SOURCES) --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
+	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -Iinclude $(SOURCES) src/bin/torchlight.c $(TEST_SOURCES) $(BENCH_SOURCES)
 format:
-	clang-format -i $(SOURCES) src/bin/torchlight.c $(HEADERS) tests/unit/*.h $(TEST_SOURCES) tests/bench/bench_lexical.c
-build/bench_lexical: $(SOURCES) tests/bench/bench_lexical.c $(HEADERS)
+	clang-format -i $(SOURCES) src/bin/torchlight.c $(HEADERS) tests/unit/*.h $(TEST_SOURCES) tests/bench/*.c tests/bench/*.h
+build/bench_lexical: $(SOURCES) $(BENCH_SOURCES) $(HEADERS) $(wildcard tests/bench/*.h)
 	@mkdir -p build
-	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) $(SOURCES) tests/bench/bench_lexical.c $(LDFLAGS) $(LDLIBS) -o $@
+	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) $(SOURCES) $(BENCH_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
 bench: build/bench_lexical
-	./build/bench_lexical 50000
-	./build/bench_lexical 500000
+	./build/bench_lexical --synthetic 50000
+	./build/bench_lexical --synthetic 500000
+	$(if $(BENCH_PATHS),./build/bench_lexical --paths $(BENCH_PATHS) --limit 500000)
 clean:
 	$(RM) -r build
 -include $(OBJECTS:.o=.d) build/src/bin/torchlight.d

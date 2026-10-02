@@ -1,4 +1,4 @@
-/* Sanitizer-enabled test runner for the first M1 increment. */
+/* Sanitizer-enabled test runner for every module. */
 #include "test.h"
 int main(void) {
     test_config();
@@ -7,6 +7,9 @@ int main(void) {
     test_prefix();
     test_subseq();
     test_fuzzy();
+    test_trigram();
+    test_typo();
+    test_dirtree();
     test_lexical();
     test_store();
     test_crawl();

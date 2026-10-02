@@ -25,14 +25,7 @@ void vec_destroy(tl_vec *vec) {
     free(vec->data);
     free(vec);
 }
-static tl_status grow(tl_vec *vec) {
-    const size_t initial_capacity = 16;
-    size_t capacity = vec->capacity == 0 ? initial_capacity : vec->capacity;
-    if (vec->capacity != 0) {
-        if (capacity > SIZE_MAX / 2)
-            return TL_LIMIT;
-        capacity *= 2;
-    }
+static tl_status resize(tl_vec *vec, size_t capacity) {
     size_t bytes = 0;
     tl_status status = tl_size_multiply(capacity, vec->element_size, &bytes);
     if (status != TL_OK)
@@ -44,17 +37,51 @@ static tl_status grow(tl_vec *vec) {
     vec->capacity = capacity;
     return TL_OK;
 }
-tl_status vec_append(tl_vec *vec, const void *item) {
-    if (vec == NULL || item == NULL)
-        return TL_INVALID;
-    if (vec->count == vec->capacity) {
-        tl_status status = grow(vec);
-        if (status != TL_OK)
-            return status;
+/* Geometric growth keeps appends amortized O(1). */
+static tl_status grow_to(tl_vec *vec, size_t needed) {
+    const size_t initial_capacity = 16;
+    if (needed <= vec->capacity)
+        return TL_OK;
+    size_t capacity = vec->capacity == 0 ? initial_capacity : vec->capacity;
+    while (capacity < needed) {
+        if (capacity > SIZE_MAX / 2)
+            return TL_LIMIT;
+        capacity *= 2;
     }
-    memcpy((unsigned char *)vec->data + vec->count * vec->element_size, item, vec->element_size);
-    vec->count++;
+    return resize(vec, capacity);
+}
+tl_status vec_append(tl_vec *vec, const void *item) {
+    return vec_append_array(vec, item, 1);
+}
+tl_status vec_append_array(tl_vec *vec, const void *items, size_t count) {
+    if (vec == NULL || (items == NULL && count != 0))
+        return TL_INVALID;
+    if (count == 0)
+        return TL_OK;
+    if (count > SIZE_MAX - vec->count)
+        return TL_LIMIT;
+    tl_status status = grow_to(vec, vec->count + count);
+    if (status != TL_OK)
+        return status;
+    memcpy((unsigned char *)vec->data + vec->count * vec->element_size, items,
+           count * vec->element_size);
+    vec->count += count;
     return TL_OK;
+}
+tl_status vec_reserve(tl_vec *vec, size_t capacity) {
+    if (vec == NULL)
+        return TL_INVALID;
+    return capacity <= vec->capacity ? TL_OK : resize(vec, capacity);
+}
+void vec_clear(tl_vec *vec) {
+    if (vec != NULL)
+        vec->count = 0;
+}
+void vec_shrink(tl_vec *vec) {
+    if (vec == NULL || vec->count == vec->capacity || vec->count == 0)
+        return;
+    tl_status status = resize(vec, vec->count);
+    (void)status; /* keeping the larger block on failure is harmless */
 }
 void *vec_data(tl_vec *vec) {
     return vec == NULL ? NULL : vec->data;

@@ -9,6 +9,8 @@ typedef struct {
     bool is_root;
 } tl_store_entry;
 typedef tl_status (*tl_store_callback)(void *context, const tl_store_entry *entry);
+/** Receive one registered root path, borrowed until the callback returns. */
+typedef tl_status (*tl_store_root_callback)(void *context, const char *root);
 /** Open/create owned catalog at path, enabling WAL/foreign keys and schema v1.
  * out NULL on error: TL_INVALID, TL_NOMEM, TL_IO or TL_STATE (unknown schema).
  * Parent directory must exist. Connections are serialized by their caller. */
@@ -31,6 +33,14 @@ tl_status store_put(tl_store *store, const tl_crawl_entry *entry);
  * reached the end; no other scopes are pruned. Same errors as store_put. root
  * is borrowed for this call; transaction remains active. */
 tl_status store_prune(tl_store *store, const char *root);
+/** Keep every saved entry at or below path from pruning/forgetting in this
+ * transaction (e.g. a configured root that is currently unavailable). TL_STATE
+ * outside a transaction, TL_INVALID for relative paths, TL_IO for SQL. */
+tl_status store_keep(tl_store *store, const char *path);
+/** Unregister root and delete its saved entries that no scan in this
+ * transaction saw or kept (the root was removed from the configuration).
+ * Same errors as store_prune; the transaction remains active. */
+tl_status store_forget_root(tl_store *store, const char *root);
 /** Commit catalog changes and increment persisted catalog_gen; TL_STATE outside
  * transaction, TL_IO on failure (transaction remains available for rollback). */
 tl_status store_commit(tl_store *store);
@@ -40,4 +50,7 @@ tl_status store_rollback(tl_store *store);
  * copy it if retaining. Callback errors propagate, plus TL_INVALID/IO/NOMEM.
  * No queries may be active on this connection during callback. */
 tl_status store_load(tl_store *store, tl_store_callback callback, void *context);
+/** Stream registered roots in byte order. Callback errors propagate, plus
+ * TL_INVALID/TL_IO/TL_NOMEM. No queries may run on this connection meanwhile. */
+tl_status store_roots(tl_store *store, tl_store_root_callback callback, void *context);
 #endif

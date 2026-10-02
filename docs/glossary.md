@@ -27,6 +27,16 @@
 | **Resolve** | Validate a result's file id against the current catalog and retrieve its exact current path before launch. |
 | **Launch-event id** | Unique id preventing duplicate history records when recording a launch is retried. |
 | **Display string** | Valid-UTF-8 rendering of a path (invalid bytes → U+FFFD). Never used to open files. |
+| **Directory tree (`dirtree`)** | Every distinct parent directory stored once with its parent link and normalized name, so parent context is matched per directory, not per file. |
+| **Usable directory** | A directory that may serve as parent context: anything except the directories above every indexed root (e.g. `/home` for root `/home/user`). |
+| **Context mask** | Per-entry conservative mask of its basename and all ancestor directory names; a word with a symbol outside it can only match through a channel hit. |
+| **Repeat mask** | Per-entry mask of symbols occurring at least twice, so a word with a repeated symbol (`apps`) skips names that cannot contain it twice. |
+| **Strong-hit skip** | Answering a single-word query from channel hits alone when enough of them beat every possible subsequence score; exact, not an approximation. |
+| **Deferred candidates** | Multiword candidates matching the first word only through a parent directory; scored only if the results so far cannot already rule them out. |
+| **Symbol cache** | Results for the 36 one-symbol queries `a`–`z`/`0`–`9`, computed when an engine is sealed. |
+| **Allowlist (`allow`)** | Configured hidden or ignored directories that are indexed anyway; their hidden ancestors are traversed but not indexed. |
+| **Configuration sync** | `torchlight index` without roots: scan configured roots, keep unavailable ones, and forget roots no longer configured. |
+| **Known-item query** | A benchmark query generated from one target entry (exact, prefix, abbreviation, typo, partial typo or parent + name) and judged by whether that entry is retrieved. |
 | **Kept scope** | A path whose saved entries (itself and everything below it) a scan must not prune: an unreadable path, or a registered root nested in the scanned root that the scan did not visit. |
 | **Reconciliation** | A successful filesystem scan used to repair the catalog after missed events, startup, or watch exhaustion. |
 | **Candidate recall** | Fraction of labeled targets surviving retrieval before final scoring. |

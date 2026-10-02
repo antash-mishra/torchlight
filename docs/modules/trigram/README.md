@@ -1,43 +1,70 @@
 # trigram
 
-> **Status:** Planned
+> **Status:** Implemented (M1)
 > **Source:** `src/index/trigram.c` · **Header:** `include/torchlight/trigram.h`
 > **Tests:** `tests/unit/test_trigram.c`
 
 ## Purpose
-Trigram inverted index used by `lexical` for substring and typo-tolerant candidate retrieval. Only the trigram channel: prefix, subsequence and typo channels live in their own modules.
+Trigram inverted index used by `lexical` for typo-tolerant and incomplete-word
+candidate retrieval: a name qualifies when it shares enough three-symbol
+substrings with the query word (`projectntoes` → `projectNotes.md`). Only the
+trigram channel: prefix, subsequence and typo channels live in their own modules.
 
 ## Responsibilities
-_TODO after implementation._
+- Owns posting lists from trigram keys to slots and per-query scratch.
+- Does **not** score or rank: it reports `(slot, shared, total)` and `lexical`
+  turns that into a score. It does not read paths, only normalized views.
 
 ## Public API
-_TODO after implementation: functions and pointer ownership rules._
+| Function | Description |
+|---|---|
+| `trigram_create()` / `trigram_destroy()` | Owned empty index. |
+| `trigram_add(index, text, slot)` | Index the distinct trigrams of a view; slots strictly increasing. |
+| `trigram_finish(index)` | Build posting lists and seal. |
+| `trigram_scratch_create()` / `trigram_scratch_destroy()` | Per-querier counters. |
+| `trigram_query(index, scratch, query, hit, context)` | Report slots sharing at least half of the query's informative trigrams. |
+
+Text passed to `trigram_add` is not retained. Scratch belongs to one index and
+must be destroyed before it; one scratch per concurrent querier.
 
 ## Design
-- Byte-level trigrams over normalized names. Keys are collision-checked hashes
-  (or byte tuples); arbitrary Unicode codepoint triples do not pack into 32 bits.
-- Relaxed overlap: a path qualifies if it shares at least a configurable
-  fraction of query trigrams, not all of them.
-- Posting lists hold stable file ids. Benchmark compression and update cost
-  before choosing a representation.
-- Built privately and published as part of a catalog generation (`catalog_gen`).
+- **Keys** are three normalized symbols packed into a `uint64_t` (21 bits each):
+  every scalar value and opaque byte symbol is below 2^21, so keys are exact and
+  never collide. They use the same symbols as subsequence and edit matching.
+- **Build** interns keys through `tl_hashmap`, records `(trigram id, slot)`
+  pairs (8 bytes each) and counting-sorts them into one posting array. Pairs
+  arrive in slot order, so every posting list is sorted and duplicate-free.
+- **Relaxed overlap:** a slot is reported when it contains at least
+  `ceil(total / 2)` of the query's informative trigrams. Query trigrams absent
+  from the corpus count as informative (a typo usually creates some).
+- **Frequent trigrams** (in more than 1/8 of slots, floor 64) are ignored: they
+  barely narrow and their posting lists would dominate query time (`txt`).
+- **Minimum query:** three distinct trigrams (five symbols). Shorter words are
+  covered by prefix, subsequence and the typo channel.
 
 ## Data flow
-_TODO after implementation._
+`lexical_finish` adds every basename view; `lexical_query` queries each word and
+records `1000 + 1000 * shared / total` as the word's trigram score for the slot.
 
 ## Invariants
-_TODO after implementation._
+- Posting lists are sorted by slot and contain each slot at most once per key.
+- Scratch counters are all zero between queries, even after a callback error.
 
 ## Performance
-_TODO: complexity, memory use, `make bench` numbers with date._
+Build is linear in total trigrams plus a counting sort. Query cost is the sum of
+the informative posting lists plus the touched slots. Memory is 4 bytes per
+posting plus 8 bytes per distinct key; see [evaluation](../../evaluation.md).
 
 ## Testing
-_TODO after implementation._
+`make test` runs `tests/unit/test_trigram.c`: overlap counts, too-short and
+absent queries, slot-order validation, lifecycle errors and scratch reuse.
 
 ## Gotchas
-_TODO after implementation._
+- Trigrams span separators (`e.m` in `readme.md`), matching the query's own
+  separators.
+- Only basenames are indexed; parent directory names use prefix/subsequence
+  matching (see [lexical](../lexical/README.md)).
 
 ## Related
-- [lexical](../lexical/README.md)
-- [tokenize](../tokenize/README.md)
-- [store](../store/README.md)
+- [lexical](../lexical/README.md), [typo](../typo/README.md), [tokenize](../tokenize/README.md)
+- ADR: [0008](../../adr/0008-m1-completion-channels-directories-config.md)

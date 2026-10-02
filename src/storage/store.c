@@ -187,16 +187,6 @@ static tl_status run_cached(sqlite3_stmt *statement, const char *path) {
     sqlite3_clear_bindings(statement);
     return status;
 }
-static tl_status one_blob(tl_store *store, const char *sql, const char *path) {
-    sqlite3_stmt *statement = NULL;
-    if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
-        return TL_IO;
-    tl_status status = bind_blob(statement, 1, path, strlen(path));
-    if (status == TL_OK && sqlite3_step(statement) != SQLITE_DONE)
-        status = TL_IO;
-    int code = sqlite3_finalize(statement);
-    return code == SQLITE_OK ? status : TL_IO;
-}
 static tl_status bind_entry(sqlite3_stmt *statement, const tl_crawl_entry *entry) {
     const char *name = strrchr(entry->path, '/');
     name = name == NULL ? entry->path : name + 1;
@@ -241,18 +231,40 @@ tl_status store_put(tl_store *store, const tl_crawl_entry *entry) {
         status = run_cached(store->keep, entry->path);
     return status;
 }
-/* ?1 is the pruned root and ?2 its slash-terminated prefix. Step one keeps
- * other registered roots nested inside it that this scan never visited (e.g. an
- * explicitly indexed hidden directory): they are refreshed by their own scans.
- * Step two deletes unseen entries in scope, except at or below a kept path. */
+/* Statements below bind ?1 to a root and ?2 to its slash-terminated prefix.
+ * Deleting unseen entries in scope spares everything at or below a kept path. */
+#define DELETE_UNSEEN_IN_SCOPE                                                                     \
+    "DELETE FROM files WHERE (path=?1 OR substr(path,1,length(?2))=?2) "                           \
+    "AND path NOT IN(SELECT path FROM seen) AND NOT EXISTS(SELECT 1 FROM kept WHERE "              \
+    "files.path=kept.path OR (substr(files.path,1,length(kept.path))=kept.path "                   \
+    "AND substr(files.path,length(kept.path)+1,1)=X'2F'))"
+/* Pruning first keeps other registered roots nested inside it that this scan
+ * never visited (e.g. an explicitly indexed hidden directory): they are
+ * refreshed by their own scans. */
 static const char *const PRUNE_SQL[] = {
     "INSERT OR IGNORE INTO kept SELECT path FROM roots WHERE path<>?1 "
     "AND substr(path,1,length(?2))=?2 AND path NOT IN(SELECT path FROM seen)",
-    "DELETE FROM files WHERE (path=?1 OR substr(path,1,length(?2))=?2) "
-    "AND path NOT IN(SELECT path FROM seen) AND NOT EXISTS(SELECT 1 FROM kept WHERE "
-    "files.path=kept.path OR (substr(files.path,1,length(kept.path))=kept.path "
-    "AND substr(files.path,length(kept.path)+1,1)=X'2F'))"};
-tl_status store_prune(tl_store *store, const char *root) {
+    DELETE_UNSEEN_IN_SCOPE, "INSERT OR IGNORE INTO roots VALUES(?1)"};
+/* Forgetting unregisters the root, then drops what no scan in this
+ * transaction saw or kept. */
+static const char *const FORGET_SQL[] = {"DELETE FROM roots WHERE path=?1", DELETE_UNSEEN_IN_SCOPE};
+static tl_status run_statement(tl_store *store, const char *sql, const char *root,
+                               const char *prefix) {
+    sqlite3_stmt *statement = NULL;
+    if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
+        return TL_IO;
+    int parameters = sqlite3_bind_parameter_count(statement);
+    tl_status status = bind_blob(statement, 1, root, strlen(root));
+    if (status == TL_OK && parameters >= 2)
+        status = bind_blob(statement, 2, prefix, strlen(prefix));
+    if (status == TL_OK && sqlite3_step(statement) != SQLITE_DONE)
+        status = TL_IO;
+    if (sqlite3_finalize(statement) != SQLITE_OK)
+        status = TL_IO;
+    return status;
+}
+static tl_status run_scoped(tl_store *store, const char *const *statements, size_t count,
+                            const char *root) {
     if (store == NULL || root == NULL || root[0] != '/')
         return TL_INVALID;
     if (!store->transaction)
@@ -268,23 +280,23 @@ tl_status store_prune(tl_store *store, const char *root) {
         prefix[length++] = '/';
     prefix[length] = 0;
     tl_status status = TL_OK;
-    for (size_t i = 0; i < sizeof(PRUNE_SQL) / sizeof(PRUNE_SQL[0]) && status == TL_OK; i++) {
-        sqlite3_stmt *statement = NULL;
-        if (sqlite3_prepare_v2(store->db, PRUNE_SQL[i], -1, &statement, NULL) != SQLITE_OK)
-            status = TL_IO;
-        if (status == TL_OK)
-            status = bind_blob(statement, 1, root, strlen(root));
-        if (status == TL_OK)
-            status = bind_blob(statement, 2, prefix, length);
-        if (status == TL_OK && sqlite3_step(statement) != SQLITE_DONE)
-            status = TL_IO;
-        if (sqlite3_finalize(statement) != SQLITE_OK)
-            status = TL_IO;
-    }
+    for (size_t i = 0; i < count && status == TL_OK; i++)
+        status = run_statement(store, statements[i], root, prefix);
     free(prefix);
-    if (status == TL_OK)
-        status = one_blob(store, "INSERT OR IGNORE INTO roots VALUES(?1)", root);
     return status;
+}
+tl_status store_prune(tl_store *store, const char *root) {
+    return run_scoped(store, PRUNE_SQL, sizeof(PRUNE_SQL) / sizeof(PRUNE_SQL[0]), root);
+}
+tl_status store_forget_root(tl_store *store, const char *root) {
+    return run_scoped(store, FORGET_SQL, sizeof(FORGET_SQL) / sizeof(FORGET_SQL[0]), root);
+}
+tl_status store_keep(tl_store *store, const char *path) {
+    if (store == NULL || path == NULL || path[0] != '/')
+        return TL_INVALID;
+    if (!store->transaction)
+        return TL_STATE;
+    return run_cached(store->keep, path);
 }
 tl_status store_commit(tl_store *store) {
     if (store == NULL)
@@ -347,4 +359,34 @@ tl_status store_load(tl_store *store, tl_store_callback callback, void *context)
         status = TL_IO;
     int finalized = sqlite3_finalize(statement);
     return finalized == SQLITE_OK ? status : TL_IO;
+}
+tl_status store_roots(tl_store *store, tl_store_root_callback callback, void *context) {
+    if (store == NULL || callback == NULL)
+        return TL_INVALID;
+    sqlite3_stmt *statement = NULL;
+    if (sqlite3_prepare_v2(store->db, "SELECT path FROM roots ORDER BY path", -1, &statement,
+                           NULL) != SQLITE_OK)
+        return TL_IO;
+    tl_status status = TL_OK;
+    int code = SQLITE_DONE;
+    while (status == TL_OK && (code = sqlite3_step(statement)) == SQLITE_ROW) {
+        int length = sqlite3_column_bytes(statement, 0);
+        const void *bytes = sqlite3_column_blob(statement, 0);
+        if (length <= 0 || bytes == NULL || memchr(bytes, 0, (size_t)length) != NULL) {
+            status = TL_IO; /* corrupt row: roots are nonempty, NUL-free paths */
+            break;
+        }
+        char *path = malloc((size_t)length + 1);
+        if (path == NULL) {
+            status = TL_NOMEM;
+            break;
+        }
+        memcpy(path, bytes, (size_t)length);
+        path[length] = 0;
+        status = callback(context, path);
+        free(path);
+    }
+    if (status == TL_OK && code != SQLITE_DONE)
+        status = TL_IO;
+    return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
 }

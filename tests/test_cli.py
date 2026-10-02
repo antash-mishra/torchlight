@@ -1,18 +1,70 @@
 """End-to-end CLI/catalog fixtures including raw bytes and failed refreshes."""
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 
 binary = str(Path(sys.argv[1]).resolve())
+# Never read the developer's real configuration or catalog.
+isolated = tempfile.mkdtemp(prefix="torchlight-cli-env-")
+base_env = dict(os.environ, XDG_CONFIG_HOME=isolated, XDG_DATA_HOME=isolated)
 
-def run(*args, success=True, env=None):
+def run_full(*args, success=True, env=None):
     result = subprocess.run([binary, *args], stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, env=env, check=False)
+                            stderr=subprocess.PIPE, env=env or base_env, check=False)
     assert (result.returncode == 0) == success, result.stderr.decode(errors="replace")
     assert b"AddressSanitizer" not in result.stderr and b"runtime error:" not in result.stderr
-    return result.stdout
+    return result
+
+def run(*args, success=True, env=None):
+    return run_full(*args, success=success, env=env).stdout
+
+def config_sync(temporary):
+    """`index` without roots syncs the catalog to the configuration file."""
+    home = Path(temporary) / "sync"
+    for directory in ["a/sub", "a/.secret", "a/.config/nvim", "b", "c"]:
+        (home / directory).mkdir(parents=True)
+    for file in ["a/one.txt", "a/sub/two.txt", "a/.secret/hidden.txt",
+                 "a/.config/nvim/init.lua", "b/three.txt", "c/four.txt"]:
+        (home / file).write_bytes(b"")
+    database, config = home / "catalog.db", home / "config"
+    def catalog():
+        return set(run("query", "--db", str(database), "--null", "--limit", "1000",
+                       "/").split(b"\0")[:-1])
+    def index():
+        return run_full("index", "--db", str(database), "--config", str(config)).stderr
+    # Duplicate and covered roots are scanned once; allowlisted hidden dirs are indexed.
+    config.write_text(f"root = {home}/a\nroot = {home}/a/sub\nroot = {home}/a/\n"
+                      f"# comment\nallow = {home}/a/.config/nvim\nroot = {home}/b\n")
+    index()
+    paths = catalog()
+    assert os.fsencode(home / "a/.config/nvim/init.lua") in paths
+    assert os.fsencode(home / "a/.secret/hidden.txt") not in paths
+    assert os.fsencode(home / "a/.config") not in paths
+    assert os.fsencode(home / "b/three.txt") in paths
+    assert len([p for p in paths if p.endswith(b"two.txt")]) == 1
+    # An unavailable configured root keeps the run going and keeps saved entries.
+    config.write_text(f"root = {home}/a\nroot = {home}/b\nroot = {home}/missing\n")
+    assert b"root unavailable" in index()
+    assert os.fsencode(home / "b/three.txt") in catalog()
+    # Removing a root from the configuration forgets it and its entries.
+    config.write_text(f"root = {home}/a\nroot = {home}/c\n")
+    assert b"Forgot" in index()
+    paths = catalog()
+    assert os.fsencode(home / "b/three.txt") not in paths
+    assert os.fsencode(home / "c/four.txt") in paths
+    assert os.fsencode(home / "a/.config/nvim/init.lua") not in paths  # no longer allowed
+    # Malformed and unknown entries fail with a message and change nothing.
+    before = catalog()
+    config.write_text("root = /x\nthis line is wrong\n")
+    result = run_full("index", "--db", str(database), "--config", str(config), success=False)
+    assert b"line 2" in result.stderr
+    config.write_text("mystery = 1\n")
+    result = run_full("index", "--db", str(database), "--config", str(config), success=False)
+    assert b"mystery" in result.stderr
+    assert catalog() == before
 
 with tempfile.TemporaryDirectory(prefix="torchlight-cli-") as temporary:
     root = Path(temporary) / "root"
@@ -80,11 +132,13 @@ with tempfile.TemporaryDirectory(prefix="torchlight-cli-") as temporary:
     inside_paths = run("query", "--db", str(inside_db), "--null", "--limit", "1000", "/")
     assert os.fsencode(inside_db) not in inside_paths
     # Defaults honor XDG and never include Torchlight's own state.
-    env = dict(os.environ, XDG_DATA_HOME=str(root / "state" / ".." / "state"))
+    env = dict(base_env, XDG_DATA_HOME=str(root / "state" / ".." / "state"))
     run("index", str(root), env=env)
     state_db = root / "state" / "torchlight" / "catalog.db"
     assert b"/state/torchlight" not in run("query", "--db", str(state_db), "--null", "--limit", "1000", "/")
+    config_sync(temporary)
     for invalid in ["0", "-1", "1001", "1x", "999999999999999999999"]:
         run("query", "--db", str(database), "--limit", invalid, "x", success=False)
     run("query", "--db", str(database), "x" * 257, success=False)
+shutil.rmtree(isolated)
 print("CLI integration tests passed.")

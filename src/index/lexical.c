@@ -1,38 +1,36 @@
-/* Prefix/subsequence orchestration with allocation-free bounded top-k selection.
- * Words match a basename, one parent directory name, or (when they contain '/')
- * the full path. */
-#include "torchlight/lexical.h"
-#include "torchlight/fuzzy.h"
-#include "torchlight/prefix.h"
-#include "torchlight/vec.h"
+/* Lexical engine construction: copies raw paths, interns parent directories,
+ * normalizes basenames into shared arenas, then builds the prefix, trigram and
+ * typo channels plus path ordering when sealed. Querying is in lexical_query.c. */
+#include "lexical_internal.h"
 #include <stdlib.h>
 #include <string.h>
-enum {
-    LEXICAL_BASENAME_BONUS = 2000,
-    LEXICAL_EXACT_BASENAME = 10000000,
-    LEXICAL_EXACT_PATH = 20000000,
-    LEXICAL_ROOT_SCORE = 1
-};
-struct entry {
-    uint64_t id;
-    char *path;
-    tl_tokenized *text;
-    tl_text view;
-    uint64_t basename_mask;
-    bool is_root;
-};
-struct tl_lexical {
-    tl_vec *entries;
-    tl_prefix *prefix;
-    bool finished, failed;
-};
-struct tl_lexical_workspace {
-    const tl_lexical *engine;
-    int *scores, *totals;
-    uint32_t symbols[LEXICAL_QUERY_BYTES * 4];
-    uint8_t boundaries[LEXICAL_QUERY_BYTES * 4];
-    size_t offsets[LEXICAL_QUERY_BYTES * 4];
-};
+/* Normalized symbols per raw byte never exceed this (see tokenize.h). */
+enum { LEXICAL_SYMBOLS_PER_BYTE = 4 };
+static tl_status create_columns(tl_lexical *engine) {
+    struct {
+        tl_vec **vec;
+        size_t size;
+    } columns[] = {{&engine->ids, sizeof(uint64_t)},
+                   {&engine->repeats, sizeof(uint64_t)},
+                   {&engine->masks, sizeof(uint64_t)},
+                   {&engine->path_offsets, sizeof(uint32_t)},
+                   {&engine->name_offsets, sizeof(uint32_t)},
+                   {&engine->name_lengths, sizeof(uint32_t)},
+                   {&engine->dirs, sizeof(uint32_t)},
+                   {&engine->roots, sizeof(uint32_t)},
+                   {&engine->paths, 1},
+                   {&engine->symbols, sizeof(uint32_t)},
+                   {&engine->boundaries, 1},
+                   {&engine->scratch_symbols, sizeof(uint32_t)},
+                   {&engine->scratch_boundaries, 1},
+                   {&engine->scratch_offsets, sizeof(size_t)}};
+    for (size_t i = 0; i < sizeof(columns) / sizeof(columns[0]); i++) {
+        tl_status status = vec_create(columns[i].size, columns[i].vec);
+        if (status != TL_OK)
+            return status;
+    }
+    return TL_OK;
+}
 tl_status lexical_create(tl_lexical **out) {
     if (out == NULL)
         return TL_INVALID;
@@ -40,9 +38,17 @@ tl_status lexical_create(tl_lexical **out) {
     tl_lexical *engine = calloc(1, sizeof(*engine));
     if (engine == NULL)
         return TL_NOMEM;
-    tl_status status = vec_create(sizeof(struct entry), &engine->entries);
+    tl_status status = create_columns(engine);
+    if (status == TL_OK)
+        status = dirtree_create(&engine->tree);
     if (status == TL_OK)
         status = prefix_create(&engine->prefix);
+    if (status == TL_OK)
+        status = prefix_create(&engine->dir_prefix);
+    if (status == TL_OK)
+        status = trigram_create(&engine->trigram);
+    if (status == TL_OK)
+        status = typo_create(&engine->typo);
     if (status != TL_OK) {
         lexical_destroy(engine);
         return status;
@@ -53,273 +59,323 @@ tl_status lexical_create(tl_lexical **out) {
 void lexical_destroy(tl_lexical *engine) {
     if (engine == NULL)
         return;
-    const struct entry *entries = vec_const_data(engine->entries);
+    tl_vec *columns[] = {engine->ids,
+                         engine->masks,
+                         engine->repeats,
+                         engine->path_offsets,
+                         engine->name_offsets,
+                         engine->name_lengths,
+                         engine->dirs,
+                         engine->roots,
+                         engine->paths,
+                         engine->symbols,
+                         engine->boundaries,
+                         engine->scratch_symbols,
+                         engine->scratch_boundaries,
+                         engine->scratch_offsets};
+    for (size_t i = 0; i < sizeof(columns) / sizeof(columns[0]); i++)
+        vec_destroy(columns[i]);
+    dirtree_destroy(engine->tree);
     prefix_destroy(engine->prefix);
-    for (size_t i = 0; i < vec_count(engine->entries); i++) {
-        tokenize_destroy(entries[i].text);
-        free(entries[i].path);
-    }
-    vec_destroy(engine->entries);
+    prefix_destroy(engine->dir_prefix);
+    trigram_destroy(engine->trigram);
+    typo_destroy(engine->typo);
+    free(engine->symbol_results);
+    free(engine->contexts);
+    free(engine->usable);
+    free(engine->path_order);
+    free(engine->path_rank);
     free(engine);
 }
+/* Normalize name into the scratch vectors; text borrows them until next use. */
+static tl_status normalize_name(tl_lexical *engine, const char *name, size_t length,
+                                tl_text *text) {
+    if (length > (SIZE_MAX - 1) / LEXICAL_SYMBOLS_PER_BYTE)
+        return TL_LIMIT;
+    size_t capacity = length * LEXICAL_SYMBOLS_PER_BYTE + 1;
+    tl_status status = vec_reserve(engine->scratch_symbols, capacity);
+    if (status == TL_OK)
+        status = vec_reserve(engine->scratch_boundaries, capacity);
+    if (status == TL_OK)
+        status = vec_reserve(engine->scratch_offsets, capacity);
+    if (status == TL_OK)
+        status = tokenize_into(name, length, vec_data(engine->scratch_symbols),
+                               vec_data(engine->scratch_boundaries),
+                               vec_data(engine->scratch_offsets), capacity, text);
+    return status;
+}
+static tl_status append_columns(tl_lexical *engine, uint64_t id, uint32_t dir, tl_text name,
+                                const char *path, size_t length) {
+    size_t path_offset = vec_count(engine->paths), name_offset = vec_count(engine->symbols);
+    if (path_offset > UINT32_MAX || name_offset > UINT32_MAX || name.length > UINT32_MAX ||
+        length >= UINT32_MAX)
+        return TL_LIMIT;
+    uint32_t path32 = (uint32_t)path_offset, name32 = (uint32_t)name_offset,
+             length32 = (uint32_t)name.length;
+    tl_status status = vec_append_array(engine->paths, path, length + 1);
+    if (status == TL_OK)
+        status = vec_append_array(engine->symbols, name.symbols, name.length);
+    if (status == TL_OK)
+        status = vec_append_array(engine->boundaries, name.boundaries, name.length);
+    uint64_t repeats = lexical_repeat_mask(name.symbols, name.length);
+    if (status == TL_OK)
+        status = vec_append(engine->masks, &name.mask);
+    if (status == TL_OK)
+        status = vec_append(engine->repeats, &repeats);
+    if (status == TL_OK)
+        status = vec_append(engine->ids, &id);
+    if (status == TL_OK)
+        status = vec_append(engine->path_offsets, &path32);
+    if (status == TL_OK)
+        status = vec_append(engine->name_offsets, &name32);
+    if (status == TL_OK)
+        status = vec_append(engine->name_lengths, &length32);
+    if (status == TL_OK)
+        status = vec_append(engine->dirs, &dir);
+    return status;
+}
+static tl_status append_entry(tl_lexical *engine, uint64_t id, const char *path, bool is_root) {
+    size_t length = strlen(path), slot = engine->count;
+    if (slot >= UINT32_MAX)
+        return TL_LIMIT;
+    const char *slash = strrchr(path, '/');
+    size_t parent_length = (size_t)(slash - path);
+    uint32_t dir = DIRTREE_ROOT;
+    tl_status status = dirtree_intern(engine->tree, path, parent_length, &dir);
+    tl_text name = {0};
+    if (status == TL_OK)
+        status = normalize_name(engine, slash + 1, length - parent_length - 1, &name);
+    if (status == TL_OK)
+        status = append_columns(engine, id, dir, name, path, length);
+    uint32_t slot32 = (uint32_t)slot;
+    if (status == TL_OK && is_root)
+        status = vec_append(engine->roots, &slot32);
+    if (status == TL_OK)
+        engine->count++;
+    return status;
+}
 tl_status lexical_add(tl_lexical *engine, uint64_t id, const char *path, bool is_root) {
-    if (engine == NULL || path == NULL || path[0] == 0 || id == 0)
+    if (engine == NULL)
         return TL_INVALID;
     if (engine->finished || engine->failed)
         return TL_STATE;
-    /* M1 append contract uses monotonically assigned ids, avoiding O(n^2) checks. */
-    const struct entry *entries = vec_const_data(engine->entries);
-    size_t count = vec_count(engine->entries);
-    if (count != 0 && entries[count - 1].id >= id)
+    if (path == NULL || path[0] != '/' || id == 0)
         return TL_INVALID;
-    struct entry entry = {.id = id, .is_root = is_root};
-    entry.path = strdup(path);
-    if (entry.path == NULL)
+    /* M1 append contract uses monotonically assigned ids, avoiding O(n^2) checks. */
+    const uint64_t *ids = vec_const_data(engine->ids);
+    if (engine->count != 0 && ids[engine->count - 1] >= id)
+        return TL_INVALID;
+    tl_status status = append_entry(engine, id, path, is_root);
+    if (status != TL_OK)
+        engine->failed = true; /* columns may be partially appended */
+    return status;
+}
+size_t lexical_count(const tl_lexical *engine) {
+    return engine == NULL ? 0 : engine->count;
+}
+/* Intern each root's own directory, then mark directories strictly above all
+ * roots unusable as parent context, unless they are inside another root. */
+static tl_status build_usable(tl_lexical *engine) {
+    const uint32_t *roots = vec_const_data(engine->roots);
+    size_t root_count = vec_count(engine->roots);
+    tl_vec *root_nodes = NULL;
+    tl_status status = vec_create(sizeof(uint32_t), &root_nodes);
+    for (size_t i = 0; i < root_count && status == TL_OK; i++) {
+        const char *path = (const char *)vec_const_data(engine->paths) +
+                           ((const uint32_t *)vec_const_data(engine->path_offsets))[roots[i]];
+        uint32_t node = DIRTREE_ROOT;
+        status = dirtree_intern(engine->tree, path, strlen(path), &node);
+        if (status == TL_OK)
+            status = vec_append(root_nodes, &node);
+    }
+    size_t nodes = dirtree_count(engine->tree);
+    uint8_t *inside = calloc(nodes, 1);
+    engine->usable = malloc(nodes);
+    if (status == TL_OK && (inside == NULL || engine->usable == NULL))
+        status = TL_NOMEM;
+    if (status == TL_OK) {
+        memset(engine->usable, 1, nodes);
+        const uint32_t *marked = vec_const_data(root_nodes);
+        for (size_t i = 0; i < vec_count(root_nodes); i++) {
+            inside[marked[i]] = 1;
+            for (uint32_t up = dirtree_parent(engine->tree, marked[i]); up != DIRTREE_NONE;
+                 up = dirtree_parent(engine->tree, up))
+                engine->usable[up] = 0;
+        }
+        /* Parents precede children, so one forward pass propagates "inside". */
+        for (uint32_t node = 1; node < nodes; node++) {
+            inside[node] |= inside[dirtree_parent(engine->tree, node)];
+            if (inside[node])
+                engine->usable[node] = 1;
+        }
+    }
+    free(inside);
+    vec_destroy(root_nodes);
+    return status;
+}
+struct path_key {
+    const char *path;
+    uint64_t id;
+    uint32_t slot;
+};
+static int compare_paths(const void *left, const void *right) {
+    const struct path_key *a = left, *b = right;
+    int order = strcmp(a->path, b->path);
+    if (order != 0)
+        return order;
+    return a->id == b->id ? 0 : a->id < b->id ? -1 : 1;
+}
+/* Sort slots by raw path bytes (then id) once, so queries can find exact raw
+ * paths by binary search and break score ties by rank instead of strcmp. */
+static tl_status build_path_order(tl_lexical *engine) {
+    size_t count = engine->count, slots = count == 0 ? 1 : count;
+    struct path_key *keys = malloc(slots * sizeof(*keys));
+    engine->path_order = malloc(slots * sizeof(uint32_t));
+    engine->path_rank = malloc(slots * sizeof(uint32_t));
+    if (keys == NULL || engine->path_order == NULL || engine->path_rank == NULL) {
+        free(keys);
         return TL_NOMEM;
-    tl_status status = tokenize_create(path, &entry.text);
-    if (status != TL_OK)
-        goto cleanup;
-    entry.view = tokenize_view(entry.text);
-    for (size_t i = entry.view.basename; i < entry.view.length; i++)
-        entry.basename_mask |= tokenize_symbol_mask(entry.view.symbols[i]);
-    status = vec_append(engine->entries, &entry);
-    if (status != TL_OK)
-        goto cleanup;
-    status = prefix_add(engine->prefix, entry.view, count);
-    if (status != TL_OK)
-        engine->failed = true;
+    }
+    const struct lexical_columns *columns = &engine->columns;
+    for (size_t i = 0; i < count; i++)
+        keys[i] = (struct path_key){columns->paths + columns->path_offsets[i], columns->ids[i],
+                                    (uint32_t)i};
+    if (count > 1)
+        qsort(keys, count, sizeof(*keys), compare_paths);
+    for (size_t rank = 0; rank < count; rank++) {
+        engine->path_order[rank] = keys[rank].slot;
+        engine->path_rank[keys[rank].slot] = (uint32_t)rank;
+    }
+    free(keys);
+    return TL_OK;
+}
+static tl_status build_entry_channels(tl_lexical *engine) {
+    tl_status status = TL_OK;
+    for (size_t slot = 0; slot < engine->count && status == TL_OK; slot++) {
+        tl_text name = lexical_name(engine, slot);
+        if (name.length == 0)
+            continue;
+        status = prefix_add(engine->prefix, name, slot);
+        if (status == TL_OK)
+            status = trigram_add(engine->trigram, name, slot);
+        if (status == TL_OK)
+            status = typo_add(engine->typo, name, slot);
+    }
+    if (status == TL_OK)
+        status = prefix_finish(engine->prefix);
+    if (status == TL_OK)
+        status = trigram_finish(engine->trigram);
+    if (status == TL_OK)
+        status = typo_finish(engine->typo);
     return status;
-cleanup:
-    tokenize_destroy(entry.text);
-    free(entry.path);
+}
+static tl_status build_directory_channel(tl_lexical *engine) {
+    size_t nodes = dirtree_count(engine->tree);
+    tl_status status = TL_OK;
+    for (uint32_t node = 1; node < nodes && status == TL_OK; node++) {
+        tl_text name = dirtree_name(engine->tree, node);
+        if (name.length != 0 && engine->usable[node])
+            status = prefix_add(engine->dir_prefix, name, node);
+    }
+    return status == TL_OK ? prefix_finish(engine->dir_prefix) : status;
+}
+static void seal_columns(tl_lexical *engine) {
+    tl_vec *columns[] = {engine->ids,          engine->masks,        engine->repeats,
+                         engine->path_offsets, engine->name_offsets, engine->name_lengths,
+                         engine->dirs,         engine->roots,        engine->paths,
+                         engine->symbols,      engine->boundaries};
+    for (size_t i = 0; i < sizeof(columns) / sizeof(columns[0]); i++)
+        vec_shrink(columns[i]);
+    engine->columns = (struct lexical_columns){.ids = vec_const_data(engine->ids),
+                                               .masks = vec_const_data(engine->masks),
+                                               .repeats = vec_const_data(engine->repeats),
+                                               .path_offsets = vec_const_data(engine->path_offsets),
+                                               .name_offsets = vec_const_data(engine->name_offsets),
+                                               .name_lengths = vec_const_data(engine->name_lengths),
+                                               .dirs = vec_const_data(engine->dirs),
+                                               .roots = vec_const_data(engine->roots),
+                                               .paths = vec_const_data(engine->paths),
+                                               .symbols = vec_const_data(engine->symbols),
+                                               .boundaries = vec_const_data(engine->boundaries)};
+    engine->root_count = vec_count(engine->roots);
+    size_t longest = 0;
+    for (size_t slot = 0; slot < engine->count; slot++) {
+        size_t length = dirtree_path_length(engine->tree, engine->columns.dirs[slot]) + 1 +
+                        engine->columns.name_lengths[slot];
+        if (length > longest)
+            longest = length;
+    }
+    engine->max_path_symbols = longest;
+    vec_destroy(engine->scratch_symbols);
+    vec_destroy(engine->scratch_boundaries);
+    vec_destroy(engine->scratch_offsets);
+    engine->scratch_symbols = engine->scratch_boundaries = engine->scratch_offsets = NULL;
+}
+/* Run every cached one-symbol query once through the normal query path. */
+static tl_status build_symbol_results(tl_lexical *engine) {
+    size_t bytes = 0;
+    tl_status status =
+        tl_size_multiply(LEXICAL_SYMBOL_QUERIES * LEXICAL_MAX_RESULTS, sizeof(tl_result), &bytes);
+    if (status != TL_OK)
+        return status;
+    engine->symbol_results = malloc(bytes);
+    if (engine->symbol_results == NULL)
+        return TL_NOMEM;
+    tl_lexical_workspace *workspace = NULL;
+    status = lexical_workspace_create(engine, &workspace);
+    for (size_t i = 0; i < LEXICAL_SYMBOL_QUERIES && status == TL_OK; i++) {
+        char query[2] = {(char)lexical_symbol_query(i), 0};
+        status = lexical_query(engine, workspace, query,
+                               engine->symbol_results + i * LEXICAL_MAX_RESULTS,
+                               LEXICAL_MAX_RESULTS, &engine->symbol_counts[i]);
+    }
+    lexical_workspace_destroy(workspace);
+    engine->symbols_ready = status == TL_OK;
     return status;
+}
+/* Per entry, every symbol of its basename or any ancestor directory name. An
+ * entry whose context lacks a symbol of a word can match that word only
+ * through a channel hit, so scans reject it with one load. */
+static tl_status build_contexts(tl_lexical *engine) {
+    engine->contexts = malloc((engine->count == 0 ? 1 : engine->count) * sizeof(uint64_t));
+    if (engine->contexts == NULL)
+        return TL_NOMEM;
+    for (size_t slot = 0; slot < engine->count; slot++)
+        engine->contexts[slot] = engine->columns.masks[slot] |
+                                 dirtree_path_mask(engine->tree, engine->columns.dirs[slot]);
+    engine->columns.contexts = engine->contexts;
+    return TL_OK;
 }
 tl_status lexical_finish(tl_lexical *engine) {
     if (engine == NULL)
         return TL_INVALID;
     if (engine->finished || engine->failed)
         return TL_STATE;
-    tl_status status = prefix_finish(engine->prefix);
+    tl_status status = build_usable(engine);
     if (status == TL_OK)
-        engine->finished = true;
+        status = dirtree_finish(engine->tree);
+    if (status == TL_OK) {
+        seal_columns(engine);
+        status = build_path_order(engine);
+    }
+    if (status == TL_OK) {
+        status = build_contexts(engine);
+    }
+    if (status == TL_OK)
+        status = build_entry_channels(engine);
+    if (status == TL_OK)
+        status = build_directory_channel(engine);
+    if (status != TL_OK) {
+        engine->failed = true;
+        return status;
+    }
+    engine->columns.path_order = engine->path_order;
+    engine->columns.path_rank = engine->path_rank;
+    engine->finished = true;
+    status = build_symbol_results(engine);
+    if (status != TL_OK) {
+        engine->finished = false;
+        engine->failed = true;
+    }
     return status;
-}
-size_t lexical_count(const tl_lexical *engine) {
-    return engine == NULL ? 0 : vec_count(engine->entries);
-}
-tl_status lexical_workspace_create(const tl_lexical *engine, tl_lexical_workspace **out) {
-    if (out == NULL)
-        return TL_INVALID;
-    *out = NULL;
-    if (engine == NULL)
-        return TL_INVALID;
-    if (!engine->finished)
-        return TL_STATE;
-    size_t count = lexical_count(engine), bytes = 0;
-    tl_status status = tl_size_multiply(count == 0 ? 1 : count, sizeof(int), &bytes);
-    if (status != TL_OK)
-        return status;
-    tl_lexical_workspace *workspace = calloc(1, sizeof(*workspace));
-    if (workspace == NULL)
-        return TL_NOMEM;
-    workspace->scores = malloc(bytes);
-    workspace->totals = malloc(bytes);
-    if (workspace->scores == NULL || workspace->totals == NULL) {
-        lexical_workspace_destroy(workspace);
-        return TL_NOMEM;
-    }
-    workspace->engine = engine;
-    *out = workspace;
-    return TL_OK;
-}
-void lexical_workspace_destroy(tl_lexical_workspace *workspace) {
-    if (workspace == NULL)
-        return;
-    free(workspace->scores);
-    free(workspace->totals);
-    free(workspace);
-}
-static tl_text slice(tl_text text, size_t start, size_t end) {
-    tl_text view = {.symbols = text.symbols + start,
-                    .boundaries = text.boundaries + start,
-                    .length = end - start};
-    for (size_t i = 0; i < view.length; i++)
-        view.mask |= tokenize_symbol_mask(view.symbols[i]);
-    return view;
-}
-static tl_text basename_view(const struct entry *entry) {
-    tl_text text = entry->view;
-    text.symbols += text.basename;
-    text.boundaries += text.basename;
-    text.byte_offsets += text.basename;
-    text.length -= text.basename;
-    text.basename = 0;
-    text.mask = entry->basename_mask;
-    return text;
-}
-/* Subsequence score within the nearest parent directory name that matches.
- * Matching across components would let letters scattered over a long absolute
- * path (e.g. "hp" in /home/user/project) match nearly every entry. Stopping at
- * the nearest match favours close context and avoids scanning every ancestor;
- * strong parent matches are already scored higher by parent token prefixes. */
-static tl_status parent_score(const struct entry *entry, tl_text word, int *out) {
-    *out = 0;
-    tl_text path = entry->view;
-    if ((path.mask & word.mask) != word.mask)
-        return TL_OK;
-    /* basename follows the last '/', so each component ends just before a '/'. */
-    for (size_t end = path.basename; end > 0 && *out == 0;) {
-        size_t component_end = end - 1, start = component_end;
-        while (start > 0 && path.symbols[start - 1] != '/')
-            start--;
-        /* The whole-path mask is a superset of the component's, so it remains a
-         * conservative filter and avoids rebuilding a mask per component. */
-        tl_text component = {.symbols = path.symbols + start,
-                             .boundaries = path.boundaries + start,
-                             .length = component_end - start,
-                             .mask = path.mask};
-        if (component.length != 0) {
-            tl_status status = fuzzy_score(component, word, out);
-            if (status != TL_OK)
-                return status;
-        }
-        end = start;
-    }
-    return TL_OK;
-}
-static bool contains_slash(tl_text word) {
-    for (size_t i = 0; i < word.length; i++) {
-        if (word.symbols[i] == '/')
-            return true;
-    }
-    return false;
-}
-/* Score one word for an entry: basename subsequences first; otherwise a word
- * containing '/' asks for path structure and matches across the full path,
- * while any other word must match within one parent directory name. */
-static tl_status entry_word_score(const struct entry *entry, tl_text word, bool path_word,
-                                  int *out) {
-    tl_status status = fuzzy_score(basename_view(entry), word, out);
-    if (status != TL_OK || *out > 0) {
-        if (*out > 0)
-            *out += LEXICAL_BASENAME_BONUS;
-        return status;
-    }
-    return path_word ? fuzzy_score(entry->view, word, out) : parent_score(entry, word, out);
-}
-static tl_status score_word(const tl_lexical *engine, tl_lexical_workspace *workspace,
-                            tl_text word) {
-    size_t count = lexical_count(engine);
-    memset(workspace->scores, 0, count * sizeof(int));
-    tl_status status = prefix_query(engine->prefix, word, workspace->scores, count);
-    if (status != TL_OK)
-        return status;
-    const struct entry *entries = vec_const_data(engine->entries);
-    bool path_word = contains_slash(word);
-    for (size_t i = 0; i < count; i++) {
-        /* Every word must match, so an entry rejected by an earlier word is done. */
-        if (workspace->totals[i] < 0)
-            continue;
-        int score = 0;
-        status = entry_word_score(&entries[i], word, path_word, &score);
-        if (status != TL_OK)
-            return status;
-        if (score > workspace->scores[i])
-            workspace->scores[i] = score;
-        if (workspace->scores[i] == 0)
-            workspace->totals[i] = -1;
-        else
-            workspace->totals[i] += workspace->scores[i];
-    }
-    return TL_OK;
-}
-static bool whitespace(uint32_t symbol) {
-    return symbol == ' ' || symbol == '\t' || symbol == '\n' || symbol == '\r';
-}
-static tl_status score_words(const tl_lexical *engine, tl_lexical_workspace *workspace,
-                             tl_text query, size_t *word_count) {
-    *word_count = 0;
-    memset(workspace->totals, 0, lexical_count(engine) * sizeof(int));
-    for (size_t start = 0; start < query.length;) {
-        if (whitespace(query.symbols[start])) {
-            start++;
-            continue;
-        }
-        size_t end = start + 1;
-        while (end < query.length && !whitespace(query.symbols[end]))
-            end++;
-        tl_status status = score_word(engine, workspace, slice(query, start, end));
-        if (status != TL_OK)
-            return status;
-        (*word_count)++;
-        start = end;
-    }
-    return TL_OK;
-}
-static bool same_symbols(tl_text a, tl_text b) {
-    return a.length == b.length && memcmp(a.symbols, b.symbols, a.length * sizeof(uint32_t)) == 0;
-}
-static bool better(tl_result a, tl_result b) {
-    if (a.score != b.score)
-        return a.score > b.score;
-    int order = strcmp(a.path, b.path);
-    return order == 0 ? a.id < b.id : order < 0;
-}
-static void insert_result(tl_result result, tl_result *results, size_t capacity, size_t *count) {
-    if (*count == capacity && !better(result, results[*count - 1]))
-        return;
-    size_t position = *count < capacity ? (*count)++ : capacity - 1;
-    while (position > 0 && better(result, results[position - 1])) {
-        results[position] = results[position - 1];
-        position--;
-    }
-    results[position] = result;
-}
-static void collect(const tl_lexical *engine, tl_lexical_workspace *workspace,
-                    const char *raw_query, tl_text query, size_t words, tl_result *results,
-                    size_t capacity, size_t *count) {
-    const struct entry *entries = vec_const_data(engine->entries);
-    size_t entry_count = lexical_count(engine);
-    for (size_t i = 0; i < entry_count; i++) {
-        int score = workspace->totals[i];
-        if (words == 0) {
-            if (!entries[i].is_root)
-                continue;
-            score = LEXICAL_ROOT_SCORE;
-        }
-        if (words != 0 && same_symbols(basename_view(&entries[i]), query))
-            score = LEXICAL_EXACT_BASENAME;
-        if (strcmp(entries[i].path, raw_query) == 0)
-            score = LEXICAL_EXACT_PATH;
-        if (score <= 0)
-            continue;
-        insert_result((tl_result){entries[i].id, entries[i].path, score}, results, capacity, count);
-    }
-}
-tl_status lexical_query(const tl_lexical *engine, tl_lexical_workspace *workspace,
-                        const char *query, tl_result *results, size_t capacity, size_t *out_count) {
-    if (out_count == NULL)
-        return TL_INVALID;
-    *out_count = 0;
-    if (engine == NULL || workspace == NULL || workspace->engine != engine || query == NULL ||
-        results == NULL || capacity == 0)
-        return TL_INVALID;
-    if (!engine->finished)
-        return TL_STATE;
-    if (capacity > LEXICAL_MAX_RESULTS)
-        return TL_LIMIT;
-    size_t length = strnlen(query, LEXICAL_QUERY_BYTES + 1);
-    if (length > LEXICAL_QUERY_BYTES)
-        return TL_LIMIT;
-    tl_text text = {0};
-    tl_status status = tokenize_into(query, length, workspace->symbols, workspace->boundaries,
-                                     workspace->offsets, LEXICAL_QUERY_BYTES * 4, &text);
-    if (status != TL_OK)
-        return status;
-    size_t words = 0;
-    status = score_words(engine, workspace, text, &words);
-    if (status != TL_OK)
-        return status;
-    collect(engine, workspace, query, text, words, results, capacity, out_count);
-    return TL_OK;
 }

@@ -10,17 +10,19 @@ Start here. Read in this order:
 
 ## Implementation status
 
-M1's first prefix/subsequence increment is implemented: local index/query CLI,
-SQLite catalog, crawler, Unicode/raw-byte tokenization and warm-engine benchmark.
-Trigram/typo retrieval and performance acceptance remain open. See the root
-[README](../README.md) for commands and [0006](adr/0006-m1-prefix-subsequence-baseline.md)
-for the incremental scope.
+M1's lexical engine and CLI are implemented: prefix, subsequence, trigram and
+typo channels with edit scoring, interned parent directories, incremental
+narrowing, configuration with allowlists, root deduplication and sync, and a
+benchmark with labeled tuning/held-out queries on synthetic and real corpora.
+The 5 ms p95 latency gate is met at 50k paths but not yet at 500k; see
+[evaluation](evaluation.md). See the root [README](../README.md) for commands and
+[0008](adr/0008-m1-completion-channels-directories-config.md) for the design.
 
 ## Module index
 
 | Layer | Module | Doc |
 |---|---|---|
-| core | Utilities (arena, vec, hashmap, log) | [core](modules/core/README.md) |
+| core | Utilities (vec, hashmap; arena and log planned) | [core](modules/core/README.md) |
 | core | Configuration | [config](modules/config/README.md) |
 | index | Path tokenizer | [tokenize](modules/tokenize/README.md) |
 | index | Lexical candidate orchestrator | [lexical](modules/lexical/README.md) |
@@ -29,6 +31,7 @@ for the incremental scope.
 | index | Subsequence channel | [subseq](modules/subseq/README.md) |
 | index | Typo channel | [typo](modules/typo/README.md) |
 | index | Fuzzy/edit scorer | [fuzzy](modules/fuzzy/README.md) |
+| index | Interned parent directories | [dirtree](modules/dirtree/README.md) |
 | index | Swappable embedder | [embed](modules/embed/README.md) |
 | index | Vector search | [vector](modules/vector/README.md) |
 | index | Ranking & fusion | [rank](modules/rank/README.md) |
@@ -53,6 +56,8 @@ for the incremental scope.
   records the initial implementation and remaining M1 gates.
 - [0007: partial scans, nested roots and component-scoped parent matching](adr/0007-partial-scans-and-component-parent-matching.md)
   refines 0006 after the first M1 review.
+- [0008: M1 completion: channels, directory interning, bounded scans and configuration](adr/0008-m1-completion-channels-directories-config.md)
+  completes M1's lexical engine and configuration.
 
 ## Keeping docs current
 

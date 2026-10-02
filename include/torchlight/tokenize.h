@@ -4,7 +4,7 @@
 #include "torchlight/common.h"
 #include <stdbool.h>
 /* Increment this contract when normalization or boundary rules change. */
-#define TOKENIZE_VERSION "utf8proc-nfc-casefold-opaque-v1"
+#define TOKENIZE_VERSION "utf8proc-nfc-casefold-opaque-v2"
 #define TOKENIZE_OPAQUE_BASE UINT32_C(0x110000)
 typedef struct tl_tokenized tl_tokenized;
 typedef struct {
@@ -16,6 +16,8 @@ typedef struct {
 } tl_text;
 /** Decode length non-NUL bytes into caller buffers with capacity elements.
  * byte_offsets maps each symbol to the start of its original grapheme cluster.
+ * boundaries marks word starts: after a separator, lower->upper case, the last
+ * capital of an acronym before lowercase (HTML|Parser), and letter<->digit.
  * out borrows buffers. TL_INVALID rejects NUL/NULL; TL_LIMIT rejects insufficient capacity (case
  * folding may expand). Valid UTF-8 clusters are NFC-normalized and Unicode case-folded; each
  * invalid byte maps to a distinct opaque symbol. */

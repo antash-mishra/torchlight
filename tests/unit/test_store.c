@@ -61,6 +61,32 @@ static void unreadable_scopes_are_kept(tl_store *store) {
     CHECK(store_commit(store) == TL_OK);
     CHECK(count_entries(store) == before - 1);
 }
+static tl_status count_root(void *context, const char *root) {
+    size_t *count = context;
+    CHECK(root[0] == '/');
+    (*count)++;
+    return TL_OK;
+}
+/* Forgetting a root drops its unseen entries but spares kept and seen ones. */
+static void forgotten_roots(tl_store *store) {
+    CHECK(store_begin(store) == TL_OK);
+    const char *paths[] = {"/f", "/f/a", "/f/b", "/g", "/g/c"};
+    for (size_t i = 0; i < 5; i++)
+        put_path(store, paths[i], false, true);
+    CHECK(store_prune(store, "/f") == TL_OK && store_prune(store, "/g") == TL_OK);
+    CHECK(store_commit(store) == TL_OK);
+    size_t roots = 0, before = count_entries(store);
+    CHECK(store_roots(store, count_root, &roots) == TL_OK);
+    CHECK(store_keep(store, "/g") == TL_STATE);
+    CHECK(store_begin(store) == TL_OK);
+    put_path(store, "/f/a", false, true); /* still seen by some other scan */
+    CHECK(store_keep(store, "/g") == TL_OK && store_keep(store, "relative") == TL_INVALID);
+    CHECK(store_forget_root(store, "/f") == TL_OK && store_forget_root(store, "/g") == TL_OK);
+    CHECK(store_commit(store) == TL_OK);
+    size_t after_roots = 0;
+    CHECK(store_roots(store, count_root, &after_roots) == TL_OK && after_roots == roots - 2);
+    CHECK(count_entries(store) == before - 2); /* "/f" and "/f/b" */
+}
 void test_store(void) {
     char database[] = "/tmp/torchlight-store-XXXXXX";
     int fd = mkstemp(database);
@@ -102,10 +128,11 @@ void test_store(void) {
     CHECK(after.last_id > original.last_id);
     nested_root_survives_parent_prune(store);
     unreadable_scopes_are_kept(store);
+    forgotten_roots(store);
     store_destroy(store);
     CHECK(store_create(database, &store) == TL_OK);
     after = (struct loaded){0};
-    CHECK(store_load(store, observe, &after) == TL_OK && after.count == 9);
+    CHECK(store_load(store, observe, &after) == TL_OK && after.count == 12);
     store_destroy(store);
     CHECK(unlink(database) == 0);
 }

@@ -10,6 +10,11 @@ struct tl_tokenized {
     tl_text view;
 };
 static size_t decode(const char *bytes, size_t length, uint32_t *symbol) {
+    /* ASCII dominates real paths; skip the general decoder for it. */
+    if ((unsigned char)bytes[0] < 0x80) {
+        *symbol = (unsigned char)bytes[0];
+        return 1;
+    }
     utf8proc_int32_t value = 0;
     utf8proc_ssize_t width =
         utf8proc_iterate((const utf8proc_uint8_t *)bytes, (utf8proc_ssize_t)length, &value);
@@ -24,11 +29,25 @@ bool tokenize_separator(uint32_t symbol) {
     return symbol == '/' || symbol == '_' || symbol == '-' || symbol == '.' || symbol == ' ' ||
            symbol == '\t' || symbol == '\n' || symbol == '\r';
 }
+enum { MASK_DIGIT_BIT = 26, MASK_HASHED_BIT = 36, MASK_HASHED_BITS = 64 - MASK_HASHED_BIT };
 uint64_t tokenize_symbol_mask(uint32_t symbol) {
-    /* Hash collisions only admit additional candidates, never lose a match. */
-    return UINT64_C(1) << ((symbol * UINT32_C(2654435761)) >> 26);
+    /* Lowercase ASCII letters and digits make up most normalized names, so they
+     * get dedicated bits and the filter is exact for them. Every other symbol
+     * hashes into the remaining bits; collisions only admit extra candidates,
+     * never lose a match. */
+    if (symbol >= 'a' && symbol <= 'z')
+        return UINT64_C(1) << (symbol - 'a');
+    if (symbol >= '0' && symbol <= '9')
+        return UINT64_C(1) << (MASK_DIGIT_BIT + symbol - '0');
+    uint32_t hashed = ((symbol * UINT32_C(2654435761)) >> 16) % MASK_HASHED_BITS;
+    return UINT64_C(1) << (MASK_HASHED_BIT + hashed);
 }
 static size_t cluster_end(const char *bytes, size_t length, size_t start, uint32_t first) {
+    /* Two ASCII characters always have a grapheme break between them except
+     * CR LF (rule GB3), so a lone ASCII byte followed by ASCII is a cluster. */
+    if (first < 0x80 && first != '\r' &&
+        (start + 1 == length || (unsigned char)bytes[start + 1] < 0x80))
+        return start + 1;
     uint32_t previous = first;
     size_t end = start + decode(bytes + start, length - start, &previous);
     if (first >= TOKENIZE_OPAQUE_BASE)
@@ -69,11 +88,45 @@ static tl_status normalize_cluster(const char *bytes, size_t length, uint32_t fi
     *out_length = (size_t)count;
     return TL_OK;
 }
-static bool camel_boundary(uint32_t previous, uint32_t current) {
-    if (previous >= TOKENIZE_OPAQUE_BASE || current >= TOKENIZE_OPAQUE_BASE)
-        return false;
-    return utf8proc_category((utf8proc_int32_t)previous) == UTF8PROC_CATEGORY_LL &&
-           utf8proc_category((utf8proc_int32_t)current) == UTF8PROC_CATEGORY_LU;
+enum symbol_class { CLASS_OTHER, CLASS_LOWER, CLASS_UPPER, CLASS_LETTER, CLASS_DIGIT };
+static enum symbol_class classify(uint32_t symbol) {
+    if (symbol >= TOKENIZE_OPAQUE_BASE)
+        return CLASS_OTHER;
+    if (symbol < 0x80) {
+        if (symbol >= 'a' && symbol <= 'z')
+            return CLASS_LOWER;
+        if (symbol >= 'A' && symbol <= 'Z')
+            return CLASS_UPPER;
+        return symbol >= '0' && symbol <= '9' ? CLASS_DIGIT : CLASS_OTHER;
+    }
+    switch (utf8proc_category((utf8proc_int32_t)symbol)) {
+    case UTF8PROC_CATEGORY_LL:
+        return CLASS_LOWER;
+    case UTF8PROC_CATEGORY_LU:
+    case UTF8PROC_CATEGORY_LT:
+        return CLASS_UPPER;
+    case UTF8PROC_CATEGORY_LM:
+    case UTF8PROC_CATEGORY_LO:
+        return CLASS_LETTER;
+    case UTF8PROC_CATEGORY_ND:
+        return CLASS_DIGIT;
+    default:
+        return CLASS_OTHER;
+    }
+}
+static bool is_letter(enum symbol_class value) {
+    return value == CLASS_LOWER || value == CLASS_UPPER || value == CLASS_LETTER;
+}
+/* Word starts inside a separator-free run, judged on raw (pre-casefold) first
+ * code points of the previous, current and next clusters:
+ *   fooBar -> foo|Bar, HTMLParser -> HTML|Parser, report2024 -> report|2024. */
+static bool word_boundary(uint32_t previous, uint32_t current, uint32_t next) {
+    enum symbol_class before = classify(previous), here = classify(current);
+    if (before == CLASS_LOWER && here == CLASS_UPPER)
+        return true;
+    if (before == CLASS_UPPER && here == CLASS_UPPER && classify(next) == CLASS_LOWER)
+        return true;
+    return (is_letter(before) && here == CLASS_DIGIT) || (before == CLASS_DIGIT && is_letter(here));
 }
 static tl_status required_capacity(const char *path, size_t length, size_t *out) {
     *out = 0;
@@ -112,17 +165,19 @@ tl_status tokenize_into(const char *bytes, size_t length, uint32_t *symbols, uin
     *out = (tl_text){.symbols = symbols, .boundaries = boundaries, .byte_offsets = byte_offsets};
     uint32_t previous = '/';
     for (size_t start = 0; start < length;) {
-        uint32_t first = 0;
+        uint32_t first = 0, next = 0;
         (void)decode(bytes + start, length - start, &first);
         size_t end = cluster_end(bytes, length, start, first), count = 0;
+        if (end < length)
+            (void)decode(bytes + end, length - end, &next);
         size_t position = out->length;
         tl_status status = normalize_cluster(bytes + start, end - start, first, symbols + position,
                                              capacity - position, &count);
         if (status != TL_OK)
             return status;
+        bool boundary = tokenize_separator(previous) || word_boundary(previous, first, next);
         for (size_t i = 0; i < count; i++) {
-            boundaries[position + i] = (uint8_t)(i == 0 && (tokenize_separator(previous) ||
-                                                            camel_boundary(previous, first)));
+            boundaries[position + i] = (uint8_t)(i == 0 && boundary);
             byte_offsets[position + i] = start;
             out->mask |= tokenize_symbol_mask(symbols[position + i]);
             if (symbols[position + i] == '/')

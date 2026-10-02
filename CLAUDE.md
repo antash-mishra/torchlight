@@ -12,14 +12,14 @@ milestones).
 ```
 include/torchlight/   public headers, one per module
 src/core/             generic reusable utilities (no Torchlight domain knowledge)
-src/index/            tokenize, lexical (prefix, trigram, subseq, typo), fuzzy,
-                      embed, vector, rank
+src/index/            tokenize, dirtree, lexical (prefix, trigram, subseq, typo),
+                      fuzzy, embed, vector, rank
 src/storage/          store.c, the ONLY place SQL lives
 src/fs/               crawl, watch
 src/ipc/              socket protocol
 src/bin/              thin executables that wire modules together, no algorithms
 ui/                   gtk/ popup, optional tui/ (daemon communication via ipc only)
-tests/                unit/test_<module>.c, bench/, fixtures/
+tests/                unit/test_<module>.c, test_cli.py, bench/, fixtures/
 docs/                 architecture, glossary, evaluation, adr/, modules/<module>/README.md
 models/ scripts/ third_party/ (vendored, never edited in place)
 ```
@@ -31,7 +31,7 @@ make            # debug build
 make test       # unit tests (ASan + UBSan)
 make lint       # clang-tidy + cppcheck
 make format     # clang-format
-make bench      # latency benchmarks
+make bench      # latency + ranking benchmarks (BENCH_PATHS=file adds a real corpus)
 ```
 
 ## Code rules

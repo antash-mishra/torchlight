@@ -23,8 +23,40 @@ recorded here.
 - Record CPU, RAM, OS, corpus size/path lengths, model revision, build flags,
   p50/p95/p99 latency, startup/indexing times, update lag, and steady/peak RSS.
 - Include incomplete misspelled tokens (e.g. `projc` for `project…`). Typo
-  lookup only matches complete tokens today, so this measures how much the
-  trigram channel covers before prefix typo correction is added.
+  lookup only matches complete tokens, so this measures how much the trigram
+  channel covers before prefix typo correction is added (`partial_typo` below).
+
+## Lexical benchmark (M1)
+
+`make bench` (`tests/bench/`) builds the release engine and reports, per corpus:
+
+- **Corpora.** A deterministic synthetic home folder (`corpus.c`: nested
+  project/document folders from a ~130-word vocabulary, camelCase and separated
+  names, numbered photos and screenshots, duplicate `README.md`/`index.js`, mixed
+  extensions, Unicode fixtures) at 50k and 500k paths; and optionally a real
+  NUL-separated path list (`BENCH_PATHS`, made with `scripts/make_corpus.sh`).
+  Real lists may contain private names and are never committed.
+- **Labeled queries** (`queries.c`): known-item queries generated from random
+  ASCII-named targets, 200 per kind: `exact` basename; `prefix` (first ~60% of
+  the stem); `abbreviation` (first letter plus consonants of each word,
+  `prjnts`); `typo` (one random edit in the stem's longest word); `partial_typo`
+  (an incomplete word with one edit, `projc`); `parent` (`<folder> <stem
+  prefix>`). A result is relevant when it has the target's basename (duplicates
+  count), and for `parent` also the same folder name. Seed 1 is the tuning set
+  used while developing; seed 2 is held out and is the one reported.
+- **Metrics:** Recall@1, Recall@10, MRR@10, and candidate recall
+  (Recall@1000: the target survives candidate selection).
+- **Latency:** every held-out query is typed one byte at a time and each
+  keystroke is timed (the launcher workload, exercising caches and narrowing);
+  then each whole query is timed after a different one. Engine build time and
+  RSS are reported too. CLI startup and SQLite loading are excluded.
+- **Fixtures:** nine sanity queries must pass on synthetic corpora
+  (`README.md`, `read`, `prjnts`, `projectnotes.md`, `documents projectnotes`,
+  `finance invoice2024`, `CAFÉ` (decomposed), `invoce2024`, a no-match query).
+
+Prefix and partial-typo queries are often genuinely ambiguous (hundreds of
+names start with `screens…`), so their known-item recall is bounded by the
+corpus, not only by ranking.
 
 ## Results
 
@@ -81,3 +113,52 @@ host measured p50 of about 37–42ms before and 48–50ms after; p95 stayed arou
 component, rather than the nearest match, measured about 72–75ms p50 and was
 rejected. The 5 ms p95 target remains **not met**. Raw output is in
 [benchmark results](../tests/bench/results/2026-10-02-m1-fixes.txt).
+
+### 2026-10-02: M1 completion (ADR 0008)
+
+Same reference machine, build flags and library versions as above, but the host
+was **heavily loaded** throughout (load average 5–9 on 12 threads, swap full,
+28–37% iowait; a trivial loop over 500k array elements took 1.4–2.3 ms instead
+of about 0.3 ms). Absolute latencies below are therefore pessimistic and noisy;
+before/after comparisons were run back to back. Quality is the held-out seed.
+Raw output: [benchmark results](../tests/bench/results/2026-10-02-m1-complete.txt).
+
+**Latency and memory** (warm engine; typing = every keystroke of every held-out query):
+
+| Corpus | Engine RSS | Typing p50 / p95 / p99 (ms) | Whole query p50 / p95 (ms) |
+|---|---:|---:|---:|
+| synthetic 50k, original engine | 81 MB | 12.7 / 26.7 / 35.8 | 10.3 / 23.7 |
+| synthetic 50k | 30 MB | **0.05 / 1.05 / 2.07** | 0.66 / 2.02 |
+| synthetic 500k | 230 MB | 0.80 / 15.9 / 25.7 | 9.5 / 25.4 |
+| real `/usr` 500k (58 B/path) | 226 MB | 0.23 / 6.7 / 16.3 | 4.1 / 15.6 |
+
+For reference, the first baseline's peak RSS at 500k was 709 MB (uniform
+synthetic corpus). The **5 ms p95 gate is met at 50k and not at 500k.** Most
+keystrokes at 500k are well under a millisecond: one-symbol queries come from
+the seal-time cache, later keystrokes narrow, and strong prefix hits skip scans.
+The p95 comes from keystrokes that need a full scan of a common-letter word
+(4–15 ms here), above all the first letter of a second word when the first word
+matches a large share of the corpus through folder names (`apps o`: 123k icons
+under `apps/` folders). The synthetic corpus is harsher than the real one
+because its ~130-word vocabulary repeats in folder names. Next options:
+intra-query parallel scans in the M2 daemon, a byte-level ASCII name layout, and
+re-measuring on an unloaded machine.
+
+**Ranking quality** (held-out; R@1 / R@10 / MRR@10 / candidate recall@1000):
+
+| Kind | synthetic 50k, original | synthetic 50k | real `/usr` 500k |
+|---|---:|---:|---:|
+| exact | .97 / 1.0 / .98 / 1.0 | .97 / 1.0 / .98 / 1.0 | .99 / 1.0 / .99 / 1.0 |
+| prefix | .27 / .44 / .33 / 1.0 | .25 / .43 / .31 / 1.0 | .47 / .71 / .54 / .99 |
+| abbreviation | .43 / .70 / .52 / .97 | .48 / .73 / .55 / .97 | .44 / .61 / .48 / .98 |
+| typo | .21 / .26 / .23 / .32 | **.76 / .85 / .79 / .99** | .78 / .91 / .83 / .98 |
+| partial typo | .01 / .02 / .01 / .35 | .02 / .04 / .02 / .57 | .06 / .14 / .08 / .46 |
+| parent | .30 / .59 / .39 / .99 | .28 / .65 / .37 / 1.0 | .29 / .48 / .33 / .91 |
+| **all** | .36 / .50 / .41 / .77 | .46 / .62 / .50 / .92 | .50 / .64 / .54 / .88 |
+
+Typo correction is the main quality gain. Prefix and partial-typo queries are
+often ambiguous (many names share the fragment), which bounds known-item recall.
+Partial typos stay weak, because typo lookup only corrects complete tokens:
+prefix typo correction remains a later extension. Raising the parent-folder
+prefix tier (ADR 0008) lifted real parent Recall@10 from 0.355 to 0.475 without
+lowering other kinds. All nine synthetic fixtures pass at 50k and 500k.

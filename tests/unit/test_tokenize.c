@@ -38,6 +38,24 @@ void test_tokenize(void) {
     view = tokenize_view(text);
     CHECK(view.length == 2 && view.byte_offsets[1] == 3 && view.boundaries[1] != 0);
     tokenize_destroy(text);
+    /* v2 word boundaries: acronym ends and letter/digit changes. */
+    text = test_text("HTMLParser2024x");
+    view = tokenize_view(text);
+    CHECK(view.boundaries[0] && view.boundaries[4] && view.boundaries[10] && view.boundaries[14]);
+    CHECK(!view.boundaries[1] && !view.boundaries[3] && !view.boundaries[5] &&
+          !view.boundaries[11]);
+    tokenize_destroy(text);
+    /* Lowercase letters and digits have dedicated, distinct mask bits. */
+    uint64_t seen = 0;
+    for (uint32_t c = 'a'; c <= 'z'; c++) {
+        CHECK((seen & tokenize_symbol_mask(c)) == 0);
+        seen |= tokenize_symbol_mask(c);
+    }
+    for (uint32_t c = '0'; c <= '9'; c++) {
+        CHECK((seen & tokenize_symbol_mask(c)) == 0);
+        seen |= tokenize_symbol_mask(c);
+    }
+    CHECK((seen & tokenize_symbol_mask(0x00e9)) == 0 && (seen & tokenize_symbol_mask('.')) == 0);
     uint32_t symbols[8];
     uint8_t boundaries[8];
     size_t offsets[8];
