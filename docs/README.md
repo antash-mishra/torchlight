@@ -1,5 +1,8 @@
 # Torchlight docs
 
+For a simple visual overview, open [Built and next](system-overview.html) in a
+browser. It shows the current system, the planned system, and the next steps.
+
 Start here. Read in this order:
 
 1. [`architecture.md`](architecture.md): how the pieces fit together and how a query flows.
