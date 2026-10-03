@@ -8,15 +8,17 @@ later extension.
 
 ## Implementation progress
 
-M1 and M2 are ready for M3. The user accepts roughly 6 ms p95 lexical latency
-at 500k paths; optimization toward the original 5 ms target resumes after the
-whole system is built. Full-engine update rebuilds remain the initial strategy.
-See the [readiness report](docs/m3-readiness.md) for checks and current measured
-limits. M3 follows the [GTK GUI design](docs/m3-gui-design.md) and
-[interactive preview](docs/m3-gui-preview.html); its popup is not implemented yet.
-Application and settings search is also planned for M3, immediately after M1/M2.
-Extend the current file-result GUI specification for application/settings rows
-as part of that milestone.
+M1, M2 and M3 are implemented; M4 is next. M3 adds installed application/settings
+search and the GTK4 popup described in the [GUI design](docs/m3-gui-design.md).
+See [desktop setup](docs/desktop-setup.md) and the
+[M3 verification report](docs/m3-completion.md) for usage, checks and measured
+limits. The [interactive preview](docs/m3-gui-preview.html) remains the original
+file-result design reference.
+
+The user accepted roughly 6 ms p95 lexical latency at 500k paths for starting M3;
+optimization toward the original 5 ms target resumes after the whole system is
+built. Full-engine update rebuilds remain the initial strategy. Historical
+pre-M3 measurements are in the [readiness report](docs/m3-readiness.md).
 
 The readiness fixes (ADR 0013) remove trigram sorting's indirect heap allocation
 and enforce the documented 3–32-symbol typo-query range. Complete resident bitmap
@@ -141,7 +143,9 @@ Split multiword queries into tokens: each must match a basename or parent-path
 token, possibly with different lexical channels. Combine token scores with
 basename priority; preserve a separate exact raw-path lookup. Empty queries return
 a bounded recent/shortcut list, or indexed root entries when history is disabled.
-Specify deterministic tie-breaking so results do not reshuffle between phases.
+The GTK popup shows `Type to search` without results for empty or whitespace-only
+input; it sends queries only after typing. Specify deterministic tie-breaking so
+results do not reshuffle between phases.
 
 Deduplicate candidates and favor basename matches over parent-path matches.
 Use fzf/fzy-style boundary, camelCase, and consecutive-character bonuses with gap
@@ -321,6 +325,15 @@ CREATE TABLE opens (
 CREATE INDEX opens_file_ts ON opens(file_id, ts);
 CREATE INDEX opens_search ON opens(search_id);
 
+-- Schema v3: desktop launches are keyed by logical desktop id, not a file row.
+CREATE TABLE desktop_opens (
+  event_id TEXT NOT NULL PRIMARY KEY,
+  desktop_id TEXT NOT NULL,
+  search_id TEXT REFERENCES searches(id) ON DELETE SET NULL,
+  ts INTEGER NOT NULL
+);
+CREATE INDEX desktop_opens_ts ON desktop_opens(ts);
+
 -- Registered successfully scanned roots support empty-query results in M1.
 CREATE TABLE roots (
   path BLOB PRIMARY KEY NOT NULL CHECK (typeof(path) = 'blob')
@@ -334,7 +347,7 @@ CREATE TABLE meta (
 
 Use prepared statements, migrations, and batched transactions. Always bind
 paths, names and extensions with `sqlite3_bind_blob`. `meta` records
-the schema version (currently 2), `catalog_gen`, and the active `emb_gen` configuration. The
+the schema version (currently 3), `catalog_gen`, and the active `emb_gen` configuration. The
 initial schema covers one active `emb_gen`; M4 adds staging storage for model
 replacement.
 Assign search ids in memory, using a unique session id generated at startup.
@@ -387,6 +400,16 @@ accepted launch requests, not guaranteed success in external applications.
 - **Service:** systemd user unit, status reporting, clean shutdown/restart,
   and a single daemon instance. A TUI is optional after the popup works.
 
+## Implementation status
+
+M1, M2 and M3 are implemented. M3 adds the resident XDG desktop catalog, mixed
+application/settings/file/folder results, asynchronous GTK4 popup and native
+actions, installable desktop entry and systemd user unit. See
+[desktop setup](docs/desktop-setup.md), [M3 verification](docs/m3-completion.md)
+and [ADR 0015](docs/adr/0015-m3-desktop-catalog-and-launcher.md). M4 is next.
+Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
+tracked explicitly in the verification report.
+
 ## Milestones
 
 1. **M1: Lexical engine and CLI.** Build tooling, crawler, SQLite catalog,
@@ -435,10 +458,10 @@ rules are in [`docs/evaluation.md`](docs/evaluation.md).
 
 ## Build
 
-- Build with C17 and a plain Makefile. Planned dependencies: SQLite first,
-  GTK4 for the popup, and ONNX Runtime if the selected backend
-  needs it. Evaluate utf8proc for the normalization contract; ncurses is
-  optional. IPC uses the bounded core JSON codec rather than adding cJSON.
+- Build with C17 and a plain Makefile. Current dependencies are SQLite,
+  utf8proc, GIO/GIO-Unix, GTK4 4.14+ and X11. ONNX Runtime is a possible M4
+  dependency if the selected backend needs it; ncurses remains optional.
+  IPC uses the bounded core JSON codec rather than adding cJSON.
   Discuss additions before implementation, following `AGENTS.md`.
 - Run sanitizers, unit/integration checks, lint, and relevant benchmarks as
   milestones introduce code. Planning changes require document consistency.

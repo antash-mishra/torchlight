@@ -17,6 +17,14 @@ static inline tl_tokenized *test_text(const char *path) {
     CHECK(tokenize_create(path, &text) == TL_OK);
     return text;
 }
+/** Run exact-byte file and revision-checked desktop launch regressions. */
+void test_actions(void);
+/** Run asynchronous IPC framing and request identity regressions. */
+void test_async(void);
+/** Run desktop discovery precedence and removal regressions. */
+void test_desktop(void);
+/** Run popup response validation and selection regressions. */
+void test_popup(void);
 /** Run XDG/override checks, aborting on failure. */
 void test_config(void);
 /** Run isolated core utility checks, aborting on failure. */

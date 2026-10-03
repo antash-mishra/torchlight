@@ -1,6 +1,6 @@
 # M3 GTK popup design
 
-**Status: specified; implementation belongs to M3.** Follow the launcher behavior
+**Status: implemented; see [M3 verification](m3-completion.md) for acceptance coverage.** Follow the launcher behavior
 in [PLAN.md](../PLAN.md#milestones) and the visual/interaction specification below.
 The [interactive preview](m3-gui-preview.html) illustrates the layout and states;
 the GTK implementation uses the desktop's theme. There is no existing Figma file
@@ -17,7 +17,7 @@ activation and focus there first; document Wayland results separately during M3.
 | Window | 680 wide; clamp to monitor work area minus 48; maximum height 70% of the work area. No title bar or resize handle. |
 | Placement | Horizontally centered on the active monitor, near its upper third. Placement is a window-system request, verified in the target session. |
 | Surface | Native GTK background, foreground, border, shadow and light/dark theme. Outer corner radius 12; inner spacing 16. |
-| Search | 52 high; symbolic search icon 20; text 20; placeholder `Search files and folders`. Entry has focus when shown. |
+| Search | 52 high; symbolic search icon 20; text 20; placeholder `Search apps, settings, files and folders`. Entry has focus when shown. |
 | Results | Request ten; show up to eight rows before scrolling. Each row 58 high, with a 24-pixel symbolic file/folder icon and a 12-pixel text gap. |
 | Row text | Basename on the first line, desktop font 15; parent path on the second line, 12 with muted foreground. End-ellipsize the name and middle-ellipsize the parent. |
 | Selection | Native accent background/foreground with a visible focus treatment. Name and parent both remain legible in high-contrast themes. |
@@ -38,7 +38,7 @@ Opening always uses the exact bytes returned by resolve.
 | Input | Behavior |
 |---|---|
 | Desktop shortcut | Invoke `torchlight-gtk --toggle`. One application instance shows/focuses the popup or hides its already-focused window. A suggested binding is Super+Space; installation documents how to choose an available Cinnamon shortcut. |
-| Show | Clear the previous query, request the empty-query root list, focus the search entry and select the first returned row. |
+| Show | Clear the previous query and results, show `Type to search` and focus the search entry. No default result is selected. |
 | Type / paste | Keep the entry focused, reset deliberate selection and issue a new query. Respect the protocol's 256-byte UTF-8 query limit; show a small inline message for an oversized paste. |
 | Up / Down | Move selection, clamped to the list ends; scroll the selected row into view. Keep text-entry focus. |
 | Enter | Resolve the selected file id, then open its current exact path with an argv-based process launch. |
@@ -71,10 +71,10 @@ changes. Resolve its id before acting. A new query resets this retention rule.
 
 | State | Content |
 |---|---|
-| Empty query | Indexed roots, with `Indexed folders` as context. M2's empty-query results provide these roots. |
+| Empty query | No result rows; `Type to search` as context. Whitespace-only input behaves the same. Cancel pending queries and invalidate old responses immediately on clearing. |
 | Results | Basename/parent rows; first row selected initially. |
 | Pending query | Keep typing responsive. Show `Searching…` after 120 ms to avoid flashing a spinner on fast queries. |
-| No matches | `No matching files` and `Try a filename or part of its folder path.` Keep the entry focused. |
+| No matches | `No matches` and `Try a filename or part of its folder path.` Keep the entry focused. |
 | Indexing | Existing searchable results remain available; footer says `Updating index…`. |
 | Degraded coverage | Existing results plus `Some folders are unavailable`; status details explain offline/unreadable folders or limited watching. |
 | Daemon unavailable | `Search service unavailable` with a Retry action. Retry reconnects and requests the latest query. |
@@ -127,3 +127,14 @@ placement behavior instead of assuming compositor support.
 
 Related: [ui module](modules/ui/README.md), [IPC](modules/ipc/README.md),
 [ADR 0014](adr/0014-m3-gtk-popup-design.md).
+
+## Implemented application/settings extension
+
+M3 extends the search placeholder to applications, settings, files and folders.
+Desktop rows use localized names and application icons with Application/Settings
+subtitles. Enter resolves their session-scoped result id and activates the native
+desktop entry; Ctrl+Enter reveals its desktop file through the same exact-byte
+action path. File/folder rows retain basename/parent labels and symbolic icons.
+The implemented GTK4 surface and acceptance evidence are in
+[M3 verification](m3-completion.md); the interactive HTML remains the original
+file-oriented design reference, not a screenshot of the application.

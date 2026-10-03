@@ -1,5 +1,6 @@
 /* Resident query loop; nonblocking sockets never retain a catalog lease. */
 #include "torchlight/daemon.h"
+#include "torchlight/desktop.h"
 #include <errno.h>
 #include <poll.h>
 #include <pthread.h>
@@ -25,6 +26,7 @@ struct client {
 };
 struct tl_daemon {
     tl_catalog *catalog;
+    tl_desktop *desktop;
     tl_writer *writer;
     tl_ipc_listener *listener;
     int signal_fd, database_lock;
@@ -35,6 +37,7 @@ struct tl_daemon {
     uint64_t engine_ns;
     struct client clients[DAEMON_MAX_CLIENTS];
     tl_result results[LEXICAL_MAX_RESULTS];
+    tl_result applications[LEXICAL_MAX_RESULTS];
 };
 static uint64_t milliseconds(void) {
     struct timespec now;
@@ -126,6 +129,8 @@ tl_status daemon_create(const tl_daemon_options *options, tl_daemon **out) {
     if (status == TL_OK)
         status = writer_create(&writer_options, &daemon->writer);
     if (status == TL_OK)
+        status = desktop_create(&daemon->desktop);
+    if (status == TL_OK)
         status = ipc_listener_create(options->socket_path, &daemon->listener);
     if (status != TL_OK) {
         tl_status cleanup = daemon_destroy(daemon);
@@ -146,6 +151,7 @@ tl_status daemon_destroy(tl_daemon *daemon) {
     }
     ipc_listener_destroy(daemon->listener);
     daemon->listener = NULL;
+    desktop_destroy(daemon->desktop);
     writer_destroy(daemon->writer);
     daemon->writer = NULL;
     tl_status status = catalog_destroy(daemon->catalog);
@@ -217,6 +223,44 @@ static void response_prefix(tl_json_buffer *b, const tl_ipc_request *request, ui
     indexing_status(b, stats);
     json_raw(b, ",\"results\":[");
 }
+static tl_status merge_applications(tl_daemon *daemon, const tl_ipc_request *request,
+                                    size_t *count) {
+    size_t app_count = 0;
+    tl_status status = desktop_query(daemon->desktop, request->query, daemon->applications,
+                                     request->limit, &app_count);
+    if (status != TL_OK)
+        return status;
+    for (size_t i = 0; i < app_count; i++) {
+        tl_result candidate = daemon->applications[i];
+        size_t place = 0;
+        while (place < *count && daemon->results[place].score > candidate.score)
+            place++;
+        if (place >= request->limit)
+            continue;
+        size_t end = *count < request->limit ? (*count)++ : request->limit - 1;
+        for (size_t j = end; j > place; j--)
+            daemon->results[j] = daemon->results[j - 1];
+        daemon->results[place] = candidate;
+    }
+    return TL_OK;
+}
+static tl_status resolve_application(tl_daemon *daemon, const tl_ipc_request *request,
+                                     size_t *count) {
+    const tl_desktop_entry *entry = desktop_resolve(daemon->desktop, request->file_id);
+    if (entry == NULL)
+        return TL_STATE;
+    daemon->results[0] = (tl_result){entry->id, entry->filename, 0};
+    *count = 1;
+    if (request->operation != IPC_OPEN)
+        return TL_OK;
+    tl_ipc_request event = *request;
+    size_t length = strlen(entry->desktop_id);
+    if (length >= sizeof(event.desktop_id))
+        return TL_LIMIT;
+    memcpy(event.desktop_id, entry->desktop_id, length + 1);
+    tl_status status = writer_history(daemon->writer, &event, NULL);
+    return status == TL_STATE ? TL_OK : status;
+}
 static tl_status execute(tl_daemon *daemon, const tl_ipc_request *request,
                          char search_id[IPC_HISTORY_ID_BYTES + 1], size_t *count,
                          uint64_t *catalog_gen, tl_catalog_reader **reader, bool superseded) {
@@ -234,6 +278,9 @@ static tl_status execute(tl_daemon *daemon, const tl_ipc_request *request,
         if (superseded)
             return TL_STATE;
     }
+    if ((request->operation == IPC_RESOLVE || request->operation == IPC_OPEN) &&
+        request->file_id >= DESKTOP_ID_BASE)
+        return resolve_application(daemon, request, count);
     if (request->operation == IPC_QUERY || request->operation == IPC_RESOLVE ||
         request->operation == IPC_OPEN) {
         tl_status status = catalog_acquire(daemon->catalog, reader);
@@ -243,6 +290,8 @@ static tl_status execute(tl_daemon *daemon, const tl_ipc_request *request,
         if (request->operation == IPC_QUERY) {
             uint64_t start = nanoseconds();
             status = catalog_query(*reader, request->query, daemon->results, request->limit, count);
+            if (status == TL_OK)
+                status = merge_applications(daemon, request, count);
             uint64_t end = nanoseconds();
             daemon->engine_ns = end >= start ? end - start : 0;
             return status;
@@ -260,8 +309,10 @@ static tl_status execute(tl_daemon *daemon, const tl_ipc_request *request,
         }
         return status;
     }
-    if (request->operation == IPC_RECONCILE)
+    if (request->operation == IPC_RECONCILE) {
+        desktop_refresh(daemon->desktop);
         return writer_reconcile(daemon->writer);
+    }
     if (request->operation == IPC_HISTORY_CLEAR)
         return writer_history(daemon->writer, request, NULL);
     return TL_OK;
@@ -295,7 +346,39 @@ struct completion {
     tl_status status;
     const char *reason;
     bool superseded;
+    tl_catalog_reader *reader;
 };
+static void encode_result(tl_daemon *daemon, tl_catalog_reader *reader, tl_json_buffer *buffer,
+                          const tl_result *result) {
+    const tl_desktop_entry *entry = desktop_resolve(daemon->desktop, result->id);
+    if (entry == NULL) {
+        ipc_result(buffer, result->id, result->path);
+        if (buffer->status == TL_OK) {
+            buffer->data[--buffer->length] = 0;
+            json_raw(buffer, ",\"kind\":");
+            json_quote(buffer, catalog_is_dir(reader, result->id) ? "folder" : "file");
+            json_raw(buffer, "}");
+        }
+        return;
+    }
+    ipc_result(buffer, entry->id, entry->filename);
+    /* Extend the result object without changing exact byte-path encoding. */
+    if (buffer->status != TL_OK)
+        return;
+    buffer->length--;
+    buffer->data[buffer->length] = 0;
+    json_raw(buffer, ",\"kind\":");
+    json_quote(buffer, entry->settings ? "settings" : "application");
+    json_raw(buffer, ",\"desktop_revision\":\"");
+    json_number(buffer, entry->revision);
+    json_raw(buffer, "\",\"name\":");
+    json_quote(buffer, entry->name);
+    json_raw(buffer, ",\"desktop_id\":");
+    json_quote(buffer, entry->desktop_id);
+    json_raw(buffer, ",\"icon\":");
+    json_quote(buffer, entry->icon == NULL ? "application-x-executable-symbolic" : entry->icon);
+    json_raw(buffer, "}");
+}
 static tl_status encode_completion(tl_daemon *daemon, struct client *client,
                                    const struct completion *completion, size_t *length) {
     char *output = client->output + client->output_length;
@@ -310,7 +393,7 @@ static tl_status encode_completion(tl_daemon *daemon, struct client *client,
     for (size_t i = 0; i < completion->count && completion->status == TL_OK; i++) {
         if (i != 0)
             json_raw(&b, ",");
-        ipc_result(&b, daemon->results[i].id, daemon->results[i].path);
+        encode_result(daemon, completion->reader, &b, &daemon->results[i]);
     }
     json_raw(&b, "],\"timing\":{\"engine_us\":");
     json_number(&b, daemon->engine_ns / 1000);
@@ -339,13 +422,16 @@ static void respond(tl_daemon *daemon, struct client *client, const tl_ipc_reque
     completion.catalog_gen = catalog.catalog_gen;
     tl_catalog_reader *reader = NULL;
     daemon->engine_ns = 0;
+    desktop_acquire(daemon->desktop);
     if (completion.status == TL_OK)
         completion.status = execute(daemon, request, completion.search_id, &completion.count,
                                     &completion.catalog_gen, &reader, superseded);
+    completion.reader = reader;
     completion.reason = response_reason(request, completion.status, decoded, repeated, superseded);
     size_t length = 0;
     tl_status encoded = encode_completion(daemon, client, &completion, &length);
     catalog_release(reader);
+    desktop_release(daemon->desktop);
     if (encoded != TL_OK) {
         close_client(client);
         return;

@@ -33,6 +33,7 @@ struct lexical_columns {
  * sealed. The engine is immutable, so these answers never go stale. */
 #define LEXICAL_SYMBOL_QUERIES 36
 struct tl_lexical {
+    tl_vec *directory_ids;
     tl_vec *ids, *masks, *repeats, *path_offsets, *name_offsets, *name_lengths, *dirs, *roots,
         *paths, *symbols, *boundaries, *scratch_symbols, *scratch_boundaries, *scratch_offsets;
     tl_dirtree *tree;

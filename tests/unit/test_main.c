@@ -1,6 +1,9 @@
 /* Sanitizer-enabled test runner for every module. */
 #include "test.h"
 int main(void) {
+    test_desktop();
+    test_popup();
+    test_actions();
     test_config();
     test_core();
     test_sort();
@@ -8,6 +11,7 @@ int main(void) {
     test_parallel();
     test_json();
     test_ipc();
+    test_async();
     test_tokenize();
     test_prefix();
     test_subseq();

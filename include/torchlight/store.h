@@ -6,12 +6,12 @@ typedef struct tl_store tl_store;
 typedef struct {
     uint64_t id;
     const char *path;
-    bool is_root;
+    bool is_root, is_dir;
 } tl_store_entry;
 typedef tl_status (*tl_store_callback)(void *context, const tl_store_entry *entry);
 /** Receive one registered root path, borrowed until the callback returns. */
 typedef tl_status (*tl_store_root_callback)(void *context, const char *root);
-/** Open/create owned catalog at path, enabling WAL/foreign keys and schema v2.
+/** Open/create owned catalog at path, enabling WAL/foreign keys and schema v3.
  * Migrate v1 atomically, retaining ids/history; legacy identities start unknown.
  * out NULL on error: TL_INVALID, TL_NOMEM, TL_IO or TL_STATE (unknown schema).
  * Parent directory must exist. Connections are serialized by their caller. */
@@ -32,6 +32,10 @@ tl_status store_begin(tl_store *store);
  * transaction. TL_INVALID for malformed entries, TL_IO for SQL, TL_LIMIT for
  * byte lengths beyond SQLite's limit, TL_STATE outside scan. */
 tl_status store_put(tl_store *store, const tl_crawl_entry *entry);
+/** Persist accepted desktop launch once by desktop id, independent of file rows.
+ * Strings borrowed during call. Same errors/idempotency as store_open_event. */
+tl_status store_desktop_open(tl_store *store, const char *event_id, const char *desktop_id,
+                             const char *search_id, int64_t timestamp);
 /** Prune unseen entries in canonical absolute root, then persist root status.
  * Entries under unreadable scopes, and under other registered roots nested in
  * root that this scan did not visit, are kept. Call only after a scan that

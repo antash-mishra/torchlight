@@ -1,6 +1,6 @@
 # daemon
 
-> **Status:** Implemented (M2): resident lexical service and bounded clients
+> **Status:** Implemented (M2/M3): resident file/application service and bounded clients
 > **Source:** `src/service/daemon.c`, `src/bin/torchlightd.c`
 > **Header:** `include/torchlight/daemon.h`
 > **Tests:** `tests/test_daemon.py`, `tests/unit/test_catalog.c`, `tests/unit/test_writer.c`
@@ -39,3 +39,11 @@ requests, cancellation, duplicate ids, size bounds and client deadlines.
 
 See [writer](../writer/README.md), [IPC](../ipc/README.md) and
 [ADR 0011](../../adr/0011-m2-daemon-writer-and-reconciliation.md).
+
+M3 owns a separate desktop catalog worker, merges its bounded lexical results
+with files by score, and adds typed launch metadata. Query/result encoding holds
+a short desktop lease and a file-catalog lease, releases both before socket
+output, and does no new filesystem/SQL/allocation work. Resolve/open dispatches
+desktop session ids to that current catalog. Open still records acceptance only;
+actual activation belongs to the UI. Reconcile wakes both background catalogs.
+See [desktop](../desktop/README.md), `tests/test_desktop.py` and ADR 0015.

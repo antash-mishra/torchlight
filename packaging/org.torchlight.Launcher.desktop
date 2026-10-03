@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Torchlight
+GenericName=Desktop launcher
+Comment=Search applications, settings, files and folders
+Exec=torchlight-gtk --toggle
+Icon=system-search-symbolic
+Terminal=false
+Categories=Utility;
+Keywords=search;launcher;files;
+StartupNotify=true

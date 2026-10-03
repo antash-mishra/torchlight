@@ -1,8 +1,8 @@
 # ipc
 
-> **Status:** Implemented (M2): strict versioned JSON-lines and Unix sockets
-> **Source:** `src/ipc/ipc.c`, `src/ipc/client.c`
-> **Headers:** `include/torchlight/ipc.h`, `include/torchlight/client.h`
+> **Status:** Implemented (M2/M3): strict JSON-lines, Unix sockets and asynchronous exchanges
+> **Source:** `src/ipc/ipc.c`, `src/ipc/client.c`, `src/ipc/async.c`
+> **Headers:** `include/torchlight/ipc.h`, `include/torchlight/client.h`, `include/torchlight/async.h`
 > **Tests:** `tests/unit/test_ipc.c`, `tests/unit/test_json.c`, `tests/test_daemon.py`
 
 The default socket is `$XDG_RUNTIME_DIR/torchlight.sock`; its directory must be
@@ -48,3 +48,17 @@ allocate in the CLI; daemon request decoding/result encoding do not allocate.
 
 See [daemon](../daemon/README.md), [core JSON](../core/README.md) and
 [ADR 0011](../../adr/0011-m2-daemon-writer-and-reconciliation.md).
+
+M3 results add kind (`file`, `folder`, `application`, `settings`). Desktop results
+also include localized name, desktop_id, decimal-string desktop_revision and
+GIcon string icon. File paths remain raw bytes, and desktop paths are actual
+entry filenames. Desktop ids occupy a session-scoped range above 2^62; the
+existing file_id request field resolves or records either kind. Changed/removed
+entries become stale. catalog_gen still identifies the file snapshot only.
+
+`ipc_exchange_create/destroy` provide main-context asynchronous GIO connections,
+peer verification, bounded framing and request/version/phase validation. A
+callback borrows one response; lexical frames may precede a final frame. Errors,
+EOF and the five-second overall deadline terminate it. Destroy cancels pending
+work and suppresses callbacks; internal references reclaim outstanding operations.
+`tests/unit/test_async.c` fragments frames and checks phases, EOF and wrong ids.

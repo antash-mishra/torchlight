@@ -22,6 +22,13 @@ void lexical_destroy(tl_lexical *engine);
  * builder stays usable); allocation/limit errors poison the builder, so
  * discard it. Paths need not be unique at this layer. */
 tl_status lexical_add(tl_lexical *engine, uint64_t id, const char *path, bool is_root);
+/** Add path with immutable directory metadata. Same lifetime/errors and ordered
+ * id requirements as lexical_add; metadata never affects matching/ranking. */
+tl_status lexical_add_entry(tl_lexical *engine, uint64_t id, const char *path, bool is_root,
+                            bool is_dir);
+/** Read directory metadata for sealed engine/id; false if unknown/unmarked.
+ * No allocation/I/O, engine must remain alive. Legacy lexical_add marks no dirs. */
+bool lexical_is_dir(const tl_lexical *engine, uint64_t id);
 /** Build all channels and seal the engine for immutable queries.
  * TL_INVALID/TL_STATE on lifecycle errors, TL_NOMEM/TL_LIMIT/TL_IO (discard). */
 tl_status lexical_finish(tl_lexical *engine);

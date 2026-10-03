@@ -1,6 +1,6 @@
 # catalog
 
-> **Status:** Implemented (first M2 increment): resident snapshot lifecycle;
+> **Status:** Implemented (M2/M3): resident snapshot lifecycle and directory metadata;
 > integrated with the M2 daemon/writer
 > **Source:** `src/index/catalog.c` · **Header:** `include/torchlight/catalog.h`
 > **Tests:** `tests/unit/test_catalog.c`
@@ -79,3 +79,7 @@ SQLite and IPC. No daemon round-trip performance is claimed.
 - [ADR 0010](../../adr/0010-m2-resident-catalog-snapshots.md)
 - [lexical](../lexical/README.md), [store](../store/README.md),
   [daemon](../daemon/README.md), [evaluation](../../evaluation.md)
+
+M3 catalog_is_dir reads immutable directory metadata while leased. It returns
+false for absent/unleased entries and performs no I/O/allocation. Directory
+flags originate in store_load and the writer's lexical_add_entry builder.

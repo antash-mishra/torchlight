@@ -6,7 +6,7 @@
 #include <sqlite3.h>
 #include <stdlib.h>
 #include <string.h>
-#define STORE_SCHEMA_VERSION 2
+#define STORE_SCHEMA_VERSION 3
 #define IDENTITY_BYTES 29
 #define IDENTITY_OBJECT_BYTES 16
 #define IDENTITY_RENAMED 2
@@ -95,6 +95,20 @@ static tl_status migrate_identity(tl_store *store) {
     }
     return TL_OK;
 }
+static tl_status migrate_desktop_history(tl_store *store) {
+    const char *steps[] = {
+        "CREATE TABLE desktop_opens(event_id TEXT NOT NULL PRIMARY KEY,"
+        "desktop_id TEXT NOT NULL,search_id TEXT REFERENCES searches(id) ON DELETE SET NULL,"
+        "ts INTEGER NOT NULL)",
+        "CREATE INDEX desktop_opens_ts ON desktop_opens(ts)",
+        "UPDATE meta SET value='3' WHERE key='schema_version'", "PRAGMA user_version=3"};
+    for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
+        tl_status status = execute(store, steps[i]);
+        if (status != TL_OK)
+            return status;
+    }
+    return TL_OK;
+}
 static tl_status migrate(tl_store *store) {
     int version = 0;
     tl_status status = schema_version(store, &version);
@@ -112,10 +126,12 @@ static tl_status migrate(tl_store *store) {
         status = create_schema(store);
         version = 1;
     }
-    if (status == TL_OK && version == 1)
+    if (status == TL_OK && version == 1) {
         status = migrate_identity(store);
-    else if (status == TL_OK && version != STORE_SCHEMA_VERSION)
-        status = TL_STATE;
+        version = 2;
+    }
+    if (status == TL_OK && version == 2)
+        status = migrate_desktop_history(store);
     if (status == TL_OK)
         status = execute(store, "COMMIT");
     if (status == TL_OK)
@@ -477,7 +493,8 @@ static tl_status load_row(sqlite3_stmt *statement, tl_store_callback callback, v
         return TL_NOMEM;
     memcpy(path, bytes, (size_t)length);
     path[length] = 0;
-    tl_store_entry entry = {(uint64_t)id, path, sqlite3_column_int(statement, 2) != 0};
+    tl_store_entry entry = {(uint64_t)id, path, sqlite3_column_int(statement, 2) != 0,
+                            sqlite3_column_int(statement, 3) != 0};
     tl_status status = callback(context, &entry);
     free(path);
     return status;
@@ -487,7 +504,7 @@ tl_status store_load(tl_store *store, tl_store_callback callback, void *context)
         return TL_INVALID;
     sqlite3_stmt *statement = NULL;
     const char *sql =
-        "SELECT id,files.path,EXISTS(SELECT 1 FROM roots WHERE roots.path=files.path) "
+        "SELECT id,files.path,EXISTS(SELECT 1 FROM roots WHERE roots.path=files.path),files.is_dir "
         "FROM files ORDER BY id";
     if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
         return TL_IO;
@@ -697,17 +714,45 @@ tl_status store_open_event(tl_store *store, const char *event_id, uint64_t file_
         status = TL_STATE;
     return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
 }
+tl_status store_desktop_open(tl_store *store, const char *event_id, const char *desktop_id,
+                             const char *search_id, int64_t timestamp) {
+    tl_status status = history_ready(store, event_id);
+    if (status != TL_OK)
+        return status;
+    if (desktop_id == NULL || desktop_id[0] == 0 || !json_utf8(desktop_id) ||
+        strlen(desktop_id) >= 4096 || timestamp < 0 ||
+        (search_id != NULL && (!json_utf8(search_id) || strlen(search_id) > 128)))
+        return TL_INVALID;
+    const char *sql = "INSERT INTO desktop_opens VALUES(?1,?2,(SELECT id FROM searches WHERE "
+                      "id=?3),?4) ON CONFLICT(event_id) DO UPDATE SET event_id=excluded.event_id "
+                      "WHERE desktop_opens.desktop_id=excluded.desktop_id AND "
+                      "desktop_opens.search_id IS excluded.search_id";
+    sqlite3_stmt *statement = NULL;
+    if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
+        return TL_IO;
+    if (sqlite3_bind_text(statement, 1, event_id, -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+        sqlite3_bind_text(statement, 2, desktop_id, -1, SQLITE_TRANSIENT) != SQLITE_OK ||
+        (search_id != NULL &&
+         sqlite3_bind_text(statement, 3, search_id, -1, SQLITE_TRANSIENT) != SQLITE_OK) ||
+        sqlite3_bind_int64(statement, 4, timestamp) != SQLITE_OK ||
+        sqlite3_step(statement) != SQLITE_DONE)
+        status = TL_IO;
+    else if (sqlite3_changes(store->db) != 1)
+        status = TL_STATE;
+    return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
+}
 tl_status store_history_prune(tl_store *store, int64_t cutoff, bool clear) {
     if (store == NULL || cutoff < 0)
         return TL_INVALID;
     if (store->transaction || store->reading)
         return TL_STATE;
     const char *steps[] = {"DELETE FROM opens WHERE ?1 OR ts<?2",
+                           "DELETE FROM desktop_opens WHERE ?1 OR ts<?2",
                            "DELETE FROM searches WHERE ?1 OR ts<?2"};
     tl_status status = execute(store, "BEGIN IMMEDIATE");
     if (status != TL_OK)
         return status;
-    for (size_t i = 0; i < 2 && status == TL_OK; i++) {
+    for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]) && status == TL_OK; i++) {
         sqlite3_stmt *statement = NULL;
         if (sqlite3_prepare_v2(store->db, steps[i], -1, &statement, NULL) != SQLITE_OK) {
             status = TL_IO;

@@ -10,20 +10,15 @@ static tl_status create_columns(tl_lexical *engine) {
     struct {
         tl_vec **vec;
         size_t size;
-    } columns[] = {{&engine->ids, sizeof(uint64_t)},
-                   {&engine->repeats, sizeof(uint64_t)},
-                   {&engine->masks, sizeof(uint64_t)},
-                   {&engine->path_offsets, sizeof(uint32_t)},
-                   {&engine->name_offsets, sizeof(uint32_t)},
-                   {&engine->name_lengths, sizeof(uint32_t)},
-                   {&engine->dirs, sizeof(uint32_t)},
-                   {&engine->roots, sizeof(uint32_t)},
-                   {&engine->paths, 1},
-                   {&engine->symbols, sizeof(uint32_t)},
-                   {&engine->boundaries, 1},
-                   {&engine->scratch_symbols, sizeof(uint32_t)},
-                   {&engine->scratch_boundaries, 1},
-                   {&engine->scratch_offsets, sizeof(size_t)}};
+    } columns[] = {
+        {&engine->directory_ids, sizeof(uint64_t)},   {&engine->ids, sizeof(uint64_t)},
+        {&engine->repeats, sizeof(uint64_t)},         {&engine->masks, sizeof(uint64_t)},
+        {&engine->path_offsets, sizeof(uint32_t)},    {&engine->name_offsets, sizeof(uint32_t)},
+        {&engine->name_lengths, sizeof(uint32_t)},    {&engine->dirs, sizeof(uint32_t)},
+        {&engine->roots, sizeof(uint32_t)},           {&engine->paths, 1},
+        {&engine->symbols, sizeof(uint32_t)},         {&engine->boundaries, 1},
+        {&engine->scratch_symbols, sizeof(uint32_t)}, {&engine->scratch_boundaries, 1},
+        {&engine->scratch_offsets, sizeof(size_t)}};
     for (size_t i = 0; i < sizeof(columns) / sizeof(columns[0]); i++) {
         tl_status status = vec_create(columns[i].size, columns[i].vec);
         if (status != TL_OK)
@@ -59,19 +54,13 @@ tl_status lexical_create(tl_lexical **out) {
 void lexical_destroy(tl_lexical *engine) {
     if (engine == NULL)
         return;
-    tl_vec *columns[] = {engine->ids,
-                         engine->masks,
-                         engine->repeats,
-                         engine->path_offsets,
-                         engine->name_offsets,
-                         engine->name_lengths,
-                         engine->dirs,
-                         engine->roots,
-                         engine->paths,
-                         engine->symbols,
-                         engine->boundaries,
-                         engine->scratch_symbols,
-                         engine->scratch_boundaries,
+    tl_vec *columns[] = {engine->directory_ids,   engine->ids,
+                         engine->masks,           engine->repeats,
+                         engine->path_offsets,    engine->name_offsets,
+                         engine->name_lengths,    engine->dirs,
+                         engine->roots,           engine->paths,
+                         engine->symbols,         engine->boundaries,
+                         engine->scratch_symbols, engine->scratch_boundaries,
                          engine->scratch_offsets};
     for (size_t i = 0; i < sizeof(columns) / sizeof(columns[0]); i++)
         vec_destroy(columns[i]);
@@ -177,6 +166,30 @@ tl_status lexical_add(tl_lexical *engine, uint64_t id, const char *path, bool is
 }
 size_t lexical_count(const tl_lexical *engine) {
     return engine == NULL ? 0 : engine->count;
+}
+tl_status lexical_add_entry(tl_lexical *engine, uint64_t id, const char *path, bool is_root,
+                            bool is_dir) {
+    tl_status status = lexical_add(engine, id, path, is_root);
+    if (status == TL_OK && is_dir) {
+        status = vec_append(engine->directory_ids, &id);
+        if (status != TL_OK)
+            engine->failed = true;
+    }
+    return status;
+}
+bool lexical_is_dir(const tl_lexical *engine, uint64_t id) {
+    if (engine == NULL || !engine->finished)
+        return false;
+    const uint64_t *ids = vec_const_data(engine->directory_ids);
+    size_t low = 0, high = vec_count(engine->directory_ids);
+    while (low < high) {
+        size_t middle = low + (high - low) / 2;
+        if (ids[middle] < id)
+            low = middle + 1;
+        else
+            high = middle;
+    }
+    return low < vec_count(engine->directory_ids) && ids[low] == id;
 }
 tl_status lexical_resolve(const tl_lexical *engine, uint64_t id, const char **out) {
     if (out == NULL)
@@ -306,10 +319,10 @@ static tl_status build_directory_channel(tl_lexical *engine) {
     return status == TL_OK ? prefix_finish(engine->dir_prefix) : status;
 }
 static void seal_columns(tl_lexical *engine) {
-    tl_vec *columns[] = {engine->ids,          engine->masks,        engine->repeats,
-                         engine->path_offsets, engine->name_offsets, engine->name_lengths,
-                         engine->dirs,         engine->roots,        engine->paths,
-                         engine->symbols,      engine->boundaries};
+    tl_vec *columns[] = {engine->directory_ids, engine->ids,          engine->masks,
+                         engine->repeats,       engine->path_offsets, engine->name_offsets,
+                         engine->name_lengths,  engine->dirs,         engine->roots,
+                         engine->paths,         engine->symbols,      engine->boundaries};
     for (size_t i = 0; i < sizeof(columns) / sizeof(columns[0]); i++)
         vec_shrink(columns[i]);
     engine->columns = (struct lexical_columns){.ids = vec_const_data(engine->ids),

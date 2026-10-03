@@ -9,6 +9,7 @@
 #define IPC_RESPONSE_BYTES (1024U * 1024U)
 #define IPC_REQUEST_ID_BYTES 64
 #define IPC_HISTORY_ID_BYTES 128
+#define IPC_DESKTOP_ID_BYTES 4096
 #define IPC_DEADLINE_MS 5000
 typedef enum {
     IPC_QUERY,
@@ -22,6 +23,8 @@ typedef struct {
     tl_ipc_operation operation;
     char request_id[IPC_REQUEST_ID_BYTES + 1], query[LEXICAL_QUERY_BYTES + 1];
     char search_id[IPC_HISTORY_ID_BYTES + 1], event_id[IPC_HISTORY_ID_BYTES + 1];
+    /* Internal writer-only resolved desktop id; never accepted from the wire. */
+    char desktop_id[IPC_DESKTOP_ID_BYTES];
     uint64_t file_id;
     size_t limit;
 } tl_ipc_request;

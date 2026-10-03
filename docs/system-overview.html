@@ -77,13 +77,13 @@
     <header>
       <p class="eyebrow">Torchlight · project overview</p>
       <h1>Find your files. Fast.</h1>
-      <p class="intro">A Linux launcher that finds files and folders by their names and paths. The resident background service keeps search ready and follows file changes. The popup comes next.</p>
+      <p class="intro">A Linux launcher that finds files and folders by their names and paths. The resident background service keeps search ready and follows file changes. The popup searches applications, settings, files and folders.</p>
       <div class="badges" aria-label="Project status">
         <span class="badge built">M1 features built</span>
         <span class="badge open">Large-list speed target still open</span>
         <span class="badge built">M2 service built</span>
         <span class="badge built">M2 review fixes verified</span>
-        <span class="badge planned">Next milestone: M3 popup</span>
+        <span class="badge planned">Next milestone: M4 semantics</span>
       </div>
     </header>
 
@@ -134,7 +134,7 @@
       <div id="future" role="tabpanel" aria-labelledby="future-tab" hidden>
         <p class="flow-label">Search without loading the list again</p>
         <div class="flow" aria-label="Terminal or popup to local connection to background service to search engine">
-          <div class="node future"><strong>Desktop popup</strong><small>A hotkey opens the GTK4 launcher in M3.</small><span class="badge planned">M3</span></div>
+          <div class="node"><strong>Desktop popup</strong><small>GTK4 keyboard launcher with app/settings search and native actions.</small><span class="badge built">M3 built</span></div>
           <span class="arrow" aria-hidden="true">↔</span>
           <div class="node"><strong>Local connection</strong><small>Send a query and receive results.</small><span class="badge built">Built</span></div>
           <span class="arrow" aria-hidden="true">↔</span>
@@ -142,7 +142,7 @@
           <span class="arrow" aria-hidden="true">↔</span>
           <div class="node"><strong>Name search</strong><small>The existing engine stays in memory.</small><span class="badge built">Engine built</span></div>
         </div>
-        <p class="caption">Results return through the same local connection. The popup will let you select a result and open it.</p>
+        <p class="caption">Results return through the same local connection. The popup lets you select a result and open it.</p>
         <p class="flow-label">Keep the saved list up to date</p>
         <div class="flow" aria-label="Folders to scanner and watcher to background writer to saved list">
           <div class="node"><strong>Your folders</strong><small>Files may be added, moved or removed.</small></div>
@@ -175,11 +175,11 @@
         <h2 id="remaining-title">What is left</h2>
         <ul>
           <li>Improve large-list latency and how quickly changes appear.</li>
-          <li>Build the popup, shortcut and open-file actions.</li>
+          <li>Broaden desktop, accessibility and monitor-scaling acceptance.</li>
           <li>Add optional search by meaning.</li>
           <li>Learn from your file-opening habits, with history controls.</li>
         </ul>
-        <p class="notice"><strong>M1/M2 are ready for M3.</strong> Query allocations and typo bounds are fixed, and roughly 6 ms p95 is accepted near 500,000 paths. The original 5 ms target and full-index rebuild cost are deferred until the whole system is built. Typos in unfinished words also need better results.</p>
+        <p class="notice"><strong>M1/M2/M3 are implemented; M4 is next.</strong> The GTK4 popup searches installed applications, settings, files and folders. Cinnamon X11 launch and reveal actions are verified. The original 5 ms target and full-index rebuild cost remain optimization work. See the <a href="m3-completion.md">M3 verification report</a>.</p>
       </section>
     </div>
 
@@ -210,17 +210,17 @@
 
     <section aria-labelledby="roadmap-title">
       <h2 id="roadmap-title">The next steps</h2>
-      <p class="section-note">M1/M2 checks pass with the accepted latency. Build the visible app next, following the <a href="m3-gui-design.md">GUI specification</a> and <a href="m3-gui-preview.html">interactive preview</a>.</p>
+      <p class="section-note">M1/M2 checks pass with the accepted latency. The visible app is implemented, following the <a href="m3-gui-design.md">GUI specification</a> and <a href="m3-gui-preview.html">interactive preview</a>.</p>
       <div class="roadmap">
         <article class="step"><span class="badge built">M2 · Built and reviewed</span><h3 style="margin-top: 12px">Stay ready</h3><p>Resident daemon, immutable snapshots, background updates, history and status. Replacement identity and inotify fallback now have regression coverage.</p></article>
-        <article class="step next"><span class="badge planned">M3 · Next</span><h3 style="margin-top: 12px">Use the popup</h3><p>GTK4 window, keyboard shortcut, live results, open or reveal files, and start at login.</p></article>
-        <article class="step"><span class="badge planned">M4</span><h3 style="margin-top: 12px">Search by meaning</h3><p>Optional model-based matches using file names and folder names.</p></article>
+        <article class="step"><span class="badge built">M3 · Built</span><h3 style="margin-top: 12px">Use the popup</h3><p>GTK4 window, keyboard shortcut, live results, open or reveal files, and start at login.</p></article>
+        <article class="step next"><span class="badge planned">M4</span><h3 style="margin-top: 12px">Search by meaning</h3><p>Optional model-based matches using file names and folder names.</p></article>
         <article class="step"><span class="badge planned">M5</span><h3 style="margin-top: 12px">Fit your habits</h3><p>Boost useful results based on what you open. Use the existing history controls and compare personalized ranking.</p></article>
       </div>
     </section>
 
     <footer>
-      <span>Status: 3 October 2026 · M1/M2 ready for M3 at accepted latency</span>
+      <span>Status: 3 October 2026 · M1/M2/M3 implemented; M4 next</span>
       <nav aria-label="More details"><a href="../PLAN.md">Full plan</a><a href="architecture.md">Architecture</a><a href="m2-review.md">M2 review</a><a href="evaluation.md">Speed results</a></nav>
     </footer>
   </main>

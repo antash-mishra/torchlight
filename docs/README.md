@@ -2,7 +2,7 @@
 
 For a simple visual overview, open [Built and next](system-overview.html) in a
 browser. It shows the current system, the planned system, and the next steps.
-The M3 popup now has a [GUI specification](m3-gui-design.md) and
+The implemented M3 popup follows the [GUI specification](m3-gui-design.md) and
 [interactive design preview](m3-gui-preview.html), including Cinnamon X11 focus,
 keyboard actions, status/error states and asynchronous IPC requirements.
 
@@ -16,10 +16,16 @@ Start here. Read in this order:
 
 ## Implementation status
 
-M1/M2 are ready for M3 with the user's acceptance of roughly 6 ms p95 at 500k
-paths. The original 5 ms target and full-engine rebuild cost remain later
-optimization work. The [readiness report](m3-readiness.md) records verification
-and current measurements. Query-contract fixes and exact resident filtering
+M3 is implemented: installed application/settings search through resident IPC,
+GTK4 keyboard popup, safe native launch/open/reveal actions, desktop integration
+and a systemd user unit. See [desktop setup](desktop-setup.md),
+[M3 verification](m3-completion.md) and [ADR 0015](adr/0015-m3-desktop-catalog-and-launcher.md).
+M4 semantic search is next.
+
+M3 proceeded with the user's acceptance of roughly 6 ms p95 at 500k paths.
+The original 5 ms target and full-engine rebuild cost remain later optimization
+work. The [readiness report](m3-readiness.md) records pre-M3 verification
+and measurements. Query-contract fixes and exact resident filtering
 are described in [ADR 0013](adr/0013-query-contracts-and-resident-filters.md).
 
 Both findings from the [M2 review](m2-review.md) are fixed and covered by sanitizer
@@ -52,6 +58,7 @@ the root [README](../README.md) for commands, and
 | core | Configuration | [config](modules/config/README.md) |
 | index | Path tokenizer | [tokenize](modules/tokenize/README.md) |
 | index | Lexical candidate orchestrator | [lexical](modules/lexical/README.md) |
+| index | Installed applications and settings | [desktop](modules/desktop/README.md) |
 | index | Resident catalog snapshots | [catalog](modules/catalog/README.md) |
 | index | Exact/prefix channel | [prefix](modules/prefix/README.md) |
 | index | Trigram channel | [trigram](modules/trigram/README.md) |
@@ -98,6 +105,10 @@ the root [README](../README.md) for commands, and
   enforces allocation/typo bounds and specifies exact bitmap/parallel query work.
 - [0014: M3 GTK popup design](adr/0014-m3-gtk-popup-design.md)
   fixes the presentation, interaction and desktop acceptance specification.
+- [0015: M3 desktop catalog and launcher](adr/0015-m3-desktop-catalog-and-launcher.md)
+  records resident desktop discovery, asynchronous UI/actions and schema v3 history.
+- [0016: empty popup without default recommendations](adr/0016-empty-popup-without-recommendations.md)
+  makes opening/clearing the popup wait for a typed search.
 
 ## Keeping docs current
 

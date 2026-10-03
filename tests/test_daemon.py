@@ -47,7 +47,8 @@ class Service:
         self.extra = extra
         self.env = dict(os.environ, HOME=str(self.base), XDG_RUNTIME_DIR=str(self.base),
                         XDG_CONFIG_HOME=str(self.base / "configuration"),
-                        XDG_DATA_HOME=str(self.base / "state"))
+                        XDG_DATA_HOME=str(self.base / "state"),
+                        XDG_DATA_DIRS=str(self.base / "no-system-apps"))
         self.process = None
         self.log = None
 

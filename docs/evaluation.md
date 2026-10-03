@@ -326,3 +326,17 @@ algorithm with the same typo-bound fix over 6,026 typing/backspace cases at 50k
 and 6,082 at 500k, including capacities ten and 1,000. This supplements the
 independent score fixtures; it is not a relevance metric. ThreadSanitizer could
 not start on this host (`unexpected memory mapping`), so it provides no result.
+
+## M3 verification (3 October 2026)
+
+M3 adds desktop discovery, mixed results and the GTK popup. The
+[M3 verification report](m3-completion.md) records unit/integration checks,
+Cinnamon focus/theme/scale observations, native settings activation and remaining
+platform coverage. Raw file-corpus benchmarks are
+[lexical](../tests/bench/results/2026-10-03-m3-lexical.txt) and
+[daemon](../tests/bench/results/2026-10-03-m3-daemon.txt). XDG applications are
+isolated in the file benchmark; mixed catalog behavior has a separate integration
+suite. At 500k the recorded engine/IPC p95 was 6.929/7.265 ms and update lag
+4.973 s, with concurrent validation activity. File ranking and 9/9 fixtures are
+unchanged. The earlier roughly 6 ms readiness acceptance and deferred 5 ms target
+remain the performance context, not a claim that this new run meets 5 ms.

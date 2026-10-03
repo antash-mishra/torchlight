@@ -39,7 +39,8 @@ class Resident:
         start = time.perf_counter()
         self.process = subprocess.Popen(self.command, stdout=self.log, stderr=self.log,
                                         env=dict(os.environ, XDG_CONFIG_HOME=str(self.base),
-                                                 XDG_DATA_HOME=str(self.base), HOME=str(self.base)))
+                                                 XDG_DATA_HOME=str(self.base), HOME=str(self.base),
+                                                 XDG_DATA_DIRS=str(self.base / "no-system-apps")))
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
             if self.process.poll() is not None:

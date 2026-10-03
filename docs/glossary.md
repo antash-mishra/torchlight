@@ -58,3 +58,12 @@
 | **Grapheme byte offset** | Original start byte of the grapheme cluster contributing a normalized symbol; folded expansions share the offset. |
 | **Sealed engine** | M1 catalog/index builder after finish, immutable until destruction; workspaces borrow its lifetime. |
 | **Query workspace** | Bounded scratch allocated before querying and bound to one sealed engine, independently reusable per caller. |
+
+- **Desktop id:** XDG application identity derived from its relative `.desktop`
+  path, replacing directory separators with hyphens; user entries mask system
+  entries with the same id.
+- **Desktop result id:** Session-scoped numeric IPC identity for an unchanged,
+  visible desktop entry. Changes/removal/restart invalidate it; it is distinct
+  from a durable SQLite file id.
+- **Desktop revision:** Fingerprint of the selected desktop filename and canonical
+  keyfile content, checked before native activation to reject replacement entries.

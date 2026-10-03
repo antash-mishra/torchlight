@@ -1,0 +1,43 @@
+cc -I/usr/include/gio-unix-2.0 -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -pthread -I/usr/include/libmount -I/usr/include/blkid  -Iinclude -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -D_DEFAULT_SOURCE -D_GNU_SOURCE -I/tmp/torchlight-deps/usr/include -std=c17 -O3 -DNDEBUG -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror src/core/common.c src/core/vec.c src/core/hashmap.c src/core/config.c src/core/json.c src/core/path.c src/core/sort.c src/core/mask.c src/core/parallel.c src/index/tokenize.c src/index/prefix.c src/index/subseq.c src/index/fuzzy.c src/index/trigram.c src/index/typo.c src/index/dirtree.c src/index/lexical.c src/index/desktop.c src/index/lexical_query.c src/index/catalog.c src/fs/crawl.c src/fs/watch.c src/storage/store.c src/ipc/ipc.c src/ipc/async.c src/ipc/client.c src/service/writer.c src/service/daemon.c tests/bench/bench_lexical.c tests/bench/corpus.c tests/bench/queries.c -L/tmp/torchlight-deps/usr/lib/x86_64-linux-gnu -Wl,-rpath,/tmp/torchlight-deps/usr/lib/x86_64-linux-gnu -lgio-2.0 -lgobject-2.0 -lglib-2.0  -pthread -lsqlite3 -lutf8proc -o build/bench_lexical
+./build/bench_lexical --synthetic 50000
+paths=50000 mean_path_bytes=71.4 build_s=0.282 engine_rss_kib=30176
+typing_ms n=12406 p50=0.052 p95=0.771 p99=1.665 max=5.154
+whole_query_ms n=1200 p50=0.154 p95=1.176 p99=2.029 max=4.887
+quality tuning/exact n=200 recall@1=0.980 recall@10=1.000 mrr@10=0.987 candidate_recall@1000=1.000
+quality tuning/prefix n=200 recall@1=0.260 recall@10=0.545 mrr@10=0.371 candidate_recall@1000=1.000
+quality tuning/abbreviation n=200 recall@1=0.550 recall@10=0.800 mrr@10=0.634 candidate_recall@1000=0.955
+quality tuning/typo n=200 recall@1=0.755 recall@10=0.865 mrr@10=0.802 candidate_recall@1000=0.965
+quality tuning/partial_typo n=200 recall@1=0.015 recall@10=0.045 mrr@10=0.022 candidate_recall@1000=0.570
+quality tuning/parent n=200 recall@1=0.295 recall@10=0.640 mrr@10=0.405 candidate_recall@1000=1.000
+quality tuning/all n=1200 recall@1=0.476 recall@10=0.649 mrr@10=0.537 candidate_recall@1000=0.915
+quality held_out/exact n=200 recall@1=0.970 recall@10=1.000 mrr@10=0.980 candidate_recall@1000=1.000
+quality held_out/prefix n=200 recall@1=0.245 recall@10=0.430 mrr@10=0.309 candidate_recall@1000=1.000
+quality held_out/abbreviation n=200 recall@1=0.475 recall@10=0.730 mrr@10=0.552 candidate_recall@1000=0.965
+quality held_out/typo n=200 recall@1=0.755 recall@10=0.850 mrr@10=0.791 candidate_recall@1000=0.990
+quality held_out/partial_typo n=200 recall@1=0.015 recall@10=0.035 mrr@10=0.022 candidate_recall@1000=0.570
+quality held_out/parent n=200 recall@1=0.280 recall@10=0.645 mrr@10=0.373 candidate_recall@1000=0.995
+quality held_out/all n=1200 recall@1=0.457 recall@10=0.615 mrr@10=0.504 candidate_recall@1000=0.920
+fixtures=9/9
+catalog_query_ms n=1200 p50=0.131 p95=0.808 p99=1.459 max=3.633
+peak_rss_kib=46440
+./build/bench_lexical --synthetic 500000
+paths=500000 mean_path_bytes=79.6 build_s=3.412 engine_rss_kib=255820
+typing_ms n=12477 p50=1.203 p95=7.512 p99=14.798 max=39.289
+whole_query_ms n=1200 p50=1.702 p95=7.313 p99=12.022 max=24.599
+quality tuning/exact n=200 recall@1=0.990 recall@10=1.000 mrr@10=0.995 candidate_recall@1000=1.000
+quality tuning/prefix n=200 recall@1=0.140 recall@10=0.395 mrr@10=0.217 candidate_recall@1000=0.940
+quality tuning/abbreviation n=200 recall@1=0.225 recall@10=0.510 mrr@10=0.301 candidate_recall@1000=0.895
+quality tuning/typo n=200 recall@1=0.590 recall@10=0.790 mrr@10=0.667 candidate_recall@1000=0.985
+quality tuning/partial_typo n=200 recall@1=0.030 recall@10=0.040 mrr@10=0.034 candidate_recall@1000=0.245
+quality tuning/parent n=200 recall@1=0.250 recall@10=0.395 mrr@10=0.299 candidate_recall@1000=0.925
+quality tuning/all n=1200 recall@1=0.371 recall@10=0.522 mrr@10=0.419 candidate_recall@1000=0.832
+quality held_out/exact n=200 recall@1=0.980 recall@10=1.000 mrr@10=0.987 candidate_recall@1000=1.000
+quality held_out/prefix n=200 recall@1=0.145 recall@10=0.395 mrr@10=0.210 candidate_recall@1000=0.925
+quality held_out/abbreviation n=200 recall@1=0.255 recall@10=0.570 mrr@10=0.345 candidate_recall@1000=0.890
+quality held_out/typo n=200 recall@1=0.570 recall@10=0.830 mrr@10=0.665 candidate_recall@1000=0.995
+quality held_out/partial_typo n=200 recall@1=0.005 recall@10=0.005 mrr@10=0.005 candidate_recall@1000=0.190
+quality held_out/parent n=200 recall@1=0.220 recall@10=0.385 mrr@10=0.270 candidate_recall@1000=0.950
+quality held_out/all n=1200 recall@1=0.362 recall@10=0.531 mrr@10=0.414 candidate_recall@1000=0.825
+fixtures=9/9
+catalog_query_ms n=1200 p50=1.732 p95=7.059 p99=10.971 max=20.883
+peak_rss_kib=399000

@@ -3,6 +3,8 @@
 CC ?= cc
 PKG_CONFIG ?= pkg-config
 DEPS_PREFIX ?=
+CPPFLAGS += $(shell $(PKG_CONFIG) --cflags gio-unix-2.0)
+LDLIBS += $(shell $(PKG_CONFIG) --libs gio-unix-2.0)
 CPPFLAGS += -Iinclude -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -D_DEFAULT_SOURCE -D_GNU_SOURCE
 WARNINGS = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror
 CFLAGS ?= -std=c17 -O0 -g3
@@ -19,8 +21,8 @@ endif
 SOURCES = src/core/common.c src/core/vec.c src/core/hashmap.c src/core/config.c src/core/json.c src/core/path.c src/core/sort.c src/core/mask.c src/core/parallel.c \
           src/index/tokenize.c src/index/prefix.c src/index/subseq.c src/index/fuzzy.c \
           src/index/trigram.c src/index/typo.c src/index/dirtree.c src/index/lexical.c \
-          src/index/lexical_query.c src/index/catalog.c src/fs/crawl.c src/fs/watch.c src/storage/store.c \
-          src/ipc/ipc.c src/ipc/client.c src/service/writer.c src/service/daemon.c
+          src/index/desktop.c src/index/lexical_query.c src/index/catalog.c src/fs/crawl.c src/fs/watch.c src/storage/store.c \
+          src/ipc/ipc.c src/ipc/async.c src/ipc/client.c src/service/writer.c src/service/daemon.c
 BIN_SOURCES = src/bin/torchlight.c src/bin/torchlightd.c
 OBJECTS = $(SOURCES:%.c=build/%.o)
 HEADERS = $(wildcard include/torchlight/*.h) $(wildcard src/*/*.h)
@@ -34,7 +36,12 @@ SAN_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pi
 CLANG_TIDY ?= clang-tidy
 CPPCHECK ?= cppcheck
 .PHONY: all test lint format bench bench-daemon clean
-all: build/torchlight build/torchlightd
+GTK_CPPFLAGS = $(subst -I,-isystem ,$(shell $(PKG_CONFIG) --cflags 'gtk4 >= 4.14' x11))
+GTK_LDLIBS = $(shell $(PKG_CONFIG) --libs 'gtk4 >= 4.14' x11)
+UI_SOURCES = ui/gtk/model.c ui/gtk/actions.c ui/gtk/launcher.c src/bin/torchlight-gtk.c
+all: build/torchlight build/torchlightd build/torchlight-gtk
+build/torchlight-gtk: $(OBJECTS) $(UI_SOURCES) ui/gtk/actions.h $(HEADERS)
+	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(UI_SOURCES) $(OBJECTS) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
 build/torchlight: $(OBJECTS) build/src/bin/torchlight.o
 	$(CC) $(CFLAGS) $(WARNINGS) $^ $(LDFLAGS) $(LDLIBS) -o $@
 build/torchlightd: $(OBJECTS) build/src/bin/torchlightd.o
@@ -42,9 +49,9 @@ build/torchlightd: $(OBJECTS) build/src/bin/torchlightd.o
 build/%.o: %.c $(HEADERS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -MMD -MP -c $< -o $@
-build/tests: $(SOURCES) $(TEST_SOURCES) $(HEADERS) tests/unit/test.h
+build/tests: $(SOURCES) ui/gtk/model.c ui/gtk/actions.c $(TEST_SOURCES) $(HEADERS) ui/gtk/actions.h tests/unit/test.h
 	@mkdir -p build
-	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $(SAN_FLAGS) $(SOURCES) $(TEST_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
+	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $(SAN_FLAGS) $(SOURCES) ui/gtk/model.c ui/gtk/actions.c $(TEST_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
 build/torchlight-sanitized: $(SOURCES) src/bin/torchlight.c $(HEADERS)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $(SAN_FLAGS) $(SOURCES) src/bin/torchlight.c $(LDFLAGS) $(LDLIBS) -o $@
@@ -58,14 +65,17 @@ test: build/tests build/torchlight-sanitized build/torchlightd-sanitized build/t
 	ASAN_OPTIONS=detect_leaks=1 ./build/tests
 	./build/test_query_alloc
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_cli.py ./build/torchlight-sanitized
+	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_desktop.py ./build/torchlightd-sanitized
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_daemon.py ./build/torchlight-sanitized ./build/torchlightd-sanitized
 lint:
 	@command -v $(CLANG_TIDY) >/dev/null || { echo 'clang-tidy is required'; exit 1; }
 	@command -v $(CPPCHECK) >/dev/null || { echo 'cppcheck is required'; exit 1; }
 	$(CLANG_TIDY) $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(FIXTURE_SOURCE) $(ALLOC_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
 	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(FIXTURE_SOURCE) $(ALLOC_SOURCE)
+	$(CLANG_TIDY) $(UI_SOURCES) --warnings-as-errors='*' -- $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 $(WARNINGS)
+	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(UI_SOURCES)
 format:
-	clang-format -i $(SOURCES) $(BIN_SOURCES) $(HEADERS) tests/unit/*.h $(TEST_SOURCES) tests/bench/*.c tests/bench/*.h $(FIXTURE_SOURCE) $(ALLOC_SOURCE)
+	clang-format -i $(UI_SOURCES) ui/gtk/actions.h $(SOURCES) $(BIN_SOURCES) $(HEADERS) tests/unit/*.h $(TEST_SOURCES) tests/bench/*.c tests/bench/*.h $(FIXTURE_SOURCE) $(ALLOC_SOURCE)
 build/bench_lexical: $(SOURCES) $(BENCH_SOURCES) $(HEADERS) $(wildcard tests/bench/*.h)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) $(SOURCES) $(BENCH_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
@@ -84,3 +94,15 @@ bench-daemon: build/torchlightd-release build/bench_fixture
 clean:
 	$(RM) -r build
 -include $(OBJECTS:.o=.d) build/src/bin/torchlight.d build/src/bin/torchlightd.d
+
+# Staged installs are reviewable with DESTDIR; prefix defaults to per-user tools.
+PREFIX ?= $(HOME)/.local
+DESTDIR ?=
+.PHONY: install test-ui
+install: all
+	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/applications $(DESTDIR)$(PREFIX)/lib/systemd/user
+	install -m 755 build/torchlight build/torchlightd build/torchlight-gtk $(DESTDIR)$(PREFIX)/bin/
+	install -m 644 packaging/org.torchlight.Launcher.desktop $(DESTDIR)$(PREFIX)/share/applications/
+	install -m 644 packaging/torchlightd.service $(DESTDIR)$(PREFIX)/lib/systemd/user/
+test-ui: all
+	python3 tests/test_popup.py

@@ -64,4 +64,7 @@ void catalog_reclaim(tl_catalog *catalog);
 /** Copy active view counts and total retained snapshots/leases under the lock.
  * Thread-safe; TL_INVALID for NULL; TL_OK otherwise. No allocation or I/O. */
 tl_status catalog_stats(tl_catalog *catalog, tl_catalog_stats *out);
+/** Read resident directory metadata while leased; false if absent/unleased.
+ * No allocation/I/O; only valid until release. */
+bool catalog_is_dir(const tl_catalog_reader *reader, uint64_t id);
 #endif

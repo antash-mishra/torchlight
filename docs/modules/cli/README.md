@@ -67,3 +67,9 @@ after recovery, and injected SQLite failures before/after a healthy root scan.
 - [Refresh failure safety ADR](../../adr/0009-unresolved-roots-and-refresh-failures.md)
 - [Evaluation](../../evaluation.md)
 - Public headers document parameters, lifetimes and error contracts.
+
+M3 daemon queries include installed applications and settings alongside files.
+JSON output exposes result kinds and desktop launch metadata. Plain/NUL output
+continues to print exact result paths (desktop filenames for application entries).
+Explicit local --db queries remain file-only. Resolve/record accept current
+session-scoped desktop result ids as well as durable file ids.

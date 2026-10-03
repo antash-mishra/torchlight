@@ -1,0 +1,15 @@
+# Resident per-user launcher backend, started with the graphical session.
+[Unit]
+Description=Torchlight search daemon
+PartOf=graphical-session.target
+After=graphical-session-pre.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/torchlightd
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=15
+
+[Install]
+WantedBy=graphical-session.target

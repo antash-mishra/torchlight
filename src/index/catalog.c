@@ -219,3 +219,7 @@ tl_status catalog_destroy(tl_catalog *catalog) {
     free(catalog);
     return TL_OK;
 }
+
+bool catalog_is_dir(const tl_catalog_reader *reader, uint64_t id) {
+    return reader != NULL && reader->leased && lexical_is_dir(reader->snapshot->engine, id);
+}

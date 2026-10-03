@@ -42,12 +42,13 @@ def schema_v1_migration(temporary):
         connection.execute("INSERT INTO opens VALUES('legacy-open',?,'legacy-search',1)", (original,))
         # Remove the additive v2 column to recreate the exact legacy layout.
         connection.execute("ALTER TABLE files DROP COLUMN identity")
+        connection.execute("DROP TABLE desktop_opens")
         connection.execute("PRAGMA user_version=1")
         connection.execute("UPDATE meta SET value='1' WHERE key='schema_version'")
     run("query", "--db", str(database), "saved.txt")
     with sqlite3.connect(database) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
-        assert connection.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == "2"
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0] == "3"
         assert connection.execute("SELECT value FROM meta WHERE key='catalog_gen'").fetchone()[0] == before
         assert connection.execute("SELECT identity FROM files WHERE id=?", (original,)).fetchone() == (None,)
     run("index", "--db", str(database), str(home))

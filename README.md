@@ -1,23 +1,24 @@
 # Torchlight
 
-A Linux filename/path launcher written in C17. M1 provides a local index/query
+A Linux application/settings/file launcher written in C17. M1 provides a local index/query
 CLI with a SQLite catalog and Unicode-aware matching: prefixes, initials,
 abbreviations (subsequences), one-edit typos, partial-word trigram overlap and
-parent-folder context. M1/M2 are ready for M3 with the accepted roughly 6 ms
+parent-folder context. The M1/M2 foundation was accepted at roughly 6 ms
 p95 latency at 500k paths. The original 5 ms target remains later optimization
 work; see [readiness](docs/m3-readiness.md) and [evaluation](docs/evaluation.md).
 
 M2 provides a [resident daemon](docs/modules/daemon/README.md), bounded Unix-socket
 IPC, asynchronous catalog/history writing, live inotify updates, reconciliation,
 file-id resolution and status. Startup serves the saved catalog before scanning.
-GTK popup/service integration is next in M3, following the
+M3 adds installed application/settings search, the GTK4 popup and service integration, following the
 [GUI design](docs/m3-gui-design.md) and [interactive preview](docs/m3-gui-preview.html).
 Full index rebuild cost remains later performance work.
 
 ## Build and use
 
 On Debian/Ubuntu/Mint, install `build-essential`, `pkg-config`, `libsqlite3-dev`,
-`libutf8proc-dev`, `clang-format`, `clang-tidy`, and `cppcheck`. SQLite and utf8proc
+`libutf8proc-dev`, `libgtk-4-dev` (GTK4 ≥ 4.14), `libglib2.0-dev`,
+`libx11-dev`, `clang-format`, `clang-tidy`, and `cppcheck`. SQLite and utf8proc
 were approved for this implementation. No third-party source is vendored.
 
 ```sh
@@ -43,7 +44,7 @@ another socket on both commands. SIGINT/SIGTERM shut down cleanly. The daemon
 accepts `--no-history`, `--history-days N` (default 30), `--rescan-ms N` (default
 30000), `--watch-capacity N`, `--max-entries N` and `--max-path-bytes N`.
 `resolve FILE_ID` retrieves a current path; `record FILE_ID EVENT_ID [SEARCH_ID]`
-queues an accepted open record. Desktop opening/reveal actions arrive in M3.
+queues an accepted open record. The GTK popup opens/reveals files and activates installed desktop entries.
 
 When the daemon is stopped, offline commands remain available:
 
@@ -91,6 +92,20 @@ escaped; use `--null` when passing exact paths to another program. The local CLI
 rebuilds the engine on each query, so it is slower than the warm engine the
 benchmark measures; the M2 daemon keeps it resident.
 
+## Desktop launcher
+
+```sh
+./build/torchlight-gtk --toggle
+./build/torchlight query --json "resolution"
+```
+
+Enter activates the selected application/settings entry or opens the resolved
+file. Ctrl+Enter reveals, arrows select and Escape closes. Results include app
+icons and native Cinnamon settings panels. Install and configure the systemd user
+service and your desktop shortcut using [desktop setup](docs/desktop-setup.md).
+`make install` supplies the executables, desktop entry and user unit.
+See [M3 verification](docs/m3-completion.md) for tested platform coverage.
+
 ## Checks
 
 ```sh
@@ -98,6 +113,7 @@ make test    # ASan + UBSan + leak checks, unit, CLI and daemon integration test
 make lint    # clang-tidy and cppcheck, warnings fail the build
 make format
 make bench   # release engine: latency and labeled ranking quality, 50k/500k paths
+make test-ui # Cinnamon/X11 keyboard acceptance (requires xdotool)
 make bench-daemon # release daemon: startup, IPC, indexing load, update lag and RSS
 ```
 

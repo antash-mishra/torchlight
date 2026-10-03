@@ -155,7 +155,8 @@ static tl_status build_entry(void *context, const tl_store_entry *entry) {
     if (builder->entries >= builder->options->max_entries ||
         length > builder->options->max_path_bytes - builder->bytes)
         return TL_LIMIT;
-    tl_status status = lexical_add(builder->engine, entry->id, entry->path, entry->is_root);
+    tl_status status =
+        lexical_add_entry(builder->engine, entry->id, entry->path, entry->is_root, entry->is_dir);
     if (status == TL_OK) {
         builder->entries++;
         builder->bytes += length;
@@ -432,6 +433,10 @@ static void drain_history(tl_writer *writer) {
         if (event.request.operation == IPC_QUERY)
             status =
                 store_search(writer->store, event.search_id, event.request.query, event.timestamp);
+        else if (event.request.operation == IPC_OPEN && event.request.desktop_id[0] != 0)
+            status = store_desktop_open(
+                writer->store, event.request.event_id, event.request.desktop_id,
+                event.request.search_id[0] == 0 ? NULL : event.request.search_id, event.timestamp);
         else if (event.request.operation == IPC_OPEN)
             status = store_open_event(
                 writer->store, event.request.event_id, event.request.file_id,
@@ -597,6 +602,9 @@ tl_status writer_history(tl_writer *writer, const tl_ipc_request *request, const
         !json_utf8(request->search_id) ||
         memchr(request->event_id, 0, sizeof(request->event_id)) == NULL ||
         !json_utf8(request->event_id))
+        return TL_INVALID;
+    if (memchr(request->desktop_id, 0, sizeof(request->desktop_id)) == NULL ||
+        !json_utf8(request->desktop_id))
         return TL_INVALID;
     if (request->operation == IPC_OPEN &&
         (request->event_id[0] == 0 || request->file_id == 0 || request->file_id > INT64_MAX))

@@ -1,6 +1,6 @@
 # store
 
-> **Status:** Implemented (M1/M2): schema v2, incarnation-aware ids, snapshots, renames and history
+> **Status:** Implemented (M1/M2/M3): schema v3, incarnation-aware ids, snapshots, renames and history
 > **Source:** `src/storage/store.c` · **Header:** `include/torchlight/store.h`
 > **Tests:** `tests/unit/test_store.c`, `tests/unit/test_identity.c`, CLI/daemon integration
 
@@ -89,3 +89,11 @@ integration tests verify disabled history, deduplication and clear.
 - [Partial scans ADR](../../adr/0007-partial-scans-and-component-parent-matching.md)
 - [Evaluation](../../evaluation.md)
 - Public headers document parameters, lifetimes and error contracts.
+
+Migration v3 adds desktop_opens(event_id, desktop_id, search_id, ts) and its
+retention index. Logical desktop ids do not reference files; nullable search ids
+retain the existing history semantics. store_desktop_open deduplicates identical
+retries and rejects conflicting events. Retention/clear delete desktop history
+alongside file history in one transaction. The v1/v2 migrations preserve file
+ids, identity, existing history and catalog_gen. store_load now exposes is_dir
+with each entry, so clients can receive resident file/folder kinds.

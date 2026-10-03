@@ -2,15 +2,14 @@
 
 ## Current implementation
 
-M2 runs as a resident lexical daemon. `torchlight query` uses Unix-socket IPC;
+M3 runs as a resident file/application daemon with a GTK4 popup. `torchlight query` uses Unix-socket IPC;
 explicit `--db` retains the M1 local query mode. Offline `index` still wires
 config -> crawl -> store, under the same database singleton lock as the daemon.
 The poll loop searches immutable catalog leases, encodes one terminal response
 and releases the lease before sending. Its worker owns SQLite, inotify,
 reconciliation, full-engine staging/publication and asynchronous history.
 Saved entries serve before background reconciliation. Status and restart/failure
-recovery are implemented. Semantics, personalization ranking and desktop UI below
-remain the target architecture. See ADR 0011 for the full-rebuild baseline and
+recovery are implemented. Semantics and personalization ranking below remain the target architecture. See ADR 0011 for the full-rebuild baseline and
 structural bounds. Roughly 6 ms p95 at 500k paths is accepted for starting M3;
 the original 5 ms target is later optimization work. See
 [readiness](m3-readiness.md) and the [GUI specification](m3-gui-design.md).
@@ -72,7 +71,8 @@ validated embedding generation (`emb_gen`) together, without mixing model versio
 
 1. The client sends a bounded, versioned JSON-line query with a request id.
 2. Assign a search id in memory and enqueue optional history once. Pin a
-   `catalog_gen`/`emb_gen` pair. **Lexical:** run `prefix`, `subseq`, and `trigram`,
+   `catalog_gen`/`emb_gen` pair. **Lexical:** run `prefix`,
+`subseq`, and `trigram`,
    plus eligible one-edit `typo` lookup unless an exact full-basename match
    makes it unnecessary. One/two-character queries use `prefix` and `subseq`.
    Narrow only complete subsequence membership with unchanged matching rules
@@ -131,3 +131,18 @@ old snapshots count toward peak RSS.
 Protect snapshot acquisition against reclamation with a short lifecycle lock
 or validated epoch scheme. A pointer load followed by reference increment alone
 is unsafe. Reclaim retired blocks in the background outside the lifecycle lock.
+
+## M3 desktop flow
+
+The daemon owns an independent XDG desktop catalog and refresh worker. Localized
+names, generic names and keywords use the existing lexical engine; typed desktop
+results merge with file results under short leases. catalog_gen remains the
+file-catalog version. Application IDs are session-scoped and retired on changes.
+The file engine carries immutable directory flags for UI icons.
+
+GTK's single-instance popup communicates only through asynchronous IPC exchanges.
+Its pure model suppresses obsolete responses and retains deliberate selection.
+Actions resolve current identities and run native GIO launch or file open/reveal
+in a worker, then enqueue accepted history. SQLite schema v3 stores desktop opens
+separately from file opens through the existing writer queue. See ADR 0015 and
+[desktop setup](desktop-setup.md).

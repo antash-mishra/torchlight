@@ -1,6 +1,6 @@
 # 0014: M3 GTK popup presentation and interaction
 
-**Status:** Accepted specification, implementation in M3
+**Status:** Accepted, implemented in M3; extended by ADR 0015
 
 ## Context
 

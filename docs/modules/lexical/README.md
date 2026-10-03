@@ -110,3 +110,9 @@ and remain independent of result capacity.
   [0013](../../adr/0013-query-contracts-and-resident-filters.md)
 - [Evaluation](../../evaluation.md) for latency, memory and ranking quality.
 - Public headers document parameters, lifetimes and error contracts.
+
+M3 adds lexical_add_entry with a directory flag and lexical_is_dir for resident
+presentation metadata. A sorted directory-id vector is separate from scoring;
+legacy lexical_add and all matching/ranking behavior remain unchanged. Desktop
+search reuses an independent engine over localized metadata without teaching
+lexical about GTK, XDG or launch commands.

@@ -1,6 +1,6 @@
 # writer
 
-> **Status:** Implemented (M2): async reconciliation, scan-only fallback, publication and history
+> **Status:** Implemented (M2/M3): async reconciliation, scan-only fallback, publication and history
 > **Source:** `src/service/writer.c` · **Header:** `include/torchlight/writer.h`
 > **Tests:** `tests/unit/test_writer.c`, `tests/unit/test_writer_fallback.c`, `tests/test_daemon.py`
 
@@ -66,3 +66,9 @@ watching, and preservation of the old watch set on later factory failures.
 See [ADR 0011](../../adr/0011-m2-daemon-writer-and-reconciliation.md),
 [ADR 0012](../../adr/0012-filesystem-incarnations-and-watch-fallback.md),
 [store](../store/README.md), [watch](../watch/README.md), [catalog](../catalog/README.md).
+
+M3 copies resolved desktop ids into internal history events. The same FIFO writer
+uses store_desktop_open for desktop launches and store_open_event for files.
+No-history, retention, deduplication, clear and diagnostic counters cover both.
+These writes do not change catalog_gen. Immutable directory flags are loaded
+alongside file paths for presentation, with no query-time filesystem lookup.
