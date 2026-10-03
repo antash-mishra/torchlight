@@ -1,9 +1,10 @@
 # Torchlight — Plan
 
 A Spotlight-style launcher for Linux: hit a hotkey, type, and get ranked
-files/folders. Written in C. The first version indexes **filenames and paths**.
-Semantic search uses only information present in those paths; document content
-extraction is a possible later extension.
+files/folders. Written in C. M1/M2 index **filenames and paths**; M3 adds
+installed applications and system-settings search. Semantic file search uses
+only information present in paths; document content extraction is a possible
+later extension.
 
 ## Implementation progress
 
@@ -13,6 +14,9 @@ whole system is built. Full-engine update rebuilds remain the initial strategy.
 See the [readiness report](docs/m3-readiness.md) for checks and current measured
 limits. M3 follows the [GTK GUI design](docs/m3-gui-design.md) and
 [interactive preview](docs/m3-gui-preview.html); its popup is not implemented yet.
+Application and settings search is also planned for M3, immediately after M1/M2.
+Extend the current file-result GUI specification for application/settings rows
+as part of that milestone.
 
 The readiness fixes (ADR 0013) remove trigram sorting's indirect heap allocation
 and enforce the documented 3–32-symbol typo-query range. Complete resident bitmap
@@ -72,6 +76,9 @@ ancestor pruning, recovery and injected SQLite write failures.
   timing does not restart after the lexical response.
 - Match exact names, prefixes, character subsequences/abbreviations, and
   bounded typos. Preserve strong exact basename matches when adding semantics.
+- From M3, search installed GUI applications and system-settings panels alongside
+  files and folders. `display` or `resolution` should return Display settings;
+  selecting it and pressing Enter should open the display configuration panel.
 - Support semantic matches when names or parent folders carry meaning.
   `tax receipts` → `ITR_2024_ack.pdf` is an evaluation case, not a guarantee.
 - Return lexical results while embeddings are unavailable or incomplete;
@@ -394,9 +401,22 @@ accepted launch requests, not guaranteed success in external applications.
    asynchronous writer and history, inotify, reconciliation, and status reporting. Validate
    create/delete/rename, directory moves, concurrent queries/updates, overflow,
    watch exhaustion, unreadable roots, and crash/restart recovery.
-3. **M3: Usable desktop launcher.** GTK4 popup, keyboard flow, desktop hotkey,
-   open/reveal actions, and systemd user service. Verify focus, stale-response
-   handling, and typing responsiveness in the target desktop session.
+3. **M3: Usable desktop launcher with application and settings search.**
+   After M1/M2, add a catalog of installed applications and settings panels
+   discovered from standard user/system XDG `.desktop` entries. Search their
+   localized names, generic names and keywords; return application/settings
+   results alongside file/folder results through daemon IPC. Respect desktop
+   visibility rules, user overrides and application install/remove changes.
+   Build the GTK4 popup with keyboard flow, desktop hotkey, application icons,
+   application/settings launch actions, file open/reveal actions, and systemd
+   user service. Enter activates the selected desktop entry through the desktop
+   application-launch API. Verify focus, stale-response handling, and typing
+   responsiveness in the target desktop session.
+   Acceptance examples: `display`, `screen` or `resolution` finds Display
+   settings and opens its panel (`cinnamon-settings display` on Cinnamon);
+   `sound` finds Sound settings, `keyboard` finds Keyboard settings, and an
+   installed application's name finds and launches that application. Validate
+   hidden/incompatible entries, duplicate desktop ids, and removed applications.
    Follow [the GUI specification](docs/m3-gui-design.md) and
    [interactive preview](docs/m3-gui-preview.html), recorded in ADR 0014.
 4. **M4: Semantic search.** Compare models on labeled path queries. Verify C
