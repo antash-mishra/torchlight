@@ -18,6 +18,11 @@ ownership only on success and rejects equal/older `catalog_gen`s. Unpublished
 views remain caller-owned and can be destroyed or retried. A fresh database's
 empty `catalog_gen = 0` is valid for first publication.
 
+Large-engine workspaces also own fixed lexical scoring workers, started during
+snapshot preparation. Thread startup failure returns `TL_IO` without transferring
+the engine. Reclaiming an unleased snapshot joins those workers outside the
+lifecycle lock; acquisition/release never starts or stops threads.
+
 ## Reader lifecycle
 
 Acquire a reader lease, query/resolve through it, and release exactly once.

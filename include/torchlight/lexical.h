@@ -23,15 +23,18 @@ void lexical_destroy(tl_lexical *engine);
  * discard it. Paths need not be unique at this layer. */
 tl_status lexical_add(tl_lexical *engine, uint64_t id, const char *path, bool is_root);
 /** Build all channels and seal the engine for immutable queries.
- * TL_INVALID/TL_STATE on lifecycle errors, TL_NOMEM/TL_LIMIT (discard). */
+ * TL_INVALID/TL_STATE on lifecycle errors, TL_NOMEM/TL_LIMIT/TL_IO (discard). */
 tl_status lexical_finish(tl_lexical *engine);
 /** Create scratch for this sealed engine, owned by caller until destroy. Engine
- * must outlive workspace. TL_INVALID/STATE/NOMEM/LIMIT; out NULL on failure.
+ * must outlive workspace. TL_INVALID/STATE/NOMEM/LIMIT/IO; out NULL on failure.
  * Separate workspaces permit concurrent queries without shared mutable state.
  * A workspace remembers the last word's complete subsequence membership to
- * narrow the next query that extends it; results never depend on that cache. */
+ * narrow the next query that extends it; results never depend on that cache.
+ * Large-engine workspaces own a fixed worker pool created here. One coordinator per
+ * workspace; its workers score disjoint batches against read-only context. */
 tl_status lexical_workspace_create(const tl_lexical *engine, tl_lexical_workspace **out);
-/** Free scratch, leaving engine untouched; NULL allowed. */
+/** Join owned workers and free scratch, leaving engine untouched; NULL allowed.
+ * Finish all queries before destroying this workspace. */
 void lexical_workspace_destroy(tl_lexical_workspace *workspace);
 /** Query sealed engine with its workspace. Copy at most capacity results to
  * caller buffer (1..LEXICAL_MAX_RESULTS); out_count is zero on error. Paths are

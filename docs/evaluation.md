@@ -4,6 +4,10 @@ How Torchlight's search quality and performance are measured. Every milestone
 validates against this list; performance numbers in `PLAN.md` are targets until
 recorded here.
 
+Current M1/M2 acceptance and the latest measurements are in the
+[M3 readiness report](m3-readiness.md) and
+[3 October readiness results](#2026-10-03-m1m2-readiness-adr-0013).
+
 - Curate labeled queries for names, extensions, prefixes, abbreviations, short
   queries, insertions/deletions/substitutions, Unicode, non-UTF-8 bytes,
   empty/multiword queries, duplicate basenames, directory context, and semantic
@@ -259,3 +263,66 @@ fresh replacement id and `stale_result` for the old id. With inotify_init1
 forced to fail, the new file is indexed, reconciliations continue, and status
 reports degraded/unavailable watching. No query-path change was made; recorded
 release performance tables above remain the pre-fix measurements.
+
+### 2026-10-03: M1/M2 readiness (ADR 0013)
+
+Same reference machine, compiler, release flags and library versions as above.
+The shared host was unpinned; lexical load average started at 2.56/2.60/2.28,
+daemon load at 1.72/2.44/2.27. No semantic model applies. Optimization used the
+seed-1 tuning workload; the regular latency and held-out quality runs still
+use seed 2 and the seed-42 synthetic corpus. The query path now uses complete
+resident mask filtering, sequential directory scoring, four bounded word
+evidence caches and three prestarted workers per large reader workspace.
+
+`make bench`:
+
+| Paths / mean bytes | Build + scratch (s) | Engine RSS (KiB) | Typing p50 / p95 / p99 (ms) | Whole-query p50 / p95 / p99 (ms) | Leased p50 / p95 / p99 (ms) | Peak process RSS (KiB) |
+|---:|---:|---:|---:|---:|---:|---:|
+| 50,000 / 71.4 | 0.237 | 27,896 | 0.041 / 0.518 / 1.078 | 0.127 / 0.701 / 1.249 | 0.121 / 0.676 / 1.149 | 44,364 |
+| 500,000 / 79.6 | 2.783 | 255,912 | 0.992 / 5.970 / 9.579 | 1.561 / 6.154 / 8.956 | 1.467 / 6.013 / 9.223 | 396,972 |
+
+Typing includes 12,406 / 12,477 samples; whole and leased runs each include
+1,200 queries. Warm timing excludes startup, SQL and construction. Engine RSS
+is measured after construction/scratch; process peak includes corpus/build and
+later benchmark resources. It does not describe daemon snapshot-update memory.
+Held-out all-kind Recall@1 / Recall@10 / MRR@10 / candidate Recall@1000 is
+0.457 / 0.615 / 0.504 / 0.920 at 50k and
+0.362 / 0.531 / 0.414 / 0.825 at 500k, unchanged from the previous engine.
+All nine synthetic fixtures pass at both sizes. Raw output:
+[lexical benchmark](../tests/bench/results/2026-10-03-m3-readiness-lexical.txt).
+
+`make bench-daemon`, with the same saved synthetic catalog and separate physical
+101-file update workload described for ADR 0011 above:
+
+| Requested / actual paths | Startup (ms) | First round trip (ms) | Warm engine p50 / p95 / p99 (ms) | Warm round trip p50 / p95 / p99 (ms) |
+|---:|---:|---:|---:|---:|
+| 50k / 49,569 | 264.459 | 0.243 | 0.140 / 0.858 / 1.452 | 0.233 / 0.964 / 1.571 |
+| 500k / 494,362 | 3,043.261 | 1.059 | 1.395 / 5.615 / 8.328 | 1.521 / 5.706 / 8.467 |
+
+| Paths | Round trip during rebuild p50 / p95 / p99 (ms) | Update lag (ms) | Reconciliation (ms) | Initial RSS / peak update RSS (KiB) |
+|---:|---:|---:|---:|---:|
+| ~50k | 0.190 / 0.966 / 2.387 (596 samples) | 395.950 | 295 | 33,756 / 78,888 |
+| ~500k | 1.705 / 6.776 / 10.161 (1,224 samples) | 4,061.917 | 3,959 | 272,932 / 657,936 |
+
+The initial physical 100-file reconciliation took 4 ms at both sizes. After
+update, daemon RSS was 61,272 / 546,100 KiB; allocator retention can keep pages
+resident after reclaim. Warm daemon query timing and socket round trips are
+separate measurements. History is disabled, and this is not a large physical
+crawl measurement. Raw output:
+[daemon benchmark](../tests/bench/results/2026-10-03-m3-readiness-daemon.txt).
+
+The user accepts **roughly 6 ms p95 to advance to M3** and defers optimization
+toward the original 5 ms target until the whole system is built. Full rebuilds
+still cost roughly four seconds and 642.5 MiB peak update RSS near 500k; smaller
+incremental updates remain later work. Unfinished misspelled-token relevance
+also remains weak. Neither is claimed fixed by this query change.
+
+`make test` passes ASan/UBSan/leak checks, independent scalar bitmap checks,
+analytic worker-batch scores, exact-name and evidence-eviction regressions,
+allocator interposition (long queries and active 100k workers), and CLI/daemon
+integration. `make lint` passes clang-tidy and cppcheck with zero warnings.
+A differential development check matches ordered ids/scores against the prior
+algorithm with the same typo-bound fix over 6,026 typing/backspace cases at 50k
+and 6,082 at 500k, including capacities ten and 1,000. This supplements the
+independent score fixtures; it is not a relevance metric. ThreadSanitizer could
+not start on this host (`unexpected memory mapping`), so it provides no result.

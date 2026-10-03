@@ -1,8 +1,8 @@
 # core
 
-> **Status:** Implemented: status codes, arithmetic, vectors, hash map, configuration, bounded JSON/base64 and byte-path scopes
-> **Source:** `src/core/common.c`, `src/core/vec.c`, `src/core/hashmap.c`, `src/core/json.c`, `src/core/path.c` · **Header:** `include/torchlight/common.h`, `include/torchlight/vec.h`, `include/torchlight/hashmap.h`, `include/torchlight/json.h`, `include/torchlight/path.h`
-> **Tests:** `tests/unit/test_core.c`, `tests/unit/test_json.c`
+> **Status:** Implemented: status/arithmetic, vectors, hash map, configuration, JSON/base64, byte scopes, in-place sort, mask bitmaps and bounded workers
+> **Source:** `src/core/` · **Headers:** `include/torchlight/{common,vec,hashmap,json,path,sort,mask,parallel}.h`
+> **Tests:** `tests/unit/test_{core,json,sort,mask,parallel}.c`
 
 ## Behavior and ownership
 
@@ -37,7 +37,25 @@ capacity exhaustion and round trips of all 255 non-NUL byte values.
 `path.h` / `src/core/path.c` provide component-aware byte scope checks without
 filesystem I/O. These stateless buffer/value utilities need no mutable context.
 
+`sort_u64` orders caller-owned integers with an in-place heapsort, constant
+scratch and no allocation. Trigram deduplication uses it because libc `qsort`
+can allocate temporary storage even when the caller supplies a fixed array.
+
+`tl_mask_index` is an immutable generic index of 64-bit row masks: one resident
+bitmap per mask bit. Queries intersect required-bit postings into owned scratch,
+can union additional rows, and iterate/count the complete set. At 500k rows the
+index uses about 4 MB; scratch uses about 63 kB. A scalar-scan oracle covers every
+bit, empty input, partial bitmap words, inclusion/deduplication and overflow.
+
+`tl_parallel` owns a bounded pthread pool, including its coordinator. Threads
+start during creation, sleep between runs, and join during destruction. Each
+dispatch partitions a borrowed context's indexes into complete disjoint ranges;
+it performs no allocation and waits for every participant even on an error.
+Tests cover all supported pool sizes, empty/tiny/uneven ranges, repeated runs
+and recovery after callback failure. It uses the existing pthread dependency.
+
 ## Related
 
 - [Implementation increment ADR](../../adr/0006-m1-prefix-subsequence-baseline.md)
+- [Query contract and scan improvements](../../adr/0013-query-contracts-and-resident-filters.md)
 - Public headers document parameters, lifetimes and error contracts.

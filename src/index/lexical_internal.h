@@ -4,6 +4,7 @@
 #define TORCHLIGHT_LEXICAL_INTERNAL_H
 #include "torchlight/dirtree.h"
 #include "torchlight/lexical.h"
+#include "torchlight/mask.h"
 #include "torchlight/prefix.h"
 #include "torchlight/trigram.h"
 #include "torchlight/typo.h"
@@ -40,6 +41,12 @@ struct tl_lexical {
     uint8_t *usable;
     uint32_t *path_order, *path_rank;
     uint64_t *contexts;
+    tl_mask_index *name_masks;
+    /* Parent directory -> entry slots, so matching directory context can be
+     * unioned with basename mask candidates without scanning every entry. */
+    uint32_t *dir_starts, *dir_entries;
+    uint64_t *dir_masks;
+    uint32_t *dir_descendants;
     tl_prefix *prefix, *dir_prefix;
     tl_trigram *trigram;
     tl_typo *typo;

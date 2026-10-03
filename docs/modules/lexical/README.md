@@ -3,7 +3,7 @@
 > **Status:** Implemented (M1): prefix, subsequence, trigram and typo channels
 > **Source:** `src/index/lexical.c` (build), `src/index/lexical_query.c` (search),
 > `src/index/lexical_internal.h` · **Header:** `include/torchlight/lexical.h`
-> **Tests:** `tests/unit/test_lexical.c`
+> **Tests:** `tests/unit/test_lexical.c`, `tests/alloc/query.c`
 
 ## Behavior and ownership
 
@@ -23,6 +23,9 @@ they need. Parent directories live once each in a [dirtree](../dirtree/README.md
 Per entry the engine keeps three 64-bit filters: the basename symbol mask, a
 *repeat mask* (symbols occurring twice or more, so `apps` needs two `p`s) and a
 *context mask* (basename plus every ancestor), all conservative.
+The basename masks also have an immutable [core bitmap index](../core/README.md).
+Directory-to-entry lists and descendant counts support complete parent unions
+and cheap scan-order estimates.
 
 **Channels**, built at seal time over basenames: [prefix](../prefix/README.md)
 (basename, tokens, initials), [trigram](../trigram/README.md),
@@ -52,17 +55,31 @@ order by raw path bytes, then id (a precomputed path rank).
 
 1. One-symbol queries (`a`–`z`, `0`–`9`) are answered from results computed at
    seal time; they start every typed query and match the most entries.
-2. For each word, channel hits are collected per entry; directory names are
-   scored lazily and at most once per word.
-3. The first word is the one extending the cached membership, else the longest.
-   A single-word query whose channel hits already fill the results with scores
-   above every possible subsequence score skips the scan entirely (exact).
-   Otherwise every entry (or only the cached membership) is scored; the context
-   mask rejects most entries with one load.
+2. For each word, channel hits are collected per entry. Directory names are
+   scored lazily for small batches, sequentially in tree order for large ones.
+   Four bounded evidence caches retain channel hits and directory scores when
+   the same word is prepared again within a query. Query epochs prevent reuse
+   after text changes; eviction changes work only.
+3. Choose the first word using basename-mask counts, possible parent descendants
+   and complete cached membership sizes. Estimates choose order only.
+   Single- and multiword queries evaluate channel hits before scanning and skip
+   only when the heap beats a proven upper bound on every unhit entry (exact).
+   Exact multiword basenames are seeded independently. Otherwise scan complete
+   cached membership, or intersect basename-mask bitmaps and union channel hits
+   and entries with positive parent context. Every possible match is included.
 4. Single-word matches stream straight into a bounded heap. Multiword candidates
    are filtered by the other words; candidates matching the first word only
    through a parent directory are deferred and skipped when the heap already
    beats their best possible total (exact).
+
+**Bounded parallel scoring.** Workspaces for engines of at least 65,536 entries
+own the coordinator plus three prestarted workers. Non-path batches of at least
+4,096 entries score disjoint output positions after all directory context has
+been resolved. Membership recording, candidate compaction and heap ordering
+stay on the coordinator. Smaller batches and `/` reconstruction are serial.
+No threads or buffers are created during a query; workspace destruction joins
+its workers. Each concurrent caller needs its own workspace. Thread startup can
+return `TL_IO`, documented in the public header.
 
 **Incremental narrowing.** Each workspace records the complete subsequence
 membership of the scanned word (basename, parent name or full path). A later
@@ -77,11 +94,19 @@ and using `/` words; small capacities must return the head of the full ranking
 (exercising skips and deferral). Tests also cover typo/trigram retrieval,
 acronym initials, parent context versus scattered letters, root-ancestor
 exclusion, the one-symbol cache, Unicode, raw bytes and exact priorities.
+Large fixed-width fixtures independently predict scores and id order for
+abbreviations, parent words and typos. They exercise worker batches, both result
+capacities and warmed membership. Exact multiword names containing internal
+separators have a regression against score-bound shortcuts. The separate glibc
+allocator test covers long queries and an active 100k-entry worker workspace.
+Queries with six distinct words and repeated words exercise evidence eviction
+and remain independent of result capacity.
 
 ## Related
 
 - ADRs: [0006](../../adr/0006-m1-prefix-subsequence-baseline.md),
   [0007](../../adr/0007-partial-scans-and-component-parent-matching.md),
-  [0008](../../adr/0008-m1-completion-channels-directories-config.md)
+  [0008](../../adr/0008-m1-completion-channels-directories-config.md),
+  [0013](../../adr/0013-query-contracts-and-resident-filters.md)
 - [Evaluation](../../evaluation.md) for latency, memory and ranking quality.
 - Public headers document parameters, lifetimes and error contracts.

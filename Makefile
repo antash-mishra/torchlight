@@ -16,7 +16,7 @@ CPPFLAGS += -I$(DEPS_PREFIX)/include
 LDFLAGS += -L$(DEPS_PREFIX)/lib/x86_64-linux-gnu -Wl,-rpath,$(DEPS_PREFIX)/lib/x86_64-linux-gnu
 LDLIBS += -lsqlite3 -lutf8proc
 endif
-SOURCES = src/core/common.c src/core/vec.c src/core/hashmap.c src/core/config.c src/core/json.c src/core/path.c \
+SOURCES = src/core/common.c src/core/vec.c src/core/hashmap.c src/core/config.c src/core/json.c src/core/path.c src/core/sort.c src/core/mask.c src/core/parallel.c \
           src/index/tokenize.c src/index/prefix.c src/index/subseq.c src/index/fuzzy.c \
           src/index/trigram.c src/index/typo.c src/index/dirtree.c src/index/lexical.c \
           src/index/lexical_query.c src/index/catalog.c src/fs/crawl.c src/fs/watch.c src/storage/store.c \
@@ -27,6 +27,7 @@ HEADERS = $(wildcard include/torchlight/*.h) $(wildcard src/*/*.h)
 TEST_SOURCES = $(wildcard tests/unit/test_*.c)
 BENCH_SOURCES = $(wildcard tests/bench/*.c)
 FIXTURE_SOURCE = tests/bench/fixture/export.c
+ALLOC_SOURCE = tests/alloc/query.c
 # Optional NUL-separated real path list for `make bench` (see scripts/make_corpus.sh).
 BENCH_PATHS ?=
 SAN_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie
@@ -50,17 +51,21 @@ build/torchlight-sanitized: $(SOURCES) src/bin/torchlight.c $(HEADERS)
 build/torchlightd-sanitized: $(SOURCES) src/bin/torchlightd.c $(HEADERS)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $(SAN_FLAGS) $(SOURCES) src/bin/torchlightd.c $(LDFLAGS) $(LDLIBS) -o $@
-test: build/tests build/torchlight-sanitized build/torchlightd-sanitized
+build/test_query_alloc: $(SOURCES) $(ALLOC_SOURCE) $(HEADERS)
+	@mkdir -p build
+	$(CC) $(CPPFLAGS) -std=c17 -O2 -g $(WARNINGS) $(SOURCES) $(ALLOC_SOURCE) $(LDFLAGS) $(LDLIBS) -o $@
+test: build/tests build/torchlight-sanitized build/torchlightd-sanitized build/test_query_alloc
 	ASAN_OPTIONS=detect_leaks=1 ./build/tests
+	./build/test_query_alloc
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_cli.py ./build/torchlight-sanitized
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_daemon.py ./build/torchlight-sanitized ./build/torchlightd-sanitized
 lint:
 	@command -v $(CLANG_TIDY) >/dev/null || { echo 'clang-tidy is required'; exit 1; }
 	@command -v $(CPPCHECK) >/dev/null || { echo 'cppcheck is required'; exit 1; }
-	$(CLANG_TIDY) $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(FIXTURE_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
-	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(FIXTURE_SOURCE)
+	$(CLANG_TIDY) $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(FIXTURE_SOURCE) $(ALLOC_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
+	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(FIXTURE_SOURCE) $(ALLOC_SOURCE)
 format:
-	clang-format -i $(SOURCES) $(BIN_SOURCES) $(HEADERS) tests/unit/*.h $(TEST_SOURCES) tests/bench/*.c tests/bench/*.h $(FIXTURE_SOURCE)
+	clang-format -i $(SOURCES) $(BIN_SOURCES) $(HEADERS) tests/unit/*.h $(TEST_SOURCES) tests/bench/*.c tests/bench/*.h $(FIXTURE_SOURCE) $(ALLOC_SOURCE)
 build/bench_lexical: $(SOURCES) $(BENCH_SOURCES) $(HEADERS) $(wildcard tests/bench/*.h)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) $(SOURCES) $(BENCH_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@

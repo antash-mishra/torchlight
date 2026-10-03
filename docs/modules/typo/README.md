@@ -40,6 +40,9 @@ Token symbols are borrowed from the caller's views and must outlive the index.
   removes hash collisions. Only distance exactly one is reported.
 - Distances use normalized code points and opaque byte symbols, never UTF-8
   byte counts.
+- Query words are also limited to **3–32 normalized symbols**, inclusively.
+  Two-symbol and 33-symbol neighbours receive no typo retrieval or score;
+  eligible three/31-symbol queries can still match three/32-symbol terms.
 
 ## Data flow
 `lexical_finish` adds basename views; each query word without `/` probes the
@@ -58,7 +61,9 @@ names contain the corrected token.
 
 ## Testing
 `make test` runs `tests/unit/test_typo.c`: all four edit kinds, exact-token
-exclusion, camelCase tokens, digit exclusion, two-edit and too-short queries.
+exclusion, camelCase tokens, digit exclusion, two-edit queries and both length
+boundaries. The lexical large-corpus regression checks a two-character
+subsequence's analytic score so a typo boost cannot silently return.
 
 ## Gotchas
 - Typos in *incomplete* words (`projc` for `project…`) are not one edit from a

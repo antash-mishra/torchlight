@@ -3,6 +3,9 @@
 int main(void) {
     test_config();
     test_core();
+    test_sort();
+    test_mask();
+    test_parallel();
     test_json();
     test_ipc();
     test_tokenize();

@@ -19,7 +19,27 @@ static struct hits query(const tl_typo *index, tl_typo_scratch *scratch, const c
     tokenize_destroy(q);
     return hits;
 }
+static void length_boundaries(void) {
+    tl_typo *index = NULL;
+    tl_typo_scratch *scratch = NULL;
+    tl_tokenized *short_name = test_text("mad.txt");
+    tl_tokenized *long_name = test_text("abcdefghijklmnopqrstuvwxyzabcdef.txt");
+    CHECK(typo_create(&index) == TL_OK);
+    CHECK(typo_add(index, tokenize_view(short_name), 0) == TL_OK);
+    CHECK(typo_add(index, tokenize_view(long_name), 1) == TL_OK);
+    CHECK(typo_finish(index) == TL_OK && typo_scratch_create(index, &scratch) == TL_OK);
+    /* Both are one edit from indexed tokens, but outside the query budget. */
+    CHECK(query(index, scratch, "md").count == 0);
+    CHECK(query(index, scratch, "abcdefghijklmnopqrstuvwxyzzabcdef").count == 0);
+    CHECK(query(index, scratch, "mXd").slots[0]);
+    CHECK(query(index, scratch, "abcdefghijklmnopqrstuvwxyzabcde").slots[1]);
+    typo_scratch_destroy(scratch);
+    typo_destroy(index);
+    tokenize_destroy(short_name);
+    tokenize_destroy(long_name);
+}
 void test_typo(void) {
+    length_boundaries();
     const char *names[] = {"README.md", "projectNotes.md", "IMG_20240101.jpg", "readme-old.txt"};
     tl_tokenized *texts[4];
     tl_typo *index = NULL;

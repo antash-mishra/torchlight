@@ -21,6 +21,12 @@ static inline tl_tokenized *test_text(const char *path) {
 void test_config(void);
 /** Run isolated core utility checks, aborting on failure. */
 void test_core(void);
+/** Run allocation-free integer sort checks, aborting on failure. */
+void test_sort(void);
+/** Test bitmap filtering against a scalar mask scan. */
+void test_mask(void);
+/** Test worker partitions, errors and repeated dispatch. */
+void test_parallel(void);
 /** Run strict JSON, Unicode/base64 and component-aware scope checks. */
 void test_json(void);
 /** Run protocol and singleton socket lifecycle checks. */

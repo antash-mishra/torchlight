@@ -179,7 +179,7 @@
           <li>Add optional search by meaning.</li>
           <li>Learn from your file-opening habits, with history controls.</li>
         </ul>
-        <p class="notice"><strong>Large-list performance remains open.</strong> Both M2 review findings are fixed and covered by regression tests. The 5 ms search target remains unmet near 500,000 paths, and small updates still rebuild the whole engine. Typos in unfinished words also need better results.</p>
+        <p class="notice"><strong>M1/M2 are ready for M3.</strong> Query allocations and typo bounds are fixed, and roughly 6 ms p95 is accepted near 500,000 paths. The original 5 ms target and full-index rebuild cost are deferred until the whole system is built. Typos in unfinished words also need better results.</p>
       </section>
     </div>
 
@@ -200,17 +200,17 @@
         <table>
           <thead><tr><th scope="col">Catalog paths</th><th scope="col">Engine p95</th><th scope="col">Round trip p95</th><th scope="col">Update lag</th><th scope="col">Peak update RSS</th></tr></thead>
           <tbody>
-            <tr><th scope="row">49,569 (~50k)</th><td>1.578 ms</td><td>1.733 ms</td><td>402 ms</td><td>69 MiB</td></tr>
-            <tr><th scope="row">494,362 (~500k)</th><td>19.113 ms</td><td>19.282 ms</td><td>3,705 ms</td><td>626 MiB</td></tr>
+            <tr><th scope="row">49,569 (~50k)</th><td>0.858 ms</td><td>0.964 ms</td><td>396 ms</td><td>77 MiB</td></tr>
+            <tr><th scope="row">494,362 (~500k)</th><td>5.615 ms</td><td>5.706 ms</td><td>4,062 ms</td><td>642.5 MiB</td></tr>
           </tbody>
         </table>
       </div>
-      <p class="caption">The 5 ms engine p95 target is met near 50k paths and remains open near 500k. A small change rebuilds the complete engine, increasing update lag and peak memory. See <a href="evaluation.md">benchmark conditions and recorded results</a>.</p>
+      <p class="caption">Recorded 3 October 2026. Roughly 6 ms p95 is accepted for starting M3. A small change rebuilds the complete engine, increasing update lag and peak memory. See <a href="evaluation.md">benchmark conditions and recorded results</a> and the <a href="m3-readiness.md">readiness report</a>.</p>
     </section>
 
     <section aria-labelledby="roadmap-title">
       <h2 id="roadmap-title">The next steps</h2>
-      <p class="section-note">The reviewed M2 issues are fixed; build the visible app next. Large-list performance remains an acceptance gate.</p>
+      <p class="section-note">M1/M2 checks pass with the accepted latency. Build the visible app next, following the <a href="m3-gui-design.md">GUI specification</a> and <a href="m3-gui-preview.html">interactive preview</a>.</p>
       <div class="roadmap">
         <article class="step"><span class="badge built">M2 · Built and reviewed</span><h3 style="margin-top: 12px">Stay ready</h3><p>Resident daemon, immutable snapshots, background updates, history and status. Replacement identity and inotify fallback now have regression coverage.</p></article>
         <article class="step next"><span class="badge planned">M3 · Next</span><h3 style="margin-top: 12px">Use the popup</h3><p>GTK4 window, keyboard shortcut, live results, open or reveal files, and start at login.</p></article>
@@ -220,7 +220,7 @@
     </section>
 
     <footer>
-      <span>Status: 3 October 2026 · M2 review fixes verified; large-list performance open</span>
+      <span>Status: 3 October 2026 · M1/M2 ready for M3 at accepted latency</span>
       <nav aria-label="More details"><a href="../PLAN.md">Full plan</a><a href="architecture.md">Architecture</a><a href="m2-review.md">M2 review</a><a href="evaluation.md">Speed results</a></nav>
     </footer>
   </main>

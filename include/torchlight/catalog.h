@@ -25,7 +25,7 @@ tl_status catalog_destroy(tl_catalog *catalog);
 /** Prepare an owned snapshot of sealed *engine with 1..CATALOG_MAX_READERS
  * preallocated workspaces. catalog_gen identifies its committed SQLite view.
  * Transfers *engine and sets it NULL only on success; out NULL on failure.
- * TL_INVALID/STATE/NOMEM/LIMIT. Build on background thread before publication. */
+ * TL_INVALID/STATE/NOMEM/LIMIT/IO. Build on background thread before publication. */
 tl_status catalog_snapshot_create(tl_lexical **engine, uint64_t catalog_gen, size_t reader_capacity,
                                   tl_catalog_snapshot **out);
 /** Destroy an unpublished snapshot; NULL allowed, no errors. Published snapshots

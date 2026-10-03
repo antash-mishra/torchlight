@@ -2,6 +2,7 @@
  * relaxed overlap counting with per-query scratch. */
 #include "torchlight/trigram.h"
 #include "torchlight/hashmap.h"
+#include "torchlight/sort.h"
 #include "torchlight/vec.h"
 #include <stdlib.h>
 #include <string.h>
@@ -42,10 +43,6 @@ static bool same_key(const void *context, uint32_t value) {
 static uint64_t key_hash(uint64_t key) {
     return hashmap_hash(HASHMAP_HASH_SEED, &key, sizeof(key));
 }
-static int compare_keys(const void *left, const void *right) {
-    uint64_t a = *(const uint64_t *)left, b = *(const uint64_t *)right;
-    return a == b ? 0 : a < b ? -1 : 1;
-}
 /* Write the sorted distinct trigram keys of text into keys (capacity at least
  * text.length); TL_INVALID if a symbol does not fit the packing. */
 static tl_status distinct_trigrams(tl_text text, uint64_t *keys, size_t *out_count) {
@@ -61,7 +58,9 @@ static tl_status distinct_trigrams(tl_text text, uint64_t *keys, size_t *out_cou
                   (uint64_t)s[1] << TRIGRAM_SYMBOL_BITS | s[2];
     }
     size_t count = text.length - 2, unique = 0;
-    qsort(keys, count, sizeof(uint64_t), compare_keys);
+    tl_status status = sort_u64(keys, count);
+    if (status != TL_OK)
+        return status;
     for (size_t i = 0; i < count; i++) {
         if (i == 0 || keys[i] != keys[unique - 1])
             keys[unique++] = keys[i];

@@ -11,12 +11,19 @@ reconciliation, full-engine staging/publication and asynchronous history.
 Saved entries serve before background reconciliation. Status and restart/failure
 recovery are implemented. Semantics, personalization ranking and desktop UI below
 remain the target architecture. See ADR 0011 for the full-rebuild baseline and
-structural bounds; the 500k latency target remains open.
+structural bounds. Roughly 6 ms p95 at 500k paths is accepted for starting M3;
+the original 5 ms target is later optimization work. See
+[readiness](m3-readiness.md) and the [GUI specification](m3-gui-design.md).
 
 ADR 0012 adds filesystem incarnation checks during scans and schema v2 identity
 storage. Replacements retire old ids and descendants before publication, with
 rollback restoring history. Inotify instance failure degrades watch coverage
 while periodic/explicit reconciliation continues and retries setup.
+
+ADR 0013 adds complete resident bitmap filtering, four per-query word evidence
+caches and bounded scoring workers. Large batches resolve directory evidence
+before dispatch; workers write disjoint outputs and the coordinator orders
+results. Query evaluation retains the same complete matching and ranking rules.
 
 ## Components
 
@@ -70,6 +77,8 @@ validated embedding generation (`emb_gen`) together, without mixing model versio
    makes it unnecessary. One/two-character queries use `prefix` and `subseq`.
    Narrow only complete subsequence membership with unchanged matching rules
    and `catalog_gen`; never use truncated top-k as narrowing input.
+   For large non-path batches, union basename bitmap candidates, channel hits
+   and matching parent entries, then score using preallocated worker scratch.
    `fuzzy` scores subsequence matches and edit-distance matches separately.
 3. `rank` orders lexical results with personalization; the daemon sends the
    `lexical` phase response immediately, or a terminal `final` in lexical-only mode.
@@ -96,7 +105,10 @@ performance numbers in `PLAN.md` are targets until benchmarked.
 ## Threads
 
 M2 uses the main/query thread and one writer thread, including crawl/watch and
-history. The expanded split below is the semantic target architecture.
+history. Each reader workspace for a large engine also owns three prestarted
+scoring workers; the daemon's default reader bound is one. They sleep between
+queries and are joined when the workspace is reclaimed. The expanded split
+below is the semantic target architecture.
 
 | Thread | Work | Blocks on |
 |---|---|---|

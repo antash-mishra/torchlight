@@ -134,6 +134,94 @@ static void capacity_consistency(const tl_lexical *engine, tl_lexical_workspace 
     for (size_t i = 0; i < few_count; i++)
         CHECK(few[i].id == all[i].id && few[i].score == all[i].score);
 }
+/* Multiword channel bounds must retain weak parent matches when necessary,
+ * preserve score ties, and seed exact names with separators inside a word. */
+static void multiword_bounds(void) {
+    const char *paths[] = {"/r",
+                           "/r/a/x-alpha_beta-y.txt",
+                           "/r/z/x alpha_beta y",
+                           "/r/q/alpha_beta x y.old",
+                           "/r/a/alpha_betagamma.txt",
+                           "/r/z/Alpha Beta.txt",
+                           "/r/alpha/beta.txt",
+                           "/r/beta/alpha.txt"};
+    tl_lexical *engine = build(paths, sizeof(paths) / sizeof(paths[0]));
+    tl_lexical_workspace *workspace = NULL;
+    CHECK(lexical_workspace_create(engine, &workspace) == TL_OK);
+    tl_result result[1];
+    size_t count = 0;
+    CHECK(lexical_query(engine, workspace, "x alpha_beta y", result, 1, &count) == TL_OK);
+    CHECK(count == 1 && result[0].id == 3 && result[0].score == 10000000);
+    const char *queries[] = {"alpha beta",     "alpha betagamma", "alpha be",      "beta alpha",
+                             "x alpha_beta y", "alpha /r/beta",   "zznomatch beta"};
+    for (size_t i = 0; i < sizeof(queries) / sizeof(queries[0]); i++)
+        capacity_consistency(engine, workspace, queries[i]);
+    lexical_workspace_destroy(workspace);
+    lexical_destroy(engine);
+}
+/* More words than evidence slots must evict safely. Reordering, duplicate
+ * words and a changed word also exercise the query epoch and parent context. */
+static void evidence_eviction(void) {
+    const char *paths[] = {"/r", "/r/one/two/three/four/five/six.txt", "/r/unmatched/six.txt",
+                           "/r/one/two/threex/four/five/six.txt"};
+    tl_lexical *engine = build(paths, sizeof(paths) / sizeof(paths[0]));
+    tl_lexical_workspace *workspace = NULL;
+    CHECK(lexical_workspace_create(engine, &workspace) == TL_OK);
+    const struct {
+        const char *query;
+        size_t count;
+        uint64_t id;
+        int score;
+    } cases[] = {{"one two three four five six", 2, 2, 18557},
+                 {"six five four three two one", 2, 2, 18557},
+                 {"one two threx four five six", 1, 4, 16496},
+                 {"one one two three four five six", 2, 2, 21057},
+                 {"one two missing four five six", 0, 0, 0}};
+    for (size_t q = 0; q < sizeof(cases) / sizeof(cases[0]); q++) {
+        tl_result results[10];
+        size_t count = 0;
+        CHECK(lexical_query(engine, workspace, cases[q].query, results, 10, &count) == TL_OK);
+        CHECK(count == cases[q].count);
+        if (count != 0)
+            CHECK(results[0].id == cases[q].id && results[0].score == cases[q].score);
+        capacity_consistency(engine, workspace, cases[q].query);
+    }
+    lexical_workspace_destroy(workspace);
+    lexical_destroy(engine);
+}
+/* Large fixed-width names have an analytic ranking: every match has the same
+ * score and byte-path order equals id order. This exercises worker batches,
+ * parent-only scans, typo hits and warm membership without a second scorer. */
+static void parallel_ranking(void) {
+    enum { PARALLEL_CORPUS_FILES = 65536 };
+    tl_lexical *engine = NULL;
+    tl_lexical_workspace *workspace = NULL;
+    CHECK(lexical_create(&engine) == TL_OK);
+    CHECK(lexical_add(engine, 1, "/r", true) == TL_OK);
+    for (size_t i = 0; i < PARALLEL_CORPUS_FILES; i++) {
+        char path[64];
+        int length = snprintf(path, sizeof(path), "/r/mad_notes_%06zu.txt", i);
+        CHECK(length > 0 && (size_t)length < sizeof(path));
+        CHECK(lexical_add(engine, i + 2, path, false) == TL_OK);
+    }
+    CHECK(lexical_finish(engine) == TL_OK);
+    CHECK(lexical_workspace_create(engine, &workspace) == TL_OK);
+    const struct {
+        const char *query;
+        int score;
+    } cases[] = {{"md", 1863}, {"r md", 4363}, {"mad notes", 11044}, {"r noets", 6044}};
+    for (size_t q = 0; q < sizeof(cases) / sizeof(cases[0]); q++) {
+        tl_result results[10];
+        size_t count = 0;
+        CHECK(lexical_query(engine, workspace, cases[q].query, results, 10, &count) == TL_OK);
+        CHECK(count == 10);
+        for (size_t i = 0; i < count; i++)
+            CHECK(results[i].id == i + 2 && results[i].score == cases[q].score);
+        capacity_consistency(engine, workspace, cases[q].query);
+    }
+    lexical_workspace_destroy(workspace);
+    lexical_destroy(engine);
+}
 /* A deterministic pseudo-random corpus large enough for skips and caches. */
 static tl_lexical *random_engine(char (*paths)[64], size_t count) {
     static const char *const words[] = {"notes", "project", "photo", "apps",  "data",
@@ -191,6 +279,9 @@ static void warm_equals_fresh(void) {
     lexical_destroy(engine);
 }
 void test_lexical(void) {
+    evidence_eviction();
+    parallel_ranking();
+    multiword_bounds();
     complete_scan_regression();
     typo_and_trigram_channels();
     root_ancestors_are_not_context();

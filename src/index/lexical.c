@@ -80,6 +80,11 @@ void lexical_destroy(tl_lexical *engine) {
     prefix_destroy(engine->dir_prefix);
     trigram_destroy(engine->trigram);
     typo_destroy(engine->typo);
+    mask_index_destroy(engine->name_masks);
+    free(engine->dir_starts);
+    free(engine->dir_entries);
+    free(engine->dir_masks);
+    free(engine->dir_descendants);
     free(engine->symbol_results);
     free(engine->contexts);
     free(engine->usable);
@@ -367,6 +372,65 @@ static tl_status build_contexts(tl_lexical *engine) {
     engine->columns.contexts = engine->contexts;
     return TL_OK;
 }
+/* Counting-sort entries by parent node. Each list is immutable and keeps slot
+ * order; nodes without entries have an empty range. */
+static tl_status build_directory_entries(tl_lexical *engine) {
+    size_t nodes = dirtree_count(engine->tree);
+    size_t start_bytes = 0, entry_bytes = 0, cursor_bytes = 0;
+    if (nodes == SIZE_MAX)
+        return TL_LIMIT;
+    tl_status status = tl_size_multiply(nodes + 1, sizeof(uint32_t), &start_bytes);
+    if (status == TL_OK)
+        status = tl_size_multiply(engine->count == 0 ? 1 : engine->count, sizeof(uint32_t),
+                                  &entry_bytes);
+    if (status == TL_OK)
+        status = tl_size_multiply(nodes, sizeof(uint32_t), &cursor_bytes);
+    if (status != TL_OK)
+        return status;
+    engine->dir_starts = calloc(1, start_bytes);
+    engine->dir_entries = malloc(entry_bytes);
+    uint32_t *cursor = malloc(cursor_bytes);
+    if (engine->dir_starts == NULL || engine->dir_entries == NULL || cursor == NULL) {
+        free(cursor);
+        return TL_NOMEM;
+    }
+    for (size_t slot = 0; slot < engine->count; slot++)
+        engine->dir_starts[engine->columns.dirs[slot] + 1]++;
+    for (size_t node = 0; node < nodes; node++) {
+        engine->dir_starts[node + 1] += engine->dir_starts[node];
+        cursor[node] = engine->dir_starts[node];
+    }
+    for (size_t slot = 0; slot < engine->count; slot++)
+        engine->dir_entries[cursor[engine->columns.dirs[slot]]++] = (uint32_t)slot;
+    free(cursor);
+    return TL_OK;
+}
+/* Cheap selectivity estimates: usable directory-name masks and the number of
+ * entries below each node. Parents precede children, so a reverse pass counts
+ * descendants. Estimates choose a scan order; they never discard candidates. */
+static tl_status build_directory_estimates(tl_lexical *engine) {
+    size_t nodes = dirtree_count(engine->tree);
+    size_t mask_bytes = 0, descendant_bytes = 0;
+    tl_status status = tl_size_multiply(nodes, sizeof(uint64_t), &mask_bytes);
+    if (status == TL_OK)
+        status = tl_size_multiply(nodes, sizeof(uint32_t), &descendant_bytes);
+    if (status != TL_OK)
+        return status;
+    engine->dir_masks = calloc(1, mask_bytes);
+    engine->dir_descendants = malloc(descendant_bytes);
+    if (engine->dir_masks == NULL || engine->dir_descendants == NULL)
+        return TL_NOMEM;
+    for (uint32_t node = 0; node < nodes; node++) {
+        if (engine->usable[node])
+            engine->dir_masks[node] = dirtree_name(engine->tree, node).mask;
+        engine->dir_descendants[node] = engine->dir_starts[node + 1] - engine->dir_starts[node];
+    }
+    for (size_t node = nodes; node > 1; node--) {
+        uint32_t parent = dirtree_parent(engine->tree, (uint32_t)(node - 1));
+        engine->dir_descendants[parent] += engine->dir_descendants[node - 1];
+    }
+    return TL_OK;
+}
 tl_status lexical_finish(tl_lexical *engine) {
     if (engine == NULL)
         return TL_INVALID;
@@ -382,6 +446,12 @@ tl_status lexical_finish(tl_lexical *engine) {
     if (status == TL_OK) {
         status = build_contexts(engine);
     }
+    if (status == TL_OK)
+        status = mask_index_create(engine->columns.masks, engine->count, &engine->name_masks);
+    if (status == TL_OK)
+        status = build_directory_entries(engine);
+    if (status == TL_OK)
+        status = build_directory_estimates(engine);
     if (status == TL_OK)
         status = build_entry_channels(engine);
     if (status == TL_OK)

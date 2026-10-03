@@ -288,8 +288,9 @@ tl_status typo_query(const tl_typo *index, tl_typo_scratch *scratch, tl_text que
         return TL_INVALID;
     if (!index->finished)
         return TL_STATE;
-    /* A one-edit neighbour can be one symbol shorter or longer than a token. */
-    if (query.length + 1 < TYPO_MIN_SYMBOLS || query.length > TYPO_MAX_SYMBOLS + 1)
+    /* Short fragments have too many neighbours; use prefix/subsequence only.
+     * The query budget is independent of an indexed neighbour's length. */
+    if (query.length < TYPO_MIN_SYMBOLS || query.length > TYPO_MAX_SYMBOLS)
         return TL_OK;
     next_epoch(index, scratch);
     tl_status status =

@@ -41,6 +41,8 @@ must be destroyed before it; one scratch per concurrent querier.
   barely narrow and their posting lists would dominate query time (`txt`).
 - **Minimum query:** three distinct trigrams (five symbols). Shorter words are
   covered by prefix, subsequence and the typo channel.
+- Distinct keys are ordered with the core in-place heapsort. Query scratch is
+  fixed before search; long words do not trigger libc sorting allocations.
 
 ## Data flow
 `lexical_finish` adds every basename view; `lexical_query` queries each word and
@@ -58,6 +60,9 @@ posting plus 8 bytes per distinct key; see [evaluation](../../evaluation.md).
 ## Testing
 `make test` runs `tests/unit/test_trigram.c`: overlap counts, too-short and
 absent queries, slot-order validation, lifecycle errors and scratch reuse.
+`tests/alloc/query.c` additionally interposes the glibc allocator during complete
+lexical queries, including 130/131/256-byte words, Unicode and worker batches.
+It runs separately from ASan so sanitizer interposition cannot hide libc calls.
 
 ## Gotchas
 - Trigrams span separators (`e.m` in `readme.md`), matching the query's own

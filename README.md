@@ -3,15 +3,16 @@
 A Linux filename/path launcher written in C17. M1 provides a local index/query
 CLI with a SQLite catalog and Unicode-aware matching: prefixes, initials,
 abbreviations (subsequences), one-edit typos, partial-word trigram overlap and
-parent-folder context. The 5 ms p95 latency target is met at 50k paths but not
-yet at 500k; see [evaluation](docs/evaluation.md), [PLAN.md](PLAN.md) and
-[docs](docs/README.md).
+parent-folder context. M1/M2 are ready for M3 with the accepted roughly 6 ms
+p95 latency at 500k paths. The original 5 ms target remains later optimization
+work; see [readiness](docs/m3-readiness.md) and [evaluation](docs/evaluation.md).
 
 M2 provides a [resident daemon](docs/modules/daemon/README.md), bounded Unix-socket
 IPC, asynchronous catalog/history writing, live inotify updates, reconciliation,
 file-id resolution and status. Startup serves the saved catalog before scanning.
-GTK popup/service integration is next in M3. Full index rebuilds and the 500k
-latency target remain performance work; see [evaluation](docs/evaluation.md).
+GTK popup/service integration is next in M3, following the
+[GUI design](docs/m3-gui-design.md) and [interactive preview](docs/m3-gui-preview.html).
+Full index rebuild cost remains later performance work.
 
 ## Build and use
 

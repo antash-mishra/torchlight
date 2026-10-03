@@ -7,6 +7,18 @@ extraction is a possible later extension.
 
 ## Implementation progress
 
+M1 and M2 are ready for M3. The user accepts roughly 6 ms p95 lexical latency
+at 500k paths; optimization toward the original 5 ms target resumes after the
+whole system is built. Full-engine update rebuilds remain the initial strategy.
+See the [readiness report](docs/m3-readiness.md) for checks and current measured
+limits. M3 follows the [GTK GUI design](docs/m3-gui-design.md) and
+[interactive preview](docs/m3-gui-preview.html); its popup is not implemented yet.
+
+The readiness fixes (ADR 0013) remove trigram sorting's indirect heap allocation
+and enforce the documented 3–32-symbol typo-query range. Complete resident bitmap
+filtering, bounded evidence caches and prestarted scoring workers reduce query
+latency without truncating candidates or changing ranking.
+
 The two findings from the [M2 implementation review](docs/m2-review.md) are fixed
 (ADR 0012): schema v2 persists filesystem incarnations so replacement files and
 directories receive fresh ids; inotify instance failure permits periodic and
@@ -20,14 +32,13 @@ reconciles roots, prepares/commits/publishes immutable `catalog_gen`s, recovers
 publication failures, and writes optional search/open history asynchronously.
 Status, byte-safe resolve, rename identity, watch fallback, singleton locking and
 clean/crash restart are covered by integration and injected-failure tests.
-Full engine rebuilds are the initial update strategy. The 500k / 5 ms latency
-gate remains open; daemon benchmarks also record full-rebuild update lag/RSS.
+Daemon benchmarks also record full-rebuild update lag and peak RSS.
 
-M1's features are implemented; its 500k latency gate is not yet met. The first
-increment implemented the Makefile/checks, XDG data paths, physical crawler, SQLite schema v1 and atomic root refreshes, approved
-utf8proc normalization, prefix/initials/subsequence matching, greedy fuzzy
-scoring, and local index/query CLI. The synthetic warm-engine benchmark covers
-50k/500k paths. See `docs/evaluation.md` for measured limits.
+M1's features are implemented. The first increment implemented the Makefile
+and checks, XDG data paths, physical crawler, SQLite schema v1 and atomic root
+refreshes, approved utf8proc normalization, prefix/initials/subsequence matching,
+greedy fuzzy scoring, and local index/query CLI. The synthetic warm-engine
+benchmark covers 50k/500k paths. See `docs/evaluation.md` for measured limits.
 
 Review fixes (ADR 0007) keep unreadable scopes and unvisited nested roots during
 pruning instead of failing or deleting them, and confine parent subsequence
@@ -39,9 +50,8 @@ per directory name below the indexed roots, complete subsequence membership
 narrowing, a configuration file with roots and hidden allowlists, root
 deduplication and configuration sync, and a benchmark with labeled tuning and
 held-out queries over synthetic and real path corpora. Memory at 500k paths fell
-by about two thirds. The 5 ms p95 lexical gate is met at 50k paths but not at
-500k on the (heavily loaded) reference machine, so M1 acceptance stays open on
-that gate; see `docs/evaluation.md`.
+by about two thirds. Historical and current benchmark conditions are recorded
+in `docs/evaluation.md`; the accepted M3 latency threshold is described above.
 
 Review fixes (ADR 0009) preserve registered roots when an unavailable configured
 spelling cannot establish their canonical identity, and roll back the entire
@@ -53,7 +63,8 @@ ancestor pruning, recovery and injected SQLite write failures.
 - Search ~500k paths from a resident daemon. Target warm lexical-phase p95
   below 5ms and final (hybrid) phase p95 below 10ms on a documented reference
   machine.
-  These are targets to measure, not established performance numbers.
+  These are targets to measure, not established performance numbers. Roughly
+  6ms lexical p95 is accepted for starting M3; reaching 5ms is deferred.
 - Report engine latency and client round-trip latency separately, including
   query embedding in hybrid measurements. Also measure first query, startup,
   crawl time, update lag, peak memory, and latency during indexing.
@@ -105,11 +116,12 @@ The `lexical` module combines four channel modules before scoring:
    membership, before ranking/truncation, and only for the same `catalog_gen`
    and matching configuration. Otherwise rescan. A bounded cache that cannot
    hold complete membership disables narrowing rather than losing matches.
-   Character posting lists are a benchmark alternative only, because common
-   letters make their intersections close to a full scan.
+   Resident basename-mask bitmaps intersect required symbols in word-sized
+   batches, then union channel hits and matching parent descendants. This
+   remains complete even when common letters select most entries (ADR 0013).
 4. **`typo`:** a one-edit deletion-neighbourhood index (SymSpell style) for
-   complete basename/stem/token matches, run for query tokens of at least three
-   characters. An exact full-basename match may skip this channel; a large
+   complete basename/stem/token matches, run for query tokens of 3–32 symbols.
+   An exact full-basename match may skip this channel; a large
    number of unrelated prefix/subsequence hits may not. Verify retrieved terms
    with edit distance, since shared deletion keys are only candidate signals.
    Lookup includes postings expansion; its cost is not independent of corpus
@@ -385,6 +397,8 @@ accepted launch requests, not guaranteed success in external applications.
 3. **M3: Usable desktop launcher.** GTK4 popup, keyboard flow, desktop hotkey,
    open/reveal actions, and systemd user service. Verify focus, stale-response
    handling, and typing responsiveness in the target desktop session.
+   Follow [the GUI specification](docs/m3-gui-design.md) and
+   [interactive preview](docs/m3-gui-preview.html), recorded in ADR 0014.
 4. **M4: Semantic search.** Compare models on labeled path queries. Verify C
    embedding parity, float reference, quantized recall, total latency/RSS,
    background embedding, and model replacement. Choose the model/vector

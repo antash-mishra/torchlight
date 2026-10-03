@@ -1,0 +1,172 @@
+<!doctype html>
+<!-- Interactive design reference for the planned GTK4 popup; local fixture data. -->
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Torchlight · M3 popup preview</title>
+<style>
+  :root { color-scheme:light dark; --page:#eeefed; --surface:#fafaf9; --text:#252724;
+    --muted:#626660; --line:#dedfdb; --accent:#3c6a9f; --selected:#e4edf8; --selected-text:#183c66; }
+  :root[data-theme="dark"] { --page:#222522; --surface:#30332f; --text:#f1f3ed;
+    --muted:#b8bdb4; --line:#50564c; --accent:#a4caff; --selected:#385675; --selected-text:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; padding:46px 24px; background:var(--page);
+    color:var(--text); font:15px/1.5 system-ui,sans-serif; }
+  main { max-width:900px; margin:auto; }
+  .intro { display:flex; justify-content:space-between; align-items:center; gap:20px; }
+  h1 { margin:0; font-size:20px; font-weight:600; }
+  .caption { color:var(--muted); margin:8px 0; font-size:13px; }
+  a { color:var(--accent); }
+  .stage { min-height:580px; padding-top:68px; }
+  .popup { width:min(680px,100%); margin:auto; background:var(--surface); border:1px solid var(--line);
+    border-radius:12px; box-shadow:0 16px 50px #0002,0 3px 10px #0001; overflow:hidden; }
+  .search { height:84px; padding:16px; display:flex; align-items:center; gap:12px; }
+  .search svg { width:20px; height:20px; color:var(--muted); flex-shrink:0; }
+  input { min-width:0; width:100%; font:20px/1.5 system-ui,sans-serif; border:0; background:transparent;
+    color:var(--text); outline:none; }
+  .search:focus-within { box-shadow:inset 0 -2px var(--accent); }
+  input::placeholder { color:var(--muted); opacity:.9; }
+  .context { margin:0; padding:8px 16px 5px; border-top:1px solid var(--line);
+    font-size:11px; color:var(--muted); letter-spacing:.04em; text-transform:uppercase; }
+  #results { max-height:464px; padding:0 8px 8px; overflow:auto; }
+  .row { height:58px; display:flex; align-items:center; gap:12px; padding:8px; border-radius:6px; cursor:pointer; }
+  .row[aria-selected="true"] { background:var(--selected); color:var(--selected-text); outline:1px solid var(--accent); outline-offset:-1px; }
+  .icon { width:24px; height:24px; flex-shrink:0; color:var(--muted); }
+  .row[aria-selected="true"] .icon { color:inherit; }
+  .labels { flex:1; min-width:0; }
+  .name { display:block; white-space:nowrap; text-overflow:ellipsis; overflow:hidden; font-size:15px; }
+  .parent { display:block; white-space:nowrap; text-overflow:ellipsis; overflow:hidden; font-size:12px; color:var(--muted); }
+  .row[aria-selected="true"] .parent { color:inherit; opacity:.8; }
+  .empty { min-height:210px; display:grid; place-content:center; text-align:center; padding:24px; }
+  .empty strong { font-size:16px; font-weight:500; }
+  .empty p { color:var(--muted); font-size:13px; margin:5px 0 12px; }
+  .footer { min-height:32px; padding:7px 16px; display:flex; justify-content:space-between; gap:10px;
+    border-top:1px solid var(--line); font-size:10px; color:var(--muted); }
+  .hints { white-space:nowrap; }
+  button { font:inherit; color:var(--text); border:1px solid var(--line); background:var(--surface);
+    border-radius:7px; padding:6px 12px; cursor:pointer; }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .controls { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; }
+  .controls button { font-size:12px; }
+  .controls button[aria-pressed="true"] { background:var(--selected); color:var(--selected-text); border-color:var(--accent); }
+  #action { min-height:24px; text-align:center; font-size:12px; color:var(--muted); }
+  @media(max-width:600px) { body { padding:24px; } .stage { padding-top:42px; } .hints { display:none; } }
+</style>
+<main>
+  <div class="intro"><h1>Torchlight · M3 popup</h1><button id="theme">Dark theme</button></div>
+  <p class="caption">Interactive layout reference. Native GTK colors and icons follow the desktop theme.
+    <a href="m3-gui-design.md">Read the specification</a>.</p>
+  <div class="stage">
+    <section class="popup" aria-label="Torchlight search preview">
+      <div class="search">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 5 5"/></svg>
+        <input id="query" type="search" placeholder="Search files and folders" value="project" autocomplete="off" aria-label="Search files and folders" aria-controls="results" aria-activedescendant="" autofocus>
+      </div>
+      <p id="context" class="context">Files and folders</p>
+      <div id="results" role="listbox" aria-label="Search results"></div>
+      <div class="footer"><span id="status" role="status">Ready</span><span class="hints">↑↓ Select &nbsp; Enter Open &nbsp; Ctrl+Enter Reveal &nbsp; Esc Close</span></div>
+    </section>
+  </div>
+  <div class="controls" aria-label="Preview states">
+    <button data-state="results" aria-pressed="true">Results</button>
+    <button data-state="roots" aria-pressed="false">Empty query</button>
+    <button data-state="empty" aria-pressed="false">No matches</button>
+    <button data-state="indexing" aria-pressed="false">Indexing</button>
+    <button data-state="offline" aria-pressed="false">Service unavailable</button>
+  </div>
+  <p id="action" role="status">Type, or use ↑↓ and Enter to try the preview. Actions show a message here.</p>
+  <p class="caption">The popup keeps exact path bytes separately from labels, resolves a selected file id before an action,
+    and retains deliberate selection through later result phases. This preview uses local sample paths.</p>
+</main>
+<script>
+  const fixtures = [
+    {id:'1',name:'projectNotes.md',parent:'/home/user/Documents',folder:false},
+    {id:'2',name:'project_plan.pdf',parent:'/home/user/Documents/Work',folder:false},
+    {id:'3',name:'Project brief.odt',parent:'/home/user/Documents/Work',folder:false},
+    {id:'4',name:'project-assets',parent:'/home/user/Pictures',folder:true},
+    {id:'5',name:'projectArchive.zip',parent:'/home/user/Downloads',folder:false},
+    {id:'6',name:'README.md',parent:'/home/user/Projects/torchlight',folder:false},
+    {id:'7',name:'Café notes.txt',parent:'/home/user/Documents',folder:false}
+  ];
+  const roots = ['Documents','Downloads','Pictures','Projects'].map((name,i)=>({id:String(100+i),name,parent:'/home/user',folder:true}));
+  const query=document.querySelector('#query'), list=document.querySelector('#results');
+  const status=document.querySelector('#status'), action=document.querySelector('#action');
+  let state='results', rows=[], selectedId=null, deliberate=false;
+  function icon(folder) {
+    const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.setAttribute('viewBox','0 0 24 24'); svg.setAttribute('fill','none');
+    svg.setAttribute('stroke','currentColor'); svg.setAttribute('stroke-width','1.5');
+    svg.setAttribute('aria-hidden','true'); svg.classList.add('icon');
+    const path=document.createElementNS(svg.namespaceURI,'path');
+    path.setAttribute('d',folder?'M3 7h7l2 2h9v11H3z M3 7V4h7l2 3':'M6 3h8l4 4v14H6z M14 3v5h4 M9 12h6 M9 16h6');
+    svg.append(path); return svg;
+  }
+  function empty(title,detail,retry=false) {
+    const box=document.createElement('div'); box.className='empty';
+    const heading=document.createElement('strong'); heading.textContent=title;
+    const text=document.createElement('p'); text.textContent=detail; box.append(heading,text);
+    if(retry) { const button=document.createElement('button'); button.textContent='Retry';
+      button.onclick=()=>setState('results'); box.append(button); }
+    list.append(box);
+  }
+  function select(id) {
+    selectedId=id;
+    for(const row of list.querySelectorAll('.row')) row.setAttribute('aria-selected',String(row.dataset.id===id));
+    const active=document.getElementById('result-'+id);
+    query.setAttribute('aria-activedescendant',active?active.id:'');
+    active?.scrollIntoView({block:'nearest'});
+  }
+  function activate(reveal) {
+    const row=rows.find(value=>value.id===selectedId);
+    if(row) action.textContent=`Preview: resolve file id ${row.id}, then ${reveal?'reveal':'open'} ${row.parent}/${row.name}.`;
+  }
+  function render() {
+    list.replaceChildren();
+    query.setAttribute('aria-activedescendant','');
+    const value=query.value.toLocaleLowerCase().trim();
+    rows=state==='offline'||state==='empty'?[]:value?fixtures.filter(row=>(row.name+' '+row.parent).toLocaleLowerCase().includes(value)):roots;
+    document.querySelector('#context').textContent=value?'Files and folders':'Indexed folders';
+    status.textContent=state==='indexing'?'Updating index…':state==='offline'?'Disconnected':`${rows.length} ${rows.length===1?'result':'results'}`;
+    if(state==='offline') { empty('Search service unavailable','Reconnect to search your indexed files.',true); return; }
+    if(rows.length===0) { empty('No matching files','Try a filename or part of its folder path.'); selectedId=null; return; }
+    if(!deliberate||!rows.some(row=>row.id===selectedId)) selectedId=rows[0].id;
+    for(const item of rows) {
+      const row=document.createElement('div'); row.className='row'; row.dataset.id=item.id;
+      row.id='result-'+item.id; row.setAttribute('role','option'); row.title=item.parent+'/'+item.name;
+      const labels=document.createElement('span'); labels.className='labels';
+      const name=document.createElement('span'); name.className='name'; name.textContent=item.name;
+      const parent=document.createElement('span'); parent.className='parent'; parent.textContent=item.parent;
+      labels.append(name,parent); row.append(icon(item.folder),labels);
+      row.onmousedown=event=>event.preventDefault();
+      row.onclick=()=>{ deliberate=true;select(item.id);activate(false);query.focus(); };
+      list.append(row);
+    }
+    select(selectedId);
+  }
+  function setState(value) {
+    state=value; deliberate=false;
+    query.value=value==='roots'?'':value==='empty'?'zznomatchqq':'project';
+    for(const button of document.querySelectorAll('[data-state]')) button.setAttribute('aria-pressed',String(button.dataset.state===value));
+    render(); query.focus();
+  }
+  for(const button of document.querySelectorAll('[data-state]')) button.onclick=()=>setState(button.dataset.state);
+  query.oninput=()=>{ if(state==='empty'||state==='roots') state='results'; deliberate=false;render(); };
+  query.onkeydown=event=>{
+    if(event.key==='ArrowDown'||event.key==='ArrowUp') {
+      event.preventDefault(); if(!rows.length)return;
+      deliberate=true; const index=rows.findIndex(row=>row.id===selectedId);
+      select(rows[Math.max(0,Math.min(rows.length-1,index+(event.key==='ArrowDown'?1:-1)))].id);
+    } else if(event.key==='Enter') { event.preventDefault();activate(event.ctrlKey); }
+    else if(event.key==='Escape') { action.textContent='Preview: Escape dismisses the real popup.'; }
+  };
+  document.querySelector('#theme').onclick=event=>{
+    const dark=document.documentElement.dataset.theme!=='dark';
+    document.documentElement.dataset.theme=dark?'dark':'light';
+    event.currentTarget.textContent=dark?'Light theme':'Dark theme';
+  };
+  if(window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    document.documentElement.dataset.theme='dark';document.querySelector('#theme').textContent='Light theme';
+  }
+  render();
+</script>
+</html>

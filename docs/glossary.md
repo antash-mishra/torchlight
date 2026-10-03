@@ -8,6 +8,7 @@
 | **Posting list** | File ids containing a given trigram. |
 | **Lexical channel** | One candidate source: `prefix`, `trigram`, `subseq` or `typo`. `lexical` merges them. |
 | **Character mask** | Conservative 64-bit hash of matching symbols; collisions add candidates, never false negatives. |
+| **Mask bitmap index** | Resident bitmaps of rows containing each mask bit; intersect required bits and union other complete match sources before scoring. |
 | **Incremental narrowing** | Re-checking complete subsequence membership for a normalized query extension with unchanged rules and `catalog_gen`; never narrowing from top-k. |
 | **Deletion neighbourhood** | A string plus all its one-character deletions; indexed by `typo` for one-edit lookups. |
 | **Candidate set** | Deduplicated ids from exact/prefix, trigram, character/subsequence, and edit fallback channels. |
@@ -34,7 +35,9 @@
 | **Usable directory** | A directory that may serve as parent context: anything except the directories above every indexed root (e.g. `/home` for root `/home/user`). |
 | **Context mask** | Per-entry conservative mask of its basename and all ancestor directory names; a word with a symbol outside it can only match through a channel hit. |
 | **Repeat mask** | Per-entry mask of symbols occurring at least twice, so a word with a repeated symbol (`apps`) skips names that cannot contain it twice. |
-| **Strong-hit skip** | Answering a single-word query from channel hits alone when enough of them beat every possible subsequence score; exact, not an approximation. |
+| **Strong-hit skip** | Answering from fully evaluated channel hits when the worst kept score beats the proven maximum of every remaining entry; supports single- and multiword queries without truncating candidates. |
+| **Word evidence cache** | One of four bounded per-query caches of complete channel hits and nearest matching parent scores for a word. Query epochs prevent reuse after text changes; eviction changes work only. |
+| **Parallel scoring batch** | Disjoint entry ranges scored by prestarted workspace workers against immutable directory context; the coordinator records complete membership and orders results. |
 | **Deferred candidates** | Multiword candidates matching the first word only through a parent directory; scored only if the results so far cannot already rule them out. |
 | **Symbol cache** | Results for the 36 one-symbol queries `a`–`z`/`0`–`9`, computed when an engine is sealed. |
 | **Allowlist (`allow`)** | Configured hidden or ignored directories that are indexed anyway; their hidden ancestors are traversed but not indexed. |

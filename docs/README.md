@@ -2,6 +2,9 @@
 
 For a simple visual overview, open [Built and next](system-overview.html) in a
 browser. It shows the current system, the planned system, and the next steps.
+The M3 popup now has a [GUI specification](m3-gui-design.md) and
+[interactive design preview](m3-gui-preview.html), including Cinnamon X11 focus,
+keyboard actions, status/error states and asynchronous IPC requirements.
 
 Start here. Read in this order:
 
@@ -13,33 +16,39 @@ Start here. Read in this order:
 
 ## Implementation status
 
+M1/M2 are ready for M3 with the user's acceptance of roughly 6 ms p95 at 500k
+paths. The original 5 ms target and full-engine rebuild cost remain later
+optimization work. The [readiness report](m3-readiness.md) records verification
+and current measurements. Query-contract fixes and exact resident filtering
+are described in [ADR 0013](adr/0013-query-contracts-and-resident-filters.md).
+
 Both findings from the [M2 review](m2-review.md) are fixed and covered by sanitizer
 regressions: filesystem incarnation checks retire replacement ids, and inotify
 instance failure permits scan-only reconciliation. See
 [ADR 0012](adr/0012-filesystem-incarnations-and-watch-fallback.md) for migration
-and fallback behavior. Large-catalog performance remains open.
+and fallback behavior.
 
 M2's resident [daemon](modules/daemon/README.md) is implemented: bounded Unix
 socket clients, lexical-only terminal responses, immutable catalog snapshots,
 asynchronous [writer/history](modules/writer/README.md), inotify and reconciliation,
 file-id resolution, status, clean shutdown and crash/restart recovery. Integration
-and injected-failure tests cover the milestone scenarios. Large catalogs still
-miss the 5 ms latency target and updates rebuild whole engines; see
-[evaluation](evaluation.md) and [0011](adr/0011-m2-daemon-writer-and-reconciliation.md).
+and injected-failure tests cover the milestone scenarios. Updates rebuild whole
+engines; see [evaluation](evaluation.md) and
+[0011](adr/0011-m2-daemon-writer-and-reconciliation.md).
 
 M1's lexical engine and CLI are implemented: prefix, subsequence, trigram and
 typo channels with edit scoring, interned parent directories, incremental
 narrowing, configuration with allowlists, root deduplication and sync, and a
 benchmark with labeled tuning/held-out queries on synthetic and real corpora.
-The 5 ms p95 latency gate is met at 50k paths but not yet at 500k; see
-[evaluation](evaluation.md). See the root [README](../README.md) for commands and
+See [evaluation](evaluation.md) for benchmark conditions and recorded results,
+the root [README](../README.md) for commands, and
 [0008](adr/0008-m1-completion-channels-directories-config.md) for the design.
 
 ## Module index
 
 | Layer | Module | Doc |
 |---|---|---|
-| core | Utilities (vec, hashmap, JSON/base64, byte scopes; arena/log planned) | [core](modules/core/README.md) |
+| core | Utilities (vec, hashmap, JSON/base64, byte scopes, sort, masks, worker pool; arena/log planned) | [core](modules/core/README.md) |
 | core | Configuration | [config](modules/config/README.md) |
 | index | Path tokenizer | [tokenize](modules/tokenize/README.md) |
 | index | Lexical candidate orchestrator | [lexical](modules/lexical/README.md) |
@@ -85,6 +94,10 @@ The 5 ms p95 latency gate is met at 50k paths but not yet at 500k; see
   completes resident IPC, live updates, asynchronous history and recovery.
 - [0012: filesystem incarnations and watch fallback](adr/0012-filesystem-incarnations-and-watch-fallback.md)
   retires replacement ids and keeps reconciliation working without inotify.
+- [0013: query contracts and complete resident filtering](adr/0013-query-contracts-and-resident-filters.md)
+  enforces allocation/typo bounds and specifies exact bitmap/parallel query work.
+- [0014: M3 GTK popup design](adr/0014-m3-gtk-popup-design.md)
+  fixes the presentation, interaction and desktop acceptance specification.
 
 ## Keeping docs current
 
