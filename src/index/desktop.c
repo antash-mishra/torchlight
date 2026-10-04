@@ -92,10 +92,15 @@ static tl_status remember_id(struct snapshot *snapshot, const char *id, bool *du
     }
     return hashmap_insert(snapshot->ids, hash, (uint32_t)(vec_count(snapshot->seen) - 1));
 }
-static bool settings_category(const char *categories) {
-    if (categories == NULL)
-        return false;
-    return g_str_has_prefix(categories, "Settings;") || strstr(categories, ";Settings;") != NULL;
+static bool settings_category(GDesktopAppInfo *info) {
+    char **categories = g_desktop_app_info_get_string_list(info, "Categories", NULL);
+    bool settings = false;
+    if (categories != NULL)
+        for (size_t i = 0; categories[i] != NULL; i++)
+            if (strcmp(categories[i], "Settings") == 0)
+                settings = true;
+    g_strfreev(categories);
+    return settings;
 }
 static char *search_key(GDesktopAppInfo *info) {
     GString *key = g_string_new("/Applications/");
@@ -128,6 +133,31 @@ static char *search_key(GDesktopAppInfo *info) {
             key->str[i] = ' ';
     return g_string_free(key, FALSE);
 }
+static GDesktopAppInfo *entry_info(const char *filename, uint64_t *revision) {
+    GKeyFile *file = g_key_file_new();
+    GDesktopAppInfo *info = NULL;
+    char *data = NULL;
+    gsize length = 0;
+    if (!g_key_file_load_from_file(file, filename, G_KEY_FILE_NONE, NULL))
+        goto cleanup;
+    /* One parsed read defines both metadata and revision. A replacement after
+     * this read must fail launch validation and get a new id on refresh. */
+    info = g_desktop_app_info_new_from_keyfile(file);
+    if (info == NULL)
+        goto cleanup;
+    data = g_key_file_to_data(file, &length, NULL);
+    if (data == NULL) {
+        g_object_unref(info);
+        info = NULL;
+        goto cleanup;
+    }
+    *revision = hashmap_hash(HASHMAP_HASH_SEED, filename, strlen(filename));
+    *revision = hashmap_hash(*revision, data, length);
+cleanup:
+    g_free(data);
+    g_key_file_unref(file);
+    return info;
+}
 static tl_status add_entry(struct snapshot *snapshot, const char *filename, const char *id) {
     bool duplicate = false;
     tl_status status = remember_id(snapshot, id, &duplicate);
@@ -139,7 +169,8 @@ static tl_status add_entry(struct snapshot *snapshot, const char *filename, cons
         !S_ISREG(info_stat.st_mode) || info_stat.st_size < 0 ||
         info_stat.st_size > DESKTOP_FILE_BYTES)
         return TL_OK;
-    GDesktopAppInfo *info = g_desktop_app_info_new_from_filename(filename);
+    uint64_t revision = 0;
+    GDesktopAppInfo *info = entry_info(filename, &revision);
     if (info == NULL)
         return TL_OK;
     const char *name = g_app_info_get_display_name(G_APP_INFO(info));
@@ -159,20 +190,10 @@ static tl_status add_entry(struct snapshot *snapshot, const char *filename, cons
         g_free((void *)entry.public.icon);
         entry.public.icon = g_strdup("application-x-executable-symbolic");
     }
-    entry.public.settings = settings_category(g_desktop_app_info_get_categories(info));
+    entry.public.settings = settings_category(info);
     entry.key = search_key(info);
-    /* Canonical keyfile serialization catches Exec/visibility/locale changes too. */
-    GKeyFile *file = g_key_file_new();
-    gchar *data = NULL;
-    gsize length = 0;
-    if (g_key_file_load_from_file(file, filename, G_KEY_FILE_NONE, NULL))
-        data = g_key_file_to_data(file, &length, NULL);
-    entry.fingerprint = hashmap_hash(HASHMAP_HASH_SEED, filename, strlen(filename));
-    if (data != NULL)
-        entry.fingerprint = hashmap_hash(entry.fingerprint, data, length);
-    entry.public.revision = entry.fingerprint;
-    g_free(data);
-    g_key_file_unref(file);
+    entry.fingerprint = revision;
+    entry.public.revision = revision;
     g_object_unref(info);
     status = vec_append(snapshot->entries, &entry);
     if (status != TL_OK) {

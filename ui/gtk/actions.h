@@ -11,6 +11,8 @@ struct launch {
 };
 /** GTask worker: task_data is borrowed launch data until completion. Returns
  * accepted boolean through task; checks cancellation before launch. Performs
- * desktop validation, argv spawn and file-manager DBus outside main context. */
+ * desktop validation, argv spawn and cancellable file-manager DBus outside main
+ * context. Cancellation prevents an unaccepted fallback; accepted actions retain
+ * their result for asynchronous history even if later canceled. */
 void actions_worker(GTask *task, gpointer source, gpointer task_data, GCancellable *cancel);
 #endif

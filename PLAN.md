@@ -15,6 +15,14 @@ See [desktop setup](docs/desktop-setup.md) and the
 limits. The [interactive preview](docs/m3-gui-preview.html) remains the original
 file-result design reference.
 
+The [M3 review fixes](docs/adr/0017-m3-snapshot-cancellation-and-acceptance.md)
+cover atomic desktop replacement, canceled actions, keyboard Retry, named
+accessible input and small-screen scale-2 placement. Automated GUI checks now
+include AT-SPI and native paint timing during a 500k rebuild. Physical fractional
+and multiple-monitor testing, human screen-reader use and Wayland remain
+separate platform validation. See [milestone status](docs/milestone-status.md)
+for a plain-language account of completed and future work.
+
 The user accepted roughly 6 ms p95 lexical latency at 500k paths for starting M3;
 optimization toward the original 5 ms target resumes after the whole system is
 built. Full-engine update rebuilds remain the initial strategy. Historical

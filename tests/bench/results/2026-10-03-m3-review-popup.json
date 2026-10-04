@@ -1,0 +1,134 @@
+[
+  {
+    "configuration": "light-100",
+    "first_focus_ms": 174.642,
+    "first_paint_ms": 161.527,
+    "repeat_focus_ms": 39.74,
+    "geometry": {
+      "WINDOW": 6291460,
+      "X": 60,
+      "Y": 120,
+      "WIDTH": 680,
+      "HEIGHT": 178,
+      "SCREEN": 0
+    },
+    "input_to_paint_ms": [
+      32.913,
+      2.924,
+      31.146,
+      32.743,
+      25.763,
+      23.504,
+      27.086,
+      34.495,
+      30.35,
+      28.161,
+      24.093,
+      30.782,
+      33.788,
+      31.19,
+      25.032
+    ],
+    "no_history": false,
+    "accessibility": true
+  },
+  {
+    "configuration": "dark-font-150",
+    "first_focus_ms": 130.791,
+    "first_paint_ms": 116.397,
+    "repeat_focus_ms": 45.751,
+    "geometry": {
+      "WINDOW": 6291460,
+      "X": 60,
+      "Y": 120,
+      "WIDTH": 680,
+      "HEIGHT": 178,
+      "SCREEN": 0
+    },
+    "input_to_paint_ms": [
+      29.924,
+      11.863,
+      27.712,
+      27.314,
+      19.715,
+      28.161,
+      28.559,
+      31.547,
+      26.118,
+      24.427,
+      33.167,
+      27.549,
+      36.632,
+      19.843,
+      25.699
+    ],
+    "no_history": false,
+    "accessibility": true
+  },
+  {
+    "configuration": "contrast-200",
+    "first_focus_ms": 265.048,
+    "first_paint_ms": 232.34,
+    "repeat_focus_ms": 74.532,
+    "geometry": {
+      "WINDOW": 6291460,
+      "X": 48,
+      "Y": 120,
+      "WIDTH": 704,
+      "HEIGHT": 356,
+      "SCREEN": 0
+    },
+    "input_to_paint_ms": [
+      37.536,
+      4.111,
+      21.816,
+      34.645,
+      21.897,
+      23.086,
+      28.731,
+      26.333,
+      35.834,
+      27.879,
+      31.127,
+      22.313,
+      34.542,
+      32.556,
+      32.659
+    ],
+    "no_history": false,
+    "accessibility": true
+  },
+  {
+    "configuration": "pointer-on-panel",
+    "first_focus_ms": 144.218,
+    "first_paint_ms": 122.346,
+    "repeat_focus_ms": 54.399,
+    "geometry": {
+      "WINDOW": 6291460,
+      "X": 60,
+      "Y": 152,
+      "WIDTH": 680,
+      "HEIGHT": 178,
+      "SCREEN": 0
+    },
+    "input_to_paint_ms": [
+      33.487,
+      5.075,
+      26.496,
+      34.12,
+      22.969,
+      32.698,
+      25.221,
+      29.667,
+      33.882,
+      31.337,
+      19.602,
+      31.474,
+      27.825,
+      22.265,
+      28.809
+    ],
+    "no_history": false,
+    "accessibility": true
+  }
+]

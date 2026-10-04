@@ -11,6 +11,7 @@ import tempfile
 import time
 
 binary = str(Path(sys.argv[1]).resolve())
+replacement_library = str(Path(sys.argv[2] if len(sys.argv) > 2 else "build/test_desktop_replace.so").resolve())
 sequence = itertools.count()
 
 
@@ -59,6 +60,16 @@ with tempfile.TemporaryDirectory(prefix="torchlight-m3-") as directory:
     entry(system, "override.desktop", "Name=OverrideSystem\n")
     entry(system, "nested/tool.desktop", "Name=NestedTool\n")
     entry(system, "translated.desktop", "Name=EnglishEditor\nName[fr]=EditeurFrancais\nGenericName[fr]=TexteFrancais\nKeywords[fr]=motfrancais;\n")
+    race = entry(system, "race.desktop", "Name=AtomicOriginal\n")
+    replacement = base / "replacement.desktop"
+    replacement.write_text("[Desktop Entry]\nType=Application\nName=AtomicReplacement\nExec=/bin/false\n")
+    # Preload ASan first when testing an instrumented executable; the injection
+    # library intercepts GIO's loader as well as our direct keyfile reads.
+    linked = subprocess.run(["ldd", binary], check=True, capture_output=True, text=True).stdout
+    runtimes = [line.split()[2] for line in linked.splitlines() if line.lstrip().startswith("libasan.so")]
+    env.update(LD_PRELOAD=":".join([*runtimes, replacement_library]),
+               TORCHLIGHT_TEST_DESKTOP_PATH=str(race),
+               TORCHLIGHT_TEST_DESKTOP_REPLACEMENT=str(replacement))
     log = tempfile.TemporaryFile()
     daemon = subprocess.Popen([binary, "--config", str(config), "--db", str(database),
                                "--rescan-ms", "500"], env=env, stdout=log, stderr=log)
@@ -88,6 +99,14 @@ with tempfile.TemporaryDirectory(prefix="torchlight-m3-") as directory:
 
     try:
         wait_for(ready)
+        initial = next(r for r in query("AtomicOriginal")["results"]
+                       if r.get("desktop_id") == "race.desktop")
+        assert initial["name"] == "AtomicOriginal"
+        assert not replacement.exists(), "The replacement must occur during the first parsed read"
+        changed = wait_for(lambda: next((r for r in query("AtomicReplacement")["results"]
+                                        if r.get("name") == "AtomicReplacement"), None))
+        assert changed["id"] != initial["id"]
+        assert call("resolve", file_id=initial["id"])["reason"] == "stale_result"
         for text, expected in [("display", "display.desktop"), ("screen", "display.desktop"),
                                ("resolution", "display.desktop"), ("sound", "sound.desktop"),
                                ("keyboard", "keyboard.desktop"), ("NestedTool", "nested-tool.desktop"),
@@ -132,4 +151,4 @@ with tempfile.TemporaryDirectory(prefix="torchlight-m3-") as directory:
         output = log.read().decode(errors="replace")
         assert daemon.returncode == 0 and "AddressSanitizer" not in output and "runtime error:" not in output, output
         log.close()
-print("Desktop integration passed: overrides, localization, settings, updates and history.")
+print("Desktop integration passed: atomic replacement, overrides, localization, settings, updates and history.")

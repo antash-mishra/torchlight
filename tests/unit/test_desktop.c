@@ -45,8 +45,8 @@ void test_desktop(void) {
     write_entry(user_apps, "missing.desktop",
                 "Name=InvisibleMissing\nTryExec=/nonexistent/torchlight-executable\n");
     write_entry(user_apps, "sound.desktop",
-                "Name=Sound\nKeywords=audio;volume;\nCategories=Settings;\n");
-    write_entry(user_apps, "keyboard.desktop", "Name=Keyboard\nCategories=Settings;\n");
+                "Name=Sound\nKeywords=audio;volume;\nCategories=Settings\n");
+    write_entry(user_apps, "keyboard.desktop", "Name=Keyboard\nCategories=Utility;Settings\n");
     write_entry(user_apps, "brand.desktop", "Name=ShortBrand\nX-GNOME-FullName=DifferentLabel\n");
     tl_desktop *desktop = NULL;
     CHECK(desktop_create(&desktop) == TL_OK);
@@ -68,7 +68,9 @@ void test_desktop(void) {
     CHECK(query(desktop, "SystemDuplicate", results) == 0);
     CHECK(query(desktop, "UserOverride", results) == 1);
     CHECK(query(desktop, "sound", results) == 1);
+    CHECK(desktop_resolve(desktop, results[0].id)->settings);
     CHECK(query(desktop, "keyboard", results) == 1);
+    CHECK(desktop_resolve(desktop, results[0].id)->settings);
     CHECK(query(desktop, "ShortBrand", results) == 1);
     CHECK(query(desktop, "DifferentLabel", results) == 1);
     CHECK(query(desktop, "", results) == 0);

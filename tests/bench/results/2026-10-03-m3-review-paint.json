@@ -1,0 +1,30 @@
+{
+  "requested_paths": 500000,
+  "catalog_entries": 494362,
+  "display": "private Xvfb/Metacity X11; native GTK after-paint",
+  "daemon_build": "C17 -O3 -DNDEBUG",
+  "launcher_build": "C17 -O0 -g3",
+  "first_focus_during_rebuild_ms": 191.107,
+  "first_paint_during_rebuild_ms": 174.327,
+  "repeat_focus_ms": {
+    "n": 10,
+    "p50": 57.067,
+    "p95": 60.481,
+    "p99": 60.481,
+    "maximum": 60.481
+  },
+  "input_to_results_paint_ms": {
+    "n": 100,
+    "p50": 31.656,
+    "p95": 43.824,
+    "p99": 57.879,
+    "maximum": 57.879
+  },
+  "indexing_input_to_results_paint_ms": {
+    "n": 39,
+    "p50": 32.367,
+    "p95": 42.149,
+    "p99": 44.883,
+    "maximum": 44.883
+  }
+}

@@ -20,7 +20,10 @@ M3 is implemented: installed application/settings search through resident IPC,
 GTK4 keyboard popup, safe native launch/open/reveal actions, desktop integration
 and a systemd user unit. See [desktop setup](desktop-setup.md),
 [M3 verification](m3-completion.md) and [ADR 0015](adr/0015-m3-desktop-catalog-and-launcher.md).
-M4 semantic search is next.
+The [M3 review fixes](adr/0017-m3-snapshot-cancellation-and-acceptance.md) cover
+consistent desktop replacement, action cancellation, keyboard Retry, accessible
+input and scaled placement. [Milestone status](milestone-status.md) explains
+what is done and what remains in plain language. M4 semantic search is next.
 
 M3 proceeded with the user's acceptance of roughly 6 ms p95 at 500k paths.
 The original 5 ms target and full-engine rebuild cost remain later optimization
@@ -109,6 +112,8 @@ the root [README](../README.md) for commands, and
   records resident desktop discovery, asynchronous UI/actions and schema v3 history.
 - [0016: empty popup without default recommendations](adr/0016-empty-popup-without-recommendations.md)
   makes opening/clearing the popup wait for a typed search.
+- [0017: M3 snapshots, cancellation and acceptance](adr/0017-m3-snapshot-cancellation-and-acceptance.md)
+  fixes replacement and action races and adds isolated GUI/accessibility/paint checks.
 
 ## Keeping docs current
 

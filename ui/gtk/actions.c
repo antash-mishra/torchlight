@@ -3,21 +3,24 @@
 #include "torchlight/hashmap.h"
 #include <gio/gdesktopappinfo.h>
 #include <string.h>
-static bool open_path(const char *path, GError **error) {
+static bool open_path(const char *path, GCancellable *cancel, GError **error) {
+    if (g_cancellable_set_error_if_cancelled(cancel, error))
+        return false;
     char *argv[] = {"xdg-open", (char *)path, NULL};
     return g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, error);
 }
-static bool reveal_path(const char *path) {
+static bool reveal_path(const char *path, GCancellable *cancel) {
     GError *error = NULL;
     char *uri = g_filename_to_uri(path, NULL, &error);
-    GDBusConnection *bus = error == NULL ? g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error) : NULL;
+    GDBusConnection *bus =
+        error == NULL ? g_bus_get_sync(G_BUS_TYPE_SESSION, cancel, &error) : NULL;
     bool accepted = false;
     if (bus != NULL && uri != NULL) {
         const char *uris[] = {uri, NULL};
         GVariant *reply = g_dbus_connection_call_sync(
             bus, "org.freedesktop.FileManager1", "/org/freedesktop/FileManager1",
             "org.freedesktop.FileManager1", "ShowItems", g_variant_new("(^ass)", uris, ""), NULL,
-            G_DBUS_CALL_FLAGS_NONE, IPC_DEADLINE_MS, NULL, &error);
+            G_DBUS_CALL_FLAGS_NONE, IPC_DEADLINE_MS, cancel, &error);
         accepted = reply != NULL;
         if (reply != NULL)
             g_variant_unref(reply);
@@ -31,11 +34,13 @@ static bool reveal_path(const char *path) {
      * Keep the byte-preserving reveal request, then make its parent reachable. */
     if (accepted && json_utf8(path))
         return true;
+    if (g_cancellable_is_cancelled(cancel))
+        return accepted;
     char *parent = g_path_get_dirname(path);
-    accepted = open_path(parent, &error);
+    bool parent_accepted = open_path(parent, cancel, &error);
     g_clear_error(&error);
     g_free(parent);
-    return accepted;
+    return accepted || parent_accepted;
 }
 static bool launch_keys_match(GKeyFile *file, GDesktopAppInfo *info) {
     /* These fields affect execution even when absent in the expected keyfile. */
@@ -92,9 +97,9 @@ void actions_worker(GTask *task, gpointer source, gpointer task_data, GCancellab
             g_object_unref(info);
         info = NULL;
     } else if (launch->reveal)
-        accepted = reveal_path(launch->row.path);
+        accepted = reveal_path(launch->row.path, cancel);
     else
-        accepted = open_path(launch->row.path, &error);
+        accepted = open_path(launch->row.path, cancel, &error);
     g_clear_error(&error);
     /* Once accepted, cancellation must not erase its history record. */
     g_task_set_check_cancellable(task, false);

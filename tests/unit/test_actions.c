@@ -17,17 +17,21 @@ static void completed(GObject *source, GAsyncResult *result, gpointer context) {
     g_clear_error(&error);
     state->done = true;
 }
-static bool run_action(struct launch *launch) {
+static bool run_action_with_cancel(struct launch *launch, GCancellable *cancel) {
     struct action_result state = {0};
-    GCancellable *cancel = g_cancellable_new();
     GTask *task = g_task_new(NULL, cancel, completed, &state);
     g_task_set_task_data(task, launch, NULL);
     g_task_run_in_thread(task, actions_worker);
     while (!state.done)
         g_main_context_iteration(NULL, true);
     g_object_unref(task);
-    g_object_unref(cancel);
     return state.accepted;
+}
+static bool run_action(struct launch *launch) {
+    GCancellable *cancel = g_cancellable_new();
+    bool accepted = run_action_with_cancel(launch, cancel);
+    g_object_unref(cancel);
+    return accepted;
 }
 static void write_text(const char *path, const char *text) {
     FILE *file = fopen(path, "w");
@@ -64,6 +68,7 @@ static void expect_marker(const char *path, const char *expected) {
 struct file_manager {
     const char *path;
     size_t requests;
+    GCancellable *cancel;
 };
 static void show_items(GDBusConnection *connection, const gchar *sender, const gchar *object,
                        const gchar *interface, const gchar *method, GVariant *parameters,
@@ -84,7 +89,42 @@ static void show_items(GDBusConnection *connection, const gchar *sender, const g
     g_free(path);
     g_free(startup);
     g_strfreev(uris);
-    g_dbus_method_invocation_return_value(invocation, NULL);
+    if (manager->cancel != NULL) {
+        /* Escape occurs while ShowItems is pending, before a failed reveal
+         * could hand off to the fallback process. */
+        g_cancellable_cancel(manager->cancel);
+        g_dbus_method_invocation_return_error(invocation, G_IO_ERROR, G_IO_ERROR_FAILED,
+                                              "File manager unavailable");
+    } else
+        g_dbus_method_invocation_return_value(invocation, NULL);
+}
+static void test_canceled_reveal(struct launch *launch, struct file_manager *manager,
+                                 const char *marker) {
+    manager->cancel = g_cancellable_new();
+    size_t requests = manager->requests;
+    CHECK(!run_action_with_cancel(launch, manager->cancel));
+    CHECK(g_cancellable_is_cancelled(manager->cancel));
+    CHECK(manager->requests == requests + 1);
+    CHECK(access(marker, F_OK) != 0);
+    g_object_unref(manager->cancel);
+    manager->cancel = NULL;
+}
+static void test_accepted_reveal_without_fallback(struct launch *launch,
+                                                  struct file_manager *manager,
+                                                  const char *marker) {
+    const char *path = getenv("PATH");
+    CHECK(path != NULL);
+    char *saved_path = strdup(path);
+    CHECK(saved_path != NULL);
+    CHECK(setenv("PATH", "/nonexistent/torchlight-fixture", 1) == 0);
+    size_t requests = manager->requests;
+    /* A successful primary reveal remains accepted even if its supplemental
+     * parent opener cannot spawn; its history must not claim a failed action. */
+    CHECK(run_action(launch));
+    CHECK(manager->requests == requests + 1);
+    CHECK(access(marker, F_OK) != 0);
+    CHECK(setenv("PATH", saved_path, 1) == 0);
+    free(saved_path);
 }
 static GSubprocess *start_bus(char **saved_address) {
     GError *error = NULL;
@@ -134,7 +174,7 @@ static void test_reveal(struct launch *launch, const char *marker) {
         &error);
     CHECK(node != NULL && error == NULL);
     const GDBusInterfaceVTable table = {.method_call = show_items};
-    struct file_manager manager = {launch->row.path, 0};
+    struct file_manager manager = {.path = launch->row.path};
     guint registration =
         g_dbus_connection_register_object(connection, "/org/freedesktop/FileManager1",
                                           node->interfaces[0], &table, &manager, NULL, &error);
@@ -144,6 +184,8 @@ static void test_reveal(struct launch *launch, const char *marker) {
     CHECK(manager.requests == 1);
     expect_marker(marker, "/tmp");
     CHECK(unlink(marker) == 0);
+    test_accepted_reveal_without_fallback(launch, &manager, marker);
+    test_canceled_reveal(launch, &manager, marker);
     CHECK(g_dbus_connection_unregister_object(connection, registration));
     g_dbus_node_info_unref(node);
     CHECK(g_dbus_connection_close_sync(connection, NULL, &error) && error == NULL);

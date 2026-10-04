@@ -74,14 +74,25 @@ make test
 make lint
 make bench
 make test-ui  # requires Cinnamon/X11, xdotool and a session bus
+make test-ui-isolated  # private Xvfb/Metacity session, theme/scale/error matrix
+make bench-ui  # native paint timing during a 500k-catalog rebuild
 ```
 
 `python3 tests/test_popup.py --matrix` repeats light/dark/high-contrast and GTK
-scale overrides. `python3 tests/test_popup_native.py` is an explicit Cinnamon
+scale overrides. It refuses to reuse an already running launcher. The isolated
+runner requires Xvfb, Metacity, xdotool and D-Bus; custom executable paths can be
+supplied as `XVFB=/path/to/Xvfb XDOTOOL=/path/to/xdotool` to make. Add `--a11y`
+to `python3 tests/run_popup_checks.py --matrix` for native AT-SPI checks
+(Python GI/AT-SPI and the system accessibility bus must be available). Its
+`--screen`, `--wm` and `--output` options choose the screen, window manager and
+JSON result file. `--bench` measures after-paint timing rather than window focus.
+
+`python3 tests/test_popup_native.py` is an explicit Cinnamon
 probe that opens real settings panels, reveals a non-UTF-8 filename's parent and
 closes only the newly created test windows. These commands require xdotool.
 
 The UI test uses isolated fixture applications, captures accepted actions and
-checks focus, keyboard search/activation, repeat invocation and history. It
+checks focus, keyboard search/activation, repeat invocation, failure/restart
+recovery, keyboard Retry, long/raw-byte names and disabled history. It
 never edits desktop shortcuts. See [M3 verification](m3-completion.md) for recorded
 measurements and platform coverage.

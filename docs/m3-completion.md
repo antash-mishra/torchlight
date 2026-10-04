@@ -7,6 +7,8 @@ results, localized name/generic-name/keyword matching, GTK4 keyboard popup,
 native desktop activation, exact-byte file open/reveal, asynchronous IPC/history,
 and installable desktop/systemd integration. M4 semantic search is next.
 See [desktop setup](desktop-setup.md) and [ADR 0015](adr/0015-m3-desktop-catalog-and-launcher.md).
+The follow-up review fixes and repeatable acceptance results are recorded below.
+For a plain-language account of M1–M5, see [milestone status](milestone-status.md).
 
 ![GTK4 popup with a Display settings result](m3-popup.png)
 
@@ -92,9 +94,10 @@ original 5 ms lexical target remain optimization work; the earlier accepted
 readiness baseline was approximately 6 ms. M3 introduces no scoring changes to
 the file engine.
 
-Wayland activation/placement, actual fractional monitor scaling, a small monitor,
-multi-monitor behavior, screen-reader interaction and separately timed GUI
-input-to-results under a 500k rebuild remain additional platform acceptance work.
+Wayland activation/placement, actual fractional monitor scaling, physical
+multi-monitor behavior and a human screen-reader session remain additional
+platform acceptance work. The review adds automated small-screen, AT-SPI and
+separately timed input-to-painted-results checks described below.
 Native UTF-8 quoted-filename reveal was verified. Nemo acknowledged a raw-byte
 filename without creating a visible window; the launcher now additionally opens
 its parent for non-UTF-8 targets. That fallback was verified in native Nemo, and
@@ -105,3 +108,74 @@ restarting the daemon. Applications refresh once a second plus scan/build time.
 The service/desktop files are staged and validated; enabling the service and
 choosing a global shortcut are installation steps in desktop setup. Existing
 user services and shortcuts were preserved.
+
+## M3 review fixes and follow-up acceptance
+
+The review fixes are implemented and have regression coverage:
+
+- Discovery constructs desktop metadata and revision from one keyfile read.
+  An atomic replacement can no longer mix an old label with a new revision;
+  refresh retires the old result id.
+- File reveal passes cancellation through bus acquisition and ShowItems,
+  checks it before parent fallback, and retains accepted primary results even
+  when the supplemental parent opener fails.
+- Settings lists without an optional trailing semicolon are classified correctly.
+- Canceled worker completion preserves accepted history but cannot dismiss or
+  overwrite a reopened search. A deliberately delayed accepted opener tests it.
+- Enter activates a focused Retry button; daemon restart restores the latest
+  query without restarting the popup.
+- Both the search entry and its editable AT-SPI node have explicit names.
+- X11 dimensions are clamped before mapping, fixing scale-2 centering on small
+  screens. Monitor selection includes the panel area while placement uses the
+  usable work area.
+
+See [ADR 0017](adr/0017-m3-snapshot-cancellation-and-acceptance.md). `make test`
+passes all module, ASan/UBSan/leak, allocation-free, CLI, desktop replacement and
+daemon suites. `make lint` passes clang-tidy and cppcheck. Staged installation,
+desktop entry validation and service verification pass. AGENTS/CLAUDE remain
+identical.
+
+`tests/run_popup_checks.py --matrix --a11y` runs in a private Xvfb/Metacity X11
+session with an 800×600 screen. A minimal session bus avoids unrelated desktop
+service activation that blocked the earlier private-session harness. Real GTK
+keyboard input and native after-paint observations verify empty/cleared input,
+all five fixture settings launches, arrow selection/scrolling, long and invalid
+byte names, failed/stale launches, oversized-paste recovery, keyboard Retry,
+daemon restart, retained accepted history and disabled history. AT-SPI checks
+verify named editable input, editing through accessibility, result labels and
+selected-row state. The panel case simulates a reserved 40-pixel top panel with
+the pointer over it; it does not represent a physical multi-monitor test.
+
+Raw observations: [popup acceptance](../tests/bench/results/2026-10-03-m3-review-popup.json).
+
+| Private X11 test | First paint | Repeat focus | Popup placement/size |
+|---|---:|---:|---|
+| Adwaita, scale 1 | 161.5 ms | 39.7 ms | x=60, y=120, 680×178 |
+| Adwaita dark, font override 1.5 | 116.4 ms | 45.8 ms | x=60, y=120, 680×178 |
+| HighContrast, scale 2 | 232.3 ms | 74.5 ms | x=48, y=120, 704×356 |
+| Pointer on simulated panel | 122.3 ms | 54.4 ms | x=60, y=152, 680×178 |
+
+These individual startup/focus samples supplement the earlier Cinnamon checks.
+The font override still does not validate Cinnamon fractional monitor scaling.
+AT-SPI automation does not establish how a human screen-reader session behaves.
+
+`make bench-ui` uses the same synthetic corpus as the daemon benchmark: 500,000
+requested paths, 494,362 saved entries, plus live filesystem updates. A test-only
+observer measures the last entry edit to the first native after-paint frame with
+current results enabled, including debounce, IPC and GTK work. Production has
+no measurement I/O. The daemon uses `-O3 -DNDEBUG`, the popup the normal debug
+build, and the display is private Xvfb/Metacity rather than hardware Cinnamon.
+
+Raw run: [paint benchmark](../tests/bench/results/2026-10-03-m3-review-paint.json).
+
+| Measurement | Samples | p50 | p95 | p99 |
+|---|---:|---:|---:|---:|
+| Input to painted results, idle | 100 | 31.7 ms | 43.8 ms | 57.9 ms |
+| Input to painted results, rebuilding | 39 | 32.4 ms | 42.1 ms | 44.9 ms |
+| Repeated invocation to focus | 10 | 57.1 ms | 60.5 ms | 60.5 ms |
+
+First paint during rebuilding was 174.3 ms; first focus was 191.1 ms. Rebuild
+samples are counted only when status reports active both before input and after
+the painted response. These observations do not time hardware display
+presentation or prove every desktop configuration. The deferred 5 ms engine
+target, rebuild delay and peak memory remain optimization work.

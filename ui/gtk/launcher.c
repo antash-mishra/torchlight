@@ -257,13 +257,14 @@ static void launched(GObject *source, GAsyncResult *result, gpointer context) {
     struct launch *launch = g_task_get_task_data(task);
     GError *error = NULL;
     bool accepted = g_task_propagate_boolean(task, &error);
+    bool canceled = g_cancellable_is_cancelled(g_task_get_cancellable(task));
     g_clear_error(&error);
     popup->launching = false;
     if (popup->launch_cancel != NULL)
         g_object_unref(popup->launch_cancel);
     popup->launch_cancel = NULL;
     if (!accepted) {
-        if (popup->visible)
+        if (popup->visible && !canceled)
             set_status(popup,
                        launch->reveal ? "Could not reveal this item" : "Could not open this item");
         return;
@@ -272,9 +273,12 @@ static void launched(GObject *source, GAsyncResult *result, gpointer context) {
     popup->history = NULL;
     tl_status status = ipc_exchange_create(popup->socket_path, &launch->event, history_response,
                                            popup, &popup->history);
-    if (status != TL_OK)
+    if (status != TL_OK && !canceled)
         set_status(popup, "Opened; history could not be recorded");
-    close_popup(popup);
+    /* An accepted action still earns history after cancellation, but its
+     * completion must not dismiss a popup reopened for a newer search. */
+    if (!canceled)
+        close_popup(popup);
 }
 static void resolved(void *context, tl_status status, const char *response, size_t length,
                      bool terminal) {
@@ -345,6 +349,8 @@ static gboolean key_pressed(GtkEventControllerKey *controller, guint key, guint 
         close_popup(popup);
         return true;
     }
+    if (gtk_widget_has_focus(popup->retry))
+        return false;
     if (key == GDK_KEY_Up || key == GDK_KEY_Down) {
         popup_model_move(popup->model, key == GDK_KEY_Up ? -1 : 1);
         select_row(popup);
@@ -452,17 +458,21 @@ static void place_window(GtkWidget *widget, gpointer context) {
     GListModel *monitors = gdk_display_get_monitors(display);
     for (guint i = 0; i < g_list_model_get_n_items(monitors); i++) {
         GdkMonitor *monitor = g_list_model_get_item(monitors, i);
-        GdkRectangle area;
+        GdkRectangle geometry, area;
+        gdk_monitor_get_geometry(monitor, &geometry);
         gdk_x11_monitor_get_workarea(monitor, &area);
         g_object_unref(monitor);
-        if (pointer_x < area.x || pointer_x >= area.x + area.width || pointer_y < area.y ||
-            pointer_y >= area.y + area.height)
+        /* Panels belong to their monitor even when outside its usable area. */
+        if (pointer_x < geometry.x || pointer_x >= geometry.x + geometry.width ||
+            pointer_y < geometry.y || pointer_y >= geometry.y + geometry.height)
             continue;
         int width = MIN(680, MAX(240, area.width - 48));
         gtk_window_set_default_size(GTK_WINDOW(popup->window), width, -1);
         gtk_scrolled_window_set_max_content_height(
             GTK_SCROLLED_WINDOW(popup->scroll), MIN(8 * 58, MAX(58, area.height * 7 / 10 - 150)));
         GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(popup->window));
+        if (surface == NULL)
+            break;
         XMoveWindow(xdisplay, gdk_x11_surface_get_xid(surface),
                     (area.x + (area.width - width) / 2) * scale,
                     (area.y + area.height / 5) * scale);
@@ -491,6 +501,20 @@ static GtkWidget *create_footer(struct popup *popup) {
     gtk_box_append(GTK_BOX(footer), hints);
     return footer;
 }
+static GtkWidget *create_search_entry(void) {
+    const char *label = "Search apps, settings, files and folders";
+    GtkWidget *entry = gtk_search_entry_new();
+    gtk_search_entry_set_placeholder_text(GTK_SEARCH_ENTRY(entry), label);
+    gtk_widget_set_size_request(entry, -1, 52);
+    gtk_accessible_update_property(GTK_ACCESSIBLE(entry), GTK_ACCESSIBLE_PROPERTY_LABEL, label, -1);
+    /* GTK exposes the internal editable text separately to AT-SPI. Give it
+     * the same name so screen readers can identify the actual input control. */
+    GtkEditable *editable = gtk_editable_get_delegate(GTK_EDITABLE(entry));
+    if (GTK_IS_ACCESSIBLE(editable))
+        gtk_accessible_update_property(GTK_ACCESSIBLE(editable), GTK_ACCESSIBLE_PROPERTY_LABEL,
+                                       label, -1);
+    return entry;
+}
 static void build_window(struct popup *popup) {
     popup->window = gtk_application_window_new(popup->application);
     gtk_window_set_title(GTK_WINDOW(popup->window), "Torchlight");
@@ -504,10 +528,7 @@ static void build_window(struct popup *popup) {
     gtk_widget_set_margin_top(box, 16);
     gtk_widget_set_margin_bottom(box, 16);
     gtk_window_set_child(GTK_WINDOW(popup->window), box);
-    popup->entry = gtk_search_entry_new();
-    gtk_search_entry_set_placeholder_text(GTK_SEARCH_ENTRY(popup->entry),
-                                          "Search apps, settings, files and folders");
-    gtk_widget_set_size_request(popup->entry, -1, 52);
+    popup->entry = create_search_entry();
     gtk_box_append(GTK_BOX(box), popup->entry);
     popup->list = gtk_list_box_new();
     gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(popup->list), true);
@@ -571,6 +592,10 @@ static int command_line(GApplication *application, GApplicationCommandLine *comm
     popup->visible = true;
     gtk_editable_set_text(GTK_EDITABLE(popup->entry), "");
     changed(GTK_EDITABLE(popup->entry), popup);
+    /* Clamp before mapping: window managers otherwise constrain an initially
+     * oversized scaled window before GTK applies its smaller default size. */
+    gtk_widget_realize(popup->window);
+    place_window(popup->window, popup);
     gtk_window_present(GTK_WINDOW(popup->window));
     gtk_widget_grab_focus(popup->entry);
     return 0;
