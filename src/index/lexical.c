@@ -51,6 +51,14 @@ tl_status lexical_create(tl_lexical **out) {
     *out = engine;
     return TL_OK;
 }
+tl_status lexical_set_prefix_bonus(tl_lexical *engine, int bonus) {
+    if (engine == NULL || bonus < 0 || bonus > LEXICAL_PREFIX_BONUS_MAX)
+        return TL_INVALID;
+    if (engine->finished || engine->failed)
+        return TL_STATE;
+    engine->prefix_bonus = bonus;
+    return TL_OK;
+}
 void lexical_destroy(tl_lexical *engine) {
     if (engine == NULL)
         return;

@@ -1,6 +1,6 @@
 # desktop
 
-> **Status:** Implemented (M3), review fixes verified: resident XDG application/settings catalog
+> **Status:** Implemented (M3), including application-name ranking regressions
 > **Source:** `src/index/desktop.c` · **Header:** `include/torchlight/desktop.h`
 > **Tests:** `tests/unit/test_desktop.c`, `tests/test_desktop.py`
 
@@ -22,6 +22,15 @@ Localized keywords and generic names form one synthetic parent component; the
 visible name is the lexical basename. Prefix/subsequence/trigram/typo matching
 therefore stays reusable. Search paths are internal only: wire responses and
 resolve return the actual desktop filename plus launch metadata.
+
+The desktop engine adds 2,000 to each basename/token/initials prefix hit. This
+lets `chrome` match the name token in `Google Chrome` ahead of ordinary file
+prefixes such as `chromepolicy…`, even when more than ten files match. It applies
+before desktop top-k selection, so a small result limit cannot discard a name
+match before weighting. Generic names, keywords and weak fuzzy matches keep
+their ordinary scores; exact filenames and paths retain their priority.
+The daemon preserves the desktop engine's tie order across result limits.
+See [ADR 0018](../../adr/0018-application-name-ranking.md).
 
 The refresh worker scans every second, preserves unchanged ids, builds changed
 engines/workspaces privately and publishes under the query lease. Discovery and

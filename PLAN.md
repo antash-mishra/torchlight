@@ -2,18 +2,28 @@
 
 A Spotlight-style launcher for Linux: hit a hotkey, type, and get ranked
 files/folders. Written in C. M1/M2 index **filenames and paths**; M3 adds
-installed applications and system-settings search. Semantic file search uses
-only information present in paths; document content extraction is a possible
+installed applications and system-settings search. Semantic search uses names,
+path context and application metadata; document content extraction is a possible
 later extension.
 
 ## Implementation progress
 
-M1, M2 and M3 are implemented; M4 is next. M3 adds installed application/settings
-search and the GTK4 popup described in the [GUI design](docs/m3-gui-design.md).
+M1, M2 and M3 are implemented. The next sequence is **M3 Part 2: search quality
+→ M4: hybrid semantic search → M5: personal recommendations**. M3 adds installed
+application/settings search and the GTK4 popup described in the
+[GUI design](docs/m3-gui-design.md).
 See [desktop setup](docs/desktop-setup.md) and the
 [M3 verification report](docs/m3-completion.md) for usage, checks and measured
 limits. The [interactive preview](docs/m3-gui-preview.html) remains the original
 file-result design reference.
+
+M3 Part 2 strengthens the existing name search before adding embeddings:
+field-aware ranking, unfinished-word typo retrieval, better fuzzy scoring and
+real launcher relevance tests. The application-name weighting and stable tie
+ordering in [ADR 0018](docs/adr/0018-application-name-ranking.md) are already
+implemented; the rest of Part 2 is planned. See
+[ADR 0019](docs/adr/0019-search-quality-before-semantic-personalization.md) and
+the [search quality review](docs/search-quality.md) for scope and comparisons.
 
 The [M3 review fixes](docs/adr/0017-m3-snapshot-cancellation-and-acceptance.md)
 cover atomic desktop replacement, canceled actions, keyboard Retry, named
@@ -86,6 +96,10 @@ ancestor pruning, recovery and injected SQLite write failures.
   timing does not restart after the lexical response.
 - Match exact names, prefixes, character subsequences/abbreviations, and
   bounded typos. Preserve strong exact basename matches when adding semantics.
+- M3 Part 2 must retrieve unfinished misspelled words, distinguish names from
+  keywords and folder context, and keep strong application-name matches visible
+  among competing files. Evaluate realistic mixed-catalog queries and preserve
+  exact file/path priority and consistent ranking across result limits.
 - From M3, search installed GUI applications and system-settings panels alongside
   files and folders. `display` or `resolution` should return Display settings;
   selecting it and pressing Enter should open the display configuration panel.
@@ -116,9 +130,10 @@ reconciliation finishes; startup does not require a synchronous full-home crawl.
 
 ## Lexical retrieval
 
-BM25 remains an option if document content is added later. Filename search needs
-explicit prefix, subsequence, and typo handling; BM25 alone does not supply these
-behaviors, although term rarity can still help rank short strings.
+M3 Part 2 compares BM25 as a baseline for field-aware name/context ranking; it
+also remains an option if document content is added later. Filename search needs
+explicit prefix, subsequence and typo handling; BM25 alone does not supply these
+behaviors, although term rarity can help rank short strings.
 
 The `lexical` module combines four channel modules before scoring:
 
@@ -146,6 +161,15 @@ The `lexical` module combines four channel modules before scoring:
    the benchmark alternative, with any performance gate evaluated for recall.
 
 One/two-character queries use `prefix` and `subseq`.
+
+**M3 Part 2 extension:** retain these channels and add indexed prefix edit
+matching for unfinished typo queries, including adjacent swaps. Compare a token
+trie/FST with an equivalent bounded index before choosing the implementation.
+Use explicit basename/application-name, keyword/generic-name and parent-context
+fields so scoring can distinguish complete tokens, partial tokens, typo counts,
+word coverage and proximity. Compare optimal fuzzy character alignment with the
+current greedy scorer; update all pruning bounds and cached scores alongside
+any scoring change. Default query behavior remains independent of result capacity.
 
 Split multiword queries into tokens: each must match a basename or parent-path
 token, possibly with different lexical channels. Combine token scores with
@@ -188,17 +212,23 @@ characters. [SQLite FTS5 documentation](https://www.sqlite.org/fts5.html)
 
 ## Semantic retrieval and ranking
 
-- Compare `minishlab/potion-retrieval-32M`,
-  `ibm-granite/granite-embedding-30m-english`, and `BAAI/bge-small-en-v1.5`
-  on real path/query pairs before choosing a default.
+- After M3 Part 2, compare `minishlab/potion-retrieval-32M` and
+  `ibm-granite/granite-embedding-small-english-r2`, retaining
+  `BAAI/bge-small-en-v1.5` as a comparison baseline. Include
+  `google/embeddinggemma-300m` when evaluating multilingual retrieval.
+  Use labeled path/application queries before choosing a default; model-card
+  benchmarks do not establish launcher relevance. See
+  [the shortlist and sources](docs/search-quality.md#updated-semantic-shortlist-for-evaluation).
 - Keep `tl_embedder` swappable. Validate C tokenization and inference against
   reference embeddings. For Model2Vec, evaluate native token lookup/pooling
   and supported ONNX export; do not assume generic `optimum` export works.
 - Published Model2Vec scores describe general retrieval benchmarks, not quality
   on abbreviated filenames or indexing time for `$HOME`.
   [Model card](https://huggingface.co/minishlab/potion-retrieval-32M)
-- Embed basename, extension, and relevant parent context. Measure whether common
-  directory prefixes add noise and whether the model recognizes abbreviations.
+- Embed basename, extension, relevant parent context and application metadata.
+  Measure whether common directory prefixes add noise and whether the model
+  recognizes abbreviations. Desktop embeddings must stay tied to the selected
+  entry's metadata/revision across refresh and both response phases.
 - **Two-phase responses:** send the lexical results immediately, then a fused
   `final` response for the same request id once query embedding and vector
   search finish. Cancel stale semantic work. Typing latency never waits on
@@ -217,10 +247,11 @@ characters. [SQLite FTS5 documentation](https://www.sqlite.org/fts5.html)
   Persist int8 scales and normalization metadata needed for comparable scores.
 - Measure scan time, total latency, and recall at 50k and 500k paths. Introduce
   ANN only if measured latency/recall requires it; no 1–2ms scan is assumed.
-- Fuse lists with RRF, then apply bounded personalization boosts. Give exact
-  basename matches explicit priority and retain lexical-only behavior when the
-  model is unavailable or an entry has not been embedded. Start RRF at k = 60
-  and tune it on labeled queries.
+- In M4, fuse lists with RRF as the first baseline and compare a tuned score
+  combination on held-out queries; select from measured quality. Give exact
+  basename/path matches explicit priority and retain lexical-only behavior when
+  the model is unavailable or an entry has not been embedded. Start RRF at k = 60
+  and tune it on labeled queries. M5 adds bounded personalization boosts afterward.
 - Model revision, preprocessing/tokenizer version, dimension, and quantization
   format define an embedding generation (`emb_gen`). Build replacements in the
   background, validate them, then activate them together. Never mix `emb_gen`s.
@@ -414,7 +445,10 @@ M1, M2 and M3 are implemented. M3 adds the resident XDG desktop catalog, mixed
 application/settings/file/folder results, asynchronous GTK4 popup and native
 actions, installable desktop entry and systemd user unit. See
 [desktop setup](docs/desktop-setup.md), [M3 verification](docs/m3-completion.md)
-and [ADR 0015](docs/adr/0015-m3-desktop-catalog-and-launcher.md). M4 is next.
+and [ADR 0015](docs/adr/0015-m3-desktop-catalog-and-launcher.md).
+M3 Part 2 search quality is next, followed by M4 hybrid semantic search and M5
+personal recommendations. Part 2 has its first application-ranking fix, but is
+not complete.
 Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
 tracked explicitly in the verification report.
 
@@ -450,19 +484,62 @@ tracked explicitly in the verification report.
    hidden/incompatible entries, duplicate desktop ids, and removed applications.
    Follow [the GUI specification](docs/m3-gui-design.md) and
    [interactive preview](docs/m3-gui-preview.html), recorded in ADR 0014.
-4. **M4: Semantic search.** Compare models on labeled path queries. Verify C
-   embedding parity, float reference, quantized recall, total latency/RSS,
-   background embedding, and model replacement. Choose the model/vector
-   strategy from measurements, then integrate RRF and two-phase execution with
-   shared snapshots, bounded queues, cancellation, and deadline/error fallback.
-5. **M5: Personalization.** Resident frecency/query-open summaries, bounded
-   boosts, history controls and retention. Compare ranking with/without
-   personalization and prevent popular files from burying exact matches.
+4. **M3 Part 2: Search quality and relevance.** Improve the implemented
+   application/settings/file/folder search before introducing semantic results.
+   Build a labeled mixed-catalog query set covering strong app-name fragments
+   among noisy files, unfinished typos, abbreviations, duplicate names,
+   folder-plus-filename queries, extensions, Unicode/raw bytes and no-match
+   queries. Label multiple reasonable results for ambiguous queries and separate
+   tuning from held-out targets.
+   Keep name, keyword/generic-name and folder evidence as explicit fields; rank
+   by exactness, token completeness, typo count, coverage, proximity and field
+   importance. Add indexed prefix typo retrieval and compare an optimal fuzzy
+   scorer against the greedy baseline. Benchmark field-aware token scoring,
+   with BM25 as a comparison baseline rather than assuming it handles prefixes
+   or typos by itself.
+   Acceptance includes `chrome` finding Google Chrome ahead of unrelated file
+   prefixes in the mixed fixture; `proej` finding `projectNotes.md` in the
+   one-file fixture; and existing exact-name/path, Unicode/raw-byte, warm/cold
+   query and top-k consistency regressions continuing to pass. Report candidate
+   recall, first useful result, top-ten success and graded nDCG@10 per query
+   class. Require measured held-out relevance improvement over the current
+   baseline; measure warm typing, query latency and steady/peak RSS at 50k/500k.
+   Preserve allocation-free lexical queries and bounded work. The original
+   5 ms target and full-rebuild optimization remain separately tracked work.
+   The Chrome name-weighting/tie-order fixes are implemented; the wider milestone
+   remains planned. See [the review](docs/search-quality.md).
+5. **M4: Hybrid semantic search.** After M3 Part 2, compare small local
+   embedding models on the labeled filename/path and application-metadata queries.
+   Create embeddings in the background; embed each query and retrieve similar
+   vectors with float cosine search as the correctness reference. Evaluate
+   quantization and approximate retrieval only when latency/RSS measurements
+   justify them. Verify C tokenizer/inference parity, reference/quantized recall,
+   background updates and model replacement before choosing a backend.
+   Combine the improved lexical list with semantic results; start with RRF and
+   compare a tuned score combination on held-out queries. Preserve explicit
+   exact-name/path priority. Integrate two-phase execution with coherent
+   file/desktop metadata and embedding snapshots, bounded queues, cancellation,
+   deadline/error fallback and selection stability. Name results appear
+   immediately; semantic work never delays the first response. File contents
+   remain a possible later extension.
+6. **M5: Personal recommendations and ranking.** After M4, use optional
+   resident frecency and query-to-open summaries for both files and applications.
+   Apply bounded boosts for frequently/recently opened and previously selected
+   results. Respect disabled history, clearing and retention in persisted and
+   resident state. Compare hybrid ranking with/without personalization on
+   held-out usage scenarios; improve personally useful results without burying
+   exact matches or strong name evidence. Existing history recording is
+   implemented; recommendation scoring is future work.
 
 ## Evaluation
 
 The labeled query set, metrics, regression scenarios and benchmark reporting
 rules are in [`docs/evaluation.md`](docs/evaluation.md).
+The [search quality review](docs/search-quality.md) records observed relevance
+gaps, the implemented application-name ranking fix, and the comparisons planned
+for M3 Part 2, M4 and M5. It includes an updated model shortlist before M4
+selection. These milestones must demonstrate relevance, latency and memory on
+real launcher queries; feature completion does not establish best search quality.
 
 ## Build
 

@@ -23,7 +23,15 @@ and a systemd user unit. See [desktop setup](desktop-setup.md),
 The [M3 review fixes](adr/0017-m3-snapshot-cancellation-and-acceptance.md) cover
 consistent desktop replacement, action cancellation, keyboard Retry, accessible
 input and scaled placement. [Milestone status](milestone-status.md) explains
-what is done and what remains in plain language. M4 semantic search is next.
+what is done and what remains in plain language. M3 Part 2 search quality is
+next, followed by M4 hybrid semantic search and M5 personal recommendations.
+The [search quality review](search-quality.md) distinguishes feature completion
+from useful ranking, records the Chrome/prefix-typo failures, and proposes
+comparisons planned for M3 Part 2 before M4 model selection.
+[ADR 0018](adr/0018-application-name-ranking.md)
+fixes strong application-name ranking and consistent tied result ordering.
+[ADR 0019](adr/0019-search-quality-before-semantic-personalization.md) records
+the staged milestone sequence; the wider search improvements remain unimplemented.
 
 M3 proceeded with the user's acceptance of roughly 6 ms p95 at 500k paths.
 The original 5 ms target and full-engine rebuild cost remain later optimization
@@ -114,6 +122,10 @@ the root [README](../README.md) for commands, and
   makes opening/clearing the popup wait for a typed search.
 - [0017: M3 snapshots, cancellation and acceptance](adr/0017-m3-snapshot-cancellation-and-acceptance.md)
   fixes replacement and action races and adds isolated GUI/accessibility/paint checks.
+- [0018: application names in mixed launcher results](adr/0018-application-name-ranking.md)
+  prioritizes name prefixes and preserves tie ordering across result limits.
+- [0019: search quality before semantics and personalization](adr/0019-search-quality-before-semantic-personalization.md)
+  plans M3 Part 2 before M4 hybrid search and M5 personal recommendations.
 
 ## Keeping docs current
 

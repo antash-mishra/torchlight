@@ -4,9 +4,11 @@ How Torchlight's search quality and performance are measured. Every milestone
 validates against this list; performance numbers in `PLAN.md` are targets until
 recorded here.
 
-Current M1/M2 acceptance and the latest measurements are in the
+Current M1/M2 acceptance and its measurements are in the
 [M3 readiness report](m3-readiness.md) and
 [3 October readiness results](#2026-10-03-m1m2-readiness-adr-0013).
+The latest ranking regression and benchmark are in the
+[application-name check](#2026-10-05-application-name-ranking-adr-0018).
 
 - Curate labeled queries for names, extensions, prefixes, abbreviations, short
   queries, insertions/deletions/substitutions, Unicode, non-UTF-8 bytes,
@@ -63,6 +65,39 @@ names start with `screens…`), so their known-item recall is bounded by the
 corpus, not only by ranking.
 
 ## Results
+
+### 2026-10-05: application-name ranking (ADR 0018)
+
+The running catalog returned Google Chrome 25th for `chrome`, outside the popup's
+ten results. [ADR 0018](adr/0018-application-name-ranking.md) adds bounded name
+prefix weighting in the desktop engine and preserves its tie ordering during
+merging. Sanitizer integration checks use 24 competing filename prefixes, an
+unrelated keyword-only application and twelve tied application entries. They
+cover typing, case, multiword names, result limits, and exact file/path priority.
+An isolated sanitizer daemon also checked the actual installed
+`google-chrome.desktop` against 24 files: Chrome was first at limits 1/10/1,000.
+That isolated check left the user's daemon unchanged. After the requested
+restart, the live device's saved catalog also returns Google Chrome first at
+limits 1/10/1,000. The replacement runs the verified updated executable with the
+original arguments, environment, configuration and database.
+
+`make test` and `make lint` pass. `make bench` retains all nine synthetic fixtures
+at 50k/500k, with unchanged held-out file-ranking metrics (the default file prefix
+bonus is zero). The same i7-8700K, Linux Mint reference machine and C17 `-O3
+-DNDEBUG` benchmark were used. These are warm synthetic engine measurements;
+they do not measure hybrid search or prove broad application relevance.
+
+| Paths | Typing p50 / p95 / p99 (ms) | Leased whole-query p50 / p95 / p99 (ms) | Peak RSS (KiB) |
+|---:|---:|---:|---:|
+| 50,000 | 0.046 / 0.658 / 1.513 | 0.128 / 0.806 / 1.417 | 46,440 |
+| 500,000 | 1.179 / 7.169 / 12.404 | 1.748 / 7.332 / 13.429 | 399,204 |
+
+The original 5 ms p95 target remains unmet. The independent one-file test of
+`proej` for `projectNotes.md` still misses; partial typo retrieval is not fixed by
+the application-name weighting. [The search quality review](search-quality.md)
+proposes broader relevance comparisons and newer M4 model candidates, without
+claiming a selected or implemented replacement.
+Raw output: [application-name ranking benchmark](../tests/bench/results/2026-10-05-application-name-ranking.txt).
 
 ### 2026-10-02: first M1 prefix/subsequence baseline
 

@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #define LEXICAL_QUERY_BYTES 256
 #define LEXICAL_MAX_RESULTS 1000
+#define LEXICAL_PREFIX_BONUS_MAX 4096
 typedef struct tl_lexical tl_lexical;
 typedef struct tl_lexical_workspace tl_lexical_workspace;
 typedef struct {
@@ -14,6 +15,12 @@ typedef struct {
 } tl_result;
 /** Create owned builder; out NULL on invalid/allocation failure. */
 tl_status lexical_create(tl_lexical **out);
+/** Set a per-word basename/token/initials prefix bonus on an unsealed builder.
+ * Default 0; accepts 0..LEXICAL_PREFIX_BONUS_MAX. Parent, typo and subsequence
+ * evidence and exact-name/path priority are unchanged. No ownership transfer,
+ * allocation or I/O. TL_INVALID for NULL/out-of-range; TL_STATE after finish
+ * or builder failure. Errors leave the previous bonus unchanged. */
+tl_status lexical_set_prefix_bonus(tl_lexical *engine, int bonus);
 /** Free engine and all paths; workspaces must no longer be used. NULL allowed. */
 void lexical_destroy(tl_lexical *engine);
 /** Copy an absolute path into the builder with a monotonically increasing

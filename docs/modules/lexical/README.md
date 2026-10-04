@@ -1,6 +1,6 @@
 # lexical
 
-> **Status:** Implemented (M1): prefix, subsequence, trigram and typo channels
+> **Status:** Implemented (M1/M3): lexical channels and bounded caller prefix weighting
 > **Source:** `src/index/lexical.c` (build), `src/index/lexical_query.c` (search),
 > `src/index/lexical_internal.h` · **Header:** `include/torchlight/lexical.h`
 > **Tests:** `tests/unit/test_lexical.c`, `tests/alloc/query.c`
@@ -50,6 +50,14 @@ is the nearest matching ancestor. Basenames up to 63 symbols gain
 `64 - length` so that shorter names win otherwise-equal matches. Exact raw paths
 (20,000,000) and exact normalized basenames (10,000,000) have priority. Ties
 order by raw path bytes, then id (a precomputed path rank).
+
+An unsealed builder may use `lexical_set_prefix_bonus` to add a bounded per-word
+bonus to basename/token/initials prefix hits. The default is zero, preserving
+file ranking. Parent, typo, subsequence and trigram evidence receive no bonus.
+The setting is fixed before sealing, including the one-symbol result cache;
+multiword pruning bounds and the exact-match safety bound include it. M3's
+desktop engine uses this generic mechanism to prioritize typed application
+names when merging catalogs. See [ADR 0018](../../adr/0018-application-name-ranking.md).
 
 **Query evaluation** (`lexical_query.c`), with no I/O, SQL or heap allocation:
 
@@ -101,6 +109,9 @@ separators have a regression against score-bound shortcuts. The separate glibc
 allocator test covers long queries and an active 100k-entry worker workspace.
 Queries with six distinct words and repeated words exercise evidence eviction
 and remain independent of result capacity.
+Caller prefix weighting is tested at zero and its upper bound, including
+invalid/sealed settings, exact priorities, typed prefixes and multiword capacity
+consistency.
 
 ## Related
 

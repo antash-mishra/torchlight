@@ -14,6 +14,13 @@ structural bounds. Roughly 6 ms p95 at 500k paths is accepted for starting M3;
 the original 5 ms target is later optimization work. See
 [readiness](m3-readiness.md) and the [GUI specification](m3-gui-design.md).
 
+The next milestone is M3 Part 2: explicit name/keyword/folder ranking, indexed
+unfinished-word typo matching and improved fuzzy scoring, measured against
+real launcher queries. The first name-weighting fix is implemented (ADR 0018).
+M4 then adds embedding/vector retrieval and hybrid fusion; M5 adds optional
+file/application personalization. See [the milestone plan](../PLAN.md) and
+[ADR 0019](adr/0019-search-quality-before-semantic-personalization.md).
+
 ADR 0012 adds filesystem incarnation checks during scans and schema v2 identity
 storage. Replacements retire old ids and descendants before publication, with
 rollback restoring history. Inotify instance failure degrades watch coverage

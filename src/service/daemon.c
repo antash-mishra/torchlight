@@ -233,7 +233,11 @@ static tl_status merge_applications(tl_daemon *daemon, const tl_ipc_request *req
     for (size_t i = 0; i < app_count; i++) {
         tl_result candidate = daemon->applications[i];
         size_t place = 0;
-        while (place < *count && daemon->results[place].score > candidate.score)
+        /* Preserve the desktop engine's order at ties, so limit=1 and limit=10
+         * expose the same head. Desktop results still precede tied files. */
+        while (place < *count && (daemon->results[place].score > candidate.score ||
+                                  (daemon->results[place].score == candidate.score &&
+                                   daemon->results[place].id >= DESKTOP_ID_BASE)))
             place++;
         if (place >= request->limit)
             continue;

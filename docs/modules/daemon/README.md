@@ -41,7 +41,11 @@ See [writer](../writer/README.md), [IPC](../ipc/README.md) and
 [ADR 0011](../../adr/0011-m2-daemon-writer-and-reconciliation.md).
 
 M3 owns a separate desktop catalog worker, merges its bounded lexical results
-with files by score, and adds typed launch metadata. Query/result encoding holds
+with files by score, and adds typed launch metadata. Desktop name-prefix
+weighting is applied inside its engine before truncation. Tied applications
+retain their engine order and precede tied files, keeping the same head for
+different result limits. See [ADR 0018](../../adr/0018-application-name-ranking.md).
+Query/result encoding holds
 a short desktop lease and a file-catalog lease, releases both before socket
 output, and does no new filesystem/SQL/allocation work. Resolve/open dispatches
 desktop session ids to that current catalog. Open still records acceptance only;

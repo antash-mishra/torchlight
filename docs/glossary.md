@@ -7,6 +7,11 @@
 | **Trigram** | A 3-byte substring of a normalized name, used as an index key. |
 | **Posting list** | File ids containing a given trigram. |
 | **Lexical channel** | One candidate source: `prefix`, `trigram`, `subseq` or `typo`. `lexical` merges them. |
+| **Prefix bonus** | Bounded caller-selected addition to each basename/token/initials prefix hit, fixed before sealing. The desktop engine uses it for name relevance; file engines default to zero. |
+| **Prefix edit matching** | Comparing a query word to the beginning of an indexed word with a small edit budget; the untyped suffix does not count as an error. Proposed for incomplete typos. |
+| **Hybrid retrieval** | Combining lexical and semantic result lists, with explicit exact-name/path priority in Torchlight's planned ranking. |
+| **BM25** | A lexical relevance formula using word occurrence, word rarity and document length. A comparison baseline for field-aware search, not currently implemented. |
+| **FST** | Finite-state transducer: a compact dictionary representation usable for token/prefix lookup. A proposed alternative for indexed prefix typo traversal. |
 | **Character mask** | Conservative 64-bit hash of matching symbols; collisions add candidates, never false negatives. |
 | **Mask bitmap index** | Resident bitmaps of rows containing each mask bit; intersect required bits and union other complete match sources before scoring. |
 | **Incremental narrowing** | Re-checking complete subsequence membership for a normalized query extension with unchanged rules and `catalog_gen`; never narrowing from top-k. |
@@ -51,6 +56,7 @@
 | **History queue** | Bounded FIFO of copied search/open/clear events written off the query thread; saturation increments a drop counter. |
 | **Candidate recall** | Fraction of labeled targets surviving retrieval before final scoring. |
 | **Recall@10** | Fraction of relevant labeled results returned in the first ten results. |
+| **nDCG@10** | Normalized discounted cumulative gain over ten results: compares graded relevance and position against the ideal order, giving earlier useful results more weight. |
 | **p95 latency** | Query duration at or below which 95% of measured requests finish. |
 | **Arena** | Bump allocator freed all at once. Used for per-query temporaries. |
 | **ADR** | Architecture Decision Record, in `docs/adr/`. |

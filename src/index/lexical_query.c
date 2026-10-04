@@ -60,8 +60,9 @@ _Static_assert(LEXICAL_TRIGRAM_BASE + LEXICAL_TRIGRAM_RANGE < LEXICAL_PARENT_PRE
 /* Sum of the largest per-word scores for any query stays below exact matches
  * (fuzzy_score_bound(n) is 256 + 72n, so the fuzzy part sums to at most
  * 256 per word plus 72 per query symbol). */
-_Static_assert((long long)LEXICAL_MAX_WORDS *(PREFIX_BASENAME_SCORE + LEXICAL_BASENAME_BONUS +
-                                              LEXICAL_LENGTH_BONUS_MAX + 256) +
+_Static_assert((long long)LEXICAL_MAX_WORDS *(PREFIX_BASENAME_SCORE + LEXICAL_PREFIX_BONUS_MAX +
+                                              LEXICAL_BASENAME_BONUS + LEXICAL_LENGTH_BONUS_MAX +
+                                              256) +
                        72LL * LEXICAL_QUERY_SYMBOLS <
                    LEXICAL_EXACT_BASENAME,
                "word scores cannot reach exact-match priority");
@@ -233,7 +234,8 @@ static void record_hit(tl_lexical_workspace *workspace, size_t slot, int score) 
         workspace->channel_max = score;
 }
 static tl_status on_prefix_hit(void *context, size_t slot, int score) {
-    record_hit(context, slot, score);
+    tl_lexical_workspace *workspace = context;
+    record_hit(workspace, slot, score + workspace->engine->prefix_bonus);
     return TL_OK;
 }
 static tl_status on_typo_hit(void *context, size_t slot) {
@@ -376,11 +378,12 @@ static int subsequence_max(const struct word *word) {
 }
 /* Largest score a word can earn from any evidence; basename keys top the
  * channels (typo and trigram hits score less). */
-static int word_max(const struct word *word) {
+static int word_max(const tl_lexical *engine, const struct word *word) {
     if (word->maximum != 0)
         return word->maximum;
     int best = subsequence_max(word);
-    return word->path || best > PREFIX_BASENAME_SCORE ? best : PREFIX_BASENAME_SCORE;
+    int prefix = PREFIX_BASENAME_SCORE + engine->prefix_bonus;
+    return word->path || best > prefix ? best : prefix;
 }
 /* Gather all channel evidence for one word. Words with '/' only match across
  * the full path, which no channel key contains, so they skip the channels. */
@@ -933,7 +936,7 @@ static bool deferred_cannot_rank(const tl_lexical_workspace *workspace, size_t f
     long long bound = fuzzy > LEXICAL_PARENT_PREFIX_SCORE ? fuzzy : LEXICAL_PARENT_PREFIX_SCORE;
     for (size_t i = 0; i < words; i++) {
         if (i != first)
-            bound += word_max(&workspace->words[i]);
+            bound += word_max(workspace->engine, &workspace->words[i]);
     }
     return (long long)workspace->heap[0].score > bound + LEXICAL_LENGTH_BONUS_MAX;
 }
@@ -971,7 +974,7 @@ static tl_status try_multiword_hits(tl_lexical_workspace *workspace, size_t firs
     long long bound = subsequence_max(&workspace->words[first]) + LEXICAL_LENGTH_BONUS_MAX;
     for (size_t i = 0; i < words; i++) {
         if (i != first)
-            bound += word_max(&workspace->words[i]);
+            bound += word_max(workspace->engine, &workspace->words[i]);
     }
     *skipped = workspace->heap_count == capacity && (long long)workspace->heap[0].score > bound;
     for (size_t i = 0; i < workspace->candidate_count; i++)

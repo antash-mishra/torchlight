@@ -174,12 +174,13 @@
       <section class="panel" aria-labelledby="remaining-title">
         <h2 id="remaining-title">What is left</h2>
         <ul>
+          <li>Improve name ranking, unfinished typos and abbreviations in M3 Part 2.</li>
           <li>Improve large-list latency and how quickly changes appear.</li>
           <li>Broaden desktop, accessibility and monitor-scaling acceptance.</li>
           <li>Add optional search by meaning.</li>
           <li>Learn from your file-opening habits, with history controls.</li>
         </ul>
-        <p class="notice"><strong>M1/M2/M3 are implemented; M4 is next.</strong> The GTK4 popup searches installed applications, settings, files and folders. Cinnamon X11 launch and reveal actions are verified. The original 5 ms target and full-index rebuild cost remain optimization work. See the <a href="m3-completion.md">M3 verification report</a>.</p>
+        <p class="notice"><strong>M1/M2/M3 are implemented; M3 Part 2 is next.</strong> Improve search quality first, then add M4 hybrid semantic search and M5 personal recommendations. The GTK4 popup searches installed applications, settings, files and folders. Cinnamon X11 launch and reveal actions are verified. The original 5 ms target and full-index rebuild cost remain optimization work. See the <a href="m3-completion.md">M3 verification report</a>.</p>
       </section>
     </div>
 
@@ -214,13 +215,14 @@
       <div class="roadmap">
         <article class="step"><span class="badge built">M2 · Built and reviewed</span><h3 style="margin-top: 12px">Stay ready</h3><p>Resident daemon, immutable snapshots, background updates, history and status. Replacement identity and inotify fallback now have regression coverage.</p></article>
         <article class="step"><span class="badge built">M3 · Built</span><h3 style="margin-top: 12px">Use the popup</h3><p>GTK4 window, keyboard shortcut, live results, open or reveal files, and start at login.</p></article>
-        <article class="step next"><span class="badge planned">M4</span><h3 style="margin-top: 12px">Search by meaning</h3><p>Optional model-based matches using file names and folder names.</p></article>
+        <article class="step next"><span class="badge planned">M3 Part 2</span><h3 style="margin-top: 12px">Improve search quality</h3><p>Better name ranking, unfinished typos and abbreviations, checked against real mixed application/file queries.</p></article>
+        <article class="step"><span class="badge planned">M4</span><h3 style="margin-top: 12px">Search by meaning</h3><p>Combine improved name search with local embeddings and vector retrieval over names, folders and application metadata.</p></article>
         <article class="step"><span class="badge planned">M5</span><h3 style="margin-top: 12px">Fit your habits</h3><p>Boost useful results based on what you open. Use the existing history controls and compare personalized ranking.</p></article>
       </div>
     </section>
 
     <footer>
-      <span>Status: 3 October 2026 · M1/M2/M3 implemented; M4 next</span>
+      <span>Status: 5 October 2026 · M1/M2/M3 implemented; M3 Part 2 → M4 → M5 next</span>
       <nav aria-label="More details"><a href="../PLAN.md">Full plan</a><a href="architecture.md">Architecture</a><a href="m2-review.md">M2 review</a><a href="evaluation.md">Speed results</a></nav>
     </footer>
   </main>

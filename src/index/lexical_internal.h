@@ -56,6 +56,7 @@ struct tl_lexical {
      * lexical_symbol_query(i); valid once symbols_ready. */
     tl_result *symbol_results;
     size_t symbol_counts[LEXICAL_SYMBOL_QUERIES];
+    int prefix_bonus;
     bool symbols_ready;
     size_t count, root_count, max_path_symbols;
     bool finished, failed;

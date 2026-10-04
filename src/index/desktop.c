@@ -13,6 +13,9 @@
 #define DESKTOP_FIELD_BYTES 4096
 #define DESKTOP_SCAN_DEPTH 16
 #define DESKTOP_FILE_BYTES (64 * 1024)
+/* A typed name token (Chrome in Google Chrome) beats a filename prefix.
+ * Metadata-only matches retain their ordinary lexical strength. */
+#define DESKTOP_NAME_PREFIX_BONUS 2000
 struct entry {
     tl_desktop_entry public;
     char *key;
@@ -64,6 +67,8 @@ static tl_status snapshot_create(struct snapshot **out) {
         status = hashmap_create(&(*out)->ids);
     if (status == TL_OK)
         status = lexical_create(&(*out)->engine);
+    if (status == TL_OK)
+        status = lexical_set_prefix_bonus((*out)->engine, DESKTOP_NAME_PREFIX_BONUS);
     return status;
 }
 struct id_key {

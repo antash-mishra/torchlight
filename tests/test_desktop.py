@@ -30,6 +30,10 @@ with tempfile.TemporaryDirectory(prefix="torchlight-m3-") as directory:
     root = base / "files"
     root.mkdir()
     (root / "Display notes.txt").touch()
+    # An application-name token must survive a full popup of filename prefixes.
+    for index in range(24):
+        (root / f"chromepolicy-{index:02}.txt").touch()
+    (root / "browser-notes.txt").touch()
     user = base / "user" / "applications"
     system = base / "system" / "applications"
     user.mkdir(parents=True)
@@ -50,6 +54,10 @@ with tempfile.TemporaryDirectory(prefix="torchlight-m3-") as directory:
 
     display = entry(system, "display.desktop", "Name=Display\nKeywords=screen;resolution;\nCategories=Settings;\n")
     entry(system, "editor.desktop", "Name=InstalledEditor\nCategories=Utility;\n")
+    entry(system, "google-chrome.desktop", "Name=Google Chrome\nGenericName=Web Browser\n")
+    entry(system, "keyword.desktop", "Name=KeywordOnly\nKeywords=chrome;\n")
+    for index in range(12):
+        entry(system, f"duplicate-{index:02}.desktop", "Name=Duplicate App\n")
     entry(system, "sound.desktop", "Name=Sound\nCategories=Settings;\n")
     entry(system, "keyboard.desktop", "Name=Keyboard\nCategories=Settings;\n")
     entry(system, "masked.desktop", "Name=InvisibleSystem\n")
@@ -120,6 +128,29 @@ with tempfile.TemporaryDirectory(prefix="torchlight-m3-") as directory:
         assert any(r.get("name") == "OverrideUser" for r in query("OverrideUser")["results"])
         assert not any(r.get("name") == "OverrideSystem" for r in query("OverrideSystem")["results"])
         wait_for(lambda: any(r.get("kind") == "file" for r in query("Display notes")["results"]))
+        for text in ["c", "ch", "chr", "chro", "chrom", "chrome", "CHROME", "google chr"]:
+            for limit in [1, 10, 1000]:
+                response = call("query", query=text, limit=limit)
+                assert response["status"] == "ok", response
+                assert response["results"][0].get("desktop_id") == "google-chrome.desktop", (text, limit, response)
+        # Metadata-only matches keep their ordinary strength; this is not an
+        # unconditional preference for every installed application.
+        assert query("browser")["results"][0]["kind"] == "file"
+        full = call("query", query="chrome", limit=1000)["results"]
+        keyword = next(i for i, result in enumerate(full)
+                       if result.get("desktop_id") == "keyword.desktop")
+        assert all(i < keyword for i, result in enumerate(full) if result["kind"] == "file")
+        exact_file = root / "chrome"
+        exact_file.touch()
+        wait_for(lambda: query("chrome")["results"][0].get("path") == str(exact_file))
+        assert query(str(exact_file))["results"][0]["path"] == str(exact_file)
+        exact_file.unlink()
+        wait_for(lambda: query("chrome")["results"][0].get("desktop_id") == "google-chrome.desktop")
+        tied = call("query", query="duplicate app", limit=1000)["results"]
+        assert len(tied) == 12
+        for limit in [1, 3, 10]:
+            small = call("query", query="duplicate app", limit=limit)["results"]
+            assert [r["id"] for r in small] == [r["id"] for r in tied[:limit]]
         assert query("")["results"][0]["kind"] == "folder"
         response = query("display")
         application = next(r for r in response["results"] if r.get("desktop_id") == "display.desktop")

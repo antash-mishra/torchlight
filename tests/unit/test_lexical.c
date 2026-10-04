@@ -134,6 +134,47 @@ static void capacity_consistency(const tl_lexical *engine, tl_lexical_workspace 
     for (size_t i = 0; i < few_count; i++)
         CHECK(few[i].id == all[i].id && few[i].score == all[i].score);
 }
+/* A caller's name-prefix weighting must preserve exact priorities and the
+ * complete ranking through cached one-symbol and multiword bound shortcuts. */
+static void prefix_bonus_ranking(void) {
+    const char *paths[] = {"/r",        "/r/Google Chrome",       "/r/chromepolicy.txt",
+                           "/r/chrome", "/r/google/notes chrome", "/r/chrome/browser google notes"};
+    CHECK(lexical_set_prefix_bonus(NULL, 0) == TL_INVALID);
+    const int bonuses[] = {0, 2000, LEXICAL_PREFIX_BONUS_MAX};
+    for (size_t b = 0; b < sizeof(bonuses) / sizeof(bonuses[0]); b++) {
+        tl_lexical *engine = NULL;
+        tl_lexical_workspace *workspace = NULL;
+        CHECK(lexical_create(&engine) == TL_OK);
+        CHECK(lexical_set_prefix_bonus(engine, bonuses[b]) == TL_OK);
+        CHECK(lexical_set_prefix_bonus(engine, -1) == TL_INVALID);
+        CHECK(lexical_set_prefix_bonus(engine, LEXICAL_PREFIX_BONUS_MAX + 1) == TL_INVALID);
+        for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); i++)
+            CHECK(lexical_add(engine, i + 1, paths[i], i == 0) == TL_OK);
+        CHECK(lexical_finish(engine) == TL_OK);
+        CHECK(lexical_set_prefix_bonus(engine, 0) == TL_STATE);
+        CHECK(lexical_workspace_create(engine, &workspace) == TL_OK);
+        expect(engine, workspace, "chrome", paths[3]);
+        expect(engine, workspace, "Google Chrome", paths[1]);
+        expect(engine, workspace, paths[2], paths[2]);
+        const char *queries[] = {"c",
+                                 "ch",
+                                 "chr",
+                                 "chrome",
+                                 "chr",
+                                 "google chr",
+                                 "google chrome notes",
+                                 "notes google chrome",
+                                 "browser notes"};
+        for (size_t i = 0; i < sizeof(queries) / sizeof(queries[0]); i++)
+            capacity_consistency(engine, workspace, queries[i]);
+        tl_result results[10];
+        size_t count = 0;
+        CHECK(lexical_query(engine, workspace, "chr", results, 10, &count) == TL_OK);
+        CHECK(count > 0 && results[0].score == 6000 + bonuses[b] + 58);
+        lexical_workspace_destroy(workspace);
+        lexical_destroy(engine);
+    }
+}
 /* Multiword channel bounds must retain weak parent matches when necessary,
  * preserve score ties, and seed exact names with separators inside a word. */
 static void multiword_bounds(void) {
@@ -279,6 +320,7 @@ static void warm_equals_fresh(void) {
     lexical_destroy(engine);
 }
 void test_lexical(void) {
+    prefix_bonus_ranking();
     evidence_eviction();
     parallel_ranking();
     multiword_bounds();
