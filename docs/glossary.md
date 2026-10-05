@@ -8,9 +8,12 @@
 | **Posting list** | File ids containing a given trigram. |
 | **Lexical channel** | One candidate source: `prefix`, `trigram`, `subseq` or `typo`. `lexical` merges them. |
 | **Prefix bonus** | Bounded caller-selected addition to each basename/token/initials prefix hit, fixed before sealing. The desktop engine uses it for name relevance; file engines default to zero. |
-| **Prefix edit matching** | Comparing a query word to the beginning of an indexed word with a small edit budget; the untyped suffix does not count as an error. Proposed for incomplete typos. |
+| **Prefix edit matching** | Comparing a query word to the beginning of an indexed word with a small edit budget; the untyped suffix does not count as an error. Implemented with one-edit sorted-range traversal for five-symbol or longer unfinished words. |
 | **Hybrid retrieval** | Combining lexical and semantic result lists, with explicit exact-name/path priority in Torchlight's planned ranking. |
-| **BM25** | A lexical relevance formula using word occurrence, word rarity and document length. A comparison baseline for field-aware search, not currently implemented. |
+| **BM25** | A lexical relevance formula using word occurrence, word rarity and document length. Implemented as an offline exact-token field comparison; the resident engine uses lexical channels. |
+| **Implicit token trie** | Lexicographically sorted distinct tokens whose shared prefixes form contiguous ranges; bounded edit rows traverse those ranges without storing additional trie nodes. |
+| **Token completeness** | Evidence that a query word consumes an entire indexed token rather than just its beginning; a bounded ranking bonus. |
+| **Optimal fuzzy alignment** | Highest-scoring ordered character placement under boundary, consecutive and gap rules; bounded DP replaces earliest-placement scoring for text up to 512 symbols. |
 | **FST** | Finite-state transducer: a compact dictionary representation usable for token/prefix lookup. A proposed alternative for indexed prefix typo traversal. |
 | **Character mask** | Conservative 64-bit hash of matching symbols; collisions add candidates, never false negatives. |
 | **Mask bitmap index** | Resident bitmaps of rows containing each mask bit; intersect required bits and union other complete match sources before scoring. |

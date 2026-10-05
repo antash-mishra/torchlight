@@ -1,17 +1,17 @@
 # fuzzy
 
-> **Status:** Implemented (M1): greedy subsequence scorer and one-edit distance
+> **Status:** Implemented (M3 Part 2): bounded optimal alignment and one-edit distance
 > **Source:** `src/index/fuzzy.c` · **Header:** `include/torchlight/fuzzy.h`
 > **Tests:** `tests/unit/test_fuzzy.c`
 
 ## Behavior and ownership
 
-`fuzzy_score` is a pure allocation-free scorer: greedy earliest ordered matches
-receive separator/camelCase and consecutive bonuses, with bounded gap penalties.
-It checks masks and returns zero unless every query symbol matches. Numeric
-bonuses are named constants. `fuzzy_score_bound(n)` is the largest score any
-`n`-symbol query can get; `lexical` uses it to prove that skipped work cannot
-change results.
+`fuzzy_score` is pure and allocation-free. For text of at most 512 symbols it
+finds the best alignment under the original boundary/consecutive bonuses and
+capped gap penalties. Two fixed stack rows and running maxima make the DP
+O(text × query); an ordered-membership pass rejects impossible matches early.
+Larger text uses `fuzzy_score_greedy`, also available as a comparison baseline.
+`fuzzy_score_bound(n)` remains unchanged and bounds both scorers.
 
 `fuzzy_edit_distance` is the separate bounded edit scorer used by the typo
 channel. It returns the optimal-string-alignment distance when it is at most
@@ -20,9 +20,11 @@ swap each cost one, so `raedme` is one edit from `readme`. With a one-edit budge
 everything before the first mismatch must be equal, so the check is linear and
 needs no table.
 
-The scorer is a readable baseline, not optimal dynamic-programming fzy
-alignment. Tests compare boundary and scattered matches, check bounds, reject
-non-matches, cover all edit kinds and two-edit pairs, and validate errors.
+Tests compare 2048 small cases against an exhaustive alignment oracle, require
+optimal scores to dominate greedy scores, and cover later better alignment,
+capped gaps, the long-text fallback, all edit kinds and score/error bounds.
+See [ADR 0020](../../adr/0020-m3-part2-search-quality.md) and the
+[completion measurements](../../m3-part2-completion.md).
 
 ## Related
 

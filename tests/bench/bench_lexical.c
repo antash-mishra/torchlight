@@ -232,6 +232,30 @@ static tl_status measure_latency(const tl_lexical *engine, tl_lexical_workspace 
     free(whole.samples);
     return status;
 }
+/* Fresh query membership/evidence caches over an already resident engine.
+ * Workspace allocation and worker startup happen outside the measured query. */
+static tl_status measure_cold(const tl_lexical *engine, const bench_query *queries, size_t count) {
+    enum { COLD_QUERY_STRIDE = 20 };
+    struct latency latency = {0};
+    tl_status status = TL_OK;
+    for (size_t q = 0; q < count && status == TL_OK; q += COLD_QUERY_STRIDE) {
+        tl_lexical_workspace *workspace = NULL;
+        status = lexical_workspace_create(engine, &workspace);
+        tl_result results[BENCH_LIMIT];
+        size_t found = 0;
+        double milliseconds = 0;
+        if (status == TL_OK)
+            status = timed_query(engine, workspace, queries[q].text, results, BENCH_LIMIT, &found,
+                                 &milliseconds);
+        lexical_workspace_destroy(workspace);
+        if (status == TL_OK)
+            status = record(&latency, milliseconds);
+    }
+    if (status == TL_OK)
+        report_latency("cold_workspace_query", &latency);
+    free(latency.samples);
+    return status;
+}
 /* Include lease acquisition/release around the same held-out whole queries.
  * Construction and publication remain outside the timed query path. */
 static tl_status measure_catalog(tl_lexical **engine, const bench_query *queries, size_t count) {
@@ -282,11 +306,15 @@ static tl_status run(const bench_corpus *corpus, bool synthetic) {
     if (status == TL_OK)
         status = measure_latency(engine, workspace, held_out, held_out_count);
     if (status == TL_OK)
+        status = measure_cold(engine, held_out, held_out_count);
+    if (status == TL_OK)
         status = evaluate(corpus, engine, workspace, "tuning", tuning, tuning_count, results);
     if (status == TL_OK)
         status = evaluate(corpus, engine, workspace, "held_out", held_out, held_out_count, results);
     if (status == TL_OK && synthetic)
         status = check_fixtures(engine, workspace);
+    if (status == TL_OK)
+        printf("steady_rss_kib=%ld\n", resident_kib());
     lexical_workspace_destroy(workspace);
     workspace = NULL;
     if (status == TL_OK)

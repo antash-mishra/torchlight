@@ -4,9 +4,10 @@ Reviewed 2026-10-05. The application-name weighting and tie-order fixes are
 implemented in [ADR 0018](adr/0018-application-name-ranking.md). The wider work
 is now planned as M3 Part 2 search quality, M4 hybrid semantic search and M5
 personal recommendations in [the plan](../PLAN.md) and
-[ADR 0019](adr/0019-search-quality-before-semantic-personalization.md). Those
-milestones are not implemented; algorithm/model choices below still require
-evaluation.
+[ADR 0019](adr/0019-search-quality-before-semantic-personalization.md). M3 Part 2 is now implemented in
+[ADR 0020](adr/0020-m3-part2-search-quality.md);
+[its verification](m3-part2-completion.md) records held-out relevance and latency
+tradeoffs. M4/M5 and model choices below still require evaluation.
 
 For Torchlight, the recommended direction is hybrid retrieval: indexed name
 search with better autocomplete and ranking, plus optional local semantic
@@ -24,7 +25,7 @@ In a separate temporary catalog containing `projectNotes.md`, `project` and
 Whole-token typo correction leaves a real autocomplete gap. This is a retrieval
 failure: a later ranking stage cannot promote a missing candidate.
 
-The fuzzy scorer also chooses the earliest matching characters greedily. Its
+At review time the fuzzy scorer chose the earliest matching characters greedily. Its
 score can miss a better alignment later in the name. Existing synthetic
 known-item benchmarks are useful for regressions, but ambiguous prefixes and
 random target selection do not establish realistic launcher relevance. See
@@ -55,9 +56,11 @@ It requires every pattern character, so it does not replace edit-based typo
 retrieval. An indexed candidate filter and benchmarked scoring are still needed
 for a large filename catalog.
 
-## Planned implementation sequence
+## Implementation sequence
 
-Steps 1–4 belong to M3 Part 2. Step 5 and fusion comparison belong to M4;
+Steps 1–4 are implemented for M3 Part 2, using explicit fields, sorted-range
+prefix editing and bounded optimal alignment. The following list records the
+original scope. Step 5 and fusion comparison belong to M4;
 personalization belongs to M5.
 
 1. Expand relevance tests before choosing a replacement. Include application

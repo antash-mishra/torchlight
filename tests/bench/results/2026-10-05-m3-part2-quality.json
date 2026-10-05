@@ -1,0 +1,3312 @@
+{
+  "fixture": "mixed.json",
+  "candidate_capacity": 1000,
+  "baseline_library": "/tmp/torchlight-m3p2-baseline.so",
+  "current_library": "build/quality_engine.so",
+  "baseline_revision": "7ace90f0a3d1474a0594b08ee8db9fde72e0f713",
+  "fixture_entries": 68,
+  "fixture_queries": 44,
+  "baseline": {
+    "aggregate": {
+      "held_out/abbreviation": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/all": {
+        "queries": 22,
+        "candidate_recall": 0.9523809523809523,
+        "empty_correct": 1.0,
+        "first_useful_rank": 48.61904761904762,
+        "mrr": 0.9523809523809523,
+        "ndcg10": 0.9385623686379458,
+        "top10_success": 0.9523809523809523
+      },
+      "held_out/application_name": {
+        "queries": 3,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/duplicate": {
+        "queries": 2,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/exact": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/extension": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/folder_name": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/metadata": {
+        "queries": 4,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/no_match": {
+        "queries": 1,
+        "empty_correct": 1.0
+      },
+      "held_out/optimal_alignment": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 0.7098097413968655,
+        "top10_success": 1.0
+      },
+      "held_out/path": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/raw_bytes": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/unfinished_typo": {
+        "queries": 3,
+        "candidate_recall": 0.6666666666666666,
+        "first_useful_rank": 334.3333333333333,
+        "mrr": 0.6666666666666666,
+        "ndcg10": 0.6666666666666666,
+        "top10_success": 0.6666666666666666
+      },
+      "held_out/unicode": {
+        "queries": 2,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/abbreviation": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/all": {
+        "queries": 22,
+        "candidate_recall": 0.9047619047619048,
+        "empty_correct": 1.0,
+        "first_useful_rank": 96.23809523809524,
+        "mrr": 0.9047619047619048,
+        "ndcg10": 0.8909433210188983,
+        "top10_success": 0.9047619047619048
+      },
+      "tuning/application_name": {
+        "queries": 3,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/duplicate": {
+        "queries": 2,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/exact": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/extension": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/folder_name": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/metadata": {
+        "queries": 4,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/no_match": {
+        "queries": 1,
+        "empty_correct": 1.0
+      },
+      "tuning/optimal_alignment": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 0.7098097413968655,
+        "top10_success": 1.0
+      },
+      "tuning/path": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/raw_bytes": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/unfinished_typo": {
+        "queries": 3,
+        "candidate_recall": 0.3333333333333333,
+        "first_useful_rank": 667.6666666666666,
+        "mrr": 0.3333333333333333,
+        "ndcg10": 0.3333333333333333,
+        "top10_success": 0.3333333333333333
+      },
+      "tuning/unicode": {
+        "queries": 2,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      }
+    },
+    "queries": [
+      {
+        "text": "chrome",
+        "class": "application_name",
+        "target_group": "chrome",
+        "split": "tuning",
+        "labels": {
+          "chrome": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "chrome",
+          "chromenoise0",
+          "chromenoise1",
+          "chromenoise2",
+          "chromenoise3",
+          "chromenoise4",
+          "chromenoise5",
+          "chromenoise6",
+          "chromenoise7",
+          "chromenoise8"
+        ]
+      },
+      {
+        "text": "chrom",
+        "class": "application_name",
+        "target_group": "chrome",
+        "split": "tuning",
+        "labels": {
+          "chrome": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "chrome",
+          "chromenoise0",
+          "chromenoise1",
+          "chromenoise2",
+          "chromenoise3",
+          "chromenoise4",
+          "chromenoise5",
+          "chromenoise6",
+          "chromenoise7",
+          "chromenoise8"
+        ]
+      },
+      {
+        "text": "Google Chrome",
+        "class": "application_name",
+        "target_group": "chrome",
+        "split": "tuning",
+        "labels": {
+          "chrome": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "chrome"
+        ]
+      },
+      {
+        "text": "firefox",
+        "class": "application_name",
+        "target_group": "firefox",
+        "split": "held_out",
+        "labels": {
+          "firefox": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "firefox",
+          "firefoxnoise0",
+          "firefoxnoise1",
+          "firefoxnoise2",
+          "firefoxnoise3",
+          "firefoxnoise4",
+          "firefoxnoise5",
+          "firefoxnoise6",
+          "firefoxnoise7",
+          "firefoxnoise8"
+        ]
+      },
+      {
+        "text": "firef",
+        "class": "application_name",
+        "target_group": "firefox",
+        "split": "held_out",
+        "labels": {
+          "firefox": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "firefox",
+          "firefoxnoise0",
+          "firefoxnoise1",
+          "firefoxnoise2",
+          "firefoxnoise3",
+          "firefoxnoise4",
+          "firefoxnoise5",
+          "firefoxnoise6",
+          "firefoxnoise7",
+          "firefoxnoise8"
+        ]
+      },
+      {
+        "text": "Mozilla Firefox",
+        "class": "application_name",
+        "target_group": "firefox",
+        "split": "held_out",
+        "labels": {
+          "firefox": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "firefox"
+        ]
+      },
+      {
+        "text": "screen",
+        "class": "metadata",
+        "target_group": "display",
+        "split": "tuning",
+        "labels": {
+          "display": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "display"
+        ]
+      },
+      {
+        "text": "Monitor",
+        "class": "metadata",
+        "target_group": "display",
+        "split": "tuning",
+        "labels": {
+          "display": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "display"
+        ]
+      },
+      {
+        "text": "Display",
+        "class": "metadata",
+        "target_group": "display",
+        "split": "tuning",
+        "labels": {
+          "display": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "display"
+        ]
+      },
+      {
+        "text": "screen Monitor",
+        "class": "metadata",
+        "target_group": "display",
+        "split": "tuning",
+        "labels": {
+          "display": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "display"
+        ]
+      },
+      {
+        "text": "volume",
+        "class": "metadata",
+        "target_group": "sound",
+        "split": "held_out",
+        "labels": {
+          "sound": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "sound"
+        ]
+      },
+      {
+        "text": "Audio",
+        "class": "metadata",
+        "target_group": "sound",
+        "split": "held_out",
+        "labels": {
+          "sound": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "sound"
+        ]
+      },
+      {
+        "text": "Sound",
+        "class": "metadata",
+        "target_group": "sound",
+        "split": "held_out",
+        "labels": {
+          "sound": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "sound"
+        ]
+      },
+      {
+        "text": "volume Audio",
+        "class": "metadata",
+        "target_group": "sound",
+        "split": "held_out",
+        "labels": {
+          "sound": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "sound"
+        ]
+      },
+      {
+        "text": "proej",
+        "class": "unfinished_typo",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      },
+      {
+        "text": "prxoje",
+        "class": "unfinished_typo",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      },
+      {
+        "text": "projecx",
+        "class": "unfinished_typo",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "project"
+        ]
+      },
+      {
+        "text": "prjnts",
+        "class": "abbreviation",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "project"
+        ]
+      },
+      {
+        "text": "projectNotes.md",
+        "class": "exact",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "project"
+        ]
+      },
+      {
+        "text": "/work/projectNotes.md",
+        "class": "path",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "project"
+        ]
+      },
+      {
+        "text": "calned",
+        "class": "unfinished_typo",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "calendar"
+        ]
+      },
+      {
+        "text": "calenx",
+        "class": "unfinished_typo",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "calendar"
+        ]
+      },
+      {
+        "text": "caleXnd",
+        "class": "unfinished_typo",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      },
+      {
+        "text": "clndag",
+        "class": "abbreviation",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "calendar"
+        ]
+      },
+      {
+        "text": "calendarAgenda.md",
+        "class": "exact",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "calendar"
+        ]
+      },
+      {
+        "text": "/events/calendarAgenda.md",
+        "class": "path",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "calendar"
+        ]
+      },
+      {
+        "text": "invoice",
+        "class": "duplicate",
+        "target_group": "invoice",
+        "split": "tuning",
+        "labels": {
+          "invoiceprimary": 3,
+          "invoiceother": 3,
+          "invoicedraft": 1
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "invoiceother",
+          "invoiceprimary",
+          "invoicedraft"
+        ]
+      },
+      {
+        "text": "finance invoice",
+        "class": "folder_name",
+        "target_group": "invoice",
+        "split": "tuning",
+        "labels": {
+          "invoiceprimary": 3,
+          "invoicedraft": 1
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "invoiceprimary",
+          "invoicedraft"
+        ]
+      },
+      {
+        "text": "finance pdf",
+        "class": "extension",
+        "target_group": "invoice",
+        "split": "tuning",
+        "labels": {
+          "invoiceprimary": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "invoiceprimary"
+        ]
+      },
+      {
+        "text": "invoice2024.pdf",
+        "class": "duplicate",
+        "target_group": "invoice",
+        "split": "tuning",
+        "labels": {
+          "invoiceprimary": 3,
+          "invoiceother": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "invoiceother",
+          "invoiceprimary"
+        ]
+      },
+      {
+        "text": "report",
+        "class": "duplicate",
+        "target_group": "report",
+        "split": "held_out",
+        "labels": {
+          "reportprimary": 3,
+          "reportother": 3,
+          "reportdraft": 1
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "reportother",
+          "reportprimary",
+          "reportdraft"
+        ]
+      },
+      {
+        "text": "research report",
+        "class": "folder_name",
+        "target_group": "report",
+        "split": "held_out",
+        "labels": {
+          "reportprimary": 3,
+          "reportdraft": 1
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "reportprimary",
+          "reportdraft"
+        ]
+      },
+      {
+        "text": "research pdf",
+        "class": "extension",
+        "target_group": "report",
+        "split": "held_out",
+        "labels": {
+          "reportprimary": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "reportprimary",
+          "reportdraft"
+        ]
+      },
+      {
+        "text": "report2024.pdf",
+        "class": "duplicate",
+        "target_group": "report",
+        "split": "held_out",
+        "labels": {
+          "reportprimary": 3,
+          "reportother": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "reportother",
+          "reportprimary",
+          "invoiceother",
+          "invoiceprimary"
+        ]
+      },
+      {
+        "text": "CAFE\u0301",
+        "class": "unicode",
+        "target_group": "cafe",
+        "split": "tuning",
+        "labels": {
+          "cafe": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "cafe"
+        ]
+      },
+      {
+        "text": "Caf\u00e9.pdf",
+        "class": "unicode",
+        "target_group": "cafe",
+        "split": "tuning",
+        "labels": {
+          "cafe": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "cafe"
+        ]
+      },
+      {
+        "text": "STRASSE",
+        "class": "unicode",
+        "target_group": "strasse",
+        "split": "held_out",
+        "labels": {
+          "strasse": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "strasse"
+        ]
+      },
+      {
+        "text": "Stra\u00dfe.txt",
+        "class": "unicode",
+        "target_group": "strasse",
+        "split": "held_out",
+        "labels": {
+          "strasse": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "strasse"
+        ]
+      },
+      {
+        "text": "rawbad",
+        "class": "raw_bytes",
+        "target_group": "rawbad",
+        "split": "tuning",
+        "labels": {
+          "rawbad": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "rawbad"
+        ]
+      },
+      {
+        "text": "rawopaque",
+        "class": "raw_bytes",
+        "target_group": "rawopaque",
+        "split": "held_out",
+        "labels": {
+          "rawopaque": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "rawopaque"
+        ]
+      },
+      {
+        "text": "zznomatchqq",
+        "class": "no_match",
+        "target_group": "zznomatchqq",
+        "split": "tuning",
+        "labels": {},
+        "metrics": {
+          "empty_correct": 1.0
+        },
+        "top10": []
+      },
+      {
+        "text": "qqabsentzz",
+        "class": "no_match",
+        "target_group": "qqabsentzz",
+        "split": "held_out",
+        "labels": {},
+        "metrics": {
+          "empty_correct": 1.0
+        },
+        "top10": []
+      },
+      {
+        "text": "aceg",
+        "class": "optimal_alignment",
+        "target_group": "alignment_a",
+        "split": "tuning",
+        "labels": {
+          "alignment_abest": 3,
+          "alignment_aother": 1
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 0.7098097413968655
+        },
+        "top10": [
+          "alignment_aother",
+          "alignment_abest"
+        ]
+      },
+      {
+        "text": "bdfh",
+        "class": "optimal_alignment",
+        "target_group": "alignment_b",
+        "split": "held_out",
+        "labels": {
+          "alignment_bbest": 3,
+          "alignment_bother": 1
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 0.7098097413968655
+        },
+        "top10": [
+          "alignment_bother",
+          "alignment_bbest"
+        ]
+      }
+    ]
+  },
+  "current": {
+    "aggregate": {
+      "held_out/abbreviation": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/all": {
+        "queries": 22,
+        "candidate_recall": 1.0,
+        "empty_correct": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/application_name": {
+        "queries": 3,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/duplicate": {
+        "queries": 2,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/exact": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/extension": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/folder_name": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/metadata": {
+        "queries": 4,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/no_match": {
+        "queries": 1,
+        "empty_correct": 1.0
+      },
+      "held_out/optimal_alignment": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/path": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/raw_bytes": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/unfinished_typo": {
+        "queries": 3,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/unicode": {
+        "queries": 2,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/abbreviation": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/all": {
+        "queries": 22,
+        "candidate_recall": 1.0,
+        "empty_correct": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/application_name": {
+        "queries": 3,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/duplicate": {
+        "queries": 2,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/exact": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/extension": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/folder_name": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/metadata": {
+        "queries": 4,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/no_match": {
+        "queries": 1,
+        "empty_correct": 1.0
+      },
+      "tuning/optimal_alignment": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/path": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/raw_bytes": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/unfinished_typo": {
+        "queries": 3,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/unicode": {
+        "queries": 2,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      }
+    },
+    "queries": [
+      {
+        "text": "chrome",
+        "class": "application_name",
+        "target_group": "chrome",
+        "split": "tuning",
+        "labels": {
+          "chrome": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "chrome",
+          "chromenoise0",
+          "chromenoise1",
+          "chromenoise2",
+          "chromenoise3",
+          "chromenoise4",
+          "chromenoise5",
+          "chromenoise6",
+          "chromenoise7",
+          "chromenoise8"
+        ]
+      },
+      {
+        "text": "chrom",
+        "class": "application_name",
+        "target_group": "chrome",
+        "split": "tuning",
+        "labels": {
+          "chrome": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "chrome",
+          "chromenoise0",
+          "chromenoise1",
+          "chromenoise2",
+          "chromenoise3",
+          "chromenoise4",
+          "chromenoise5",
+          "chromenoise6",
+          "chromenoise7",
+          "chromenoise8"
+        ]
+      },
+      {
+        "text": "Google Chrome",
+        "class": "application_name",
+        "target_group": "chrome",
+        "split": "tuning",
+        "labels": {
+          "chrome": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "chrome"
+        ]
+      },
+      {
+        "text": "firefox",
+        "class": "application_name",
+        "target_group": "firefox",
+        "split": "held_out",
+        "labels": {
+          "firefox": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "firefox",
+          "firefoxnoise0",
+          "firefoxnoise1",
+          "firefoxnoise2",
+          "firefoxnoise3",
+          "firefoxnoise4",
+          "firefoxnoise5",
+          "firefoxnoise6",
+          "firefoxnoise7",
+          "firefoxnoise8"
+        ]
+      },
+      {
+        "text": "firef",
+        "class": "application_name",
+        "target_group": "firefox",
+        "split": "held_out",
+        "labels": {
+          "firefox": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "firefox",
+          "firefoxnoise0",
+          "firefoxnoise1",
+          "firefoxnoise2",
+          "firefoxnoise3",
+          "firefoxnoise4",
+          "firefoxnoise5",
+          "firefoxnoise6",
+          "firefoxnoise7",
+          "firefoxnoise8"
+        ]
+      },
+      {
+        "text": "Mozilla Firefox",
+        "class": "application_name",
+        "target_group": "firefox",
+        "split": "held_out",
+        "labels": {
+          "firefox": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "firefox"
+        ]
+      },
+      {
+        "text": "screen",
+        "class": "metadata",
+        "target_group": "display",
+        "split": "tuning",
+        "labels": {
+          "display": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "display"
+        ]
+      },
+      {
+        "text": "Monitor",
+        "class": "metadata",
+        "target_group": "display",
+        "split": "tuning",
+        "labels": {
+          "display": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "display"
+        ]
+      },
+      {
+        "text": "Display",
+        "class": "metadata",
+        "target_group": "display",
+        "split": "tuning",
+        "labels": {
+          "display": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "display"
+        ]
+      },
+      {
+        "text": "screen Monitor",
+        "class": "metadata",
+        "target_group": "display",
+        "split": "tuning",
+        "labels": {
+          "display": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "display"
+        ]
+      },
+      {
+        "text": "volume",
+        "class": "metadata",
+        "target_group": "sound",
+        "split": "held_out",
+        "labels": {
+          "sound": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "sound"
+        ]
+      },
+      {
+        "text": "Audio",
+        "class": "metadata",
+        "target_group": "sound",
+        "split": "held_out",
+        "labels": {
+          "sound": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "sound"
+        ]
+      },
+      {
+        "text": "Sound",
+        "class": "metadata",
+        "target_group": "sound",
+        "split": "held_out",
+        "labels": {
+          "sound": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "sound"
+        ]
+      },
+      {
+        "text": "volume Audio",
+        "class": "metadata",
+        "target_group": "sound",
+        "split": "held_out",
+        "labels": {
+          "sound": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "sound"
+        ]
+      },
+      {
+        "text": "proej",
+        "class": "unfinished_typo",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "project"
+        ]
+      },
+      {
+        "text": "prxoje",
+        "class": "unfinished_typo",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "project"
+        ]
+      },
+      {
+        "text": "projecx",
+        "class": "unfinished_typo",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "project"
+        ]
+      },
+      {
+        "text": "prjnts",
+        "class": "abbreviation",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "project"
+        ]
+      },
+      {
+        "text": "projectNotes.md",
+        "class": "exact",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "project"
+        ]
+      },
+      {
+        "text": "/work/projectNotes.md",
+        "class": "path",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "project"
+        ]
+      },
+      {
+        "text": "calned",
+        "class": "unfinished_typo",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "calendar"
+        ]
+      },
+      {
+        "text": "calenx",
+        "class": "unfinished_typo",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "calendar"
+        ]
+      },
+      {
+        "text": "caleXnd",
+        "class": "unfinished_typo",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "calendar"
+        ]
+      },
+      {
+        "text": "clndag",
+        "class": "abbreviation",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "calendar"
+        ]
+      },
+      {
+        "text": "calendarAgenda.md",
+        "class": "exact",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "calendar"
+        ]
+      },
+      {
+        "text": "/events/calendarAgenda.md",
+        "class": "path",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "calendar"
+        ]
+      },
+      {
+        "text": "invoice",
+        "class": "duplicate",
+        "target_group": "invoice",
+        "split": "tuning",
+        "labels": {
+          "invoiceprimary": 3,
+          "invoiceother": 3,
+          "invoicedraft": 1
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "invoiceother",
+          "invoiceprimary",
+          "invoicedraft"
+        ]
+      },
+      {
+        "text": "finance invoice",
+        "class": "folder_name",
+        "target_group": "invoice",
+        "split": "tuning",
+        "labels": {
+          "invoiceprimary": 3,
+          "invoicedraft": 1
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "invoiceprimary",
+          "invoicedraft"
+        ]
+      },
+      {
+        "text": "finance pdf",
+        "class": "extension",
+        "target_group": "invoice",
+        "split": "tuning",
+        "labels": {
+          "invoiceprimary": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "invoiceprimary"
+        ]
+      },
+      {
+        "text": "invoice2024.pdf",
+        "class": "duplicate",
+        "target_group": "invoice",
+        "split": "tuning",
+        "labels": {
+          "invoiceprimary": 3,
+          "invoiceother": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "invoiceother",
+          "invoiceprimary"
+        ]
+      },
+      {
+        "text": "report",
+        "class": "duplicate",
+        "target_group": "report",
+        "split": "held_out",
+        "labels": {
+          "reportprimary": 3,
+          "reportother": 3,
+          "reportdraft": 1
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "reportother",
+          "reportprimary",
+          "reportdraft"
+        ]
+      },
+      {
+        "text": "research report",
+        "class": "folder_name",
+        "target_group": "report",
+        "split": "held_out",
+        "labels": {
+          "reportprimary": 3,
+          "reportdraft": 1
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "reportprimary",
+          "reportdraft"
+        ]
+      },
+      {
+        "text": "research pdf",
+        "class": "extension",
+        "target_group": "report",
+        "split": "held_out",
+        "labels": {
+          "reportprimary": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "reportprimary",
+          "reportdraft"
+        ]
+      },
+      {
+        "text": "report2024.pdf",
+        "class": "duplicate",
+        "target_group": "report",
+        "split": "held_out",
+        "labels": {
+          "reportprimary": 3,
+          "reportother": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "reportother",
+          "reportprimary",
+          "invoiceother",
+          "invoiceprimary"
+        ]
+      },
+      {
+        "text": "CAFE\u0301",
+        "class": "unicode",
+        "target_group": "cafe",
+        "split": "tuning",
+        "labels": {
+          "cafe": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "cafe"
+        ]
+      },
+      {
+        "text": "Caf\u00e9.pdf",
+        "class": "unicode",
+        "target_group": "cafe",
+        "split": "tuning",
+        "labels": {
+          "cafe": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "cafe"
+        ]
+      },
+      {
+        "text": "STRASSE",
+        "class": "unicode",
+        "target_group": "strasse",
+        "split": "held_out",
+        "labels": {
+          "strasse": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "strasse"
+        ]
+      },
+      {
+        "text": "Stra\u00dfe.txt",
+        "class": "unicode",
+        "target_group": "strasse",
+        "split": "held_out",
+        "labels": {
+          "strasse": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "strasse"
+        ]
+      },
+      {
+        "text": "rawbad",
+        "class": "raw_bytes",
+        "target_group": "rawbad",
+        "split": "tuning",
+        "labels": {
+          "rawbad": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "rawbad"
+        ]
+      },
+      {
+        "text": "rawopaque",
+        "class": "raw_bytes",
+        "target_group": "rawopaque",
+        "split": "held_out",
+        "labels": {
+          "rawopaque": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "rawopaque"
+        ]
+      },
+      {
+        "text": "zznomatchqq",
+        "class": "no_match",
+        "target_group": "zznomatchqq",
+        "split": "tuning",
+        "labels": {},
+        "metrics": {
+          "empty_correct": 1.0
+        },
+        "top10": []
+      },
+      {
+        "text": "qqabsentzz",
+        "class": "no_match",
+        "target_group": "qqabsentzz",
+        "split": "held_out",
+        "labels": {},
+        "metrics": {
+          "empty_correct": 1.0
+        },
+        "top10": []
+      },
+      {
+        "text": "aceg",
+        "class": "optimal_alignment",
+        "target_group": "alignment_a",
+        "split": "tuning",
+        "labels": {
+          "alignment_abest": 3,
+          "alignment_aother": 1
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "alignment_abest",
+          "alignment_aother"
+        ]
+      },
+      {
+        "text": "bdfh",
+        "class": "optimal_alignment",
+        "target_group": "alignment_b",
+        "split": "held_out",
+        "labels": {
+          "alignment_bbest": 3,
+          "alignment_bother": 1
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "alignment_bbest",
+          "alignment_bother"
+        ]
+      }
+    ]
+  },
+  "bm25": {
+    "aggregate": {
+      "held_out/abbreviation": {
+        "queries": 1,
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001.0,
+        "mrr": 0.0,
+        "ndcg10": 0.0,
+        "top10_success": 0.0
+      },
+      "held_out/all": {
+        "queries": 22,
+        "candidate_recall": 0.6825396825396826,
+        "empty_correct": 1.0,
+        "first_useful_rank": 286.7142857142857,
+        "mrr": 0.7142857142857143,
+        "ndcg10": 0.6568441400336904,
+        "top10_success": 0.7142857142857143
+      },
+      "held_out/application_name": {
+        "queries": 3,
+        "candidate_recall": 0.6666666666666666,
+        "first_useful_rank": 334.3333333333333,
+        "mrr": 0.6666666666666666,
+        "ndcg10": 0.6666666666666666,
+        "top10_success": 0.6666666666666666
+      },
+      "held_out/duplicate": {
+        "queries": 2,
+        "candidate_recall": 0.6666666666666666,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 0.5419585996553166,
+        "top10_success": 1.0
+      },
+      "held_out/exact": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/extension": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/folder_name": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 0.7098097413968655,
+        "top10_success": 1.0
+      },
+      "held_out/metadata": {
+        "queries": 4,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/no_match": {
+        "queries": 1,
+        "empty_correct": 1.0
+      },
+      "held_out/optimal_alignment": {
+        "queries": 1,
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001.0,
+        "mrr": 0.0,
+        "ndcg10": 0.0,
+        "top10_success": 0.0
+      },
+      "held_out/path": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/raw_bytes": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "held_out/unfinished_typo": {
+        "queries": 3,
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001.0,
+        "mrr": 0.0,
+        "ndcg10": 0.0,
+        "top10_success": 0.0
+      },
+      "held_out/unicode": {
+        "queries": 2,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/abbreviation": {
+        "queries": 1,
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001.0,
+        "mrr": 0.0,
+        "ndcg10": 0.0,
+        "top10_success": 0.0
+      },
+      "tuning/all": {
+        "queries": 22,
+        "candidate_recall": 0.6825396825396826,
+        "empty_correct": 1.0,
+        "first_useful_rank": 286.7142857142857,
+        "mrr": 0.7142857142857143,
+        "ndcg10": 0.6568441400336904,
+        "top10_success": 0.7142857142857143
+      },
+      "tuning/application_name": {
+        "queries": 3,
+        "candidate_recall": 0.6666666666666666,
+        "first_useful_rank": 334.3333333333333,
+        "mrr": 0.6666666666666666,
+        "ndcg10": 0.6666666666666666,
+        "top10_success": 0.6666666666666666
+      },
+      "tuning/duplicate": {
+        "queries": 2,
+        "candidate_recall": 0.6666666666666666,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 0.5419585996553166,
+        "top10_success": 1.0
+      },
+      "tuning/exact": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/extension": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/folder_name": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 0.7098097413968655,
+        "top10_success": 1.0
+      },
+      "tuning/metadata": {
+        "queries": 4,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/no_match": {
+        "queries": 1,
+        "empty_correct": 1.0
+      },
+      "tuning/optimal_alignment": {
+        "queries": 1,
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001.0,
+        "mrr": 0.0,
+        "ndcg10": 0.0,
+        "top10_success": 0.0
+      },
+      "tuning/path": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/raw_bytes": {
+        "queries": 1,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      },
+      "tuning/unfinished_typo": {
+        "queries": 3,
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001.0,
+        "mrr": 0.0,
+        "ndcg10": 0.0,
+        "top10_success": 0.0
+      },
+      "tuning/unicode": {
+        "queries": 2,
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1.0,
+        "mrr": 1.0,
+        "ndcg10": 1.0,
+        "top10_success": 1.0
+      }
+    },
+    "queries": [
+      {
+        "text": "chrome",
+        "class": "application_name",
+        "target_group": "chrome",
+        "split": "tuning",
+        "labels": {
+          "chrome": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "chrome",
+          "chromenoise0",
+          "chromenoise1",
+          "chromenoise10",
+          "chromenoise11",
+          "chromenoise12",
+          "chromenoise13",
+          "chromenoise14",
+          "chromenoise15",
+          "chromenoise16"
+        ]
+      },
+      {
+        "text": "chrom",
+        "class": "application_name",
+        "target_group": "chrome",
+        "split": "tuning",
+        "labels": {
+          "chrome": 3
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      },
+      {
+        "text": "Google Chrome",
+        "class": "application_name",
+        "target_group": "chrome",
+        "split": "tuning",
+        "labels": {
+          "chrome": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "chrome",
+          "chromenoise0",
+          "chromenoise1",
+          "chromenoise10",
+          "chromenoise11",
+          "chromenoise12",
+          "chromenoise13",
+          "chromenoise14",
+          "chromenoise15",
+          "chromenoise16"
+        ]
+      },
+      {
+        "text": "firefox",
+        "class": "application_name",
+        "target_group": "firefox",
+        "split": "held_out",
+        "labels": {
+          "firefox": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "firefox",
+          "firefoxnoise0",
+          "firefoxnoise1",
+          "firefoxnoise10",
+          "firefoxnoise11",
+          "firefoxnoise12",
+          "firefoxnoise13",
+          "firefoxnoise14",
+          "firefoxnoise15",
+          "firefoxnoise16"
+        ]
+      },
+      {
+        "text": "firef",
+        "class": "application_name",
+        "target_group": "firefox",
+        "split": "held_out",
+        "labels": {
+          "firefox": 3
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      },
+      {
+        "text": "Mozilla Firefox",
+        "class": "application_name",
+        "target_group": "firefox",
+        "split": "held_out",
+        "labels": {
+          "firefox": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "firefox",
+          "firefoxnoise0",
+          "firefoxnoise1",
+          "firefoxnoise10",
+          "firefoxnoise11",
+          "firefoxnoise12",
+          "firefoxnoise13",
+          "firefoxnoise14",
+          "firefoxnoise15",
+          "firefoxnoise16"
+        ]
+      },
+      {
+        "text": "screen",
+        "class": "metadata",
+        "target_group": "display",
+        "split": "tuning",
+        "labels": {
+          "display": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "display"
+        ]
+      },
+      {
+        "text": "Monitor",
+        "class": "metadata",
+        "target_group": "display",
+        "split": "tuning",
+        "labels": {
+          "display": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "display"
+        ]
+      },
+      {
+        "text": "Display",
+        "class": "metadata",
+        "target_group": "display",
+        "split": "tuning",
+        "labels": {
+          "display": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "display"
+        ]
+      },
+      {
+        "text": "screen Monitor",
+        "class": "metadata",
+        "target_group": "display",
+        "split": "tuning",
+        "labels": {
+          "display": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "display"
+        ]
+      },
+      {
+        "text": "volume",
+        "class": "metadata",
+        "target_group": "sound",
+        "split": "held_out",
+        "labels": {
+          "sound": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "sound"
+        ]
+      },
+      {
+        "text": "Audio",
+        "class": "metadata",
+        "target_group": "sound",
+        "split": "held_out",
+        "labels": {
+          "sound": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "sound"
+        ]
+      },
+      {
+        "text": "Sound",
+        "class": "metadata",
+        "target_group": "sound",
+        "split": "held_out",
+        "labels": {
+          "sound": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "sound"
+        ]
+      },
+      {
+        "text": "volume Audio",
+        "class": "metadata",
+        "target_group": "sound",
+        "split": "held_out",
+        "labels": {
+          "sound": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "sound"
+        ]
+      },
+      {
+        "text": "proej",
+        "class": "unfinished_typo",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      },
+      {
+        "text": "prxoje",
+        "class": "unfinished_typo",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      },
+      {
+        "text": "projecx",
+        "class": "unfinished_typo",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      },
+      {
+        "text": "prjnts",
+        "class": "abbreviation",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      },
+      {
+        "text": "projectNotes.md",
+        "class": "exact",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "project",
+          "calendar"
+        ]
+      },
+      {
+        "text": "/work/projectNotes.md",
+        "class": "path",
+        "target_group": "project",
+        "split": "tuning",
+        "labels": {
+          "project": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "project",
+          "calendar"
+        ]
+      },
+      {
+        "text": "calned",
+        "class": "unfinished_typo",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      },
+      {
+        "text": "calenx",
+        "class": "unfinished_typo",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      },
+      {
+        "text": "caleXnd",
+        "class": "unfinished_typo",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      },
+      {
+        "text": "clndag",
+        "class": "abbreviation",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      },
+      {
+        "text": "calendarAgenda.md",
+        "class": "exact",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "calendar",
+          "project"
+        ]
+      },
+      {
+        "text": "/events/calendarAgenda.md",
+        "class": "path",
+        "target_group": "calendar",
+        "split": "held_out",
+        "labels": {
+          "calendar": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "calendar",
+          "project"
+        ]
+      },
+      {
+        "text": "invoice",
+        "class": "duplicate",
+        "target_group": "invoice",
+        "split": "tuning",
+        "labels": {
+          "invoiceprimary": 3,
+          "invoiceother": 3,
+          "invoicedraft": 1
+        },
+        "metrics": {
+          "candidate_recall": 0.3333333333333333,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 0.08391719931063304
+        },
+        "top10": [
+          "invoicedraft"
+        ]
+      },
+      {
+        "text": "finance invoice",
+        "class": "folder_name",
+        "target_group": "invoice",
+        "split": "tuning",
+        "labels": {
+          "invoiceprimary": 3,
+          "invoicedraft": 1
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 0.7098097413968655
+        },
+        "top10": [
+          "invoicedraft",
+          "invoiceprimary"
+        ]
+      },
+      {
+        "text": "finance pdf",
+        "class": "extension",
+        "target_group": "invoice",
+        "split": "tuning",
+        "labels": {
+          "invoiceprimary": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "invoiceprimary",
+          "cafe",
+          "invoiceother",
+          "reportother",
+          "reportprimary",
+          "invoicedraft"
+        ]
+      },
+      {
+        "text": "invoice2024.pdf",
+        "class": "duplicate",
+        "target_group": "invoice",
+        "split": "tuning",
+        "labels": {
+          "invoiceprimary": 3,
+          "invoiceother": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "invoiceother",
+          "invoiceprimary",
+          "cafe",
+          "reportother",
+          "reportprimary"
+        ]
+      },
+      {
+        "text": "report",
+        "class": "duplicate",
+        "target_group": "report",
+        "split": "held_out",
+        "labels": {
+          "reportprimary": 3,
+          "reportother": 3,
+          "reportdraft": 1
+        },
+        "metrics": {
+          "candidate_recall": 0.3333333333333333,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 0.08391719931063304
+        },
+        "top10": [
+          "reportdraft"
+        ]
+      },
+      {
+        "text": "research report",
+        "class": "folder_name",
+        "target_group": "report",
+        "split": "held_out",
+        "labels": {
+          "reportprimary": 3,
+          "reportdraft": 1
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 0.7098097413968655
+        },
+        "top10": [
+          "reportdraft",
+          "reportprimary"
+        ]
+      },
+      {
+        "text": "research pdf",
+        "class": "extension",
+        "target_group": "report",
+        "split": "held_out",
+        "labels": {
+          "reportprimary": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "reportprimary",
+          "cafe",
+          "invoiceother",
+          "invoiceprimary",
+          "reportother",
+          "reportdraft"
+        ]
+      },
+      {
+        "text": "report2024.pdf",
+        "class": "duplicate",
+        "target_group": "report",
+        "split": "held_out",
+        "labels": {
+          "reportprimary": 3,
+          "reportother": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "reportother",
+          "reportprimary",
+          "cafe",
+          "invoiceother",
+          "invoiceprimary"
+        ]
+      },
+      {
+        "text": "CAFE\u0301",
+        "class": "unicode",
+        "target_group": "cafe",
+        "split": "tuning",
+        "labels": {
+          "cafe": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "cafe"
+        ]
+      },
+      {
+        "text": "Caf\u00e9.pdf",
+        "class": "unicode",
+        "target_group": "cafe",
+        "split": "tuning",
+        "labels": {
+          "cafe": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "cafe",
+          "invoiceother",
+          "invoiceprimary",
+          "reportother",
+          "reportprimary"
+        ]
+      },
+      {
+        "text": "STRASSE",
+        "class": "unicode",
+        "target_group": "strasse",
+        "split": "held_out",
+        "labels": {
+          "strasse": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "strasse"
+        ]
+      },
+      {
+        "text": "Stra\u00dfe.txt",
+        "class": "unicode",
+        "target_group": "strasse",
+        "split": "held_out",
+        "labels": {
+          "strasse": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "strasse",
+          "alignment_aother",
+          "alignment_bother",
+          "rawbad",
+          "rawopaque",
+          "alignment_abest",
+          "alignment_bbest",
+          "invoicedraft",
+          "reportdraft",
+          "chromenoise0"
+        ]
+      },
+      {
+        "text": "rawbad",
+        "class": "raw_bytes",
+        "target_group": "rawbad",
+        "split": "tuning",
+        "labels": {
+          "rawbad": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "rawbad"
+        ]
+      },
+      {
+        "text": "rawopaque",
+        "class": "raw_bytes",
+        "target_group": "rawopaque",
+        "split": "held_out",
+        "labels": {
+          "rawopaque": 3
+        },
+        "metrics": {
+          "candidate_recall": 1.0,
+          "first_useful_rank": 1,
+          "mrr": 1.0,
+          "top10_success": 1.0,
+          "ndcg10": 1.0
+        },
+        "top10": [
+          "rawopaque"
+        ]
+      },
+      {
+        "text": "zznomatchqq",
+        "class": "no_match",
+        "target_group": "zznomatchqq",
+        "split": "tuning",
+        "labels": {},
+        "metrics": {
+          "empty_correct": 1.0
+        },
+        "top10": []
+      },
+      {
+        "text": "qqabsentzz",
+        "class": "no_match",
+        "target_group": "qqabsentzz",
+        "split": "held_out",
+        "labels": {},
+        "metrics": {
+          "empty_correct": 1.0
+        },
+        "top10": []
+      },
+      {
+        "text": "aceg",
+        "class": "optimal_alignment",
+        "target_group": "alignment_a",
+        "split": "tuning",
+        "labels": {
+          "alignment_abest": 3,
+          "alignment_aother": 1
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      },
+      {
+        "text": "bdfh",
+        "class": "optimal_alignment",
+        "target_group": "alignment_b",
+        "split": "held_out",
+        "labels": {
+          "alignment_bbest": 3,
+          "alignment_bother": 1
+        },
+        "metrics": {
+          "candidate_recall": 0.0,
+          "first_useful_rank": 1001,
+          "mrr": 0,
+          "top10_success": 0.0,
+          "ndcg10": 0.0
+        },
+        "top10": []
+      }
+    ]
+  }
+}

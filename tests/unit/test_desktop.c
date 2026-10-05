@@ -63,6 +63,8 @@ void test_desktop(void) {
     CHECK(query(desktop, "screen", results) == 1 && results[0].id == id);
     CHECK(query(desktop, "resolution", results) == 1 && results[0].id == id);
     CHECK(query(desktop, "monitor", results) == 1 && results[0].id == id);
+    CHECK(query(desktop, "dislp", results) == 1 && results[0].id == id);
+    CHECK(query(desktop, "screen monitor", results) == 1 && results[0].id == id);
     CHECK(query(desktop, "Invisible", results) == 0);
     CHECK(query(desktop, "MaskedSystem", results) == 0);
     CHECK(query(desktop, "SystemDuplicate", results) == 0);

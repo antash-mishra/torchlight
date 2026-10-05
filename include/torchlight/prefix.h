@@ -7,6 +7,7 @@
 enum {
     PREFIX_BASENAME_SCORE = 6000,
     PREFIX_TOKEN_SCORE = 5000,
+    PREFIX_COMPLETE_BONUS = 128,
     PREFIX_INITIALS_SCORE = 4500,
     PREFIX_PARENT_SCORE = 1000
 };
@@ -27,7 +28,7 @@ tl_status prefix_add(tl_prefix *index, tl_text text, size_t slot);
  * TL_NOMEM if the sorted key table cannot be allocated (discard the index). */
 tl_status prefix_finish(tl_prefix *index);
 /** Report every key that starts with the nonempty query, in key order. Never
- * truncates. No allocation or I/O. TL_INVALID for bad arguments, TL_STATE
- * before finish, or the first non-OK status returned by hit. */
+ * truncates. Complete token keys gain PREFIX_COMPLETE_BONUS. No allocation or I/O. TL_INVALID for
+ * bad arguments, TL_STATE before finish, or the first non-OK status returned by hit. */
 tl_status prefix_query(const tl_prefix *index, tl_text query, tl_prefix_hit hit, void *context);
 #endif

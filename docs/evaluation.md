@@ -375,3 +375,23 @@ suite. At 500k the recorded engine/IPC p95 was 6.929/7.265 ms and update lag
 4.973 s, with concurrent validation activity. File ranking and 9/9 fixtures are
 unchanged. The earlier roughly 6 ms readiness acceptance and deferred 5 ms target
 remain the performance context, not a claim that this new run meets 5 ms.
+
+## M3 Part 2 labeled relevance
+
+The [mixed-catalog fixture and evaluator](../tests/quality/README.md) supplement
+historical synthetic known-item benchmarks with realistic app/settings names,
+competing files and ambiguous graded labels. The split keeps target families
+and their variants together. Native runs compare the frozen pre-change engine
+against explicit fields, prefix editing and optimal alignment; an independent
+exact-token field BM25 baseline is also recorded. Cold-workspace and result-limit
+checks run for every labeled query. At fewer than 1000 entries the fixture returns
+complete matching membership, so candidate recall is exact rather than a top-k
+proxy. Per-class first-useful rank, MRR, top-ten success, nDCG@10 and no-match
+accuracy are stored in the JSON artifact.
+
+[Part 2 verification](m3-part2-completion.md) reports held-out results, 50k/500k
+warm typing/whole queries, fresh-workspace query timing and steady/peak RSS.
+The fresh-workspace timing excludes allocation/worker startup and is not an OS
+cold-cache measurement. Prefix edits and optimal alignment increase work;
+the original 5 ms target remains separate optimization work. Earlier statements
+above about missing prefix correction describe the historical M1 baseline.

@@ -10,15 +10,22 @@ static tl_status create_columns(tl_lexical *engine) {
     struct {
         tl_vec **vec;
         size_t size;
-    } columns[] = {
-        {&engine->directory_ids, sizeof(uint64_t)},   {&engine->ids, sizeof(uint64_t)},
-        {&engine->repeats, sizeof(uint64_t)},         {&engine->masks, sizeof(uint64_t)},
-        {&engine->path_offsets, sizeof(uint32_t)},    {&engine->name_offsets, sizeof(uint32_t)},
-        {&engine->name_lengths, sizeof(uint32_t)},    {&engine->dirs, sizeof(uint32_t)},
-        {&engine->roots, sizeof(uint32_t)},           {&engine->paths, 1},
-        {&engine->symbols, sizeof(uint32_t)},         {&engine->boundaries, 1},
-        {&engine->scratch_symbols, sizeof(uint32_t)}, {&engine->scratch_boundaries, 1},
-        {&engine->scratch_offsets, sizeof(size_t)}};
+    } columns[] = {{&engine->fields, sizeof(struct lexical_field)},
+                   {&engine->directory_ids, sizeof(uint64_t)},
+                   {&engine->ids, sizeof(uint64_t)},
+                   {&engine->repeats, sizeof(uint64_t)},
+                   {&engine->masks, sizeof(uint64_t)},
+                   {&engine->path_offsets, sizeof(uint32_t)},
+                   {&engine->name_offsets, sizeof(uint32_t)},
+                   {&engine->name_lengths, sizeof(uint32_t)},
+                   {&engine->dirs, sizeof(uint32_t)},
+                   {&engine->roots, sizeof(uint32_t)},
+                   {&engine->paths, 1},
+                   {&engine->symbols, sizeof(uint32_t)},
+                   {&engine->boundaries, 1},
+                   {&engine->scratch_symbols, sizeof(uint32_t)},
+                   {&engine->scratch_boundaries, 1},
+                   {&engine->scratch_offsets, sizeof(size_t)}};
     for (size_t i = 0; i < sizeof(columns) / sizeof(columns[0]); i++) {
         tl_status status = vec_create(columns[i].size, columns[i].vec);
         if (status != TL_OK)
@@ -41,6 +48,8 @@ tl_status lexical_create(tl_lexical **out) {
     if (status == TL_OK)
         status = prefix_create(&engine->dir_prefix);
     if (status == TL_OK)
+        status = prefix_create(&engine->field_prefix);
+    if (status == TL_OK)
         status = trigram_create(&engine->trigram);
     if (status == TL_OK)
         status = typo_create(&engine->typo);
@@ -62,6 +71,11 @@ tl_status lexical_set_prefix_bonus(tl_lexical *engine, int bonus) {
 void lexical_destroy(tl_lexical *engine) {
     if (engine == NULL)
         return;
+    struct lexical_field *fields = vec_data(engine->fields);
+    for (size_t i = 0; i < vec_count(engine->fields); i++)
+        tokenize_destroy(fields[i].text);
+    vec_destroy(engine->fields);
+    prefix_destroy(engine->field_prefix);
     tl_vec *columns[] = {engine->directory_ids,   engine->ids,
                          engine->masks,           engine->repeats,
                          engine->path_offsets,    engine->name_offsets,
@@ -183,6 +197,31 @@ tl_status lexical_add_entry(tl_lexical *engine, uint64_t id, const char *path, b
         if (status != TL_OK)
             engine->failed = true;
     }
+    return status;
+}
+static tl_status append_field(tl_lexical *engine, const char *text, int weight) {
+    if (text == NULL || text[0] == 0)
+        return TL_OK;
+    if (vec_count(engine->fields) >= UINT32_MAX)
+        return TL_LIMIT;
+    struct lexical_field field = {.slot = (uint32_t)(engine->count - 1), .weight = weight};
+    tl_status status = tokenize_create(text, &field.text);
+    if (status == TL_OK)
+        status = vec_append(engine->fields, &field);
+    if (status != TL_OK)
+        tokenize_destroy(field.text);
+    return status;
+}
+tl_status lexical_add_fields(tl_lexical *engine, uint64_t id, const char *path,
+                             const char *generic_name, const char *keywords) {
+    tl_status status = lexical_add(engine, id, path, false);
+    if (status != TL_OK)
+        return status;
+    status = append_field(engine, generic_name, LEXICAL_GENERIC_SCORE);
+    if (status == TL_OK)
+        status = append_field(engine, keywords, LEXICAL_KEYWORD_SCORE);
+    if (status != TL_OK)
+        engine->failed = true;
     return status;
 }
 bool lexical_is_dir(const tl_lexical *engine, uint64_t id) {
@@ -315,6 +354,17 @@ static tl_status build_entry_channels(tl_lexical *engine) {
     if (status == TL_OK)
         status = typo_finish(engine->typo);
     return status;
+}
+static tl_status build_field_channel(tl_lexical *engine) {
+    const struct lexical_field *fields = vec_const_data(engine->fields);
+    tl_status status = TL_OK;
+    for (size_t i = 0; i < vec_count(engine->fields) && status == TL_OK; i++) {
+        tl_text text = tokenize_view(fields[i].text);
+        text.basename = 0;
+        if (text.length != 0)
+            status = prefix_add(engine->field_prefix, text, i);
+    }
+    return status == TL_OK ? prefix_finish(engine->field_prefix) : status;
 }
 static tl_status build_directory_channel(tl_lexical *engine) {
     size_t nodes = dirtree_count(engine->tree);
@@ -477,6 +527,8 @@ tl_status lexical_finish(tl_lexical *engine) {
         status = build_entry_channels(engine);
     if (status == TL_OK)
         status = build_directory_channel(engine);
+    if (status == TL_OK)
+        status = build_field_channel(engine);
     if (status != TL_OK) {
         engine->failed = true;
         return status;

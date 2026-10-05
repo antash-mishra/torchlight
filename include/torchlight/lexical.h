@@ -33,6 +33,13 @@ tl_status lexical_add(tl_lexical *engine, uint64_t id, const char *path, bool is
  * id requirements as lexical_add; metadata never affects matching/ranking. */
 tl_status lexical_add_entry(tl_lexical *engine, uint64_t id, const char *path, bool is_root,
                             bool is_dir);
+/** Add a named entry with separate generic-name and keyword evidence. Path's
+ * basename is the primary name; folder context remains independent. Optional
+ * NULL fields are empty. Copies all bytes; caller retains ownership. Same id,
+ * lifecycle and failure contracts as lexical_add; failed copies poison builder.
+ * Generic-name prefixes outrank keywords, both below primary-name prefixes. */
+tl_status lexical_add_fields(tl_lexical *engine, uint64_t id, const char *path,
+                             const char *generic_name, const char *keywords);
 /** Read directory metadata for sealed engine/id; false if unknown/unmarked.
  * No allocation/I/O, engine must remain alive. Legacy lexical_add marks no dirs. */
 bool lexical_is_dir(const tl_lexical *engine, uint64_t id);
@@ -55,12 +62,12 @@ void lexical_workspace_destroy(tl_lexical_workspace *workspace);
  * borrowed until engine destruction. Query <= LEXICAL_QUERY_BYTES raw non-NUL
  * bytes. Empty/space-only queries return indexed roots. Every whitespace-
  * separated word must match, through any channel: a basename prefix, token or
- * initials; a basename subsequence; a one-edit basename token typo; enough
- * shared basename trigrams; or a prefix/subsequence within one parent
- * directory name below the indexed roots. A word containing '/' may instead
- * match across the full path. Exact raw paths, then exact basenames, have
- * priority. Ties order by raw path bytes, then id. No I/O/heap allocation.
- * TL_INVALID/STATE/LIMIT on contract violations; scratch is reusable on failure. */
+ * initials; a basename subsequence; a one-edit basename token or eligible unfinished-prefix typo;
+ * enough shared basename trigrams; an explicit generic-name/keyword prefix or subsequence; or a
+ * prefix/subsequence within one parent directory name below the indexed roots. A word containing
+ * '/' may instead match across the full path. Exact raw paths, then exact basenames, have priority.
+ * Ties order by raw path bytes, then id. No I/O/heap allocation. TL_INVALID/STATE/LIMIT on contract
+ * violations; scratch is reusable on failure. */
 tl_status lexical_query(const tl_lexical *engine, tl_lexical_workspace *workspace,
                         const char *query, tl_result *results, size_t capacity, size_t *out_count);
 /** Return number of entries; zero for NULL, no errors. */

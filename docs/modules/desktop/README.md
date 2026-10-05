@@ -1,6 +1,6 @@
 # desktop
 
-> **Status:** Implemented (M3), including application-name ranking regressions
+> **Status:** Implemented (M3 Part 2), including independent name/generic/keyword fields
 > **Source:** `src/index/desktop.c` · **Header:** `include/torchlight/desktop.h`
 > **Tests:** `tests/unit/test_desktop.c`, `tests/test_desktop.py`
 
@@ -18,17 +18,21 @@ receive a settings result kind; no Cinnamon-specific launch command is invented.
 Category lists use GIO's list parser, including valid lists without a final
 semicolon.
 
-Localized keywords and generic names form one synthetic parent component; the
-visible name is the lexical basename. Prefix/subsequence/trigram/typo matching
-therefore stays reusable. Search paths are internal only: wire responses and
-resolve return the actual desktop filename plus launch metadata.
+Localized generic names and keywords are copied into separate lexical fields;
+the display name stays the primary basename. A distinct `Name` alias is retained
+with the generic-name evidence when `X-GNOME-FullName` changes the display label.
+Metadata never enters the parent directory tree. Generic/keyword prefixes score
+2800/2600, plus 128 for complete tokens. Primary-name prefixes remain stronger;
+metadata fuzzy evidence uses the same bounded optimal scorer. Search paths are
+internal only: wire responses and resolve return the actual desktop filename
+plus launch metadata. See [ADR 0020](../../adr/0020-m3-part2-search-quality.md).
 
 The desktop engine adds 2,000 to each basename/token/initials prefix hit. This
 lets `chrome` match the name token in `Google Chrome` ahead of ordinary file
 prefixes such as `chromepolicy…`, even when more than ten files match. It applies
 before desktop top-k selection, so a small result limit cannot discard a name
 match before weighting. Generic names, keywords and weak fuzzy matches keep
-their ordinary scores; exact filenames and paths retain their priority.
+their separate lower field scores; exact filenames and paths retain their priority.
 The daemon preserves the desktop engine's tie order across result limits.
 See [ADR 0018](../../adr/0018-application-name-ranking.md).
 

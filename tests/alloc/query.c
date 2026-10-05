@@ -65,7 +65,8 @@ static tl_status check_lengths(const tl_lexical *engine, tl_lexical_workspace *w
         if (status != TL_OK)
             return status;
     }
-    const char *cases[] = {"", "RAEDME", "root notes", "caf\xc3\xa9", "caf\x65\xcc\x81"};
+    const char *cases[] = {"",           "proej",       "prxoje",         "RAEDME",
+                           "root notes", "caf\xc3\xa9", "caf\x65\xcc\x81"};
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         tl_status status = check_query(engine, workspace, cases[i]);
         if (status != TL_OK)
@@ -91,7 +92,8 @@ static tl_status check_workers(void) {
         status = lexical_finish(engine);
     if (status == TL_OK)
         status = lexical_workspace_create(engine, &workspace);
-    const char *queries[] = {"ao", "root ao", "md", "mad noets", "mad", "notes", "root", "x z"};
+    const char *queries[] = {"ao",    "root ao", "md",    "mad noets", "mad",
+                             "notes", "root",    "noets", "x z"};
     for (size_t i = 0; i < sizeof(queries) / sizeof(queries[0]) && status == TL_OK; i++)
         status = check_query(engine, workspace, queries[i]);
     lexical_workspace_destroy(workspace);
@@ -106,7 +108,8 @@ int main(void) {
     const char *paths[] = {"/root/abcdefghijklmnopqrstuvwxyz.txt", "/root/projectNotes.md",
                            "/root/README.md", "/root/Caf\xc3\xa9.pdf", "/root/bad\xff.txt"};
     for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]) && status == TL_OK; i++)
-        status = lexical_add(engine, i + 1, paths[i], false);
+        status =
+            lexical_add_fields(engine, i + 1, paths[i], "document editor", "screen resolution");
     if (status == TL_OK)
         status = lexical_finish(engine);
     if (status == TL_OK)

@@ -1,4 +1,4 @@
-/* Greedy subsequence scoring with boundary/consecutive bonuses, plus a
+/* Optimal bounded subsequence scoring with a greedy fallback, plus a
  * linear-time check for edit distance within one edit. */
 #include "torchlight/fuzzy.h"
 #include <limits.h>
@@ -17,7 +17,7 @@ int fuzzy_score_bound(size_t query_length) {
         return INT_MAX;
     return BASE_SCORE + (int)query_length * MAX_SYMBOL_GAIN;
 }
-tl_status fuzzy_score(tl_text text, tl_text query, int *out) {
+tl_status fuzzy_score_greedy(tl_text text, tl_text query, int *out) {
     if (out == NULL || text.symbols == NULL || text.boundaries == NULL || query.symbols == NULL ||
         query.length == 0)
         return TL_INVALID;
@@ -41,6 +41,73 @@ tl_status fuzzy_score(tl_text text, tl_text query, int *out) {
     }
     if (matched == query.length)
         *out = score > 0 ? score : 1;
+    return TL_OK;
+}
+/* The two running maxima encode capped gaps exactly: max(previous[j] + j)
+ * handles the linear penalty and max(previous[j]) handles its capped tail.
+ * Thus each DP row is linear, without a quadratic search over alignments. */
+static void alignment_row(tl_text text, uint32_t symbol, const int *previous, int *current) {
+    const int missing = INT_MIN / 2;
+    int best = missing, positioned = missing;
+    for (size_t i = 0; i < text.length; i++) {
+        if (i >= 2 && previous[i - 2] != missing) {
+            if (previous[i - 2] > best)
+                best = previous[i - 2];
+            if (previous[i - 2] + (int)i - 2 > positioned)
+                positioned = previous[i - 2] + (int)i - 2;
+        }
+        int value = missing;
+        if (i != 0 && previous[i - 1] != missing)
+            value = previous[i - 1] + CONSECUTIVE_BONUS;
+        int gap = positioned - (int)i + 1;
+        if (best - MAX_GAP_PENALTY > gap)
+            gap = best - MAX_GAP_PENALTY;
+        if (best != missing && gap > value)
+            value = gap;
+        current[i] = text.symbols[i] == symbol && value != missing
+                         ? value + MATCH_BONUS + (text.boundaries[i] != 0 ? BOUNDARY_BONUS : 0)
+                         : missing;
+    }
+}
+/* Masks cannot prove ordered membership. Reject impossible alignments in one
+ * pass before paying for DP, especially for long abbreviations in noisy names. */
+static bool ordered_match(tl_text text, tl_text query) {
+    size_t matched = 0;
+    for (size_t i = 0; i < text.length && matched < query.length; i++)
+        if (text.symbols[i] == query.symbols[matched])
+            matched++;
+    return matched == query.length;
+}
+tl_status fuzzy_score(tl_text text, tl_text query, int *out) {
+    if (text.length > FUZZY_OPTIMAL_MAX_SYMBOLS)
+        return fuzzy_score_greedy(text, query, out);
+    if (out == NULL || text.symbols == NULL || text.boundaries == NULL || query.symbols == NULL ||
+        query.length == 0)
+        return TL_INVALID;
+    *out = 0;
+    if (query.length > (size_t)(INT_MAX - BASE_SCORE) / MAX_SYMBOL_GAIN)
+        return TL_LIMIT;
+    if (query.length > text.length || (text.mask & query.mask) != query.mask ||
+        !ordered_match(text, query))
+        return TL_OK;
+    int previous[FUZZY_OPTIMAL_MAX_SYMBOLS], current[FUZZY_OPTIMAL_MAX_SYMBOLS];
+    const int missing = INT_MIN / 2;
+    for (size_t i = 0; i < text.length; i++) {
+        int gain = MATCH_BONUS + (text.boundaries[i] != 0 ? BOUNDARY_BONUS : 0);
+        previous[i] = text.symbols[i] == query.symbols[0]
+                          ? BASE_SCORE + gain - (int)(i > MAX_GAP_PENALTY ? MAX_GAP_PENALTY : i)
+                          : missing;
+    }
+    for (size_t q = 1; q < query.length; q++) {
+        alignment_row(text, query.symbols[q], previous, current);
+        memcpy(previous, current, text.length * sizeof(*previous));
+    }
+    int best = missing;
+    for (size_t i = 0; i < text.length; i++)
+        if (previous[i] > best)
+            best = previous[i];
+    if (best != missing)
+        *out = best > 0 ? best : 1;
     return TL_OK;
 }
 static bool same_tail(const uint32_t *a, const uint32_t *b, size_t length) {

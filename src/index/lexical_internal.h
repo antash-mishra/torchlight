@@ -32,7 +32,16 @@ struct lexical_columns {
  * most entries, so their best results are precomputed when the engine is
  * sealed. The engine is immutable, so these answers never go stale. */
 #define LEXICAL_SYMBOL_QUERIES 36
+/* Explicit auxiliary fields never enter the directory tree. */
+struct lexical_field {
+    tl_tokenized *text;
+    uint32_t slot;
+    int weight;
+};
+enum { LEXICAL_GENERIC_SCORE = 2800, LEXICAL_KEYWORD_SCORE = 2600 };
 struct tl_lexical {
+    tl_vec *fields;
+    tl_prefix *field_prefix;
     tl_vec *directory_ids;
     tl_vec *ids, *masks, *repeats, *path_offsets, *name_offsets, *name_lengths, *dirs, *roots,
         *paths, *symbols, *boundaries, *scratch_symbols, *scratch_boundaries, *scratch_offsets;

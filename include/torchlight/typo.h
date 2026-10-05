@@ -7,6 +7,8 @@
  * too many one-edit neighbours to be useful; longer ones are rare and would
  * multiply deletion keys. */
 #define TYPO_MIN_SYMBOLS 3
+/* Prefix typos start later to limit ambiguous short-fragment expansion. */
+#define TYPO_PREFIX_MIN_SYMBOLS 5
 #define TYPO_MAX_SYMBOLS 32
 typedef struct tl_typo tl_typo;
 typedef struct tl_typo_scratch tl_typo_scratch;
@@ -34,10 +36,12 @@ tl_status typo_scratch_create(const tl_typo *index, tl_typo_scratch **out);
 /** Free scratch; NULL allowed. */
 void typo_scratch_destroy(tl_typo_scratch *scratch);
 /** Report every slot holding an indexed token at edit distance exactly one
- * from query (insertion, deletion, substitution or adjacent swap). Exact token
- * matches are left to the prefix channel. Queries outside the indexed length
- * range report nothing. No allocation or I/O. TL_INVALID for bad arguments or
- * foreign scratch, TL_STATE before finish, or the first non-OK hit status. */
+ * from query, or a token prefix when query has at least TYPO_PREFIX_MIN_SYMBOLS
+ * symbols (insertion, deletion, substitution or adjacent swap). Exact full tokens are left to the
+ * prefix channel; exact prefixes receive no prefix-edit hits, but can still be whole-token one-edit
+ * neighbours. Queries outside the indexed length range report nothing. No allocation or I/O.
+ * TL_INVALID for bad arguments or foreign scratch, TL_STATE before finish, or the first non-OK hit
+ * status. */
 tl_status typo_query(const tl_typo *index, tl_typo_scratch *scratch, tl_text query, tl_typo_hit hit,
                      void *context);
 #endif

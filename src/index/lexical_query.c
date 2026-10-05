@@ -61,8 +61,8 @@ _Static_assert(LEXICAL_TRIGRAM_BASE + LEXICAL_TRIGRAM_RANGE < LEXICAL_PARENT_PRE
  * (fuzzy_score_bound(n) is 256 + 72n, so the fuzzy part sums to at most
  * 256 per word plus 72 per query symbol). */
 _Static_assert((long long)LEXICAL_MAX_WORDS *(PREFIX_BASENAME_SCORE + LEXICAL_PREFIX_BONUS_MAX +
-                                              LEXICAL_BASENAME_BONUS + LEXICAL_LENGTH_BONUS_MAX +
-                                              256) +
+                                              PREFIX_COMPLETE_BONUS + LEXICAL_BASENAME_BONUS +
+                                              LEXICAL_LENGTH_BONUS_MAX + 256) +
                        72LL * LEXICAL_QUERY_SYMBOLS <
                    LEXICAL_EXACT_BASENAME,
                "word scores cannot reach exact-match priority");
@@ -238,6 +238,27 @@ static tl_status on_prefix_hit(void *context, size_t slot, int score) {
     record_hit(workspace, slot, score + workspace->engine->prefix_bonus);
     return TL_OK;
 }
+static tl_status on_field_hit(void *context, size_t field, int score) {
+    tl_lexical_workspace *workspace = context;
+    const struct lexical_field *fields = vec_const_data(workspace->engine->fields);
+    int complete = score == PREFIX_TOKEN_SCORE + PREFIX_COMPLETE_BONUS ? PREFIX_COMPLETE_BONUS : 0;
+    record_hit(workspace, fields[field].slot, fields[field].weight + complete);
+    return TL_OK;
+}
+/* Auxiliary fields are normally a small application catalog. Prefix hits are
+ * indexed; mask-filtered fuzzy evidence preserves abbreviation coverage. */
+static tl_status prepare_fields(tl_lexical_workspace *workspace, tl_text word) {
+    const tl_lexical *engine = workspace->engine;
+    tl_status status = prefix_query(engine->field_prefix, word, on_field_hit, workspace);
+    const struct lexical_field *fields = vec_const_data(engine->fields);
+    for (size_t i = 0; i < vec_count(engine->fields) && status == TL_OK; i++) {
+        int score = 0;
+        status = fuzzy_score(tokenize_view(fields[i].text), word, &score);
+        if (status == TL_OK && score > 0)
+            record_hit(workspace, fields[i].slot, score);
+    }
+    return status;
+}
 static tl_status on_typo_hit(void *context, size_t slot) {
     record_hit(context, slot, LEXICAL_TYPO_SCORE);
     return TL_OK;
@@ -382,7 +403,7 @@ static int word_max(const tl_lexical *engine, const struct word *word) {
     if (word->maximum != 0)
         return word->maximum;
     int best = subsequence_max(word);
-    int prefix = PREFIX_BASENAME_SCORE + engine->prefix_bonus;
+    int prefix = PREFIX_BASENAME_SCORE + engine->prefix_bonus + PREFIX_COMPLETE_BONUS;
     return word->path || best > prefix ? best : prefix;
 }
 /* Gather all channel evidence for one word. Words with '/' only match across
@@ -404,6 +425,8 @@ static tl_status prepare_word(tl_lexical_workspace *workspace, struct word *word
     if (status == TL_OK && word->text.length <= TRIGRAM_MAX_QUERY_SYMBOLS)
         status = trigram_query(engine->trigram, workspace->trigram, word->text, on_trigram_hit,
                                workspace);
+    if (status == TL_OK)
+        status = prepare_fields(workspace, word->text);
     if (status == TL_OK)
         status = prefix_query(engine->dir_prefix, word->text, on_directory_hit, workspace);
     if (workspace->channel_max > word->maximum)

@@ -250,7 +250,7 @@ static void parallel_ranking(void) {
     const struct {
         const char *query;
         int score;
-    } cases[] = {{"md", 1863}, {"r md", 4363}, {"mad notes", 11044}, {"r noets", 6044}};
+    } cases[] = {{"md", 1863}, {"r md", 4363}, {"mad notes", 11172}, {"r noets", 6044}};
     for (size_t q = 0; q < sizeof(cases) / sizeof(cases[0]); q++) {
         tl_result results[10];
         size_t count = 0;
@@ -319,7 +319,39 @@ static void warm_equals_fresh(void) {
     lexical_workspace_destroy(warm);
     lexical_destroy(engine);
 }
+static void quality_fields(void) {
+    tl_lexical *engine = NULL;
+    tl_lexical_workspace *workspace = NULL;
+    CHECK(lexical_create(&engine) == TL_OK);
+    CHECK(lexical_add_fields(engine, 1, "/Applications/Display", "Monitor configuration",
+                             "screen resolution") == TL_OK);
+    CHECK(lexical_add_fields(engine, 2, "/Applications/Screen Recorder", "Capture", "display") ==
+          TL_OK);
+    CHECK(lexical_add(engine, 3, "/work/projectNotes.md", false) == TL_OK);
+    CHECK(lexical_add(engine, 4, "/work/projectNotebook.md", false) == TL_OK);
+    CHECK(lexical_finish(engine) == TL_OK);
+    CHECK(lexical_add_fields(engine, 5, "/Applications/Late", NULL, NULL) == TL_STATE);
+    CHECK(lexical_workspace_create(engine, &workspace) == TL_OK);
+    expect(engine, workspace, "screen", "/Applications/Screen Recorder");
+    expect(engine, workspace, "monitor", "/Applications/Display");
+    expect(engine, workspace, "screen resolution", "/Applications/Display");
+    expect(engine, workspace, "project notes", "/work/projectNotes.md");
+    const char *queries[] = {"s",       "sc",          "screen",
+                             "monitor", "resolution",  "screen resolution",
+                             "proej",   "proej notes", "project notes"};
+    for (size_t i = 0; i < sizeof(queries) / sizeof(queries[0]); i++)
+        capacity_consistency(engine, workspace, queries[i]);
+    lexical_workspace_destroy(workspace);
+    lexical_destroy(engine);
+    CHECK(lexical_create(&engine) == TL_OK);
+    CHECK(lexical_add(engine, 1, "/work/projectNotes.md", false) == TL_OK);
+    CHECK(lexical_finish(engine) == TL_OK && lexical_workspace_create(engine, &workspace) == TL_OK);
+    expect(engine, workspace, "proej", "/work/projectNotes.md");
+    lexical_workspace_destroy(workspace);
+    lexical_destroy(engine);
+}
 void test_lexical(void) {
+    quality_fields();
     prefix_bonus_ranking();
     evidence_eviction();
     parallel_ranking();

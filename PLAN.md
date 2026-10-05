@@ -8,8 +8,8 @@ later extension.
 
 ## Implementation progress
 
-M1, M2 and M3 are implemented. The next sequence is **M3 Part 2: search quality
-→ M4: hybrid semantic search → M5: personal recommendations**. M3 adds installed
+M1, M2, M3 and M3 Part 2 are implemented. The next sequence is
+**M4: hybrid semantic search → M5: personal recommendations**. M3 adds installed
 application/settings search and the GTK4 popup described in the
 [GUI design](docs/m3-gui-design.md).
 See [desktop setup](docs/desktop-setup.md) and the
@@ -21,7 +21,9 @@ M3 Part 2 strengthens the existing name search before adding embeddings:
 field-aware ranking, unfinished-word typo retrieval, better fuzzy scoring and
 real launcher relevance tests. The application-name weighting and stable tie
 ordering in [ADR 0018](docs/adr/0018-application-name-ranking.md) are already
-implemented; the rest of Part 2 is planned. See
+implemented. Part 2 now adds explicit generic/keyword fields, indexed prefix
+edits and bounded optimal fuzzy alignment, with held-out and BM25 comparisons.
+See [Part 2 verification](docs/m3-part2-completion.md),
 [ADR 0019](docs/adr/0019-search-quality-before-semantic-personalization.md) and
 the [search quality review](docs/search-quality.md) for scope and comparisons.
 
@@ -163,13 +165,13 @@ The `lexical` module combines four channel modules before scoring:
 One/two-character queries use `prefix` and `subseq`.
 
 **M3 Part 2 extension:** retain these channels and add indexed prefix edit
-matching for unfinished typo queries, including adjacent swaps. Compare a token
-trie/FST with an equivalent bounded index before choosing the implementation.
+matching for unfinished typo queries, including adjacent swaps. The implemented
+sorted token ranges form an implicit trie with bounded edit rows, reusing the existing dictionary.
 Use explicit basename/application-name, keyword/generic-name and parent-context
 fields so scoring can distinguish complete tokens, partial tokens, typo counts,
 word coverage and proximity. Compare optimal fuzzy character alignment with the
-current greedy scorer; update all pruning bounds and cached scores alongside
-any scoring change. Default query behavior remains independent of result capacity.
+greedy comparison scorer; pruning bounds and cached scores include token
+completeness. This extension is implemented in ADR 0020. Default query behavior remains independent of result capacity.
 
 Split multiword queries into tokens: each must match a basename or parent-path
 token, possibly with different lexical channels. Combine token scores with
@@ -446,9 +448,9 @@ application/settings/file/folder results, asynchronous GTK4 popup and native
 actions, installable desktop entry and systemd user unit. See
 [desktop setup](docs/desktop-setup.md), [M3 verification](docs/m3-completion.md)
 and [ADR 0015](docs/adr/0015-m3-desktop-catalog-and-launcher.md).
-M3 Part 2 search quality is next, followed by M4 hybrid semantic search and M5
-personal recommendations. Part 2 has its first application-ranking fix, but is
-not complete.
+M3 Part 2 search quality is implemented; see
+[its verification and measured tradeoffs](docs/m3-part2-completion.md). M4 hybrid
+semantic search and M5 personal recommendations are next.
 Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
 tracked explicitly in the verification report.
 
@@ -506,8 +508,11 @@ tracked explicitly in the verification report.
    baseline; measure warm typing, query latency and steady/peak RSS at 50k/500k.
    Preserve allocation-free lexical queries and bounded work. The original
    5 ms target and full-rebuild optimization remain separately tracked work.
-   The Chrome name-weighting/tie-order fixes are implemented; the wider milestone
-   remains planned. See [the review](docs/search-quality.md).
+   Implemented in [ADR 0020](docs/adr/0020-m3-part2-search-quality.md), including
+   Chrome and one-file `proej` regressions, explicit metadata fields, optimal
+   alignment and held-out/BM25 comparisons. See
+   [measured acceptance](docs/m3-part2-completion.md); the small labeled fixture
+   and latency tradeoff are explicit limits.
 5. **M4: Hybrid semantic search.** After M3 Part 2, compare small local
    embedding models on the labeled filename/path and application-metadata queries.
    Create embeddings in the background; embed each query and retrieve similar

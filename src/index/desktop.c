@@ -18,7 +18,7 @@
 #define DESKTOP_NAME_PREFIX_BONUS 2000
 struct entry {
     tl_desktop_entry public;
-    char *key;
+    char *key, *generic_name, *keywords;
     uint64_t fingerprint;
 };
 struct snapshot {
@@ -45,6 +45,8 @@ static void snapshot_destroy(struct snapshot *snapshot) {
         g_free((void *)entries[i].public.name);
         g_free((void *)entries[i].public.icon);
         g_free(entries[i].key);
+        g_free(entries[i].generic_name);
+        g_free(entries[i].keywords);
     }
     char **seen = vec_data(snapshot->seen);
     for (size_t i = 0; i < vec_count(snapshot->seen); i++)
@@ -108,35 +110,35 @@ static bool settings_category(GDesktopAppInfo *info) {
     return settings;
 }
 static char *search_key(GDesktopAppInfo *info) {
-    GString *key = g_string_new("/Applications/");
+    char *key = g_strconcat("/Applications/", g_app_info_get_display_name(G_APP_INFO(info)), NULL);
+    for (size_t i = strlen("/Applications/"); key[i] != 0; i++)
+        if (key[i] == '/')
+            key[i] = ' ';
+    return key;
+}
+/* Preserve Name when a desktop supplies a different display label, but keep
+ * both separate from keywords and from filesystem folder context. */
+static char *generic_field(GDesktopAppInfo *info) {
     const char *generic = g_desktop_app_info_get_generic_name(info);
+    const char *name = g_app_info_get_name(G_APP_INFO(info));
+    if (name != NULL && strlen(name) >= DESKTOP_FIELD_BYTES)
+        name = NULL;
+    if (generic != NULL && strlen(generic) >= DESKTOP_FIELD_BYTES)
+        generic = NULL;
+    return g_strconcat(name == NULL ? "" : name, " ", generic == NULL ? "" : generic, NULL);
+}
+static char *keyword_field(GDesktopAppInfo *info) {
     const char *const *keywords = g_desktop_app_info_get_keywords(info);
-    const char *localized_name = g_app_info_get_name(G_APP_INFO(info));
-    if (localized_name != NULL && strlen(localized_name) < DESKTOP_FIELD_BYTES) {
-        g_string_append(key, localized_name);
-        g_string_append_c(key, ' ');
-    }
-    if (generic != NULL && key->len + strlen(generic) <= DESKTOP_FIELD_BYTES)
-        g_string_append(key, generic);
+    GString *text = g_string_new("");
     if (keywords != NULL)
         for (size_t i = 0; keywords[i] != NULL; i++) {
-            if (key->len + strlen(keywords[i]) > DESKTOP_FIELD_BYTES)
+            if (strlen(keywords[i]) > DESKTOP_FIELD_BYTES - text->len)
                 break;
-            g_string_append_c(key, ' ');
-            g_string_append(key, keywords[i]);
+            g_string_append(text, keywords[i]);
+            if (text->len < DESKTOP_FIELD_BYTES)
+                g_string_append_c(text, ' ');
         }
-    /* Metadata is one parent component; basename priority stays with the name. */
-    for (size_t i = strlen("/Applications/"); i < key->len; i++)
-        if (key->str[i] == '/')
-            key->str[i] = ' ';
-    g_string_append_c(key, '/');
-    const char *name = g_app_info_get_display_name(G_APP_INFO(info));
-    size_t start = key->len;
-    g_string_append(key, name);
-    for (size_t i = start; i < key->len; i++)
-        if (key->str[i] == '/')
-            key->str[i] = ' ';
-    return g_string_free(key, FALSE);
+    return g_string_free(text, FALSE);
 }
 static GDesktopAppInfo *entry_info(const char *filename, uint64_t *revision) {
     GKeyFile *file = g_key_file_new();
@@ -197,6 +199,8 @@ static tl_status add_entry(struct snapshot *snapshot, const char *filename, cons
     }
     entry.public.settings = settings_category(info);
     entry.key = search_key(info);
+    entry.generic_name = generic_field(info);
+    entry.keywords = keyword_field(info);
     entry.fingerprint = revision;
     entry.public.revision = revision;
     g_object_unref(info);
@@ -207,6 +211,8 @@ static tl_status add_entry(struct snapshot *snapshot, const char *filename, cons
         g_free((void *)entry.public.name);
         g_free((void *)entry.public.icon);
         g_free(entry.key);
+        g_free(entry.generic_name);
+        g_free(entry.keywords);
     }
     return status;
 }
@@ -290,7 +296,8 @@ static tl_status build(tl_desktop *desktop, struct snapshot *snapshot) {
         qsort(entries, vec_count(snapshot->entries), sizeof(*entries), id_compare);
     tl_status status = TL_OK;
     for (size_t i = 0; status == TL_OK && i < vec_count(snapshot->entries); i++)
-        status = lexical_add(snapshot->engine, entries[i].public.id, entries[i].key, false);
+        status = lexical_add_fields(snapshot->engine, entries[i].public.id, entries[i].key,
+                                    entries[i].generic_name, entries[i].keywords);
     if (status == TL_OK)
         status = lexical_finish(snapshot->engine);
     if (status == TL_OK)

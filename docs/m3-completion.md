@@ -5,8 +5,9 @@ Recorded 3 October 2026 on Linux Mint 22.2, Cinnamon X11, GTK4 4.14.5.
 M3 is implemented: resident XDG application/settings discovery, mixed daemon
 results, localized name/generic-name/keyword matching, GTK4 keyboard popup,
 native desktop activation, exact-byte file open/reveal, asynchronous IPC/history,
-and installable desktop/systemd integration. M3 Part 2 search quality is next,
-followed by M4 hybrid semantic search and M5 personalization; see
+and installable desktop/systemd integration. M3 Part 2 search quality is now implemented
+([verification](m3-part2-completion.md)), followed next by M4 hybrid semantic
+search and M5 personalization; see
 [the updated milestone plan](../PLAN.md).
 See [desktop setup](desktop-setup.md) and [ADR 0015](adr/0015-m3-desktop-catalog-and-launcher.md).
 The follow-up review fixes and repeatable acceptance results are recorded below.

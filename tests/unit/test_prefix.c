@@ -44,7 +44,8 @@ void test_prefix(void) {
     best = query(index, "pn");
     CHECK(best.scores[1] == PREFIX_INITIALS_SCORE && best.scores[0] == 0);
     best = query(index, "notes");
-    CHECK(best.scores[1] == PREFIX_TOKEN_SCORE && best.scores[0] == PREFIX_PARENT_SCORE);
+    CHECK(best.scores[1] == PREFIX_TOKEN_SCORE + PREFIX_COMPLETE_BONUS &&
+          best.scores[0] == PREFIX_PARENT_SCORE);
     best = query(index, "zzz");
     CHECK(best.hits == 0);
     prefix_destroy(index);

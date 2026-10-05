@@ -14,12 +14,14 @@ structural bounds. Roughly 6 ms p95 at 500k paths is accepted for starting M3;
 the original 5 ms target is later optimization work. See
 [readiness](m3-readiness.md) and the [GUI specification](m3-gui-design.md).
 
-The next milestone is M3 Part 2: explicit name/keyword/folder ranking, indexed
-unfinished-word typo matching and improved fuzzy scoring, measured against
-real launcher queries. The first name-weighting fix is implemented (ADR 0018).
-M4 then adds embedding/vector retrieval and hybrid fusion; M5 adds optional
-file/application personalization. See [the milestone plan](../PLAN.md) and
-[ADR 0019](adr/0019-search-quality-before-semantic-personalization.md).
+M3 Part 2 adds explicit generic-name/keyword fields beside primary names and
+filesystem folders, indexed unfinished-word one-edit matching through sorted
+term ranges, complete-token scoring and optimal fuzzy alignment up to 512
+symbols. Queries remain allocation-free; the large-text greedy fallback and
+all existing capacity/cache contracts remain bounded. See
+[ADR 0020](adr/0020-m3-part2-search-quality.md) and
+[measured relevance/performance](m3-part2-completion.md). M4 embedding/vector
+retrieval and hybrid fusion are next, followed by M5 optional personalization.
 
 ADR 0012 adds filesystem incarnation checks during scans and schema v2 identity
 storage. Replacements retire old ids and descendants before publication, with
@@ -142,7 +144,7 @@ is unsafe. Reclaim retired blocks in the background outside the lifecycle lock.
 ## M3 desktop flow
 
 The daemon owns an independent XDG desktop catalog and refresh worker. Localized
-names, generic names and keywords use the existing lexical engine; typed desktop
+names, independent generic names and keywords use the lexical engine; typed desktop
 results merge with file results under short leases. catalog_gen remains the
 file-catalog version. Application IDs are session-scoped and retired on changes.
 The file engine carries immutable directory flags for UI icons.

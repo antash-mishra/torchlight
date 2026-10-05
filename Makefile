@@ -120,3 +120,8 @@ test-ui-isolated: all build/test_popup_probe.so
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --matrix
 bench-ui: all build/test_popup_probe.so build/torchlightd-release build/bench_fixture
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --bench
+
+# Isolated shared engine for the labeled mixed-catalog evaluator.
+build/quality_engine.so: $(SOURCES) $(HEADERS)
+	@mkdir -p build
+	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG -fPIC -shared $(WARNINGS) $(SOURCES) $(LDFLAGS) $(LDLIBS) -o $@

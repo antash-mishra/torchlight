@@ -1,6 +1,6 @@
 # lexical
 
-> **Status:** Implemented (M1/M3): lexical channels and bounded caller prefix weighting
+> **Status:** Implemented (M3 Part 2): explicit fields, prefix edits and optimal alignment
 > **Source:** `src/index/lexical.c` (build), `src/index/lexical_query.c` (search),
 > `src/index/lexical_internal.h` · **Header:** `include/torchlight/lexical.h`
 > **Tests:** `tests/unit/test_lexical.c`, `tests/alloc/query.c`
@@ -38,12 +38,20 @@ usable parent context; the root's own name is.
 | Evidence for a word | Score |
 |---|---|
 | basename key prefix: whole basename / token / initials | 6000 / 5000 / 4500 |
-| one-edit basename token typo | 3500 |
+| one-edit basename token or eligible unfinished-prefix typo | 3500 |
+| explicit generic-name / keyword prefix | 2800 / 2600 |
 | parent directory name or token starting with the word | 2500 |
 | basename subsequence | 1500 + fuzzy score |
 | enough shared basename trigrams | 1000 + 1000 × shared/total |
 | subsequence within one usable parent directory name | fuzzy score |
 | word containing `/`: subsequence across the full path | fuzzy score |
+
+Complete name/auxiliary token prefixes gain 128, preserving the tier order.
+`lexical_add_fields` copies separate generic-name and keyword fields, with an
+indexed prefix channel and mask-filtered fuzzy evidence. Names, metadata and
+folder context remain independent. Auxiliary fields are intended for a small
+application catalog; files without them incur no scan of fields. Fuzzy proximity
+uses optimal alignment up to 512 symbols with a greedy fallback for larger text.
 
 A word's score is the best of its evidence; word scores add up. Parent context
 is the nearest matching ancestor. Basenames up to 63 symbols gain
@@ -127,3 +135,5 @@ presentation metadata. A sorted directory-id vector is separate from scoring;
 legacy lexical_add and all matching/ranking behavior remain unchanged. Desktop
 search reuses an independent engine over localized metadata without teaching
 lexical about GTK, XDG or launch commands.
+
+M3 Part 2 adds exhaustive scorer/edit references and a [mixed relevance evaluator](../../../tests/quality/README.md). See [ADR 0020](../../adr/0020-m3-part2-search-quality.md) and [measurements](../../m3-part2-completion.md).

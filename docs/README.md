@@ -24,14 +24,14 @@ The [M3 review fixes](adr/0017-m3-snapshot-cancellation-and-acceptance.md) cover
 consistent desktop replacement, action cancellation, keyboard Retry, accessible
 input and scaled placement. [Milestone status](milestone-status.md) explains
 what is done and what remains in plain language. M3 Part 2 search quality is
-next, followed by M4 hybrid semantic search and M5 personal recommendations.
-The [search quality review](search-quality.md) distinguishes feature completion
-from useful ranking, records the Chrome/prefix-typo failures, and proposes
-comparisons planned for M3 Part 2 before M4 model selection.
-[ADR 0018](adr/0018-application-name-ranking.md)
-fixes strong application-name ranking and consistent tied result ordering.
-[ADR 0019](adr/0019-search-quality-before-semantic-personalization.md) records
-the staged milestone sequence; the wider search improvements remain unimplemented.
+implemented, followed next by M4 hybrid semantic search and M5 recommendations.
+[Part 2 verification](m3-part2-completion.md) records indexed prefix edits,
+explicit metadata fields, optimal fuzzy alignment, held-out/BM25 comparisons,
+latency and RSS. The [search quality review](search-quality.md) explains the
+original Chrome/prefix-typo failures and future M4 model selection.
+[ADR 0018](adr/0018-application-name-ranking.md) fixes application-name weighting;
+[ADR 0019](adr/0019-search-quality-before-semantic-personalization.md) records the
+staged sequence, implemented for Part 2 in [ADR 0020](adr/0020-m3-part2-search-quality.md).
 
 M3 proceeded with the user's acceptance of roughly 6 ms p95 at 500k paths.
 The original 5 ms target and full-engine rebuild cost remain later optimization
@@ -126,6 +126,9 @@ the root [README](../README.md) for commands, and
   prioritizes name prefixes and preserves tie ordering across result limits.
 - [0019: search quality before semantics and personalization](adr/0019-search-quality-before-semantic-personalization.md)
   plans M3 Part 2 before M4 hybrid search and M5 personal recommendations.
+
+- [0020: M3 Part 2 search quality](adr/0020-m3-part2-search-quality.md)
+  adds explicit fields, indexed prefix edits and bounded optimal alignment.
 
 ## Keeping docs current
 

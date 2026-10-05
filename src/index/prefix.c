@@ -186,7 +186,11 @@ tl_status prefix_query(const tl_prefix *index, tl_text query, tl_prefix_hit hit,
      * range costs no further symbol comparisons. */
     size_t end = bound(index, query, true);
     for (size_t i = bound(index, query, false); i < end; i++) {
-        tl_status status = hit(context, index->sorted[i].slot, index->sorted[i].score);
+        const struct prefix_key *key = &index->sorted[i];
+        int complete = key->score == PREFIX_TOKEN_SCORE && key->length == query.length
+                           ? PREFIX_COMPLETE_BONUS
+                           : 0;
+        tl_status status = hit(context, key->slot, key->score + complete);
         if (status != TL_OK)
             return status;
     }

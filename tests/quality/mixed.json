@@ -1,0 +1,757 @@
+{
+  "description": "Hand-labeled mixed launcher fixture; target families separated before evaluation. No personal usage claims.",
+  "entries": [
+    {
+      "key": "chrome",
+      "path": "/Applications/Google Chrome",
+      "kind": "app",
+      "generic": "Web Browser",
+      "keywords": "internet web browsing"
+    },
+    {
+      "key": "chromenoise0",
+      "path": "/cache/chrome-cache-00.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise1",
+      "path": "/cache/chrome-cache-01.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise2",
+      "path": "/cache/chrome-cache-02.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise3",
+      "path": "/cache/chrome-cache-03.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise4",
+      "path": "/cache/chrome-cache-04.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise5",
+      "path": "/cache/chrome-cache-05.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise6",
+      "path": "/cache/chrome-cache-06.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise7",
+      "path": "/cache/chrome-cache-07.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise8",
+      "path": "/cache/chrome-cache-08.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise9",
+      "path": "/cache/chrome-cache-09.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise10",
+      "path": "/cache/chrome-cache-10.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise11",
+      "path": "/cache/chrome-cache-11.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise12",
+      "path": "/cache/chrome-cache-12.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise13",
+      "path": "/cache/chrome-cache-13.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise14",
+      "path": "/cache/chrome-cache-14.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise15",
+      "path": "/cache/chrome-cache-15.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise16",
+      "path": "/cache/chrome-cache-16.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise17",
+      "path": "/cache/chrome-cache-17.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise18",
+      "path": "/cache/chrome-cache-18.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise19",
+      "path": "/cache/chrome-cache-19.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise20",
+      "path": "/cache/chrome-cache-20.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise21",
+      "path": "/cache/chrome-cache-21.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise22",
+      "path": "/cache/chrome-cache-22.txt",
+      "kind": "file"
+    },
+    {
+      "key": "chromenoise23",
+      "path": "/cache/chrome-cache-23.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefox",
+      "path": "/Applications/Mozilla Firefox",
+      "kind": "app",
+      "generic": "Web Browser",
+      "keywords": "internet web browsing"
+    },
+    {
+      "key": "firefoxnoise0",
+      "path": "/cache/firefox-cache-00.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise1",
+      "path": "/cache/firefox-cache-01.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise2",
+      "path": "/cache/firefox-cache-02.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise3",
+      "path": "/cache/firefox-cache-03.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise4",
+      "path": "/cache/firefox-cache-04.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise5",
+      "path": "/cache/firefox-cache-05.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise6",
+      "path": "/cache/firefox-cache-06.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise7",
+      "path": "/cache/firefox-cache-07.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise8",
+      "path": "/cache/firefox-cache-08.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise9",
+      "path": "/cache/firefox-cache-09.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise10",
+      "path": "/cache/firefox-cache-10.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise11",
+      "path": "/cache/firefox-cache-11.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise12",
+      "path": "/cache/firefox-cache-12.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise13",
+      "path": "/cache/firefox-cache-13.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise14",
+      "path": "/cache/firefox-cache-14.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise15",
+      "path": "/cache/firefox-cache-15.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise16",
+      "path": "/cache/firefox-cache-16.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise17",
+      "path": "/cache/firefox-cache-17.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise18",
+      "path": "/cache/firefox-cache-18.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise19",
+      "path": "/cache/firefox-cache-19.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise20",
+      "path": "/cache/firefox-cache-20.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise21",
+      "path": "/cache/firefox-cache-21.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise22",
+      "path": "/cache/firefox-cache-22.txt",
+      "kind": "file"
+    },
+    {
+      "key": "firefoxnoise23",
+      "path": "/cache/firefox-cache-23.txt",
+      "kind": "file"
+    },
+    {
+      "key": "display",
+      "path": "/Applications/Display",
+      "kind": "app",
+      "generic": "Monitor configuration",
+      "keywords": "screen resolution"
+    },
+    {
+      "key": "sound",
+      "path": "/Applications/Sound",
+      "kind": "app",
+      "generic": "Audio control",
+      "keywords": "volume speakers"
+    },
+    {
+      "key": "project",
+      "path": "/work/projectNotes.md",
+      "kind": "file"
+    },
+    {
+      "key": "calendar",
+      "path": "/events/calendarAgenda.md",
+      "kind": "file"
+    },
+    {
+      "key": "invoiceprimary",
+      "path": "/finance/invoice2024.pdf",
+      "kind": "file"
+    },
+    {
+      "key": "invoiceother",
+      "path": "/archive/invoice2024.pdf",
+      "kind": "file"
+    },
+    {
+      "key": "invoicedraft",
+      "path": "/finance/invoiceDraft.txt",
+      "kind": "file"
+    },
+    {
+      "key": "reportprimary",
+      "path": "/research/report2024.pdf",
+      "kind": "file"
+    },
+    {
+      "key": "reportother",
+      "path": "/archive/report2024.pdf",
+      "kind": "file"
+    },
+    {
+      "key": "reportdraft",
+      "path": "/research/reportDraft.txt",
+      "kind": "file"
+    },
+    {
+      "key": "cafe",
+      "path": "/docs/Caf\u00e9.pdf",
+      "kind": "file"
+    },
+    {
+      "key": "strasse",
+      "path": "/docs/Stra\u00dfe.txt",
+      "kind": "file"
+    },
+    {
+      "key": "rawbad",
+      "kind": "file",
+      "path_hex": "2f62797465732f726177626164ff2e747874"
+    },
+    {
+      "key": "rawopaque",
+      "kind": "file",
+      "path_hex": "2f62797465732f7261776f7061717565fe2e747874"
+    },
+    {
+      "key": "alignment_abest",
+      "path": "/alignment/axxxxxxxxxAcexyg.txt",
+      "kind": "file"
+    },
+    {
+      "key": "alignment_aother",
+      "path": "/alignment/axcexgxxxxxxxxxx.txt",
+      "kind": "file"
+    },
+    {
+      "key": "alignment_bbest",
+      "path": "/alignment/bxxxxxxxxxBdfxyh.txt",
+      "kind": "file"
+    },
+    {
+      "key": "alignment_bother",
+      "path": "/alignment/bxdfxhxxxxxxxxxx.txt",
+      "kind": "file"
+    }
+  ],
+  "queries": [
+    {
+      "text": "chrome",
+      "class": "application_name",
+      "target_group": "chrome",
+      "split": "tuning",
+      "labels": {
+        "chrome": 3
+      }
+    },
+    {
+      "text": "chrom",
+      "class": "application_name",
+      "target_group": "chrome",
+      "split": "tuning",
+      "labels": {
+        "chrome": 3
+      }
+    },
+    {
+      "text": "Google Chrome",
+      "class": "application_name",
+      "target_group": "chrome",
+      "split": "tuning",
+      "labels": {
+        "chrome": 3
+      }
+    },
+    {
+      "text": "firefox",
+      "class": "application_name",
+      "target_group": "firefox",
+      "split": "held_out",
+      "labels": {
+        "firefox": 3
+      }
+    },
+    {
+      "text": "firef",
+      "class": "application_name",
+      "target_group": "firefox",
+      "split": "held_out",
+      "labels": {
+        "firefox": 3
+      }
+    },
+    {
+      "text": "Mozilla Firefox",
+      "class": "application_name",
+      "target_group": "firefox",
+      "split": "held_out",
+      "labels": {
+        "firefox": 3
+      }
+    },
+    {
+      "text": "screen",
+      "class": "metadata",
+      "target_group": "display",
+      "split": "tuning",
+      "labels": {
+        "display": 3
+      }
+    },
+    {
+      "text": "Monitor",
+      "class": "metadata",
+      "target_group": "display",
+      "split": "tuning",
+      "labels": {
+        "display": 3
+      }
+    },
+    {
+      "text": "Display",
+      "class": "metadata",
+      "target_group": "display",
+      "split": "tuning",
+      "labels": {
+        "display": 3
+      }
+    },
+    {
+      "text": "screen Monitor",
+      "class": "metadata",
+      "target_group": "display",
+      "split": "tuning",
+      "labels": {
+        "display": 3
+      }
+    },
+    {
+      "text": "volume",
+      "class": "metadata",
+      "target_group": "sound",
+      "split": "held_out",
+      "labels": {
+        "sound": 3
+      }
+    },
+    {
+      "text": "Audio",
+      "class": "metadata",
+      "target_group": "sound",
+      "split": "held_out",
+      "labels": {
+        "sound": 3
+      }
+    },
+    {
+      "text": "Sound",
+      "class": "metadata",
+      "target_group": "sound",
+      "split": "held_out",
+      "labels": {
+        "sound": 3
+      }
+    },
+    {
+      "text": "volume Audio",
+      "class": "metadata",
+      "target_group": "sound",
+      "split": "held_out",
+      "labels": {
+        "sound": 3
+      }
+    },
+    {
+      "text": "proej",
+      "class": "unfinished_typo",
+      "target_group": "project",
+      "split": "tuning",
+      "labels": {
+        "project": 3
+      }
+    },
+    {
+      "text": "prxoje",
+      "class": "unfinished_typo",
+      "target_group": "project",
+      "split": "tuning",
+      "labels": {
+        "project": 3
+      }
+    },
+    {
+      "text": "projecx",
+      "class": "unfinished_typo",
+      "target_group": "project",
+      "split": "tuning",
+      "labels": {
+        "project": 3
+      }
+    },
+    {
+      "text": "prjnts",
+      "class": "abbreviation",
+      "target_group": "project",
+      "split": "tuning",
+      "labels": {
+        "project": 3
+      }
+    },
+    {
+      "text": "projectNotes.md",
+      "class": "exact",
+      "target_group": "project",
+      "split": "tuning",
+      "labels": {
+        "project": 3
+      }
+    },
+    {
+      "text": "/work/projectNotes.md",
+      "class": "path",
+      "target_group": "project",
+      "split": "tuning",
+      "labels": {
+        "project": 3
+      }
+    },
+    {
+      "text": "calned",
+      "class": "unfinished_typo",
+      "target_group": "calendar",
+      "split": "held_out",
+      "labels": {
+        "calendar": 3
+      }
+    },
+    {
+      "text": "calenx",
+      "class": "unfinished_typo",
+      "target_group": "calendar",
+      "split": "held_out",
+      "labels": {
+        "calendar": 3
+      }
+    },
+    {
+      "text": "caleXnd",
+      "class": "unfinished_typo",
+      "target_group": "calendar",
+      "split": "held_out",
+      "labels": {
+        "calendar": 3
+      }
+    },
+    {
+      "text": "clndag",
+      "class": "abbreviation",
+      "target_group": "calendar",
+      "split": "held_out",
+      "labels": {
+        "calendar": 3
+      }
+    },
+    {
+      "text": "calendarAgenda.md",
+      "class": "exact",
+      "target_group": "calendar",
+      "split": "held_out",
+      "labels": {
+        "calendar": 3
+      }
+    },
+    {
+      "text": "/events/calendarAgenda.md",
+      "class": "path",
+      "target_group": "calendar",
+      "split": "held_out",
+      "labels": {
+        "calendar": 3
+      }
+    },
+    {
+      "text": "invoice",
+      "class": "duplicate",
+      "target_group": "invoice",
+      "split": "tuning",
+      "labels": {
+        "invoiceprimary": 3,
+        "invoiceother": 3,
+        "invoicedraft": 1
+      }
+    },
+    {
+      "text": "finance invoice",
+      "class": "folder_name",
+      "target_group": "invoice",
+      "split": "tuning",
+      "labels": {
+        "invoiceprimary": 3,
+        "invoicedraft": 1
+      }
+    },
+    {
+      "text": "finance pdf",
+      "class": "extension",
+      "target_group": "invoice",
+      "split": "tuning",
+      "labels": {
+        "invoiceprimary": 3
+      }
+    },
+    {
+      "text": "invoice2024.pdf",
+      "class": "duplicate",
+      "target_group": "invoice",
+      "split": "tuning",
+      "labels": {
+        "invoiceprimary": 3,
+        "invoiceother": 3
+      }
+    },
+    {
+      "text": "report",
+      "class": "duplicate",
+      "target_group": "report",
+      "split": "held_out",
+      "labels": {
+        "reportprimary": 3,
+        "reportother": 3,
+        "reportdraft": 1
+      }
+    },
+    {
+      "text": "research report",
+      "class": "folder_name",
+      "target_group": "report",
+      "split": "held_out",
+      "labels": {
+        "reportprimary": 3,
+        "reportdraft": 1
+      }
+    },
+    {
+      "text": "research pdf",
+      "class": "extension",
+      "target_group": "report",
+      "split": "held_out",
+      "labels": {
+        "reportprimary": 3
+      }
+    },
+    {
+      "text": "report2024.pdf",
+      "class": "duplicate",
+      "target_group": "report",
+      "split": "held_out",
+      "labels": {
+        "reportprimary": 3,
+        "reportother": 3
+      }
+    },
+    {
+      "text": "CAFE\u0301",
+      "class": "unicode",
+      "target_group": "cafe",
+      "split": "tuning",
+      "labels": {
+        "cafe": 3
+      }
+    },
+    {
+      "text": "Caf\u00e9.pdf",
+      "class": "unicode",
+      "target_group": "cafe",
+      "split": "tuning",
+      "labels": {
+        "cafe": 3
+      }
+    },
+    {
+      "text": "STRASSE",
+      "class": "unicode",
+      "target_group": "strasse",
+      "split": "held_out",
+      "labels": {
+        "strasse": 3
+      }
+    },
+    {
+      "text": "Stra\u00dfe.txt",
+      "class": "unicode",
+      "target_group": "strasse",
+      "split": "held_out",
+      "labels": {
+        "strasse": 3
+      }
+    },
+    {
+      "text": "rawbad",
+      "class": "raw_bytes",
+      "target_group": "rawbad",
+      "split": "tuning",
+      "labels": {
+        "rawbad": 3
+      }
+    },
+    {
+      "text": "rawopaque",
+      "class": "raw_bytes",
+      "target_group": "rawopaque",
+      "split": "held_out",
+      "labels": {
+        "rawopaque": 3
+      }
+    },
+    {
+      "text": "zznomatchqq",
+      "class": "no_match",
+      "target_group": "zznomatchqq",
+      "split": "tuning",
+      "labels": {}
+    },
+    {
+      "text": "qqabsentzz",
+      "class": "no_match",
+      "target_group": "qqabsentzz",
+      "split": "held_out",
+      "labels": {}
+    },
+    {
+      "text": "aceg",
+      "class": "optimal_alignment",
+      "target_group": "alignment_a",
+      "split": "tuning",
+      "labels": {
+        "alignment_abest": 3,
+        "alignment_aother": 1
+      }
+    },
+    {
+      "text": "bdfh",
+      "class": "optimal_alignment",
+      "target_group": "alignment_b",
+      "split": "held_out",
+      "labels": {
+        "alignment_bbest": 3,
+        "alignment_bother": 1
+      }
+    }
+  ]
+}
