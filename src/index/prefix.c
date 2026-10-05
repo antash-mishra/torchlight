@@ -1,5 +1,5 @@
-/* Binary-search prefix ranges over sorted keys. Basename/token keys borrow the
- * caller's normalized symbols; initials live in one index-owned arena. */
+/* Binary-search prefix ranges with token completion at basename/token strength.
+ * Keys borrow normalized symbols; initials live in one index-owned arena. */
 #include "torchlight/prefix.h"
 #include "torchlight/vec.h"
 #include <stdlib.h>
@@ -8,6 +8,7 @@
 struct prefix_key {
     const uint32_t *symbols;
     uint32_t length, slot;
+    /* Token keys store their completed score, avoiding an extra flag per key. */
     int score;
 };
 struct pending_initials {
@@ -92,6 +93,14 @@ static tl_status add_initials(tl_prefix *index, tl_text text, size_t slot) {
     struct pending_initials pending = {(uint32_t)offset, (uint32_t)length, (uint32_t)slot};
     return vec_append(index->pending, &pending);
 }
+static int token_complete_score(tl_text text, size_t start) {
+    if (start < text.basename)
+        return PREFIX_PARENT_SCORE;
+    /* The first token already has basename-prefix strength. Keep completion
+     * at that tier so a whole-basename hit cannot hide its bonus. */
+    int score = start == text.basename ? PREFIX_BASENAME_SCORE : PREFIX_TOKEN_SCORE;
+    return score + PREFIX_COMPLETE_BONUS;
+}
 tl_status prefix_add(tl_prefix *index, tl_text text, size_t slot) {
     if (index == NULL || text.symbols == NULL || text.boundaries == NULL ||
         text.basename > text.length)
@@ -113,8 +122,7 @@ tl_status prefix_add(tl_prefix *index, tl_text text, size_t slot) {
         while (end < text.length && !tokenize_separator(text.symbols[end]) &&
                text.boundaries[end] == 0)
             end++;
-        status = add_key(index, text, start, end, slot,
-                         start >= text.basename ? PREFIX_TOKEN_SCORE : PREFIX_PARENT_SCORE);
+        status = add_key(index, text, start, end, slot, token_complete_score(text, start));
         if (status != TL_OK)
             return status;
         start = end;
@@ -177,6 +185,11 @@ static size_t bound(const tl_prefix *index, tl_text query, bool want_greater) {
     }
     return lo;
 }
+static int query_score(const struct prefix_key *key, size_t length) {
+    bool token = key->score == PREFIX_BASENAME_SCORE + PREFIX_COMPLETE_BONUS ||
+                 key->score == PREFIX_TOKEN_SCORE + PREFIX_COMPLETE_BONUS;
+    return token && length < key->length ? key->score - PREFIX_COMPLETE_BONUS : key->score;
+}
 tl_status prefix_query(const tl_prefix *index, tl_text query, tl_prefix_hit hit, void *context) {
     if (index == NULL || hit == NULL || query.symbols == NULL || query.length == 0)
         return TL_INVALID;
@@ -187,10 +200,7 @@ tl_status prefix_query(const tl_prefix *index, tl_text query, tl_prefix_hit hit,
     size_t end = bound(index, query, true);
     for (size_t i = bound(index, query, false); i < end; i++) {
         const struct prefix_key *key = &index->sorted[i];
-        int complete = key->score == PREFIX_TOKEN_SCORE && key->length == query.length
-                           ? PREFIX_COMPLETE_BONUS
-                           : 0;
-        tl_status status = hit(context, key->slot, key->score + complete);
+        tl_status status = hit(context, key->slot, query_score(key, query.length));
         if (status != TL_OK)
             return status;
     }

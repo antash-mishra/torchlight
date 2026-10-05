@@ -41,6 +41,13 @@ void test_prefix(void) {
     CHECK(prefix_query(index, tokenize_view(q), stop, NULL) == TL_LIMIT);
     best = query(index, "pr");
     CHECK(best.scores[1] == PREFIX_BASENAME_SCORE && best.scores[0] == PREFIX_PARENT_SCORE);
+    best = query(index, "project");
+    CHECK(best.scores[1] == PREFIX_BASENAME_SCORE + PREFIX_COMPLETE_BONUS &&
+          best.scores[0] == PREFIX_PARENT_SCORE);
+    best = query(index, "projectn");
+    CHECK(best.scores[1] == PREFIX_BASENAME_SCORE && best.scores[0] == 0);
+    best = query(index, "projectnotes.md");
+    CHECK(best.scores[1] == PREFIX_BASENAME_SCORE && best.scores[0] == 0);
     best = query(index, "pn");
     CHECK(best.scores[1] == PREFIX_INITIALS_SCORE && best.scores[0] == 0);
     best = query(index, "notes");

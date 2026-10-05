@@ -1,6 +1,6 @@
 # lexical
 
-> **Status:** Implemented (M3 Part 2): explicit fields, prefix edits and optimal alignment
+> **Status:** Implemented (M3 Part 2): explicit fields, prefix edits, optimal alignment and first-token completion
 > **Source:** `src/index/lexical.c` (build), `src/index/lexical_query.c` (search),
 > `src/index/lexical_internal.h` · **Header:** `include/torchlight/lexical.h`
 > **Tests:** `tests/unit/test_lexical.c`, `tests/alloc/query.c`
@@ -47,6 +47,11 @@ usable parent context; the root's own name is.
 | word containing `/`: subsequence across the full path | fuzzy score |
 
 Complete name/auxiliary token prefixes gain 128, preserving the tier order.
+The first basename token keeps basename strength, so its complete match scores
+6128 rather than having a 5128 token hit overridden by a 6000 basename prefix.
+For example, `project` prefers `project notes.txt` over `projectile.txt` even
+though the latter is shorter. Auxiliary fields retain their own weights and
+completion bonus. See [ADR 0021](../../adr/0021-first-token-completeness.md).
 `lexical_add_fields` copies separate generic-name and keyword fields, with an
 indexed prefix channel and mask-filtered fuzzy evidence. Names, metadata and
 folder context remain independent. Auxiliary fields are intended for a small
@@ -110,6 +115,8 @@ and using `/` words; small capacities must return the head of the full ranking
 (exercising skips and deferral). Tests also cover typo/trigram retrieval,
 acronym initials, parent context versus scattered letters, root-ancestor
 exclusion, the one-symbol cache, Unicode, raw bytes and exact priorities.
+First-token regressions cover spaces, underscores, camelCase, acronym boundaries,
+case folding and one-symbol answers, at single-result and larger capacities.
 Large fixed-width fixtures independently predict scores and id order for
 abbreviations, parent words and typos. They exercise worker batches, both result
 capacities and warmed membership. Exact multiword names containing internal

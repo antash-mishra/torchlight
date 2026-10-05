@@ -129,6 +129,8 @@ the root [README](../README.md) for commands, and
 
 - [0020: M3 Part 2 search quality](adr/0020-m3-part2-search-quality.md)
   adds explicit fields, indexed prefix edits and bounded optimal alignment.
+- [0021: first-token completion](adr/0021-first-token-completeness.md)
+  preserves the completion bonus at basename strength without growing the index.
 
 ## Keeping docs current
 

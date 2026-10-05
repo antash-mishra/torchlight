@@ -116,3 +116,39 @@ symbols; larger inputs keep greedy scoring. Auxiliary fuzzy evidence scans the
 bounded desktop fields and should be measured before using this API for a large
 metadata-heavy catalog. M4 can now compare semantic retrieval against this
 improved lexical baseline; M5 will evaluate optional personalization afterward.
+
+## First-token completeness review fix
+
+[ADR 0021](adr/0021-first-token-completeness.md) fixes completion evidence being
+overridden by a whole-basename prefix. `project` now ranks `project notes.txt`
+(6175) ahead of `projectile.txt` (6050). The first token keeps basename strength;
+only its complete match gains 128, with no additional index keys or query buffers.
+Generic-name/keyword completion retains its existing field weights.
+
+The new prefix regression fails on the original Part 2 implementation and passes
+with the fix. Ranking regressions cover spaces, underscores, camelCase, acronym
+boundaries, case folding and the one-symbol cache, including single-result and
+larger capacities and exact-name priority. Existing worker/evidence tests now
+include the completed first token in their independent expected scores.
+
+`make test` passes sanitizer units, allocation checks and CLI/desktop/daemon
+integration; `make lint` passes. AGENTS.md and CLAUDE.md remain identical. The
+mixed evaluator retains all 44 recorded query rankings and metrics, including
+held-out recall and nDCG@10 of 1.000. Its small-fixture limits still apply.
+
+`make bench` passes all nine fixtures at both sizes. The
+[review-fix run](../tests/bench/results/2026-10-05-m3-part2-token-completeness.txt)
+records the same seeded synthetic corpora without overlapping test/lint runs:
+
+| Paths | Typing p95 | Whole-query p95 | Total steady RSS | Process peak RSS |
+|---|---:|---:|---:|---:|
+| 50k | 1.185 ms | 1.568 ms | 40016 KiB | 46520 KiB |
+| 500k | 8.393 ms | 9.447 ms | 334760 KiB | 399204 KiB |
+
+The completion preference changes ambiguous synthetic rankings: at 50k, held-out
+parent-query top-ten success changes from 0.645 to 0.560 and overall success from
+0.621 to 0.607; prefix Recall@1 rises from 0.240 to 0.245. At 500k, overall top-ten
+success remains 0.539. These known-item proxies label a random target among many
+similar names; the fix deliberately favors complete first tokens. The graded
+mixed-catalog results remain unchanged. Timing differences between single runs
+are noisy, and the original 5 ms target remains unmet.

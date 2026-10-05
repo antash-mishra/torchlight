@@ -241,7 +241,9 @@ static tl_status on_prefix_hit(void *context, size_t slot, int score) {
 static tl_status on_field_hit(void *context, size_t field, int score) {
     tl_lexical_workspace *workspace = context;
     const struct lexical_field *fields = vec_const_data(workspace->engine->fields);
-    int complete = score == PREFIX_TOKEN_SCORE + PREFIX_COMPLETE_BONUS ? PREFIX_COMPLETE_BONUS : 0;
+    bool complete_token = score == PREFIX_BASENAME_SCORE + PREFIX_COMPLETE_BONUS ||
+                          score == PREFIX_TOKEN_SCORE + PREFIX_COMPLETE_BONUS;
+    int complete = complete_token ? PREFIX_COMPLETE_BONUS : 0;
     record_hit(workspace, fields[field].slot, fields[field].weight + complete);
     return TL_OK;
 }

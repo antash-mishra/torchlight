@@ -134,6 +134,32 @@ static void capacity_consistency(const tl_lexical *engine, tl_lexical_workspace 
     for (size_t i = 0; i < few_count; i++)
         CHECK(few[i].id == all[i].id && few[i].score == all[i].score);
 }
+/* A complete first token must beat a shorter name containing only its prefix,
+ * including separator, camelCase, acronym and cached one-symbol boundaries. */
+static void first_token_completeness(void) {
+    const struct {
+        const char *complete, *partial, *query;
+    } cases[] = {{"/work/project notes.txt", "/work/projectile.txt", "project"},
+                 {"/work/projectNotes.md", "/work/projectile.md", "project"},
+                 {"/work/project_notes.txt", "/work/projectile.txt", "PROJECT"},
+                 {"/work/HTMLParserGuide.c", "/work/htmlish.c", "html"},
+                 {"/work/a_long_description.txt", "/work/aardvark.txt", "a"}};
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *paths[] = {"/work", cases[i].complete, cases[i].partial};
+        tl_lexical *engine = build(paths, sizeof(paths) / sizeof(paths[0]));
+        tl_lexical_workspace *workspace = NULL;
+        CHECK(lexical_workspace_create(engine, &workspace) == TL_OK);
+        tl_result result[1];
+        size_t count = 0;
+        CHECK(lexical_query(engine, workspace, cases[i].query, result, 1, &count) == TL_OK);
+        CHECK(count == 1 && result[0].id == 2);
+        expect(engine, workspace, cases[i].query, cases[i].complete);
+        capacity_consistency(engine, workspace, cases[i].query);
+        expect(engine, workspace, strrchr(cases[i].partial, '/') + 1, cases[i].partial);
+        lexical_workspace_destroy(workspace);
+        lexical_destroy(engine);
+    }
+}
 /* A caller's name-prefix weighting must preserve exact priorities and the
  * complete ranking through cached one-symbol and multiword bound shortcuts. */
 static void prefix_bonus_ranking(void) {
@@ -213,10 +239,10 @@ static void evidence_eviction(void) {
         size_t count;
         uint64_t id;
         int score;
-    } cases[] = {{"one two three four five six", 2, 2, 18557},
-                 {"six five four three two one", 2, 2, 18557},
-                 {"one two threx four five six", 1, 4, 16496},
-                 {"one one two three four five six", 2, 2, 21057},
+    } cases[] = {{"one two three four five six", 2, 2, 18685},
+                 {"six five four three two one", 2, 2, 18685},
+                 {"one two threx four five six", 1, 4, 16624},
+                 {"one one two three four five six", 2, 2, 21185},
                  {"one two missing four five six", 0, 0, 0}};
     for (size_t q = 0; q < sizeof(cases) / sizeof(cases[0]); q++) {
         tl_result results[10];
@@ -250,7 +276,7 @@ static void parallel_ranking(void) {
     const struct {
         const char *query;
         int score;
-    } cases[] = {{"md", 1863}, {"r md", 4363}, {"mad notes", 11172}, {"r noets", 6044}};
+    } cases[] = {{"md", 1863}, {"r md", 4363}, {"mad notes", 11300}, {"r noets", 6044}};
     for (size_t q = 0; q < sizeof(cases) / sizeof(cases[0]); q++) {
         tl_result results[10];
         size_t count = 0;
@@ -334,6 +360,10 @@ static void quality_fields(void) {
     CHECK(lexical_workspace_create(engine, &workspace) == TL_OK);
     expect(engine, workspace, "screen", "/Applications/Screen Recorder");
     expect(engine, workspace, "monitor", "/Applications/Display");
+    tl_result result[1];
+    size_t count = 0;
+    CHECK(lexical_query(engine, workspace, "monitor", result, 1, &count) == TL_OK);
+    CHECK(count == 1 && result[0].score == 2800 + 128 + 57);
     expect(engine, workspace, "screen resolution", "/Applications/Display");
     expect(engine, workspace, "project notes", "/work/projectNotes.md");
     const char *queries[] = {"s",       "sc",          "screen",
@@ -351,6 +381,7 @@ static void quality_fields(void) {
     lexical_destroy(engine);
 }
 void test_lexical(void) {
+    first_token_completeness();
     quality_fields();
     prefix_bonus_ranking();
     evidence_eviction();
