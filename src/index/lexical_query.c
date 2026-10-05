@@ -1091,3 +1091,11 @@ tl_status lexical_query(const tl_lexical *engine, tl_lexical_workspace *workspac
     reset_workspace(workspace);
     return status;
 }
+
+tl_lexical_exactness lexical_exactness(const tl_result *result) {
+    if (result == NULL)
+        return LEXICAL_ORDINARY;
+    return result->score >= LEXICAL_EXACT_PATH       ? LEXICAL_EXACT_RAW_PATH
+           : result->score >= LEXICAL_EXACT_BASENAME ? LEXICAL_EXACT_NAME
+                                                     : LEXICAL_ORDINARY;
+}

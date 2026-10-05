@@ -79,3 +79,12 @@
   from a durable SQLite file id.
 - **Desktop revision:** Fingerprint of the selected desktop filename and canonical
   keyfile content, checked before native activation to reject replacement entries.
+
+- **Static embedding:** A trained token lookup table pooled into a text vector;
+  Potion uses this without a contextual transformer runtime.
+- **Prepared-text cache:** Versioned background storage keyed by exact semantic
+  input and emb_gen, allowing unchanged metadata to reuse validated vectors.
+- **Sign-bit shortlist:** Experimental Hamming candidate selection before int8
+  cosine rescoring; recall must pass evaluation before it becomes a default.
+- **desktop_gen:** Session-local immutable desktop metadata sequence, separate
+  from catalog_gen and emb_gen; required for coherent hybrid publication.

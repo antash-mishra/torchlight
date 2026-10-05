@@ -5,8 +5,9 @@
 M3 runs as a resident file/application daemon with a GTK4 popup. `torchlight query` uses Unix-socket IPC;
 explicit `--db` retains the M1 local query mode. Offline `index` still wires
 config -> crawl -> store, under the same database singleton lock as the daemon.
-The poll loop searches immutable catalog leases, encodes one terminal response
-and releases the lease before sending. Its worker owns SQLite, inotify,
+The poll loop searches immutable catalog leases and releases them after encoding
+lexical results. With an explicitly configured model, a matching owned semantic
+metadata snapshot supports the asynchronous final phase. Its worker owns SQLite, inotify,
 reconciliation, full-engine staging/publication and asynchronous history.
 Saved entries serve before background reconciliation. Status and restart/failure
 recovery are implemented. Semantics and personalization ranking below remain the target architecture. See ADR 0011 for the full-rebuild baseline and
@@ -20,12 +21,13 @@ term ranges, complete-token scoring and optimal fuzzy alignment up to 512
 symbols. Queries remain allocation-free; the large-text greedy fallback and
 all existing capacity/cache contracts remain bounded. See
 [ADR 0020](adr/0020-m3-part2-search-quality.md) and
-[measured relevance/performance](m3-part2-completion.md). M4 has started with
-an owned float cosine reference, swappable embedder adapter and bounded RRF
-fusion. These modules are not yet wired into the daemon; trained inference,
-persisted/background vectors and coherent two-phase snapshots remain pending.
-See [M4 implementation](m4-implementation.md) and
-[ADR 0022](adr/0022-m4-semantic-foundation.md). M5 optional personalization follows.
+[measured relevance/performance](m3-part2-completion.md). M4 implements opt-in native Potion, float/int8 retrieval, background
+versioned cache and coherent two-phase RRF. The semantic worker owns inference
+and copied metadata snapshots; the coordinator sends lexical results immediately
+and enforces cancellation/deadline fallback. See [M4 implementation](m4-implementation.md),
+[measured model evaluation](m4-model-evaluation.md) and
+[ADR 0023](adr/0023-m4-native-potion-and-two-phase-search.md). Large-catalog latency
+and broader relevance acceptance remain open. M5 personalization follows.
 
 ADR 0012 adds filesystem incarnation checks during scans and schema v2 identity
 storage. Replacements retire old ids and descendants before publication, with

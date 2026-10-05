@@ -4,6 +4,17 @@
 #include "lexical_internal.h"
 #include <stdlib.h>
 #include <string.h>
+tl_status lexical_entry(const tl_lexical *engine, size_t position, uint64_t *id, const char **path,
+                        bool *is_dir) {
+    if (engine == NULL || id == NULL || path == NULL || is_dir == NULL || position >= engine->count)
+        return TL_INVALID;
+    if (!engine->finished)
+        return TL_STATE;
+    *id = engine->columns.ids[position];
+    *path = engine->columns.paths + engine->columns.path_offsets[position];
+    *is_dir = lexical_is_dir(engine, *id);
+    return TL_OK;
+}
 /* Normalized symbols per raw byte never exceed this (see tokenize.h). */
 enum { LEXICAL_SYMBOLS_PER_BYTE = 4 };
 static tl_status create_columns(tl_lexical *engine) {
@@ -542,4 +553,23 @@ tl_status lexical_finish(tl_lexical *engine) {
         engine->failed = true;
     }
     return status;
+}
+
+const char *lexical_context_path(const tl_lexical *engine, size_t position) {
+    if (engine == NULL || !engine->finished || position >= engine->count)
+        return NULL;
+    const char *path = engine->columns.paths + engine->columns.path_offsets[position];
+    size_t nearest = 0, begin = 0;
+    for (size_t i = 0; i < engine->root_count; i++) {
+        uint32_t slot = engine->columns.roots[i];
+        const char *root = engine->columns.paths + engine->columns.path_offsets[slot];
+        size_t length = strlen(root);
+        if (length < nearest || strncmp(path, root, length) != 0 ||
+            (length != 1 && path[length] != 0 && path[length] != '/'))
+            continue;
+        nearest = length;
+        const char *separator = strrchr(root, '/');
+        begin = separator == NULL ? 0 : (size_t)(separator + 1 - root);
+    }
+    return path + begin;
 }

@@ -61,6 +61,7 @@ void test_dirtree(void);
 void test_fuzzy(void);
 /** Check the embedder adapter's metadata, ownership and error contracts. */
 void test_embed(void);
+void test_potion(void);
 /** Compare cosine retrieval to independent scalar arithmetic and reader checks. */
 void test_vector(void);
 /** Check RRF scores, exact-match protection and lexical fallback. */

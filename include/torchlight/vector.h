@@ -1,4 +1,4 @@
-/* Owned, immutable float cosine reference with bounded allocation-free queries. */
+/* Owned float/int8 cosine and experimental binary shortlist; bounded query scratch. */
 #ifndef TORCHLIGHT_VECTOR_H
 #define TORCHLIGHT_VECTOR_H
 #include "torchlight/common.h"
@@ -7,6 +7,20 @@
 #define VECTOR_MAX_RESULTS 1000
 typedef struct tl_vector tl_vector;
 typedef struct tl_vector_workspace tl_vector_workspace;
+/** Create exhaustive int8 cosine index. Same ownership/errors as vector_create;
+ * budget includes ids, quantized components and per-row inverse norms. Quantize
+ * normalized floats using round(component*127), then normalize stored integers
+ * during cosine evaluation. No approximate candidate pruning. Compare recall
+ * against float reference before deployment; quantization version int8-l2-1. */
+tl_status vector_create_int8(uint64_t emb_gen, size_t dimensions, size_t capacity,
+                             size_t budget_bytes, tl_vector **out);
+/** Experimental sign-bit shortlist followed by int8 cosine. Same ownership and
+ * errors as vector_create_int8; shortlist >= output capacity is required at
+ * query time. Store sign bits plus integers and normalize during rescoring.
+ * Hamming ties prefer smaller ids. Validate recall/latency against exhaustive
+ * search on the target corpus before selecting this approximate format. */
+tl_status vector_create_binary_int8(uint64_t emb_gen, size_t dimensions, size_t capacity,
+                                    size_t shortlist, size_t budget_bytes, tl_vector **out);
 typedef struct {
     uint64_t id;
     double cosine;

@@ -8,11 +8,15 @@
 #define LEXICAL_PREFIX_BONUS_MAX 4096
 typedef struct tl_lexical tl_lexical;
 typedef struct tl_lexical_workspace tl_lexical_workspace;
+typedef enum { LEXICAL_ORDINARY, LEXICAL_EXACT_NAME, LEXICAL_EXACT_RAW_PATH } tl_lexical_exactness;
 typedef struct {
     uint64_t id;
     const char *path;
     int score;
 } tl_result;
+/** Return explicit exact-match tier of a lexical result; ordinary for NULL.
+ * Borrowed result; no allocation/I/O/errors. Score encoding stays internal. */
+tl_lexical_exactness lexical_exactness(const tl_result *result);
 /** Create owned builder; out NULL on invalid/allocation failure. */
 tl_status lexical_create(tl_lexical **out);
 /** Set a per-word basename/token/initials prefix bonus on an unsealed builder.
@@ -76,4 +80,14 @@ size_t lexical_count(const tl_lexical *engine);
  * raw path until engine destruction, out NULL on error. TL_INVALID for NULL/0,
  * TL_STATE for unsealed engine or absent id. No I/O/heap allocation. */
 tl_status lexical_resolve(const tl_lexical *engine, uint64_t id, const char **out);
+/** Borrow sorted-id entry at position in sealed engine; TL_INVALID for NULL or
+ * out-of-range, TL_STATE if unsealed. No allocation/I/O; outputs valid until
+ * engine destruction. Caller owns output pointers, path remains engine-owned. */
+tl_status lexical_entry(const tl_lexical *engine, size_t position, uint64_t *id, const char **path,
+                        bool *is_dir);
+/** Borrow path suffix starting at the nearest indexed root's basename for a
+ * sealed entry position. NULL for invalid/unsealed input. Metadata consumers
+ * can exclude parents outside indexing scope. Borrow until engine destruction;
+ * no allocation/I/O/errors. */
+const char *lexical_context_path(const tl_lexical *engine, size_t position);
 #endif

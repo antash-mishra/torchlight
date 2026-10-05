@@ -3,10 +3,12 @@
 #include "torchlight/json.h"
 #include "torchlight/path.h"
 #include <limits.h>
+#include <math.h>
 #include <sqlite3.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#define STORE_SCHEMA_VERSION 3
+#define STORE_SCHEMA_VERSION 4
 #define IDENTITY_BYTES 29
 #define IDENTITY_OBJECT_BYTES 16
 #define IDENTITY_RENAMED 2
@@ -15,7 +17,8 @@ struct tl_store {
     sqlite3 *db;
     /* Per-entry statements are prepared once; a scan runs them for every entry. */
     sqlite3_stmt *put, *mark_seen, *keep, *identity;
-    bool transaction, reading, changed;
+    sqlite3_stmt *embedding_get, *embedding_put, *embedding_touch;
+    bool transaction, reading, changed, embedding_batch;
 };
 static void catalog_change(void *context, int operation, const char *database, const char *table,
                            sqlite3_int64 row) {
@@ -130,8 +133,22 @@ static tl_status migrate(tl_store *store) {
         status = migrate_identity(store);
         version = 2;
     }
-    if (status == TL_OK && version == 2)
+    if (status == TL_OK && version == 2) {
         status = migrate_desktop_history(store);
+        version = 3;
+    }
+    if (status == TL_OK && version == 3) {
+        const char *steps[] = {"CREATE TABLE embedding_models(emb_gen TEXT PRIMARY KEY,descriptor "
+                               "TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 0)",
+                               "CREATE TABLE embedding_cache(emb_gen TEXT NOT NULL REFERENCES "
+                               "embedding_models(emb_gen) ON DELETE CASCADE,"
+                               "text BLOB NOT NULL,payload BLOB NOT NULL,touched INTEGER NOT NULL "
+                               "DEFAULT 1,PRIMARY KEY(emb_gen,text)) WITHOUT ROWID",
+                               "UPDATE meta SET value='4' WHERE key='schema_version'",
+                               "PRAGMA user_version=4"};
+        for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]) && status == TL_OK; i++)
+            status = execute(store, steps[i]);
+    }
     if (status == TL_OK)
         status = execute(store, "COMMIT");
     if (status == TL_OK)
@@ -158,7 +175,18 @@ static tl_status prepare_statements(tl_store *store) {
         sqlite3_prepare_v2(store->db, MARK_SEEN_SQL, -1, &store->mark_seen, NULL) != SQLITE_OK ||
         sqlite3_prepare_v2(store->db, KEEP_SQL, -1, &store->keep, NULL) != SQLITE_OK ||
         sqlite3_prepare_v2(store->db, "SELECT identity FROM files WHERE path=?1", -1,
-                           &store->identity, NULL) != SQLITE_OK)
+                           &store->identity, NULL) != SQLITE_OK ||
+        sqlite3_prepare_v2(store->db,
+                           "SELECT payload FROM embedding_cache WHERE emb_gen=?1 AND text=?2", -1,
+                           &store->embedding_get, NULL) != SQLITE_OK ||
+        sqlite3_prepare_v2(
+            store->db,
+            "INSERT INTO embedding_cache(emb_gen,text,payload,touched) VALUES(?1,?2,?3,1) "
+            "ON CONFLICT(emb_gen,text) DO UPDATE SET payload=excluded.payload,touched=1",
+            -1, &store->embedding_put, NULL) != SQLITE_OK ||
+        sqlite3_prepare_v2(store->db,
+                           "UPDATE embedding_cache SET touched=1 WHERE emb_gen=?1 AND text=?2", -1,
+                           &store->embedding_touch, NULL) != SQLITE_OK)
         return TL_IO;
     return TL_OK;
 }
@@ -203,6 +231,9 @@ void store_destroy(tl_store *store) {
     sqlite3_finalize(store->mark_seen);
     sqlite3_finalize(store->keep);
     sqlite3_finalize(store->identity);
+    sqlite3_finalize(store->embedding_get);
+    sqlite3_finalize(store->embedding_put);
+    sqlite3_finalize(store->embedding_touch);
     if (store->db != NULL) {
         /* Closing the connection rolls back any unfinished transaction. */
         int code = sqlite3_close_v2(store->db);
@@ -213,7 +244,7 @@ void store_destroy(tl_store *store) {
 tl_status store_begin(tl_store *store) {
     if (store == NULL)
         return TL_INVALID;
-    if (store->transaction || store->reading)
+    if (store->transaction || store->reading || store->embedding_batch)
         return TL_STATE;
     tl_status status = execute(store, "BEGIN IMMEDIATE");
     if (status != TL_OK)
@@ -772,5 +803,178 @@ tl_status store_history_prune(tl_store *store, int64_t cutoff, bool clear) {
         if (rollback != TL_OK)
             status = rollback;
     }
+    return status;
+}
+
+static tl_status embedding_bind(sqlite3_stmt *statement, uint64_t emb_gen, const char *text) {
+    char generation[21];
+    int length = snprintf(generation, sizeof(generation), "%llu", (unsigned long long)emb_gen);
+    if (length < 0 || (size_t)length >= sizeof(generation))
+        return TL_LIMIT;
+    if (sqlite3_bind_text(statement, 1, generation, -1, SQLITE_TRANSIENT) != SQLITE_OK)
+        return TL_IO;
+    return text == NULL ? TL_OK : bind_blob(statement, 2, text, strlen(text));
+}
+static tl_status embedding_execute(tl_store *store, const char *sql, uint64_t emb_gen,
+                                   const char *descriptor) {
+    sqlite3_stmt *statement = NULL;
+    if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
+        return TL_IO;
+    tl_status status = embedding_bind(statement, emb_gen, NULL);
+    if (status == TL_OK && descriptor != NULL &&
+        sqlite3_bind_text(statement, 2, descriptor, -1, SQLITE_TRANSIENT) != SQLITE_OK)
+        status = TL_IO;
+    if (status == TL_OK && sqlite3_step(statement) != SQLITE_DONE)
+        status = TL_IO;
+    if (sqlite3_finalize(statement) != SQLITE_OK)
+        status = TL_IO;
+    return status;
+}
+tl_status store_embedding_stage(tl_store *store, uint64_t emb_gen, const char *descriptor) {
+    if (store == NULL || emb_gen == 0 || descriptor == NULL || !json_utf8(descriptor) ||
+        strlen(descriptor) > 4096 || descriptor[0] == 0)
+        return TL_INVALID;
+    if (store->transaction || store->reading || store->embedding_batch)
+        return TL_STATE;
+    tl_status status =
+        embedding_execute(store,
+                          "INSERT INTO embedding_models(emb_gen,descriptor) VALUES(?1,?2) "
+                          "ON CONFLICT(emb_gen) DO UPDATE SET descriptor=excluded.descriptor "
+                          "WHERE descriptor=excluded.descriptor",
+                          emb_gen, descriptor);
+    if (status == TL_OK && sqlite3_changes(store->db) == 0)
+        return TL_STATE;
+    if (status == TL_OK)
+        status = embedding_execute(store, "UPDATE embedding_cache SET touched=0 WHERE emb_gen=?1",
+                                   emb_gen, NULL);
+    return status;
+}
+static bool embedding_decode(sqlite3_stmt *statement, float *values, size_t dimensions) {
+    const unsigned char *bytes = sqlite3_column_blob(statement, 0);
+    bool valid = bytes != NULL;
+    double norm = 0;
+    for (size_t i = 0; i < dimensions && valid; i++) {
+        uint32_t bits = (uint32_t)bytes[i * 4] | (uint32_t)bytes[i * 4 + 1] << 8 |
+                        (uint32_t)bytes[i * 4 + 2] << 16 | (uint32_t)bytes[i * 4 + 3] << 24;
+        memcpy(values + i, &bits, sizeof(float));
+        valid = isfinite(values[i]);
+        norm += (double)values[i] * values[i];
+    }
+    return valid && fabs(norm - 1) < 1e-4;
+}
+tl_status store_embedding_get(tl_store *store, uint64_t emb_gen, const char *text, float *values,
+                              size_t dimensions, bool *out_found) {
+    if (out_found != NULL)
+        *out_found = false;
+    if (store == NULL || emb_gen == 0 || text == NULL || values == NULL || out_found == NULL ||
+        dimensions == 0 || dimensions > 4096)
+        return TL_INVALID;
+    if (store->transaction || store->reading)
+        return TL_STATE;
+    sqlite3_stmt *statement = store->embedding_get;
+    sqlite3_reset(statement);
+    sqlite3_clear_bindings(statement);
+    tl_status status = embedding_bind(statement, emb_gen, text);
+    int code = status == TL_OK ? sqlite3_step(statement) : SQLITE_ERROR;
+    if (code == SQLITE_ROW && sqlite3_column_bytes(statement, 0) == (int)(dimensions * 4)) {
+        *out_found = embedding_decode(statement, values, dimensions);
+    } else if (code != SQLITE_ROW && code != SQLITE_DONE) {
+        status = TL_IO;
+    }
+    if (sqlite3_reset(statement) != SQLITE_OK)
+        status = TL_IO;
+    if (status == TL_OK && *out_found) {
+        statement = store->embedding_touch;
+        sqlite3_reset(statement);
+        sqlite3_clear_bindings(statement);
+        status = embedding_bind(statement, emb_gen, text);
+        if (status == TL_OK && sqlite3_step(statement) != SQLITE_DONE)
+            status = TL_IO;
+        if (sqlite3_reset(statement) != SQLITE_OK)
+            status = TL_IO;
+    }
+    return status;
+}
+tl_status store_embedding_put(tl_store *store, uint64_t emb_gen, const char *text,
+                              const float *values, size_t dimensions) {
+    if (store == NULL || emb_gen == 0 || text == NULL || values == NULL || dimensions == 0 ||
+        dimensions > 4096)
+        return TL_INVALID;
+    if (store->transaction || store->reading)
+        return TL_STATE;
+    unsigned char payload[4096 * 4];
+    double norm = 0;
+    for (size_t i = 0; i < dimensions; i++) {
+        if (!isfinite(values[i]))
+            return TL_INVALID;
+        norm += (double)values[i] * values[i];
+        uint32_t bits = 0;
+        memcpy(&bits, values + i, sizeof(float));
+        for (size_t j = 0; j < 4; j++)
+            payload[i * 4 + j] = (unsigned char)(bits >> (j * 8));
+    }
+    if (fabs(norm - 1) >= 1e-4)
+        return TL_INVALID;
+    sqlite3_stmt *statement = store->embedding_put;
+    sqlite3_reset(statement);
+    sqlite3_clear_bindings(statement);
+    tl_status status = embedding_bind(statement, emb_gen, text);
+    if (status == TL_OK)
+        status = bind_blob(statement, 3, (const char *)payload, dimensions * 4);
+    if (status == TL_OK && sqlite3_step(statement) != SQLITE_DONE)
+        status = TL_IO;
+    if (sqlite3_reset(statement) != SQLITE_OK)
+        status = TL_IO;
+    return status;
+}
+tl_status store_embedding_activate(tl_store *store, uint64_t emb_gen) {
+    if (store == NULL || emb_gen == 0)
+        return TL_INVALID;
+    if (store->transaction || store->reading || store->embedding_batch)
+        return TL_STATE;
+    tl_status status = execute(store, "BEGIN IMMEDIATE");
+    if (status != TL_OK)
+        return status;
+    status = embedding_execute(store, "UPDATE embedding_models SET active=1 WHERE emb_gen=?1",
+                               emb_gen, NULL);
+    if (status == TL_OK && sqlite3_changes(store->db) == 0)
+        status = TL_STATE;
+    const char *steps[] = {"UPDATE embedding_models SET active=(emb_gen=?1)",
+                           "DELETE FROM embedding_cache WHERE emb_gen!=?1 OR touched=0",
+                           "DELETE FROM embedding_models WHERE emb_gen!=?1"};
+    for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]) && status == TL_OK; i++)
+        status = embedding_execute(store, steps[i], emb_gen, NULL);
+    if (status == TL_OK)
+        status = execute(store, "COMMIT");
+    if (status != TL_OK) {
+        tl_status rollback = execute(store, "ROLLBACK");
+        if (rollback != TL_OK)
+            return rollback;
+    }
+    return status;
+}
+
+tl_status store_embedding_batch_begin(tl_store *store) {
+    if (store == NULL)
+        return TL_INVALID;
+    if (store->transaction || store->reading || store->embedding_batch)
+        return TL_STATE;
+    tl_status status = execute(store, "BEGIN IMMEDIATE");
+    if (status == TL_OK)
+        store->embedding_batch = true;
+    return status;
+}
+tl_status store_embedding_batch_end(tl_store *store, bool commit) {
+    if (store == NULL)
+        return TL_INVALID;
+    if (!store->embedding_batch)
+        return TL_STATE;
+    tl_status status = execute(store, commit ? "COMMIT" : "ROLLBACK");
+    if (status != TL_OK && commit) {
+        tl_status rollback = execute(store, "ROLLBACK");
+        if (rollback != TL_OK)
+            status = rollback;
+    }
+    store->embedding_batch = false;
     return status;
 }

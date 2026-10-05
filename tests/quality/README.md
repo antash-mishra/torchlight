@@ -38,3 +38,12 @@ library as the baseline path above; no tracked source needs modification.
 The evaluator fails unless held-out nDCG and candidate recall improve. Keep the
 baseline frozen; do not move query variants between splits after measuring them.
 Use a larger independently labeled corpus before drawing broad quality claims.
+
+## M4 English semantic fixture
+
+`semantic.json` contains 36 items and 52 queries with target-family splits.
+`scripts/evaluate_semantic.py` compares local pinned Potion dimensions/fusion;
+`check_potion_parity.py` checks C/reference inference and int8 neighbors;
+`evaluate_semantic_daemon.py` evaluates the actual two-phase resident path.
+See [model evaluation](../../docs/m4-model-evaluation.md). Normal tests do not
+require model weights. Private Documents names are not committed.

@@ -99,4 +99,29 @@ tl_status store_open_event(tl_store *store, const char *event_id, uint64_t file_
 /** Delete history older than cutoff, or all history when clear is true. Applies
  * to opens and searches, never catalog rows/gen. TL_INVALID/STATE/IO. */
 tl_status store_history_prune(tl_store *store, int64_t cutoff, bool clear);
+/** Stage a complete UTF-8 model/transform descriptor and clear cache marks.
+ * gen is nonzero and descriptor borrowed, <=4096 bytes. Never advances
+ * catalog_gen. Background-only; no active catalog transaction. TL_INVALID/IO/
+ * STATE. Staged cache survives restart but is never interpreted as active. */
+tl_status store_embedding_stage(tl_store *store, uint64_t emb_gen, const char *descriptor);
+/** Read/touch an exact prepared-text cache key in one emb_gen. Copy finite
+ * normalized floats into caller buffer; out_found false for missing/wrong-sized/corrupt
+ * cache. No ownership transfer. Background-only. TL_INVALID/IO/STATE. */
+tl_status store_embedding_get(tl_store *store, uint64_t emb_gen, const char *text, float *values,
+                              size_t dimensions, bool *out_found);
+/** Persist finite normalized floats under exact prepared text/model version.
+ * All pointers borrowed; dimensions 1..4096. Background-only, no catalog_gen
+ * change. TL_INVALID/IO/STATE. Uses little-endian float32 cache payload. */
+tl_status store_embedding_put(tl_store *store, uint64_t emb_gen, const char *text,
+                              const float *values, size_t dimensions);
+/** Atomically activate staged descriptor and discard unmarked/other-model
+ * cache rows. Call only after complete resident staging validates. Existing
+ * query snapshots remain owned in RAM. Background-only. TL_INVALID/IO/STATE. */
+tl_status store_embedding_activate(tl_store *store, uint64_t emb_gen);
+/** Begin/end a bounded background cache batch, amortizing WAL commits.
+ * Use this connection only for embedding get/put until end; false rolls back.
+ * No ownership transfer. TL_INVALID/IO/STATE; end always clears batch state.
+ * Never advances catalog_gen. Stop batching before stage/activate. */
+tl_status store_embedding_batch_begin(tl_store *store);
+tl_status store_embedding_batch_end(tl_store *store, bool commit);
 #endif

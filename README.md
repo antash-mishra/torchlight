@@ -135,3 +135,14 @@ A local `machine.mk` (ignored) can set `DEPS_PREFIX`, `CLANG_TIDY`, and
 `CPPCHECK` for an unpacked development environment; normal builds use
 `pkg-config`. This workspace's validation packages were unpacked under
 `/tmp/torchlight-deps` because system installation required a sudo password.
+
+### Optional local semantic search
+
+M4's provisional English backend is native Potion retrieval 32M (256d).
+Export the pinned model using `scripts/export_potion.py`, then pass
+`torchlightd --model /absolute/path/potion-256.tlm`. The daemon embeds names,
+nearby folders and app metadata in the background; contents are not read.
+Lexical results appear first, followed by a semantic final or bounded fallback.
+Model loading is local and does not require Python in the launcher.
+[Model research, setup and measured limits](docs/m4-model-evaluation.md) explain
+the optional evaluation tools and remaining 500k performance acceptance.

@@ -190,7 +190,57 @@ static void check_ties_and_readers(void) {
     vector_destroy(index);
 }
 
+static void check_int8(void) {
+    tl_vector *index = NULL;
+    CHECK(vector_create_int8(11, 5, 3, 1, &index) == TL_LIMIT && index == NULL);
+    CHECK(vector_create_int8(11, 5, 3, SIZE_MAX, &index) == TL_OK);
+    float values[] = {0.8F, -0.6F, 0, 0, 0};
+    CHECK(vector_add(index, 1, 11, values, 5) == TL_OK);
+    float other[] = {0, 0, 1, 0, 0};
+    CHECK(vector_add(index, 2, 11, other, 5) == TL_OK);
+    CHECK(vector_finish(index) == TL_OK);
+    tl_vector_workspace *workspace = NULL;
+    CHECK(vector_workspace_create(index, &workspace) == TL_OK);
+    tl_vector_result results[2];
+    size_t count = 0;
+    CHECK(vector_query(index, workspace, 11, values, 5, results, 2, &count) == TL_OK);
+    CHECK(count == 2 && results[0].id == 1 && results[1].id == 2);
+    const float integer[] = {102, -76, 0, 0, 0};
+    CHECK(fabs(results[0].cosine - (double)reference_cosine(integer, values, 5)) < 1e-6);
+    CHECK(results[1].cosine == 0);
+    CHECK(vector_query(index, workspace, 12, values, 5, results, 2, &count) == TL_STATE);
+    CHECK(vector_bytes(index) < 256);
+    vector_workspace_destroy(workspace);
+    vector_destroy(index);
+}
+
+static void check_binary(void) {
+    tl_vector *index = NULL;
+    CHECK(vector_create_binary_int8(11, 5, 3, 0, SIZE_MAX, &index) == TL_INVALID);
+    CHECK(vector_create_binary_int8(11, 5, 3, 2, SIZE_MAX, &index) == TL_OK);
+    float first[] = {1, -1, 1, -1, 1}, second[] = {-1, 1, -1, 1, -1};
+    CHECK(vector_add(index, 1, 11, first, 5) == TL_OK);
+    CHECK(vector_add(index, 2, 11, second, 5) == TL_OK);
+    CHECK(vector_add(index, 3, 11, first, 5) == TL_OK);
+    CHECK(vector_finish(index) == TL_OK);
+    tl_vector_workspace *workspace = NULL;
+    CHECK(vector_workspace_create(index, &workspace) == TL_OK);
+    tl_vector_result results[3];
+    size_t count = 0;
+    CHECK(vector_query(index, workspace, 11, first, 5, results, 2, &count) == TL_OK);
+    CHECK(count == 2 && results[0].id == 1 && results[1].id == 3);
+    CHECK(vector_query(index, workspace, 11, first, 5, results, 1, &count) == TL_OK);
+    CHECK(count == 1 && results[0].id == 1);
+    CHECK(vector_query(index, workspace, 11, first, 5, results, 3, &count) == TL_LIMIT);
+    CHECK(vector_query(index, workspace, 11, second, 5, results, 2, &count) == TL_OK);
+    CHECK(count == 2 && results[0].id == 2 && results[1].id == 1);
+    vector_workspace_destroy(workspace);
+    vector_destroy(index);
+}
+
 void test_vector(void) {
+    check_binary();
+    check_int8();
     check_reference();
     check_normalization();
     check_lifecycle();

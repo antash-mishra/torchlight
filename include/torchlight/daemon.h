@@ -1,4 +1,4 @@
-/* Resident lexical-only daemon orchestration with bounded nonblocking clients. */
+/* Resident lexical/hybrid daemon orchestration with bounded nonblocking clients. */
 #ifndef TORCHLIGHT_DAEMON_H
 #define TORCHLIGHT_DAEMON_H
 #include "torchlight/writer.h"
@@ -8,8 +8,10 @@ typedef struct tl_daemon tl_daemon;
 typedef struct {
     const tl_config *config;
     const char *socket_path;
+    const char *model_path;
     size_t watch_capacity, max_entries, max_path_bytes;
     unsigned rescan_ms, history_days;
+    unsigned semantic_deadline_ms;
     bool history;
 } tl_daemon_options;
 /** Create owned daemon with socket/database singleton locks, saved resident

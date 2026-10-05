@@ -21,7 +21,7 @@ def percentiles(values):
 
 
 class Resident:
-    def __init__(self, binary, base, size):
+    def __init__(self, binary, base, size, model=None):
         self.base, self.size = base, size
         self.socket_path = base / "socket"
         self.database = base / "catalog.db"
@@ -34,6 +34,9 @@ class Resident:
         self.command = [binary, "--db", str(self.database), "--config", str(self.config),
                         "--socket", str(self.socket_path), "--no-history", "--rescan-ms", "3600000",
                         "--max-entries", str(size + 10000)]
+        self.model = model
+        if model:
+            self.command += ["--model", model, "--semantic-deadline-ms", "1000"]
 
     def start(self):
         start = time.perf_counter()
@@ -63,9 +66,16 @@ class Resident:
         request = dict(version=1, request_id=str(self.sequence), op=operation, **fields)
         start = time.perf_counter_ns()
         self.connection.sendall(json.dumps(request).encode() + b"\n")
-        line = self.stream.readline(1024 * 1024)
+        response = json.loads(self.stream.readline(1024 * 1024))
+        initial = response
+        lexical_ms = (time.perf_counter_ns() - start) / 1e6
+        while response["phase"] != "final":
+            response = json.loads(self.stream.readline(1024 * 1024))
         elapsed = (time.perf_counter_ns() - start) / 1e6
-        response = json.loads(line)
+        response["lexical_elapsed_ms"] = lexical_ms
+        for field in ("indexing", "timing"):
+            if field not in response and field in initial:
+                response[field] = initial[field]
         assert response["status"] == "ok", response
         assert response["phase"] == "final" and response["request_id"] == request["request_id"]
         return response, elapsed
@@ -122,7 +132,7 @@ def seed_catalog(service, paths):
         return connection.execute("SELECT count(*) FROM files").fetchone()[0]
 
 
-def benchmark(binary, fixture, size):
+def benchmark(binary, fixture, size, model=None):
     with tempfile.TemporaryDirectory(prefix="torchlight-ipc-bench-") as temporary:
         base = Path(temporary)
         live = base / "live"
@@ -134,7 +144,7 @@ def benchmark(binary, fixture, size):
         subprocess.run([fixture, str(size), str(path_file), str(query_file)], check=True)
         paths = path_file.read_bytes().split(b"\0")[:-1]
         queries = [json.loads(line)["query"] for line in query_file.read_text().splitlines()]
-        service = Resident(binary, base, size)
+        service = Resident(binary, base, size, model)
         try:
             service.start()  # Initialize schema and the real 100-file scan.
             initial = service.idle()
@@ -144,10 +154,23 @@ def benchmark(binary, fixture, size):
             startup = service.start()
             first, first_ms = service.call(query="projectNotes.md", limit=10)
             service.idle()
+            semantic_ready_ms = None
+            if model:
+                ready_start = time.perf_counter()
+                deadline = time.monotonic() + 600
+                while time.monotonic() < deadline:
+                    response, _ = service.call(query="projectNotes.md", limit=10)
+                    if response['emb_gen'] is not None:
+                        semantic_ready_ms = (time.perf_counter() - ready_start) * 1000
+                        break
+                    time.sleep(.05)
+                else:
+                    raise TimeoutError('semantic publication')
             steady_memory = service.memory()
-            round_trip, engine = [], []
+            round_trip, engine, lexical_phase = [], [], []
             for query in queries:
                 response, elapsed = service.call(query=query, limit=10)
+                lexical_phase.append(response['lexical_elapsed_ms'])
                 round_trip.append(elapsed)
                 engine.append(response["timing"]["engine_us"] / 1000)
             # Measure a real filesystem batch while rebuilding a large resident
@@ -175,6 +198,7 @@ def benchmark(binary, fixture, size):
                 raise TimeoutError("update publication")
             latest = service.idle()
             output = dict(requested_paths=size, catalog_entries=entries, held_out_queries=len(queries),
+                          semantic_ready_ms=semantic_ready_ms, lexical_phase_ms=percentiles(lexical_phase),
                           startup_ms=round(startup, 3), first_query_ms=round(first_ms, 3),
                           first_engine_ms=first["timing"]["engine_us"] / 1000,
                           engine_ms=percentiles(engine), round_trip_ms=percentiles(round_trip),
@@ -194,6 +218,7 @@ if __name__ == "__main__":
     parser.add_argument("daemon")
     parser.add_argument("fixture")
     parser.add_argument("--sizes", nargs="+", type=int, default=[50000, 500000])
+    parser.add_argument("--model")
     args = parser.parse_args()
     cpu = next((line.split(":", 1)[1].strip() for line in Path("/proc/cpuinfo").read_text().splitlines()
                 if line.startswith("model name")), "unknown")
@@ -201,4 +226,5 @@ if __name__ == "__main__":
                           ram_kib=os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") // 1024,
                           build="C17 -O3 -DNDEBUG", corpus="M1 synthetic seed 42, deduplicated; held-out query seed 2")), flush=True)
     for size in args.sizes:
-        benchmark(str(Path(args.daemon).resolve()), str(Path(args.fixture).resolve()), size)
+        benchmark(str(Path(args.daemon).resolve()), str(Path(args.fixture).resolve()), size,
+                  str(Path(args.model).resolve()) if args.model else None)

@@ -144,3 +144,9 @@ search reuses an independent engine over localized metadata without teaching
 lexical about GTK, XDG or launch commands.
 
 M3 Part 2 adds exhaustive scorer/edit references and a [mixed relevance evaluator](../../../tests/quality/README.md). See [ADR 0020](../../adr/0020-m3-part2-search-quality.md) and [measurements](../../m3-part2-completion.md).
+
+## M4 metadata integration
+
+The entry/context APIs expose immutable sorted metadata and context clipped at
+indexed roots. lexical_exactness exposes exact tiers without leaking numeric
+score constants to fusion. Query scoring algorithms remain unchanged.

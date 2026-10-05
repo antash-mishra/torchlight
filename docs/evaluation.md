@@ -398,3 +398,11 @@ The fresh-workspace timing excludes allocation/worker startup and is not an OS
 cold-cache measurement. Prefix edits and optimal alignment increase work;
 the original 5 ms target remains separate optimization work. Earlier statements
 above about missing prefix correction describe the historical M1 baseline.
+
+## M4 native model and hybrid evaluation
+
+[Model evaluation](m4-model-evaluation.md) records pinned English Potion research,
+small target-family splits, native parity, quantized/approximate reference recall,
+two-phase daemon latency/RSS and the private Documents aggregate smoke check.
+M4 functionality is opt-in; 500k latency and broader model/relevance acceptance
+remain open. Normal sanitizer tests require no downloaded model.

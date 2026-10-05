@@ -223,3 +223,39 @@ tl_status catalog_destroy(tl_catalog *catalog) {
 bool catalog_is_dir(const tl_catalog_reader *reader, uint64_t id) {
     return reader != NULL && reader->leased && lexical_is_dir(reader->snapshot->engine, id);
 }
+tl_status catalog_pin(tl_catalog *catalog, tl_catalog_snapshot **out) {
+    if (catalog == NULL || out == NULL)
+        return TL_INVALID;
+    lock_catalog(catalog);
+    *out = catalog->active;
+    if (*out != NULL) {
+        (*out)->leased++;
+        catalog->readers++;
+    }
+    unlock_catalog(catalog);
+    return *out == NULL ? TL_STATE : TL_OK;
+}
+void catalog_unpin(tl_catalog_snapshot *snapshot) {
+    if (snapshot == NULL)
+        return;
+    lock_catalog(snapshot->owner);
+    snapshot->leased--;
+    snapshot->owner->readers--;
+    unlock_catalog(snapshot->owner);
+}
+uint64_t catalog_snapshot_gen(const tl_catalog_snapshot *snapshot) {
+    return snapshot == NULL ? 0 : snapshot->catalog_gen;
+}
+size_t catalog_snapshot_count(const tl_catalog_snapshot *snapshot) {
+    return snapshot == NULL ? 0 : lexical_count(snapshot->engine);
+}
+tl_status catalog_snapshot_entry(const tl_catalog_snapshot *snapshot, size_t position, uint64_t *id,
+                                 const char **path, bool *is_dir) {
+    if (snapshot == NULL)
+        return TL_INVALID;
+    return lexical_entry(snapshot->engine, position, id, path, is_dir);
+}
+
+const char *catalog_snapshot_context(const tl_catalog_snapshot *snapshot, size_t position) {
+    return snapshot == NULL ? NULL : lexical_context_path(snapshot->engine, position);
+}

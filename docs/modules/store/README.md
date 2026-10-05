@@ -1,6 +1,6 @@
 # store
 
-> **Status:** Implemented (M1/M2/M3): schema v3, incarnation-aware ids, snapshots, renames and history
+> **Status:** Implemented (M4): schema v4, versioned embedding cache plus catalog/history
 > **Source:** `src/storage/store.c` · **Header:** `include/torchlight/store.h`
 > **Tests:** `tests/unit/test_store.c`, `tests/unit/test_identity.c`, CLI/daemon integration
 
@@ -12,7 +12,7 @@ Migration v1 creates PLAN.md's files/searches/opens/meta schema and a BLOB-keyed
 `roots` table so empty queries can identify indexed roots. `PRAGMA user_version`
 controls migrations; `meta.schema_version` records the same version. Migration
 v2 adds a nullable 29-byte BLOB identity, preserving legacy ids and history.
-Unknown schema versions are rejected. Embedding search remains planned; M2 writes optional
+Unknown schema versions are rejected. Migration v4 adds staged embedding model descriptors and prepared-text float cache; M2 writes optional
 search/open history through the service writer.
 
 `store_begin/put/prune/commit` form one refresh of one or more roots. A temporary BLOB
@@ -97,3 +97,13 @@ retries and rejects conflicting events. Retention/clear delete desktop history
 alongside file history in one transaction. The v1/v2 migrations preserve file
 ids, identity, existing history and catalog_gen. store_load now exposes is_dir
 with each entry, so clients can receive resident file/folder kinds.
+
+## M4 integration
+
+See [native backend/service decision](../../adr/0023-m4-native-potion-and-two-phase-search.md)
+and [measured model evaluation](../../m4-model-evaluation.md).
+
+Embedding cache operations use a separate background connection, never query SQL.
+Finite little-endian floats are keyed by full emb_gen and exact prepared text.
+Batches amortize WAL commits; complete staging activates and prunes cache rows
+atomically. Cache changes do not advance catalog_gen or alter history.

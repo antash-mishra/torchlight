@@ -8,6 +8,7 @@ typedef struct tl_desktop tl_desktop;
 typedef struct {
     uint64_t id, revision;
     const char *desktop_id, *filename, *name, *icon;
+    const char *generic_name, *keywords;
     bool settings;
 } tl_desktop_entry;
 /** Create owned XDG catalog and refresh worker. Environment/locale must remain
@@ -30,4 +31,11 @@ tl_status desktop_query(tl_desktop *desktop, const char *query, tl_result *resul
 const tl_desktop_entry *desktop_resolve(const tl_desktop *desktop, uint64_t id);
 /** Request early refresh; thread-safe, no I/O. Changes also refresh every second. */
 void desktop_refresh(tl_desktop *desktop);
+/** Borrow current snapshot sequence/count while holding an exclusive query
+ * lease. Zero for NULL; no allocation/I/O or errors. Sequence starts at one. */
+uint64_t desktop_gen(const tl_desktop *desktop);
+size_t desktop_count(const tl_desktop *desktop);
+/** Borrow entry at sorted-id position under a query lease, NULL if absent.
+ * Strings (including generic_name/keywords) borrow lease. No allocation/I/O. */
+const tl_desktop_entry *desktop_entry(const tl_desktop *desktop, size_t position);
 #endif

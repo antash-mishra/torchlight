@@ -1,15 +1,14 @@
 # embed
 
-> **Status:** M4 foundation implemented; model backend and preprocessing pending
+> **Status:** M4 adapter implemented; native Potion backend and preprocessing available
 > **Source:** `src/index/embed.c` · **Header:** `include/torchlight/embed.h`
 > **Tests:** `tests/unit/test_embed.c`
 
 ## Purpose
 
 Owns a swappable local `tl_embedder` backend, immutable model metadata and
-validated float output. It supplies the interface for model comparison; it does
-not yet load or run a trained model. English retrieval is the first evaluation
-target. See [M4 implementation](../../m4-implementation.md) and
+validated float output. It supplies the interface for model comparison; the
+separate Potion module loads and runs the trained English backend through it. See [M4 implementation](../../m4-implementation.md) and
 [ADR 0022](../../adr/0022-m4-semantic-foundation.md).
 
 ## Public API and ownership
@@ -37,22 +36,17 @@ work. There is no model activation or snapshot registry in this adapter.
 
 Each adapter has one inference caller at a time. Independent adapters can use
 independent contexts; the interface assumes neither backend thread safety nor
-preemption. Queuing and cancellation are later service responsibilities.
+preemption. Queuing and cancellation belong to the implemented semantic service.
 
 ## Text preparation and model selection
 
 Raw filesystem paths retain their original byte identity in lexical search and
 actions. They cannot be passed directly to inference when malformed UTF-8 is
-present. Versioned path/application text preparation is still pending and must
-include useful names, extensions, nearby folders and application metadata.
-
-Compare `minishlab/potion-retrieval-32M` and
-`ibm-granite/granite-embedding-small-english-r2`, with
-`BAAI/bge-small-en-v1.5` as a baseline. The [shortlist](../../search-quality.md)
-links primary model documentation. No model/runtime is installed or selected.
-Validate C tokenization/inference against reference embeddings before adopting
-a backend. Common folders, abbreviations and reduced dimensions need labeled
-launcher evaluation, separate from published general retrieval scores.
+present. The native Potion backend provides `launcher-text-1` preprocessing and
+pinned-reference inference. Names/extensions/nearby scoped folders and app metadata
+are evaluated with English queries. [Model evaluation](../../m4-model-evaluation.md)
+records the selected provisional backend, parity and remaining comparison gates.
+The adapter itself still owns no activation registry; the service provides it.
 
 ## Testing
 
@@ -66,3 +60,8 @@ adapter contract and do not establish trained-model parity or semantic quality.
 - [vector](../vector/README.md)
 - [rank](../rank/README.md)
 - [M4 work remaining](../../m4-implementation.md)
+
+## M4 integration
+
+See [native backend/service decision](../../adr/0023-m4-native-potion-and-two-phase-search.md)
+and [measured model evaluation](../../m4-model-evaluation.md).

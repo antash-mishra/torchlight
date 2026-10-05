@@ -1,0 +1,18 @@
+{
+  "cases": 108,
+  "dimensions": 256,
+  "maximum_absolute_error": 0.0,
+  "tolerance": 2e-06,
+  "native_load_ms": 288.7824969366193,
+  "native_encode_us": {
+    "50": 11.652009561657906,
+    "95": 40.556956082582474,
+    "99": 200.99565386772073
+  },
+  "includes_ctypes_overhead": true,
+  "native_int8": {
+    "reference_order_cases": 52,
+    "float_recall10": 0.9788461538461539,
+    "maximum_cosine_error": 1.353404215365117e-07
+  }
+}

@@ -17,13 +17,13 @@ See [desktop setup](docs/desktop-setup.md) and the
 limits. The [interactive preview](docs/m3-gui-preview.html) remains the original
 file-result design reference.
 
-M4 has started with a swappable embedder adapter, owned float cosine reference
-and bounded RRF baseline with exact-match priority. English is the first model
-evaluation target. Model comparison, trained C backend, compression, background
-embedding persistence and coherent two-phase service remain pending. See
-[M4 implementation and measurements](docs/m4-implementation.md) and
-[ADR 0022](docs/adr/0022-m4-semantic-foundation.md); the daemon still searches
-lexically, and no semantic model/runtime has been selected.
+M4's functional English-first path is implemented: native Potion 256d,
+float/int8 retrieval, versioned background cache, exact-priority RRF and coherent
+two-phase service. It is opt-in with `torchlightd --model PATH.tlm`.
+[M4 implementation](docs/m4-implementation.md),
+[model evaluation](docs/m4-model-evaluation.md) and
+[ADR 0023](docs/adr/0023-m4-native-potion-and-two-phase-search.md) record the
+provisional selection and remaining 500k latency/broader relevance acceptance.
 
 M3 Part 2 strengthens the existing name search before adding embeddings:
 field-aware ranking, unfinished-word typo retrieval, better fuzzy scoring and
@@ -457,9 +457,8 @@ actions, installable desktop entry and systemd user unit. See
 [desktop setup](docs/desktop-setup.md), [M3 verification](docs/m3-completion.md)
 and [ADR 0015](docs/adr/0015-m3-desktop-catalog-and-launcher.md).
 M3 Part 2 search quality is implemented; see
-[its verification and measured tradeoffs](docs/m3-part2-completion.md). M4's
-semantic foundation is started; trained models and resident hybrid integration
-remain pending. M5 personal recommendations follow M4.
+[its verification and measured tradeoffs](docs/m3-part2-completion.md). M4 implements opt-in native semantics, background cache and two-phase hybrid
+queries; large-catalog latency and broader relevance acceptance remain open. M5 personal recommendations follow M4.
 Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
 tracked explicitly in the verification report.
 
@@ -536,10 +535,11 @@ tracked explicitly in the verification report.
    deadline/error fallback and selection stability. Name results appear
    immediately; semantic work never delays the first response. File contents
    remain a possible later extension.
-   Started in [ADR 0022](docs/adr/0022-m4-semantic-foundation.md): embedder adapter,
-   float reference and exact-priority RRF. See [implementation and remaining
-   gates](docs/m4-implementation.md); trained models and resident hybrid queries
-   are not yet implemented.
+   Functional opt-in implementation in [ADR 0023](docs/adr/0023-m4-native-potion-and-two-phase-search.md):
+   native Potion, float/int8 retrieval, persisted background caching and coherent
+   two-phase RRF. See [implementation and acceptance gates](docs/m4-implementation.md)
+   and [measured model/daemon evaluation](docs/m4-model-evaluation.md); 500k latency
+   and broader model/relevance acceptance remain open.
 6. **M5: Personal recommendations and ranking.** After M4, use optional
    resident frecency and query-to-open summaries for both files and applications.
    Apply bounded boosts for frequently/recently opened and previously selected

@@ -1,6 +1,6 @@
 # daemon
 
-> **Status:** Implemented (M2/M3): resident file/application service and bounded clients
+> **Status:** Implemented (M4): opt-in two-phase hybrid service and bounded clients
 > **Source:** `src/service/daemon.c`, `src/bin/torchlightd.c`
 > **Header:** `include/torchlight/daemon.h`
 > **Tests:** `tests/test_daemon.py`, `tests/unit/test_catalog.c`, `tests/unit/test_writer.c`
@@ -21,7 +21,8 @@ cannot pin old catalogs. Superseded query frames already in the input buffer
 receive cancelled completion; duplicate active ids are rejected.
 
 Every M2 request ends with `phase: final`; query completion uses
-`reason: lexical_only`. Each accepted query receives a random-session/sequence
+`reason: lexical_only` when no model is configured. With `--model`, ready matching
+snapshots send lexical then final hybrid/fallback through the semantic service. Each accepted query receives a random-session/sequence
 search id before one optional history enqueue. Resolve leases the current view;
 stale ids return `stale_result`. Open recording is asynchronous and validates the
 current catalog id, without launching an external application.
@@ -51,3 +52,13 @@ output, and does no new filesystem/SQL/allocation work. Resolve/open dispatches
 desktop session ids to that current catalog. Open still records acceptance only;
 actual activation belongs to the UI. Reconcile wakes both background catalogs.
 See [desktop](../desktop/README.md), `tests/test_desktop.py` and ADR 0015.
+
+## M4 integration
+
+See [native backend/service decision](../../adr/0023-m4-native-potion-and-two-phase-search.md)
+and [measured model evaluation](../../m4-model-evaluation.md).
+
+Status includes semantic availability, staging progress, vector bytes and the
+last background error. The coordinator enforces semantic deadlines independently
+of blocked inference/cache work. Write-half-closed clients can still receive
+both responses. Response-limit terminal errors cancel pending semantic jobs.

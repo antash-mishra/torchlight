@@ -56,3 +56,9 @@ A complete scan is periodic rather than driven by inotify, avoiding extra watch
 pressure. Application install/remove lag is scan/build time plus at most one
 second. See [ADR 0015](../../adr/0015-m3-desktop-catalog-and-launcher.md) and
 [review fixes](../../adr/0017-m3-snapshot-cancellation-and-acceptance.md).
+
+## M4 metadata integration
+
+The service can copy sorted entry names, generic names, keywords, icons and
+revisions under the existing exclusive lease. desktop_gen identifies its view;
+owned semantic metadata is used after releasing this lease, before inference.

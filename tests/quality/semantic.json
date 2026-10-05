@@ -1,0 +1,670 @@
+{
+  "schema": 1,
+  "description": "English filename/path and desktop metadata only; no file contents. Target families split before evaluation.",
+  "entries": [
+    {
+      "key": "tax",
+      "kind": "file",
+      "path": "/home/demo/Finance/Income_tax_return_2024.pdf"
+    },
+    {
+      "key": "invoice",
+      "kind": "file",
+      "path": "/home/demo/Finance/Client_invoice_March.pdf"
+    },
+    {
+      "key": "budget",
+      "kind": "file",
+      "path": "/home/demo/Finance/Household_budget.xlsx"
+    },
+    {
+      "key": "bank",
+      "kind": "file",
+      "path": "/home/demo/Finance/Bank_statement_July.pdf"
+    },
+    {
+      "key": "insurance",
+      "kind": "file",
+      "path": "/home/demo/Personal/Car_insurance_policy.pdf"
+    },
+    {
+      "key": "passport",
+      "kind": "file",
+      "path": "/home/demo/Personal/Passport_scan.pdf"
+    },
+    {
+      "key": "flight",
+      "kind": "file",
+      "path": "/home/demo/Travel/Delhi_flight_booking.pdf"
+    },
+    {
+      "key": "hotel",
+      "kind": "file",
+      "path": "/home/demo/Travel/Goa_hotel_reservation.pdf"
+    },
+    {
+      "key": "holiday",
+      "kind": "file",
+      "path": "/home/demo/Photos/Summer_beach_holiday.jpg"
+    },
+    {
+      "key": "resume",
+      "kind": "file",
+      "path": "/home/demo/Career/Software_engineer_resume.pdf"
+    },
+    {
+      "key": "contract",
+      "kind": "file",
+      "path": "/home/demo/Career/Employment_contract.pdf"
+    },
+    {
+      "key": "lecture",
+      "kind": "file",
+      "path": "/home/demo/University/Physics_lecture_notes.pdf"
+    },
+    {
+      "key": "exam",
+      "kind": "file",
+      "path": "/home/demo/University/Calculus_exam_schedule.pdf"
+    },
+    {
+      "key": "recipe",
+      "kind": "file",
+      "path": "/home/demo/Cooking/Vegetarian_dinner_recipes.txt"
+    },
+    {
+      "key": "shopping",
+      "kind": "file",
+      "path": "/home/demo/Home/Grocery_shopping_list.txt"
+    },
+    {
+      "key": "meeting",
+      "kind": "file",
+      "path": "/home/demo/Work/Quarterly_meeting_minutes.md"
+    },
+    {
+      "key": "roadmap",
+      "kind": "file",
+      "path": "/home/demo/Work/Product_roadmap_2026.md"
+    },
+    {
+      "key": "slides",
+      "kind": "file",
+      "path": "/home/demo/Work/Sales_presentation.pptx"
+    },
+    {
+      "key": "code",
+      "kind": "file",
+      "path": "/home/demo/Projects/torchlight/src/main.c"
+    },
+    {
+      "key": "readme",
+      "kind": "file",
+      "path": "/home/demo/Projects/torchlight/README.md"
+    },
+    {
+      "key": "music",
+      "kind": "file",
+      "path": "/home/demo/Music/Jazz_evening_playlist.m3u"
+    },
+    {
+      "key": "movie",
+      "kind": "file",
+      "path": "/home/demo/Videos/Family_birthday_movie.mp4"
+    },
+    {
+      "key": "log",
+      "kind": "file",
+      "path": "/home/demo/Cache/browser_debug.log"
+    },
+    {
+      "key": "archive",
+      "kind": "file",
+      "path": "/home/demo/Downloads/linux_source.tar.gz"
+    },
+    {
+      "key": "duplicate",
+      "kind": "file",
+      "path": "/home/demo/Archive/old_resume.pdf"
+    },
+    {
+      "key": "unicode",
+      "kind": "file",
+      "path": "/home/demo/Cooking/Caf\u00e9_menu.pdf"
+    },
+    {
+      "key": "browser",
+      "kind": "app",
+      "path": "/Applications/Firefox",
+      "generic": "Web Browser",
+      "keywords": "Internet;Web;"
+    },
+    {
+      "key": "terminal",
+      "kind": "app",
+      "path": "/Applications/GNOME Terminal",
+      "generic": "Terminal Emulator",
+      "keywords": "Shell;Command;"
+    },
+    {
+      "key": "pdf",
+      "kind": "app",
+      "path": "/Applications/Document Viewer",
+      "generic": "PDF Viewer",
+      "keywords": "PDF;PostScript;"
+    },
+    {
+      "key": "editor",
+      "kind": "app",
+      "path": "/Applications/Text Editor",
+      "generic": "Text Editor",
+      "keywords": "Text;Documents;"
+    },
+    {
+      "key": "audio",
+      "kind": "app",
+      "path": "/Applications/Rhythmbox",
+      "generic": "Music Player",
+      "keywords": "Music;Audio;"
+    },
+    {
+      "key": "display",
+      "kind": "app",
+      "path": "/Applications/Displays",
+      "generic": "Display Settings",
+      "keywords": "Screen;Resolution;Monitor;"
+    },
+    {
+      "key": "sound",
+      "kind": "app",
+      "path": "/Applications/Sound",
+      "generic": "Audio Settings",
+      "keywords": "Speakers;Microphone;Volume;"
+    },
+    {
+      "key": "network",
+      "kind": "app",
+      "path": "/Applications/Network",
+      "generic": "Network Settings",
+      "keywords": "WiFi;Internet;Ethernet;"
+    },
+    {
+      "key": "files",
+      "kind": "app",
+      "path": "/Applications/Files",
+      "generic": "File Manager",
+      "keywords": "Folders;Directories;"
+    },
+    {
+      "key": "calc",
+      "kind": "app",
+      "path": "/Applications/Calculator",
+      "generic": "Calculator",
+      "keywords": "Arithmetic;Math;"
+    }
+  ],
+  "queries": [
+    {
+      "text": "tax paperwork",
+      "labels": {
+        "tax": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "tax"
+    },
+    {
+      "text": "income tax return",
+      "labels": {
+        "tax": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "tax"
+    },
+    {
+      "text": "bill sent to client",
+      "labels": {
+        "invoice": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "invoice"
+    },
+    {
+      "text": "March invoice",
+      "labels": {
+        "invoice": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "invoice"
+    },
+    {
+      "text": "vehicle coverage document",
+      "labels": {
+        "insurance": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "insurance"
+    },
+    {
+      "text": "car insurance policy",
+      "labels": {
+        "insurance": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "insurance"
+    },
+    {
+      "text": "airplane ticket",
+      "labels": {
+        "flight": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "flight"
+    },
+    {
+      "text": "flight booking",
+      "labels": {
+        "flight": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "flight"
+    },
+    {
+      "text": "my job application CV",
+      "labels": {
+        "resume": 3,
+        "duplicate": 1
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "resume"
+    },
+    {
+      "text": "software engineer resume",
+      "labels": {
+        "resume": 3,
+        "duplicate": 1
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "resume"
+    },
+    {
+      "text": "class study notes",
+      "labels": {
+        "lecture": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "lecture"
+    },
+    {
+      "text": "physics lecture",
+      "labels": {
+        "lecture": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "lecture"
+    },
+    {
+      "text": "ideas for meat free meals",
+      "labels": {
+        "recipe": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "recipe"
+    },
+    {
+      "text": "vegetarian dinner",
+      "labels": {
+        "recipe": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "recipe"
+    },
+    {
+      "text": "notes from team discussion",
+      "labels": {
+        "meeting": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "meeting"
+    },
+    {
+      "text": "quarterly meeting",
+      "labels": {
+        "meeting": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "meeting"
+    },
+    {
+      "text": "browse the internet",
+      "labels": {
+        "browser": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "browser"
+    },
+    {
+      "text": "Firefox",
+      "labels": {
+        "browser": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "browser"
+    },
+    {
+      "text": "open a PDF document",
+      "labels": {
+        "pdf": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "pdf"
+    },
+    {
+      "text": "Document Viewer",
+      "labels": {
+        "pdf": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "pdf"
+    },
+    {
+      "text": "change monitor resolution",
+      "labels": {
+        "display": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "display"
+    },
+    {
+      "text": "Displays",
+      "labels": {
+        "display": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "display"
+    },
+    {
+      "text": "listen to songs",
+      "labels": {
+        "audio": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "audio"
+    },
+    {
+      "text": "Rhythmbox",
+      "labels": {
+        "audio": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "audio"
+    },
+    {
+      "text": "plan my monthly spending",
+      "labels": {
+        "budget": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "budget"
+    },
+    {
+      "text": "household budget",
+      "labels": {
+        "budget": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "budget"
+    },
+    {
+      "text": "account transactions document",
+      "labels": {
+        "bank": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "bank"
+    },
+    {
+      "text": "bank statement",
+      "labels": {
+        "bank": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "bank"
+    },
+    {
+      "text": "travel identity document",
+      "labels": {
+        "passport": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "passport"
+    },
+    {
+      "text": "passport scan",
+      "labels": {
+        "passport": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "passport"
+    },
+    {
+      "text": "place to stay on vacation",
+      "labels": {
+        "hotel": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "hotel"
+    },
+    {
+      "text": "hotel reservation",
+      "labels": {
+        "hotel": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "hotel"
+    },
+    {
+      "text": "agreement with employer",
+      "labels": {
+        "contract": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "contract"
+    },
+    {
+      "text": "employment contract",
+      "labels": {
+        "contract": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "contract"
+    },
+    {
+      "text": "when are my mathematics tests",
+      "labels": {
+        "exam": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "exam"
+    },
+    {
+      "text": "calculus exam schedule",
+      "labels": {
+        "exam": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "exam"
+    },
+    {
+      "text": "things to buy at supermarket",
+      "labels": {
+        "shopping": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "shopping"
+    },
+    {
+      "text": "grocery shopping list",
+      "labels": {
+        "shopping": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "shopping"
+    },
+    {
+      "text": "future product development plans",
+      "labels": {
+        "roadmap": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "roadmap"
+    },
+    {
+      "text": "product roadmap",
+      "labels": {
+        "roadmap": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "roadmap"
+    },
+    {
+      "text": "slideshow for sales talk",
+      "labels": {
+        "slides": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "slides"
+    },
+    {
+      "text": "sales presentation",
+      "labels": {
+        "slides": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "slides"
+    },
+    {
+      "text": "run shell commands",
+      "labels": {
+        "terminal": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "terminal"
+    },
+    {
+      "text": "GNOME Terminal",
+      "labels": {
+        "terminal": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "terminal"
+    },
+    {
+      "text": "adjust speaker loudness",
+      "labels": {
+        "sound": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "sound"
+    },
+    {
+      "text": "Sound",
+      "labels": {
+        "sound": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "sound"
+    },
+    {
+      "text": "connect to wireless internet",
+      "labels": {
+        "network": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "network"
+    },
+    {
+      "text": "Network",
+      "labels": {
+        "network": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "network"
+    },
+    {
+      "text": "quantum banana teleporter",
+      "labels": {},
+      "split": "tuning",
+      "class": "no_match",
+      "target_group": "quantum banana teleporter"
+    },
+    {
+      "text": "zzzzqxxxyyy",
+      "labels": {},
+      "split": "tuning",
+      "class": "no_match",
+      "target_group": "zzzzqxxxyyy"
+    },
+    {
+      "text": "volcano submarine manual",
+      "labels": {},
+      "split": "heldout",
+      "class": "no_match",
+      "target_group": "volcano submarine manual"
+    },
+    {
+      "text": "qzxvjjkk",
+      "labels": {},
+      "split": "heldout",
+      "class": "no_match",
+      "target_group": "qzxvjjkk"
+    }
+  ]
+}

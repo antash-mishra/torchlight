@@ -22,9 +22,9 @@ endif
 SOURCES = src/core/common.c src/core/vec.c src/core/hashmap.c src/core/config.c src/core/json.c src/core/path.c src/core/sort.c src/core/mask.c src/core/parallel.c \
           src/index/tokenize.c src/index/prefix.c src/index/subseq.c src/index/fuzzy.c \
           src/index/trigram.c src/index/typo.c src/index/dirtree.c src/index/lexical.c \
-          src/index/embed.c src/index/vector.c src/index/rank.c \
+          src/index/embed.c src/index/potion.c src/index/vector.c src/index/rank.c \
           src/index/desktop.c src/index/lexical_query.c src/index/catalog.c src/fs/crawl.c src/fs/watch.c src/storage/store.c \
-          src/ipc/ipc.c src/ipc/async.c src/ipc/client.c src/service/writer.c src/service/daemon.c
+          src/ipc/ipc.c src/ipc/async.c src/ipc/client.c src/service/writer.c src/service/semantic.c src/service/daemon.c
 BIN_SOURCES = src/bin/torchlight.c src/bin/torchlightd.c
 OBJECTS = $(SOURCES:%.c=build/%.o)
 HEADERS = $(wildcard include/torchlight/*.h) $(wildcard src/*/*.h)
@@ -33,6 +33,7 @@ BENCH_SOURCES = tests/bench/bench_lexical.c tests/bench/corpus.c tests/bench/que
 VECTOR_BENCH_SOURCE = tests/bench/bench_vector.c
 FIXTURE_SOURCE = tests/bench/fixture/export.c
 DESKTOP_FIXTURE_SOURCE = tests/fixtures/desktop_replace.c
+SEMANTIC_FIXTURE_SOURCE = tests/fixtures/semantic_stall.c
 ALLOC_SOURCE = tests/alloc/query.c
 # Optional NUL-separated real path list for `make bench` (see scripts/make_corpus.sh).
 BENCH_PATHS ?=
@@ -72,21 +73,25 @@ build/test_query_alloc: $(SOURCES) $(ALLOC_SOURCE) $(HEADERS)
 build/test_desktop_replace.so: $(DESKTOP_FIXTURE_SOURCE)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) -fPIC -shared $< -ldl -o $@
-test: build/tests build/torchlight-sanitized build/torchlightd-sanitized build/test_query_alloc build/test_desktop_replace.so
+build/test_semantic_stall.so: $(SEMANTIC_FIXTURE_SOURCE)
+	@mkdir -p build
+	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) -fPIC -shared $< -ldl -o $@
+test: build/tests build/torchlight-sanitized build/torchlightd-sanitized build/test_query_alloc build/test_desktop_replace.so build/test_semantic_stall.so
 	ASAN_OPTIONS=detect_leaks=1 ./build/tests
 	./build/test_query_alloc
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_cli.py ./build/torchlight-sanitized
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_desktop.py ./build/torchlightd-sanitized ./build/test_desktop_replace.so
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_daemon.py ./build/torchlight-sanitized ./build/torchlightd-sanitized
+	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_semantic.py ./build/torchlightd-sanitized ./build/test_semantic_stall.so ./build/torchlight-sanitized
 lint:
 	@command -v $(CLANG_TIDY) >/dev/null || { echo 'clang-tidy is required'; exit 1; }
 	@command -v $(CPPCHECK) >/dev/null || { echo 'cppcheck is required'; exit 1; }
-	$(CLANG_TIDY) $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(ALLOC_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
-	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(ALLOC_SOURCE)
+	$(CLANG_TIDY) $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
+	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE)
 	$(CLANG_TIDY) $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 $(WARNINGS)
 	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE)
 format:
-	clang-format -i $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) ui/gtk/actions.h $(SOURCES) $(BIN_SOURCES) $(HEADERS) tests/unit/*.h $(TEST_SOURCES) tests/bench/*.c tests/bench/*.h $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(ALLOC_SOURCE)
+	clang-format -i $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) ui/gtk/actions.h $(SOURCES) $(BIN_SOURCES) $(HEADERS) tests/unit/*.h $(TEST_SOURCES) tests/bench/*.c tests/bench/*.h $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE)
 build/bench_lexical: $(SOURCES) $(BENCH_SOURCES) $(HEADERS) $(wildcard tests/bench/*.h)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) $(SOURCES) $(BENCH_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@

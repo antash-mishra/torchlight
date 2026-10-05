@@ -11,6 +11,7 @@
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
+#define IPC_CLIENT_JSON_TOKENS 16384
 struct tl_ipc_listener {
     int fd, lock;
     char *path;
@@ -389,6 +390,63 @@ static tl_status connect_client(const char *path, int *out, int64_t deadline) {
         status = TL_IO;
     return status;
 }
+/* Validate intermediate envelopes before discarding their borrowed bytes. */
+static tl_status response_phase(const char *response, size_t length, const tl_ipc_request *request,
+                                bool *final) {
+    tl_json_token tokens[IPC_CLIENT_JSON_TOKENS];
+    tl_json json;
+    tl_status status = json_parse(response, length, tokens, IPC_CLIENT_JSON_TOKENS, &json);
+    uint64_t version = 0;
+    char id[IPC_REQUEST_ID_BYTES + 1], phase[16];
+    if (status != TL_OK)
+        return status;
+    if (json_uint(&json, json_member(&json, 0, "version"), &version) != TL_OK ||
+        version != IPC_VERSION ||
+        string_member(&json, "request_id", id, sizeof(id), true) != TL_OK ||
+        strcmp(id, request->request_id) != 0 ||
+        string_member(&json, "phase", phase, sizeof(phase), true) != TL_OK)
+        return TL_INVALID;
+    *final = strcmp(phase, "final") == 0;
+    return *final || (request->operation == IPC_QUERY && strcmp(phase, "lexical") == 0)
+               ? TL_OK
+               : TL_INVALID;
+}
+static tl_status receive_terminal(int fd, int64_t deadline, const tl_ipc_request *request,
+                                  char *response, size_t capacity, size_t *out_length) {
+    size_t received = 0;
+    bool saw_lexical = false;
+    for (;;) {
+        char *newline = memchr(response, '\n', received);
+        if (newline != NULL) {
+            size_t length = (size_t)(newline - response) + 1;
+            bool final = false;
+            tl_status status = response_phase(response, length, request, &final);
+            if (status != TL_OK || (!final && saw_lexical))
+                return status != TL_OK ? status : TL_INVALID;
+            if (final) {
+                response[length] = 0;
+                *out_length = length;
+                return TL_OK;
+            }
+            saw_lexical = true;
+            received -= length;
+            memmove(response, response + length, received);
+            continue;
+        }
+        if (received + 1 == capacity)
+            return TL_LIMIT;
+        tl_status status = ready(fd, POLLIN, deadline);
+        if (status != TL_OK)
+            return status;
+        ssize_t count = recv(fd, response + received, capacity - received - 1, 0);
+        if (count < 0 && (errno == EAGAIN || errno == EINTR))
+            continue;
+        if (count <= 0)
+            return TL_IO;
+        received += (size_t)count;
+        response[received] = 0;
+    }
+}
 tl_status ipc_call(const char *path, const tl_ipc_request *request, char *response, size_t capacity,
                    size_t *out_length) {
     if (out_length == NULL)
@@ -405,7 +463,7 @@ tl_status ipc_call(const char *path, const tl_ipc_request *request, char *respon
         return TL_IO;
     if (status == TL_OK)
         status = connect_client(path, &fd, deadline);
-    size_t sent = 0, received = 0;
+    size_t sent = 0;
     while (status == TL_OK && sent < length) {
         status = ready(fd, POLLOUT, deadline);
         if (status != TL_OK)
@@ -418,29 +476,8 @@ tl_status ipc_call(const char *path, const tl_ipc_request *request, char *respon
         else
             sent += (size_t)count;
     }
-    while (status == TL_OK) {
-        if (received + 1 == capacity) {
-            status = TL_LIMIT;
-            break;
-        }
-        status = ready(fd, POLLIN, deadline);
-        if (status != TL_OK)
-            break;
-        ssize_t count = recv(fd, response + received, capacity - received - 1, 0);
-        if (count < 0 && (errno == EAGAIN || errno == EINTR))
-            continue;
-        if (count <= 0) {
-            status = TL_IO;
-            break;
-        }
-        received += (size_t)count;
-        response[received] = 0;
-        char *newline = memchr(response, '\n', received);
-        if (newline != NULL) {
-            *out_length = (size_t)(newline - response) + 1;
-            break;
-        }
-    }
+    if (status == TL_OK)
+        status = receive_terminal(fd, deadline, request, response, capacity, out_length);
     if (fd >= 0)
         close(fd);
     return status;

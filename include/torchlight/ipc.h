@@ -66,8 +66,9 @@ int ipc_listener_descriptor(const tl_ipc_listener *listener);
  * when no peer ready, TL_IO/INVALID otherwise; out -1 on errors. Close by caller. */
 tl_status ipc_accept(tl_ipc_listener *listener, int *out);
 /** Exchange one request with terminal response under a 5-second total deadline.
- * Response copied into caller buffer; TL_INVALID/IO/LIMIT. No allocation;
- * server errors remain JSON for caller to inspect. out_length zero on error. */
+ * Consumes one optional lexical frame; terminal response copied into caller buffer;
+ * TL_INVALID/IO/LIMIT. No allocation; server errors remain JSON for caller to inspect. out_length
+ * zero on error. */
 tl_status ipc_call(const char *path, const tl_ipc_request *request, char *response, size_t capacity,
                    size_t *out_length);
 #endif

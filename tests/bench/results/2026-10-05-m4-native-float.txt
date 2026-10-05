@@ -1,0 +1,15 @@
+cc -I/usr/include/gio-unix-2.0 -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -pthread -I/usr/include/libmount -I/usr/include/blkid  -Iinclude -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -D_DEFAULT_SOURCE -D_GNU_SOURCE -I/tmp/torchlight-deps/usr/include -std=c17 -O3 -DNDEBUG -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror src/core/common.c src/core/sort.c src/index/vector.c src/index/rank.c tests/bench/bench_vector.c -L/tmp/torchlight-deps/usr/lib/x86_64-linux-gnu -Wl,-rpath,/tmp/torchlight-deps/usr/lib/x86_64-linux-gnu -lgio-2.0 -lgobject-2.0 -lglib-2.0  -pthread -lm -lsqlite3 -lutf8proc -o build/bench_vector
+./build/bench_vector 50000
+synthetic_float_reference model=none inference=excluded ipc=excluded
+rows=50000 dimensions=256 index_bytes=51600104 build_s=0.068 resident_kib=52336
+first_scan_ms=13.798
+float_scan_ms n=64 p50=15.495 p95=27.139 p99=29.481 max=29.481
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=52352
+rrf_2x1000_ms n=64 p50=0.444 p95=0.501 p99=0.524 max=0.524
+./build/bench_vector 500000
+synthetic_float_reference model=none inference=excluded ipc=excluded
+rows=500000 dimensions=256 index_bytes=516000104 build_s=0.798 resident_kib=505836
+first_scan_ms=144.059
+float_scan_ms n=64 p50=166.600 p95=189.204 p99=208.774 max=208.774
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=505728
+rrf_2x1000_ms n=64 p50=0.315 p95=0.365 p99=0.433 max=0.433

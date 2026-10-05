@@ -215,6 +215,29 @@ static void acquisition_races_reclamation(void) {
     CHECK(catalog_destroy(context.shared.catalog) == TL_OK);
 }
 void test_catalog(void) {
+    tl_catalog *registry = NULL;
+    CHECK(catalog_create(2, &registry) == TL_OK);
+    tl_catalog_snapshot *view = snapshot(1, "/r/old.md", 1), *pin = NULL;
+    CHECK(catalog_publish(registry, &view) == TL_OK);
+    CHECK(catalog_pin(registry, &pin) == TL_OK);
+    tl_catalog_reader *reader = NULL;
+    CHECK(catalog_acquire(registry, &reader) == TL_OK);
+    catalog_release(reader);
+    view = snapshot(2, "/r/new.md", 1);
+    CHECK(catalog_publish(registry, &view) == TL_OK);
+    catalog_reclaim(registry);
+    CHECK(catalog_snapshot_gen(pin) == 1 && catalog_snapshot_count(pin) == 2);
+    uint64_t id = 0;
+    const char *path = NULL;
+    bool directory = false;
+    CHECK(catalog_snapshot_entry(pin, 1, &id, &path, &directory) == TL_OK);
+    CHECK(id == 3 && strcmp(path, "/r/old.md") == 0 && !directory);
+    CHECK(strcmp(catalog_snapshot_context(pin, 0), "r") == 0);
+    CHECK(strcmp(catalog_snapshot_context(pin, 1), "r/old.md") == 0);
+    CHECK(catalog_destroy(registry) == TL_STATE);
+    catalog_unpin(pin);
+    catalog_reclaim(registry);
+    CHECK(catalog_destroy(registry) == TL_OK);
     ownership_and_limits();
     failed_preparation();
     concurrent_publication();

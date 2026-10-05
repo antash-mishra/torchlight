@@ -139,6 +139,23 @@ void test_store(void) {
     CHECK(close(fd) == 0);
     tl_store *store = NULL;
     CHECK(store_create(database, &store) == TL_OK);
+    CHECK(store_embedding_activate(store, 7) == TL_STATE);
+    CHECK(store_embedding_stage(store, 7, "[model,tokenizer,preprocessing,projection,int8]") ==
+          TL_OK);
+    CHECK(store_embedding_stage(store, 7, "conflicting model") == TL_STATE);
+    float embedding[] = {0.6F, 0.8F}, cached[2];
+    const float invalid_embedding[] = {2, 2};
+    CHECK(store_embedding_put(store, 7, "bad", invalid_embedding, 2) == TL_INVALID);
+    bool found = true;
+    CHECK(store_embedding_get(store, 7, "invoice pdf", cached, 2, &found) == TL_OK && !found);
+    CHECK(store_embedding_put(store, 7, "invoice pdf", embedding, 2) == TL_OK);
+    CHECK(store_embedding_activate(store, 7) == TL_OK);
+    CHECK(store_embedding_get(store, 7, "invoice pdf", cached, 2, &found) == TL_OK && found);
+    CHECK(cached[0] == embedding[0] && cached[1] == embedding[1]);
+    CHECK(store_embedding_get(store, 8, "invoice pdf", cached, 2, &found) == TL_OK && !found);
+    CHECK(store_embedding_stage(store, 8, "new model") == TL_OK);
+    CHECK(store_embedding_activate(store, 8) == TL_OK);
+    CHECK(store_embedding_get(store, 7, "invoice pdf", cached, 2, &found) == TL_OK && !found);
     uint64_t empty_gen = 99;
     struct loaded empty = {0};
     CHECK(store_load_catalog(store, observe, &empty, &empty_gen) == TL_OK);

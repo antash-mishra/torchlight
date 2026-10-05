@@ -24,9 +24,9 @@ The [M3 review fixes](adr/0017-m3-snapshot-cancellation-and-acceptance.md) cover
 consistent desktop replacement, action cancellation, keyboard Retry, accessible
 input and scaled placement. [Milestone status](milestone-status.md) explains
 what is done and what remains in plain language. M3 Part 2 search quality is
-implemented. M4 has started with the embedder adapter, float cosine reference
-and RRF fusion baseline; trained models, background vectors and two-phase
-service integration remain pending. See [M4 implementation](m4-implementation.md)
+implemented. M4 implements opt-in native Potion, float/int8 retrieval, versioned background
+caching and coherent two-phase RRF. Large-catalog latency and broader model
+acceptance remain open. See [M4 implementation](m4-implementation.md)
 and [ADR 0022](adr/0022-m4-semantic-foundation.md). M5 recommendations follow M4.
 [Part 2 verification](m3-part2-completion.md) records indexed prefix edits,
 explicit metadata fields, optimal fuzzy alignment, held-out/BM25 comparisons,
@@ -80,6 +80,8 @@ the root [README](../README.md) for commands, and
 | index | Typo channel | [typo](modules/typo/README.md) |
 | index | Fuzzy/edit scorer | [fuzzy](modules/fuzzy/README.md) |
 | index | Interned parent directories | [dirtree](modules/dirtree/README.md) |
+| index | Native static Potion | [potion](modules/potion/README.md) |
+| service | Background semantic queries | [semantic](modules/semantic/README.md) |
 | index | Swappable embedder | [embed](modules/embed/README.md) |
 | index | Vector search | [vector](modules/vector/README.md) |
 | index | Ranking & fusion | [rank](modules/rank/README.md) |
@@ -144,3 +146,6 @@ the root [README](../README.md) for commands, and
 - Changing a module's API or behavior? Update its doc **in the same change**.
 - Making a significant design decision? Add an ADR using
   [`adr/0000-template.md`](adr/0000-template.md).
+
+- [0023: native Potion and two-phase search](adr/0023-m4-native-potion-and-two-phase-search.md)
+  records the provisional backend, owned metadata snapshots and measured limits.

@@ -1,0 +1,662 @@
+{
+  "rows": [
+    {
+      "query": "schedule co",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "temp.tar.gz",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "dsc068",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "nts",
+      "recall10": 0.8,
+      "top1_agreement": true
+    },
+    {
+      "query": "srcbnk78",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "__ini",
+      "recall10": 0.9,
+      "top1_agreement": true
+    },
+    {
+      "query": "examp",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "paper_archive trav",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "final-podcast-74.json",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "proej",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "DSC03214.JPG",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "2014",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "2012",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "indx",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "srcltt39",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "concert scre",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "sheet",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "form tabl",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "dsc023",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "jurn",
+      "recall10": 0.8,
+      "top1_agreement": true
+    },
+    {
+      "query": "rdm",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "bakcu",
+      "recall10": 0.8,
+      "top1_agreement": true
+    },
+    {
+      "query": "exmv9",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "manual354.tar.gz",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "websi",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "migragi",
+      "recall10": 0.9,
+      "top1_agreement": true
+    },
+    {
+      "query": "draft_shcema",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "utils",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "plnhs",
+      "recall10": 0.9,
+      "top1_agreement": true
+    },
+    {
+      "query": "sceenshot from 2021-05-25 16-28",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "client300.csv",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "chpterslides",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "table_video.odt",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "aslets_2025_search",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "websitpe_v8",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "arcv3",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "Build_2016_old.docx",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "enain",
+      "recall10": 0.9,
+      "top1_agreement": true
+    },
+    {
+      "query": "thesis thes",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "birthday ga",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "photo_2010_mdule",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "Makefile",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "2021 img_",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "budget_2011_comopnent",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "idex",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "2010 read",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "payroll_an",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "manualGraph.xlsx",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "IMG_5542.jpg",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "prssrc",
+      "recall10": 0.9,
+      "top1_agreement": true
+    },
+    {
+      "query": "qry8",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "design_temp.png",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "lettermodu",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "reea",
+      "recall10": 0.8,
+      "top1_agreement": true
+    },
+    {
+      "query": "deusign130",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "bank sear",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "plan_homeqwork",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "list_2013_rqesume",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "rprgrd",
+      "recall10": 0.9,
+      "top1_agreement": true
+    },
+    {
+      "query": "src201td",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "report_v7.js",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "house_le",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "service stor",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "scripts_",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "epsio",
+      "recall10": 0.6,
+      "top1_agreement": false
+    },
+    {
+      "query": "desgin_config",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "rcplst",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "client webs",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "uplv4",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "lcturepayroll",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "contract973.txt",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "mpanl80",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "modl",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "rsum",
+      "recall10": 0.9,
+      "top1_agreement": true
+    },
+    {
+      "query": "sht201rcp",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "query_invoice.log",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "hmwsrv33",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "schedule dsc0",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "homeorksource",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "scrfrm202",
+      "recall10": 0.9,
+      "top1_agreement": true
+    },
+    {
+      "query": "plan sour",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "mkedic",
+      "recall10": 0.6,
+      "top1_agreement": true
+    },
+    {
+      "query": "covurs",
+      "recall10": 0.7,
+      "top1_agreement": false
+    },
+    {
+      "query": "source imp",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "scrfrm202",
+      "recall10": 0.9,
+      "top1_agreement": true
+    },
+    {
+      "query": "prsfnl",
+      "recall10": 0.2,
+      "top1_agreement": false
+    },
+    {
+      "query": "2021 musi",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "rsmsch39",
+      "recall10": 0.9,
+      "top1_agreement": true
+    },
+    {
+      "query": "letter mode",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "templ",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "2020 pars",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "schedk",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "map_epiosde",
+      "recall10": 0.8,
+      "top1_agreement": true
+    },
+    {
+      "query": "manual-le",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "travel_survey dsc0",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "2017 dsc0",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "Copy_2024_config.tar.gz",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "bookHouse.js",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "client gu",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "dsc06",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "photo_2020_m",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "DSC04374.JPG",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "assees935",
+      "recall10": 0.9,
+      "top1_agreement": true
+    },
+    {
+      "query": "buzild",
+      "recall10": 0.5,
+      "top1_agreement": true
+    },
+    {
+      "query": "reum",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "temp7 scho",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "brtsv",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "2010 mode",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "IMG_7674.jpg",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "archive_",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "query_schema invo",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "chapbter",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "resl",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "client_2014_",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "meeji",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "notes_v2.csv",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "lst201old",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "episode make",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "screenshot from 2022",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "demo-sheet lect",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "img_5",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "todo_2022_sourcd",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "dqraft",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "calendar-ma",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "video_course proj",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "video_photo dsc0",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "lyrics_bank.png",
+      "recall10": 1.0,
+      "top1_agreement": true
+    },
+    {
+      "query": "syncversiod",
+      "recall10": 1.0,
+      "top1_agreement": true
+    }
+  ],
+  "paths": 500000,
+  "dimensions": 256,
+  "shortlist": 20000,
+  "encode_seconds": 15.9652129849419,
+  "mean_recall10": 0.96484375,
+  "top1_agreement": 0.9765625,
+  "reference_ms": {
+    "50": 66.24277238734066,
+    "95": 80.87558699771762,
+    "99": 88.67581914644688
+  },
+  "approximate_ms": {
+    "50": 10.868399403989315,
+    "95": 18.872039439156648,
+    "99": 20.440655364654962
+  },
+  "approximate_bytes": 150000104,
+  "limits": "Trained embeddings of synthetic paths; no human labels, no IPC/inference in search timing."
+}

@@ -1,0 +1,12 @@
+synthetic_int8_exhaustive model=none inference=excluded ipc=excluded
+rows=50000 dimensions=256 index_bytes=13400104 build_s=0.131 resident_kib=15008
+first_scan_ms=7.160
+float_scan_ms n=64 p50=7.466 p95=12.832 p99=13.659 max=13.659
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=14720
+rrf_2x1000_ms n=64 p50=0.337 p95=0.501 p99=0.566 max=0.566
+synthetic_int8_exhaustive model=none inference=excluded ipc=excluded
+rows=500000 dimensions=256 index_bytes=134000104 build_s=1.261 resident_kib=132804
+first_scan_ms=67.814
+float_scan_ms n=64 p50=74.631 p95=99.770 p99=116.325 max=116.325
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=132864
+rrf_2x1000_ms n=64 p50=0.348 p95=0.539 p99=0.764 max=0.764

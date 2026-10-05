@@ -11,7 +11,7 @@ M3 Part 2 is implemented; M4 has started, followed by M5, as recorded in [the pl
 | M2 | Keep a background service running, remember the file list, and update it when files change. | Implemented |
 | M3 | Show a keyboard popup; search apps, settings, files and folders; open or reveal the selected item. | Implemented; review fixes verified |
 | M3 Part 2 | Improve name search, unfinished typos, abbreviations and ranking; test useful results among competing apps and files. | Implemented; held-out relevance and performance measured |
-| M4 | Combine improved name search with optional local embeddings and vector retrieval for meaning-based matches. | Started: embedder interface, float reference and RRF; model and daemon integration pending |
+| M4 | Combine improved name search with optional local embeddings and vector retrieval for meaning-based matches. | Functional opt-in implementation; native Potion/cache/two-phase RRF tested; performance and broader relevance acceptance open |
 | M5 | Use optional opening history to recommend personally useful files and apps higher, with privacy and history controls. | Planned after M4 |
 
 M3 Part 2 now keeps names, generic names, keywords and folders distinct, finds
@@ -22,15 +22,12 @@ BM25, with target families separated between tuning and held-out queries.
 the extra latency cost. Exact names/paths and allocation-free queries are preserved.
 The small fixture establishes regressions, not universal best search quality.
 
-M4's initial C foundation implements the embedder interface, exact float vector
-matching and protected fusion. Its [implementation report](m4-implementation.md)
-records tests, measured costs and the remaining sequence. M4 still needs
-English model comparison, background creation of numeric representations
-of paths and application metadata, fast vector matching, and combining those
-matches with the improved name search. Ordinary name search must remain
-available when the model is slow or unavailable. This milestone uses names,
-paths and application metadata; reading document contents is a possible later
-extension.
+M4 now runs native Potion with background versioned cache and coherent two-phase
+RRF. [Model evaluation](m4-model-evaluation.md) records the English fixture,
+trained C parity, int8/approximate retrieval and the Documents smoke check.
+The 500k final latency target and broader model comparison remain open; the
+[implementation report](m4-implementation.md) separates completed features from
+those acceptance gates. File contents are not read.
 
 M5 still needs file/application ranking changes that learn from usage and tests
 proving they help without hiding exact matches. Recording and clearing optional

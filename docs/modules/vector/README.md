@@ -1,6 +1,6 @@
 # vector
 
-> **Status:** M4 float reference implemented; quantization and service integration pending
+> **Status:** M4 float/int8 retrieval implemented; experimental binary shortlist remains gated
 > **Source:** `src/index/vector.c` · **Header:** `include/torchlight/vector.h`
 > **Tests:** `tests/unit/test_vector.c`, `tests/alloc/query.c`
 
@@ -39,13 +39,12 @@ Scores describe normalized float vectors; they include float-rounding error.
 An index contains only one `emb_gen`. The caller must assign it to a complete
 model/tokenizer/preprocessing/transform/format descriptor. Binding vectors to
 file/desktop revisions and pinning catalog/embedding snapshots across response
-phases are still service work. An immutable vector builder alone does not supply
+phases belong to the implemented semantic service. An immutable vector builder alone does not supply
 those lifetime guarantees.
 
 Owned buffers avoid explicit query-time file reads; the OS can still page or
 swap them. The float reference is for evaluation and exceeds the planned 150 MB
-compressed-vector budget at 500k paths. Production storage/search format is not
-selected by this implementation.
+compressed-vector budget at 500k paths. The service uses exhaustive int8; the binary shortlist remains experimental.
 
 ## Performance and next experiments
 
@@ -80,3 +79,20 @@ cover ownership and bounds. Synthetic self-match checks are not model relevance.
 - [embed](../embed/README.md)
 - [rank](../rank/README.md)
 - [ADR 0022](../../adr/0022-m4-semantic-foundation.md)
+
+## M4 integration
+
+See [native backend/service decision](../../adr/0023-m4-native-potion-and-two-phase-search.md)
+and [measured model evaluation](../../m4-model-evaluation.md).
+
+## Compressed variants
+
+`vector_create_int8` rounds normalized components with scale 127, stores integer
+rows and inverse integer norms, then performs exhaustive normalized cosine.
+`vector_create_binary_int8` additionally stores sign bits and a fixed shortlist.
+Two histogram passes retain the closest Hamming candidates, ties by id, before
+int8 cosine; its top-k is approximate. Shortlist selection does not depend on
+display capacity. Runtime-checked x86 POPCNT has a portable fallback. Budgeting
+includes ids, components, inverse norms and signs. Both paths use owned memory
+and preallocated scratch. [Measured recall/latency](../../m4-model-evaluation.md)
+rejects the current binary variants as service defaults.

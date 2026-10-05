@@ -2,8 +2,10 @@
 #include "torchlight/rank.h"
 #include "torchlight/vector.h"
 #include <errno.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/resource.h>
 #include <time.h>
 #include <unistd.h>
@@ -61,11 +63,13 @@ static void report(const char *label, double *samples) {
            samples[(count * 99 + 99) / 100 - 1], samples[count - 1]);
 }
 
-static tl_status build(size_t rows, tl_vector **index, tl_vector_workspace **workspace) {
+static tl_status build(size_t rows, bool compact, tl_vector **index,
+                       tl_vector_workspace **workspace) {
     double start = 0, end = 0;
     tl_status status = now(&start);
     if (status == TL_OK)
-        status = vector_create(1, VECTOR_BENCH_DIMENSIONS, rows, SIZE_MAX, index);
+        status = compact ? vector_create_int8(1, VECTOR_BENCH_DIMENSIONS, rows, SIZE_MAX, index)
+                         : vector_create(1, VECTOR_BENCH_DIMENSIONS, rows, SIZE_MAX, index);
     for (size_t i = 0; i < rows && status == TL_OK; i++) {
         float values[VECTOR_BENCH_DIMENSIONS];
         embedding(i + 1, values);
@@ -156,8 +160,9 @@ static tl_status fusion(void) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 2 || argv[1][0] < '0' || argv[1][0] > '9') {
-        fprintf(stderr, "usage: bench_vector ROWS (256 dimensions, synthetic floats)\n");
+    if ((argc != 2 && argc != 3) || argv[1][0] < '0' || argv[1][0] > '9' ||
+        (argc == 3 && strcmp(argv[2], "--int8") != 0)) {
+        fprintf(stderr, "usage: bench_vector ROWS [--int8] (256 dimensions, synthetic)\n");
         return 1;
     }
     errno = 0;
@@ -165,10 +170,11 @@ int main(int argc, char **argv) {
     unsigned long long value = strtoull(argv[1], &end, 10);
     if (errno != 0 || *end != 0 || value == 0 || value > SIZE_MAX)
         return 1;
-    puts("synthetic_float_reference model=none inference=excluded ipc=excluded");
+    puts(argc == 3 ? "synthetic_int8_exhaustive model=none inference=excluded ipc=excluded"
+                   : "synthetic_float_reference model=none inference=excluded ipc=excluded");
     tl_vector *index = NULL;
     tl_vector_workspace *workspace = NULL;
-    tl_status status = build((size_t)value, &index, &workspace);
+    tl_status status = build((size_t)value, argc == 3, &index, &workspace);
     if (status == TL_OK)
         status = scan(index, workspace);
     if (status == TL_OK)

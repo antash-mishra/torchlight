@@ -1,5 +1,6 @@
 /* Thin executable: parse daemon options and wire the reusable service module. */
 #include "torchlight/daemon.h"
+#include "torchlight/semantic.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +22,7 @@ static tl_status parse(int argc, char **argv, tl_daemon_options *options, const 
                                    .max_path_bytes = 128U * 1024U * 1024U,
                                    .rescan_ms = 30000,
                                    .history_days = 30};
+    options->semantic_deadline_ms = SEMANTIC_DEADLINE_MS;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--no-history") == 0) {
             options->history = false;
@@ -36,6 +38,10 @@ static tl_status parse(int argc, char **argv, tl_daemon_options *options, const 
             *config = value;
         else if (strcmp(key, "--socket") == 0)
             options->socket_path = value;
+        else if (strcmp(key, "--model") == 0)
+            options->model_path = value;
+        else if (strcmp(key, "--semantic-deadline-ms") == 0 && number(value, 4000, &parsed))
+            options->semantic_deadline_ms = (unsigned)parsed;
         else if (strcmp(key, "--rescan-ms") == 0 && number(value, 3600000, &parsed) &&
                  parsed >= 100)
             options->rescan_ms = (unsigned)parsed;
@@ -59,7 +65,8 @@ int main(int argc, char **argv) {
     if (status != TL_OK) {
         fputs("Usage: torchlightd [--db PATH] [--config PATH] [--socket PATH]\n"
               "  [--no-history] [--history-days N] [--rescan-ms N]\n"
-              "  [--watch-capacity N] [--max-entries N] [--max-path-bytes N]\n",
+              "  [--watch-capacity N] [--max-entries N] [--max-path-bytes N]\n"
+              "  [--model PATH.tlm] [--semantic-deadline-ms N]\n",
               stderr);
         return 2;
     }

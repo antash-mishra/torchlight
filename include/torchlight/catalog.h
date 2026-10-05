@@ -67,4 +67,20 @@ tl_status catalog_stats(tl_catalog *catalog, tl_catalog_stats *out);
 /** Read resident directory metadata while leased; false if absent/unleased.
  * No allocation/I/O; only valid until release. */
 bool catalog_is_dir(const tl_catalog_reader *reader, uint64_t id);
+/** Pin active metadata without reserving a lexical workspace. Thread-safe,
+ * allocation-free; TL_STATE if unavailable, TL_INVALID for NULL. Release once
+ * with catalog_unpin; registry must outlive pin. Intended for background copies. */
+tl_status catalog_pin(tl_catalog *catalog, tl_catalog_snapshot **out);
+/** Release metadata pin; NULL allowed, no allocation/I/O or errors. */
+void catalog_unpin(tl_catalog_snapshot *snapshot);
+/** Borrow generation/count of a metadata pin, zero for NULL. No errors. */
+uint64_t catalog_snapshot_gen(const tl_catalog_snapshot *snapshot);
+size_t catalog_snapshot_count(const tl_catalog_snapshot *snapshot);
+/** Borrow sorted-id entry at position while pinned; TL_INVALID out-of-range or
+ * NULL. Outputs borrow pin. No allocation/I/O. */
+tl_status catalog_snapshot_entry(const tl_catalog_snapshot *snapshot, size_t position, uint64_t *id,
+                                 const char **path, bool *is_dir);
+/** Borrow scoped raw path context under a metadata pin; see lexical_context_path.
+ * NULL for invalid input; no allocation/I/O/errors. */
+const char *catalog_snapshot_context(const tl_catalog_snapshot *snapshot, size_t position);
 #endif

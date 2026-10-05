@@ -1,0 +1,13 @@
+{
+  "files": 42,
+  "eligible_files": 37,
+  "skipped_hidden_directory_files": 5,
+  "exact_name_queries": 37,
+  "exact_top1": 37,
+  "coherent_two_phase": 37,
+  "lexical_p95_ms": 0.9508319199085236,
+  "final_p95_ms": 1.498259138315916,
+  "contents_read": false,
+  "private_names_recorded": false,
+  "limits": "User Documents; automatically generated exact-name checks, not labeled semantic relevance."
+}

@@ -1,6 +1,6 @@
 # ipc
 
-> **Status:** Implemented (M2/M3): strict JSON-lines, Unix sockets and asynchronous exchanges
+> **Status:** Implemented (M2/M3/M4): strict JSON-lines, Unix sockets and asynchronous exchanges
 > **Source:** `src/ipc/ipc.c`, `src/ipc/client.c`, `src/ipc/async.c`
 > **Headers:** `include/torchlight/ipc.h`, `include/torchlight/client.h`, `include/torchlight/async.h`
 > **Tests:** `tests/unit/test_ipc.c`, `tests/unit/test_json.c`, `tests/test_daemon.py`
@@ -28,9 +28,10 @@ are rejected. The generic parser bounds depth to eight and tokens to 32 here.
 | `history_clear` | none |
 
 Responses include `version`, `request_id`, `search_id`, `catalog_gen`,
-`emb_gen: null`, `phase: final`, `status`, `reason`, `indexing`, `history` and
-bounded `results`. Query success uses `reason: lexical_only`; semantics/two-phase
-execution arrive in M4. Query frames superseded by newer buffered frames receive
+`emb_gen`, `phase`, `status`, `reason` and bounded `results`. Lexical-only
+queries return one final frame. Available M4 semantics return a lexical frame
+followed by a final frame with matching snapshot generations. Initial frames
+include indexing/history status. Query frames superseded by newer buffered frames receive
 `status: cancelled`; active duplicate ids receive
 `reason: duplicate_active_request_id`. Malformed requests without a valid decoded
 envelope receive an empty request id and the connection closes after the error.
@@ -42,6 +43,8 @@ returns the current exact path or `stale_result`; open records only an accepted
 history request. Responses release catalog leases before queuing socket output.
 The daemon bounds clients, four active ids and 1 MiB total output per client.
 
+`ipc_call` validates and consumes at most one lexical frame before returning
+the terminal frame within the original deadline, without allocating.
 `client_request` validates terminal envelopes, prints JSON, safe plain paths or
 original NUL-delimited paths, and returns a failure for server errors. It may
 allocate in the CLI; daemon request decoding/result encoding do not allocate.

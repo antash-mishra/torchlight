@@ -83,3 +83,9 @@ SQLite and IPC. No daemon round-trip performance is claimed.
 M3 catalog_is_dir reads immutable directory metadata while leased. It returns
 false for absent/unleased entries and performs no I/O/allocation. Directory
 flags originate in store_load and the writer's lexical_add_entry builder.
+
+## M4 metadata integration
+
+Metadata pins retain snapshots without reserving lexical workspaces; scoped
+context paths exclude parents outside the indexed roots. Background consumers
+copy metadata, release pins and reclaim through the existing lifecycle.

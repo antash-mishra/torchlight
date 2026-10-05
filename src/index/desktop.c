@@ -33,7 +33,7 @@ struct tl_desktop {
     pthread_t thread;
     bool started, stop, refresh;
     struct snapshot *active;
-    uint64_t next_id;
+    uint64_t next_id, desktop_gen;
 };
 static void snapshot_destroy(struct snapshot *snapshot) {
     if (snapshot == NULL)
@@ -201,6 +201,8 @@ static tl_status add_entry(struct snapshot *snapshot, const char *filename, cons
     entry.key = search_key(info);
     entry.generic_name = generic_field(info);
     entry.keywords = keyword_field(info);
+    entry.public.generic_name = entry.generic_name;
+    entry.public.keywords = entry.keywords;
     entry.fingerprint = revision;
     entry.public.revision = revision;
     g_object_unref(info);
@@ -344,6 +346,7 @@ static void *refresh_worker(void *context) {
         pthread_mutex_lock(&desktop->lock);
         struct snapshot *old = desktop->active;
         desktop->active = next;
+        desktop->desktop_gen++;
         pthread_mutex_unlock(&desktop->lock);
         snapshot_destroy(old);
     }
@@ -355,6 +358,7 @@ tl_status desktop_create(tl_desktop **out) {
     tl_desktop *desktop = calloc(1, sizeof(*desktop));
     if (desktop == NULL)
         return TL_NOMEM;
+    desktop->desktop_gen = 1;
     if (pthread_mutex_init(&desktop->lock, NULL) != 0) {
         free(desktop);
         return TL_IO;
@@ -444,4 +448,16 @@ const tl_desktop_entry *desktop_resolve(const tl_desktop *desktop, uint64_t id) 
     return low < vec_count(desktop->active->entries) && entries[low].public.id == id
                ? &entries[low].public
                : NULL;
+}
+uint64_t desktop_gen(const tl_desktop *desktop) {
+    return desktop == NULL ? 0 : desktop->desktop_gen;
+}
+size_t desktop_count(const tl_desktop *desktop) {
+    return desktop == NULL ? 0 : vec_count(desktop->active->entries);
+}
+const tl_desktop_entry *desktop_entry(const tl_desktop *desktop, size_t position) {
+    if (desktop == NULL || position >= desktop_count(desktop))
+        return NULL;
+    const struct entry *entries = vec_const_data(desktop->active->entries);
+    return &entries[position].public;
 }
