@@ -51,6 +51,14 @@ def wait(predicate, timeout=15):
     raise AssertionError(f'timed out: {last!r}')
 
 
+def decode_response(line):
+    assert line and line.endswith(b'\n'), 'incomplete response frame'
+    response = json.loads(line)
+    for field in ('indexing', 'history', 'semantic'):
+        assert field in response, f'{response["phase"]} response omitted {field}'
+    return response
+
+
 class Service:
     def __init__(self, base, deadline=200):
         self.base = base
@@ -91,11 +99,11 @@ class Service:
                 return None
         wait(ready)
 
-    def stop(self):
+    def stop(self, timeout=10):
         if self.process is None:
             return
         self.process.send_signal(signal.SIGTERM)
-        self.process.wait(timeout=10)
+        self.process.wait(timeout=timeout)
         self.log.seek(0)
         log = self.log.read().decode()
         assert self.process.returncode == 0, log
@@ -115,8 +123,7 @@ class Service:
             phases = []
             while True:
                 line = stream.readline()
-                assert line, phases
-                phases.append(json.loads(line))
+                phases.append(decode_response(line))
                 if phases[-1]['phase'] == 'final':
                     return phases
 
@@ -129,6 +136,98 @@ class Service:
         for key in ('request_id', 'search_id', 'catalog_gen', 'emb_gen'):
             assert phases[0][key] == phases[1][key], phases
         return phases
+
+
+def large_exchange(service, expected, slow):
+    response_limit = 1024 * 1024
+    request = dict(version=1, request_id=str(next(SEQUENCE)), op='query',
+                   query='invoice', limit=len(expected))
+    with socket.socket(socket.AF_UNIX) as connection:
+        connection.settimeout(5)
+        connection.connect(str(service.path))
+        connection.sendall(json.dumps(request).encode() + b'\n')
+        if slow:
+            # Force the first frame to remain queued while inference completes.
+            time.sleep(.25)
+        stream = connection.makefile('rb')
+        lines = [stream.readline(), stream.readline()]
+        phases = [decode_response(line) for line in lines]
+        assert [(p['phase'], p['reason']) for p in phases] == [
+            ('lexical', 'semantic_pending'), ('final', 'hybrid')], phases
+        assert all(response_limit // 2 < len(line) < response_limit for line in lines)
+        for field in ('request_id', 'search_id', 'catalog_gen', 'emb_gen'):
+            assert phases[0][field] == phases[1][field], field
+        for phase in phases:
+            assert len(phase['results']) == len(expected)
+            assert {row['path'] for row in phase['results']} == expected
+
+
+def check_large_responses(base):
+    service = Service(base, deadline=1000)
+    parent = service.root / ('b' * 125)
+    parent.mkdir()
+    expected = set()
+    for index in range(1000):
+        path = parent / ('invoice-' + 'a' * 145 + f'-{index:04d}.pdf')
+        path.touch()
+        expected.add(str(path))
+    try:
+        service.start()
+        service.hybrid('invoice')
+        large_exchange(service, expected, slow=False)
+        large_exchange(service, expected, slow=True)
+        if CLI:
+            completed = subprocess.run([CLI, 'query', '--socket', str(service.path),
+                '--json', '--limit', '1000', 'invoice'], capture_output=True, timeout=5)
+            assert completed.returncode == 0, completed.stderr
+            final = decode_response(completed.stdout)
+            assert final['phase'] == 'final' and len(final['results']) == len(expected)
+            assert {row['path'] for row in final['results']} == expected
+    finally:
+        service.stop()
+
+
+def check_degraded_status(base):
+    service = Service(base)
+    (service.root / 'invoice.pdf').touch()
+    with service.config.open('a') as config:
+        config.write(f'root = {base / "offline-root"}\n')
+    try:
+        service.start()
+        wait(lambda: service.query('status', operation='status')[0]['indexing']['degraded'])
+        for text in ('bill', 'tax'):
+            phases = service.hybrid('bill') if text == 'bill' else service.query(text)
+            assert len(phases) == 2, phases
+            for phase in phases:
+                assert phase['indexing']['degraded'] and phase['indexing']['offline_roots'] == 1
+    finally:
+        service.stop()
+
+
+def check_fifo_model(base):
+    service = Service(base)
+    invoice = service.root / 'invoice.pdf'
+    invoice.touch()
+    service.model.unlink()
+    os.mkfifo(service.model, 0o600)
+    try:
+        service.start()
+        wait(lambda: service.query('status', operation='status')[0]['semantic']['last_error']
+             == 'I/O failure')
+        def indexed():
+            phases = service.query('invoice.pdf')
+            return phases if phases[-1]['results'] else None
+        phases = wait(indexed)
+        assert len(phases) == 1 and phases[0]['reason'] == 'semantic_unavailable', phases
+        assert phases[0]['results'][0]['path'] == str(invoice), phases
+        # No producer ever opens the FIFO; SIGTERM must still join the worker.
+        service.stop(timeout=3)
+    finally:
+        if service.process is not None:
+            if service.process.poll() is None:
+                service.process.kill()
+                service.process.wait(timeout=5)
+            service.log.close()
 
 
 with tempfile.TemporaryDirectory(prefix='torchlight-semantic-') as temp:
@@ -155,8 +254,8 @@ with tempfile.TemporaryDirectory(prefix='torchlight-semantic-') as temp:
             connection.sendall(b'{"version":1,"request_id":"half-close","op":"query","query":"bill","limit":10}\n')
             connection.shutdown(socket.SHUT_WR)
             stream = connection.makefile('rb')
-            assert json.loads(stream.readline())['phase'] == 'lexical'
-            assert json.loads(stream.readline())['phase'] == 'final'
+            assert decode_response(stream.readline())['phase'] == 'lexical'
+            assert decode_response(stream.readline())['phase'] == 'final'
         assert service.hybrid('surf')[1]['results'][0]['kind'] == 'application'
         assert service.hybrid('invoice.pdf')[1]['results'][0]['path'] == str(invoice)
         # A held external cache write stalls background work, never lexical IPC.
@@ -179,12 +278,12 @@ with tempfile.TemporaryDirectory(prefix='torchlight-semantic-') as temp:
                 stream = connection.makefile('rb')
                 first = dict(version=1, request_id='cancel-1', op='query', query='bill', limit=10)
                 connection.sendall(json.dumps(first).encode() + b'\n')
-                assert json.loads(stream.readline())['phase'] == 'lexical'
+                assert decode_response(stream.readline())['phase'] == 'lexical'
                 second = dict(first, request_id='cancel-2', query='tax')
                 connection.sendall(json.dumps(second).encode() + b'\n')
-                cancelled = json.loads(stream.readline())
+                cancelled = decode_response(stream.readline())
                 assert cancelled['request_id'] == 'cancel-1' and cancelled['status'] == 'cancelled', cancelled
-                while json.loads(stream.readline())['phase'] != 'final':
+                while decode_response(stream.readline())['phase'] != 'final':
                     pass
             blocker.rollback()
         service.hybrid('bill')
@@ -196,18 +295,18 @@ with tempfile.TemporaryDirectory(prefix='torchlight-semantic-') as temp:
                 stream = connection.makefile('rb')
                 first = dict(version=1, request_id='running-1', op='query', query='bill', limit=10)
                 connection.sendall(json.dumps(first).encode() + b'\n')
-                assert json.loads(stream.readline())['phase'] == 'lexical'
+                assert decode_response(stream.readline())['phase'] == 'lexical'
                 wait(lambda: not service.marker.exists())  # Inference entered the injected stall.
                 second = dict(first, request_id='running-2', query='tax')
                 connection.sendall(json.dumps(second).encode() + b'\n')
-                cancelled = json.loads(stream.readline())
+                cancelled = decode_response(stream.readline())
                 assert cancelled['request_id'] == 'running-1' and cancelled['status'] == 'cancelled', cancelled
-                saturated = json.loads(stream.readline())
+                saturated = decode_response(stream.readline())
                 assert saturated['request_id'] == 'running-2' and saturated['reason'] == 'semantic_queue_full', saturated
                 time.sleep(.35)
                 connection.sendall(json.dumps(dict(first, request_id='running-3')).encode() + b'\n')
-                assert json.loads(stream.readline())['phase'] == 'lexical'
-                final = json.loads(stream.readline())
+                assert decode_response(stream.readline())['phase'] == 'lexical'
+                final = decode_response(stream.readline())
                 assert final['phase'] == 'final' and final['request_id'] == 'running-3', final
         with sqlite3.connect(service.database) as db:
             assert db.execute('SELECT count(*) FROM embedding_models WHERE active=1').fetchone()[0] == 1
@@ -240,4 +339,7 @@ with tempfile.TemporaryDirectory(prefix='torchlight-semantic-') as temp:
         assert phases[0]['results'][0]['path'] == str(invoice)
     finally:
         service.stop()
+for check in (check_large_responses, check_degraded_status, check_fifo_model):
+    with tempfile.TemporaryDirectory(prefix='torchlight-semantic-regression-') as temp:
+        check(Path(temp))
 print('Semantic daemon lifecycle checks passed.')

@@ -544,13 +544,44 @@ static void respond(tl_daemon *daemon, struct client *client, const tl_ipc_reque
     if (decoded != TL_OK || repeated)
         client->closing = true;
 }
-static void semantic_completion(struct client *client, bool cancel) {
+static tl_status append_semantic_status(tl_daemon *daemon, char *output, size_t capacity,
+                                        size_t *length) {
+    tl_writer_stats writer;
+    tl_semantic_stats semantic;
+    tl_status status = writer_stats(daemon->writer, &writer);
+    if (status == TL_OK)
+        status = semantic_stats(daemon->semantic, &semantic);
+    if (status != TL_OK)
+        return status;
+    if (*length < 2 || output[*length - 2] != '}' || output[*length - 1] != '\n')
+        return TL_STATE;
+    /* Extend the worker's owned envelope with the coordinator's current status. */
+    size_t prefix = *length - 2;
+    tl_json_buffer buffer;
+    json_buffer_init(&buffer, output + prefix, capacity - prefix);
+    indexing_status(&buffer, &writer, &semantic);
+    json_raw(&buffer, "}\n");
+    *length = buffer.status == TL_OK ? prefix + buffer.length : 0;
+    return buffer.status;
+}
+static void semantic_completion(tl_daemon *daemon, struct client *client, bool cancel) {
     if (!client->semantic_pending)
         return;
+    /* Each phase can fill the output buffer. Drain earlier frames before taking
+     * a final, rather than treating a fast worker as a slow-client overflow. */
+    if (!cancel && client->output_length != client->sent)
+        return;
     size_t length = 0;
+    size_t capacity = IPC_RESPONSE_BYTES - client->output_length;
+    if (capacity <= SEMANTIC_STATUS_BYTES) {
+        close_client(client);
+        return;
+    }
+    char *output = client->output + client->output_length;
     tl_status status = semantic_take(client->semantic, client->slot, client->semantic_token, cancel,
-                                     client->output + client->output_length,
-                                     IPC_RESPONSE_BYTES - client->output_length, &length);
+                                     output, capacity - SEMANTIC_STATUS_BYTES, &length);
+    if (status == TL_OK && length != 0)
+        status = append_semantic_status(daemon, output, capacity, &length);
     if (status != TL_OK) {
         close_client(client);
         return;
@@ -590,7 +621,7 @@ static void requests(tl_daemon *daemon, struct client *client) {
         /* A repeated active id remains a protocol error, not a cancellation. */
         if (decoded == TL_OK && request.operation == IPC_QUERY && client->semantic_pending &&
             !duplicate(client, request.request_id))
-            semantic_completion(client, true);
+            semantic_completion(daemon, client, true);
         if (client->fd < 0)
             return;
         respond(daemon, client, &request, decoded, superseded);
@@ -677,7 +708,7 @@ tl_status daemon_run(tl_daemon *daemon) {
         for (size_t i = 0; i < DAEMON_MAX_CLIENTS; i++) {
             struct client *client = &daemon->clients[i];
             if (client->fd >= 0)
-                semantic_completion(client, false);
+                semantic_completion(daemon, client, false);
             if (client->fd >= 0 && now >= client->deadline)
                 close_client(client);
             short events = client->closing ? 0 : POLLIN;

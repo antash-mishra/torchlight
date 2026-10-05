@@ -18,6 +18,7 @@ int main(void) {
     test_fuzzy();
     test_embed();
     test_potion();
+    test_semantic();
     test_vector();
     test_rank();
     test_trigram();

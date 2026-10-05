@@ -9,7 +9,7 @@
 | **Lexical channel** | One candidate source: `prefix`, `trigram`, `subseq` or `typo`. `lexical` merges them. |
 | **Prefix bonus** | Bounded caller-selected addition to each basename/token/initials prefix hit, fixed before sealing. The desktop engine uses it for name relevance; file engines default to zero. |
 | **Prefix edit matching** | Comparing a query word to the beginning of an indexed word with a small edit budget; the untyped suffix does not count as an error. Implemented with one-edit sorted-range traversal for five-symbol or longer unfinished words. |
-| **Hybrid retrieval** | Combining lexical and semantic result lists with explicit exact-name/path priority. The M4 fusion module is implemented; resident integration is pending. |
+| **Hybrid retrieval** | Combining lexical and semantic result lists with explicit exact-name/path priority. M4 integrates native Potion and RRF through opt-in resident two-phase search. |
 | **BM25** | A lexical relevance formula using word occurrence, word rarity and document length. Implemented as an offline exact-token field comparison; the resident engine uses lexical channels. |
 | **Implicit token trie** | Lexicographically sorted distinct tokens whose shared prefixes form contiguous ranges; bounded edit rows traverse those ranges without storing additional trie nodes. |
 | **Token completeness** | Evidence that a query word consumes an entire indexed token rather than just its beginning; a bounded ranking bonus. |
@@ -39,6 +39,7 @@
 | **Generation** | Never used alone in code or docs: always `catalog_gen` or `emb_gen`. |
 | **Two-phase response** | A `lexical` result set sent immediately, followed by a fused `final` set for the same request. |
 | **Terminal response** | `final` results or a completion error ending an active request, including lexical fallback on semantic failure/deadline. |
+| **Response backpressure** | Keeping a semantic final pending while earlier socket output drains, so individually valid phases share a bounded client queue. |
 | **Resolve** | Validate a result's file id against the current catalog and retrieve its exact current path before launch. |
 | **Launch-event id** | Unique id preventing duplicate history records when recording a launch is retried. |
 | **Display string** | Valid-UTF-8 rendering of a path (invalid bytes → U+FFFD). Never used to open files. |

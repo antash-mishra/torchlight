@@ -138,6 +138,10 @@ the root [README](../README.md) for commands, and
   preserves the completion bonus at basename strength without growing the index.
 - [0022: M4 semantic foundation](adr/0022-m4-semantic-foundation.md)
   starts the swappable embedder, float cosine reference and bounded exact-priority RRF.
+- [0023: native Potion and two-phase search](adr/0023-m4-native-potion-and-two-phase-search.md)
+  records the provisional backend, owned metadata snapshots and measured limits.
+- [0024: M4 response backpressure and model inputs](adr/0024-m4-response-backpressure-and-model-inputs.md)
+  keeps large two-phase responses bounded, preserves status and rejects blocking model streams.
 
 ## Keeping docs current
 
@@ -146,6 +150,3 @@ the root [README](../README.md) for commands, and
 - Changing a module's API or behavior? Update its doc **in the same change**.
 - Making a significant design decision? Add an ADR using
   [`adr/0000-template.md`](adr/0000-template.md).
-
-- [0023: native Potion and two-phase search](adr/0023-m4-native-potion-and-two-phase-search.md)
-  records the provisional backend, owned metadata snapshots and measured limits.

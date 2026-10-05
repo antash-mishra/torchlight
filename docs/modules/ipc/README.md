@@ -30,9 +30,9 @@ are rejected. The generic parser bounds depth to eight and tokens to 32 here.
 Responses include `version`, `request_id`, `search_id`, `catalog_gen`,
 `emb_gen`, `phase`, `status`, `reason` and bounded `results`. Lexical-only
 queries return one final frame. Available M4 semantics return a lexical frame
-followed by a final frame with matching snapshot generations. Initial frames
-include indexing/history status. Query frames superseded by newer buffered frames receive
-`status: cancelled`; active duplicate ids receive
+followed by a final frame with matching snapshot generations. Every phase
+includes current indexing/history/semantic status. Query frames superseded by
+newer buffered frames receive `status: cancelled`; active duplicate ids receive
 `reason: duplicate_active_request_id`. Malformed requests without a valid decoded
 envelope receive an empty request id and the connection closes after the error.
 
@@ -42,6 +42,9 @@ embedded controls/newlines. Display never supplies an action target. Resolve
 returns the current exact path or `stale_result`; open records only an accepted
 history request. Responses release catalog leases before queuing socket output.
 The daemon bounds clients, four active ids and 1 MiB total output per client.
+It drains earlier output before queuing a semantic final; two individually
+valid frames need not fit in the output queue simultaneously. Client deadlines
+and cancellation still bound retained jobs and snapshots.
 
 `ipc_call` validates and consumes at most one lexical frame before returning
 the terminal frame within the original deadline, without allocating.

@@ -7,6 +7,9 @@
 #define SEMANTIC_CLIENTS 16
 #define SEMANTIC_DEADLINE_MS 200
 #define SEMANTIC_VECTOR_BYTES (150U * 1024U * 1024U)
+/* Leave room for the coordinator's current indexing/history status. */
+#define SEMANTIC_STATUS_BYTES 1024U
+#define SEMANTIC_RESPONSE_BYTES (IPC_RESPONSE_BYTES - SEMANTIC_STATUS_BYTES)
 typedef struct tl_semantic tl_semantic;
 typedef struct {
     bool available, building;
@@ -41,8 +44,11 @@ tl_status semantic_submit(tl_semantic *semantic, size_t slot, uint64_t token,
 /** Copy a ready terminal JSON response, or an immediate lexical terminal on
  * cancel/deadline, into caller buffer. out_length zero while pending (TL_OK).
  * Cancel emits cancelled/superseded. A consumed/unknown token returns TL_STATE;
- * TL_INVALID/LIMIT for arguments/buffer. No allocation/SQL/I/O. In-flight work
- * retains its own snapshot until completion even after cancellation. */
+ * TL_INVALID/LIMIT for arguments/buffer. TL_LIMIT leaves the job available for
+ * retry or cancellation; out_length stays zero. Frames fit within
+ * SEMANTIC_RESPONSE_BYTES, leaving SEMANTIC_STATUS_BYTES for coordinator status.
+ * No allocation/SQL/I/O. In-flight work retains its own snapshot until completion
+ * even after cancellation. */
 tl_status semantic_take(tl_semantic *semantic, size_t slot, uint64_t token, bool cancel,
                         char *output, size_t capacity, size_t *out_length);
 /** Borrow eventfd used to wake coordinator; -1 for NULL. Caller must not close

@@ -1,7 +1,8 @@
 # Semantic service
 
 > **Status:** Implemented M4 opt-in two-phase execution; large-catalog latency
-> acceptance remains open. Enable with `torchlightd --model PATH.tlm`.
+> acceptance remains open. Buffer retries and per-phase status are regression-tested.
+> Enable with `torchlightd --model PATH.tlm`.
 
 Public contract: [semantic.h](../../../include/torchlight/semantic.h).
 
@@ -41,6 +42,14 @@ crossing connections. Eventfd wakes the poll loop. Closed/slow clients release
 jobs; the worker reclaims retired views. Existing IPC clients already wait for
 the terminal response and the popup preserves selection by id.
 
+`semantic_take` does not consume a ready, cancelled or deadline response when
+the caller buffer is too small: `TL_LIMIT` leaves the token and snapshot live
+for retry or cancellation. The coordinator waits for earlier output to drain
+before taking a normal final, preserving the existing 1 MiB client bound.
+Worker envelopes leave 1 KiB for the coordinator to append current indexing,
+history and semantic status; status is present on every phase. See
+[ADR 0024](../../adr/0024-m4-response-backpressure-and-model-inputs.md).
+
 Schema v4 caches exact prepared text under full model/transform emb_gen. Changing
 a path or application revision produces different metadata/text or session ids;
 staging is abandoned when its source generations change. Unchanged text reuses
@@ -54,5 +63,7 @@ baseline; startup and update costs are measured, not claimed incremental.
 [Lifecycle tests](../../../tests/test_semantic.py) use independent analytic
 models and cover restart/cache, rename/delete, application removal, replacement,
 missing models, blocked-writer deadlines, injected running cancellation,
-queue saturation and write-half-close completion. Trained-model
+queue saturation, write-half-close completion, large two-phase responses,
+degraded status and FIFO model shutdown. [Unit tests](../../../tests/unit/test_semantic.c)
+check buffer-limit retries and snapshot release. Trained-model
 and large-catalog measurements are in [M4 evaluation](../../m4-model-evaluation.md).

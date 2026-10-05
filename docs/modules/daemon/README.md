@@ -1,9 +1,11 @@
 # daemon
 
-> **Status:** Implemented (M4): opt-in two-phase hybrid service and bounded clients
+> **Status:** Implemented (M4): opt-in two-phase hybrid service, bounded clients
+> and reviewed response backpressure/status handling
 > **Source:** `src/service/daemon.c`, `src/bin/torchlightd.c`
 > **Header:** `include/torchlight/daemon.h`
-> **Tests:** `tests/test_daemon.py`, `tests/unit/test_catalog.c`, `tests/unit/test_writer.c`
+> **Tests:** `tests/test_daemon.py`, `tests/test_semantic.py`,
+> `tests/unit/test_catalog.c`, `tests/unit/test_writer.c`
 
 `torchlightd` loads the saved catalog and begins serving before its worker's
 background reconciliation finishes. `daemon_create/run/destroy` own the poll
@@ -62,3 +64,12 @@ Status includes semantic availability, staging progress, vector bytes and the
 last background error. The coordinator enforces semantic deadlines independently
 of blocked inference/cache work. Write-half-closed clients can still receive
 both responses. Response-limit terminal errors cancel pending semantic jobs.
+
+The coordinator drains earlier socket output before taking a semantic final,
+so two individually valid frames may exceed 1 MiB together without overflowing
+the per-client queue. The semantic job remains pending until transmission space
+is available, cancellation occurs or the client expires. Every phase carries
+current indexing/history/semantic status, including degraded indexing warnings.
+The worker reserves 1 KiB of its frame budget for this coordinator-owned status.
+Large fast/slow-reader exchanges and degraded-root regressions exercise this
+contract. See [ADR 0024](../../adr/0024-m4-response-backpressure-and-model-inputs.md).

@@ -342,7 +342,8 @@ static tl_status encode_response(const struct job *job, const tl_rank_result *re
                                  const char *status, const char *reason, char *out, size_t capacity,
                                  size_t *length) {
     tl_json_buffer buffer;
-    json_buffer_init(&buffer, out, capacity);
+    json_buffer_init(&buffer, out,
+                     capacity < SEMANTIC_RESPONSE_BYTES ? capacity : SEMANTIC_RESPONSE_BYTES);
     json_raw(&buffer, "{\"version\":1,\"request_id\":");
     json_quote(&buffer, job->request.request_id);
     json_raw(&buffer, ",\"phase\":\"final\",\"catalog_gen\":");
@@ -401,10 +402,10 @@ static void run_job(tl_semantic *service, struct job *job) {
                                          : "hybrid";
     tl_status encoded = encode_response(
         job, status == TL_OK ? fused : NULL, status == TL_OK ? fused_count : job->lexical_count,
-        "ok", reason, job->output, IPC_RESPONSE_BYTES, &job->output_length);
+        "ok", reason, job->output, SEMANTIC_RESPONSE_BYTES, &job->output_length);
     if (encoded != TL_OK) {
         encoded = encode_response(job, NULL, 0, "error", "response_limit", job->output,
-                                  IPC_RESPONSE_BYTES, &job->output_length);
+                                  SEMANTIC_RESPONSE_BYTES, &job->output_length);
         (void)encoded;
     }
     pthread_mutex_lock(&service->lock);
@@ -691,6 +692,10 @@ tl_status semantic_take(tl_semantic *service, size_t slot, uint64_t token, bool 
         status = encode_response(
             job, NULL, cancel ? 0 : job->lexical_count, cancel ? "cancelled" : "ok",
             cancel ? "superseded" : "semantic_deadline", output, capacity, out_length);
+        if (status != TL_OK) {
+            pthread_mutex_unlock(&service->lock);
+            return status;
+        }
         if (job->state == JOB_RUNNING)
             job->state = JOB_ABANDONED;
         else {
@@ -698,13 +703,13 @@ tl_status semantic_take(tl_semantic *service, size_t slot, uint64_t token, bool 
             job->state = JOB_FREE;
         }
     } else if (job->state == JOB_DONE) {
-        if (job->output_length >= capacity)
-            status = TL_LIMIT;
-        else {
-            memcpy(output, job->output, job->output_length);
-            output[job->output_length] = 0;
-            *out_length = job->output_length;
+        if (job->output_length >= capacity) {
+            pthread_mutex_unlock(&service->lock);
+            return TL_LIMIT;
         }
+        memcpy(output, job->output, job->output_length);
+        output[job->output_length] = 0;
+        *out_length = job->output_length;
         job->snapshot->references--;
         job->state = JOB_FREE;
     }

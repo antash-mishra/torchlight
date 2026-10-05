@@ -56,6 +56,25 @@ static void check_encoding(tl_embedder *model, const char *text, float mean) {
     CHECK(fabsf(values[0] - mean / sqrtf(mean * mean + 1)) < 1e-6F);
     CHECK(fabsf(values[1] - 1 / sqrtf(mean * mean + 1)) < 1e-6F);
 }
+void test_potion_file(const char *path) {
+    unsigned char bytes[4096];
+    size_t length = fixture(bytes);
+    FILE *file = fopen(path, "wb");
+    CHECK(file != NULL && fwrite(bytes, 1, length, file) == length && fclose(file) == 0);
+}
+static void check_regular_targets(const char *path) {
+    char directory[] = "/tmp/torchlight-model-target-XXXXXX", link[128];
+    CHECK(mkdtemp(directory) != NULL);
+    int length = snprintf(link, sizeof(link), "%s/model", directory);
+    CHECK(length > 0 && (size_t)length < sizeof(link));
+    CHECK(symlink(path, link) == 0);
+    tl_embedder *model = NULL;
+    CHECK(potion_load(link, POTION_MODEL_BYTES, &model) == TL_OK);
+    embedder_destroy(model);
+    CHECK(unlink(link) == 0);
+    CHECK(potion_load(directory, POTION_MODEL_BYTES, &model) == TL_IO && model == NULL);
+    CHECK(rmdir(directory) == 0);
+}
 void test_potion(void) {
     unsigned char bytes[4096];
     size_t length = fixture(bytes);
@@ -78,6 +97,7 @@ void test_potion(void) {
     long_word[101] = 0;
     CHECK(embedder_encode(model, EMBED_QUERY, long_word, unknown, 2) == TL_STATE);
     embedder_destroy(model);
+    check_regular_targets(path);
     CHECK(potion_load(path, 1, &model) == TL_LIMIT && model == NULL);
     bytes[length - 1] ^= 1;
     FILE *file = fopen(path, "wb");

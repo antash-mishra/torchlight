@@ -23,6 +23,9 @@ remain open. See [model research and measured evaluation](m4-model-evaluation.md
   owned file/desktop metadata snapshots and bounded reclamation.
 - Immediate lexical phase, bounded per-client semantic jobs, coherent generation
   pairs, eventfd completion, cancellation and deadline/error/unavailable fallback.
+- Reviewed output backpressure with retryable buffer limits, current status on
+  both phases, and regular-file validation that keeps FIFO model paths from
+  blocking shutdown; dedicated unit and daemon regressions cover these fixes.
 - Analytic sanitizer/loader/vector/cache tests and resident lifecycle tests;
   synchronous CLI now waits for the final phase; async popup selection
   handling retains its existing regression coverage.
@@ -33,7 +36,8 @@ Contracts: [potion](../include/torchlight/potion.h),
 [semantic](../include/torchlight/semantic.h), [vector](../include/torchlight/vector.h),
 [rank](../include/torchlight/rank.h), [storage](../include/torchlight/store.h).
 Decisions: [initial foundation](adr/0022-m4-semantic-foundation.md),
-[native backend and publication](adr/0023-m4-native-potion-and-two-phase-search.md).
+[native backend and publication](adr/0023-m4-native-potion-and-two-phase-search.md),
+[response backpressure and model inputs](adr/0024-m4-response-backpressure-and-model-inputs.md).
 
 ## Remaining acceptance work
 
@@ -61,3 +65,11 @@ Run `make test`, `make lint`, `make bench`, `make bench-vector`. Normal tests us
 independent analytic models and no ML dependencies. Trained-model evaluation is
 optional and reproducible from pinned artifacts; large model binaries stay in
 ignored `build/models/`. Relevant artifacts are linked in the evaluation report.
+
+The 2026-10-06 review fixes passed `make all`, `make test` (ASan/UBSan),
+`make lint`, `make bench` and `make bench-vector`. Trained-model checks passed
+all 108 encoding parity cases and all 52 int8 reference order comparisons;
+native held-out nDCG@10 remained 0.969 and top-ten success remained 100% on the
+small fixture. The popup also retained its degraded warning after applying
+both actual daemon phases with an offline root. These fixes do not close the
+large-catalog latency or broader model-comparison gates above.

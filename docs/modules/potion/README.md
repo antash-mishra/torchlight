@@ -1,6 +1,7 @@
 # Potion
 
-> **Status:** Implemented for M4; pinned Potion retrieval 32M, native CPU inference.
+> **Status:** Implemented for M4; pinned Potion retrieval 32M, native CPU inference
+> and model loading restricted to regular files.
 
 Public contract: [potion.h](../../../include/torchlight/potion.h).
 
@@ -11,6 +12,14 @@ The header is 220 bytes; the payload contains count+1 offsets, NUL-terminated
 vocabulary and a row-major table. No mappings, Python, network or ONNX runtime
 are used by C inference. Python export/reference evaluation dependencies are
 isolated and optional. Large model artifacts stay in ignored `build/models/`.
+
+Model inputs must be regular files; symlinks to regular files remain supported.
+The loader opens with nonblocking flags, then checks the actual descriptor's
+type before reading. FIFOs, devices and directories return `TL_IO`, so a FIFO
+without a writer cannot block semantic-worker shutdown. Checking the opened
+descriptor also avoids a path-replacement race between validation and reading.
+Unit tests cover regular symlink targets and directories; a daemon regression
+covers unavailable semantics and bounded shutdown with a FIFO model path.
 
 BERT normalization lowercases, strips accents and controls, separates Chinese
 characters and punctuation, then performs longest-match WordPiece with the

@@ -3,11 +3,14 @@
 #include "torchlight/potion.h"
 #include "torchlight/hashmap.h"
 #include "torchlight/json.h"
+#include <fcntl.h>
 #include <gio/gio.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <utf8proc.h>
 
 enum {
@@ -324,18 +327,38 @@ static tl_status create_adapter(struct potion *model, const unsigned char header
     const tl_embedder_backend backend = {potion_encode, potion_destroy};
     return embedder_create(&descriptor, &backend, model, out);
 }
+static tl_status open_model(const char *filename, FILE **out) {
+    /* Opening a FIFO must not wait for a writer before its type is checked.
+     * Inspect the opened descriptor so symlink/replacement races cannot bypass
+     * the regular-file requirement. */
+    int descriptor = open(filename, O_RDONLY | O_CLOEXEC | O_NONBLOCK | O_NOCTTY);
+    if (descriptor < 0)
+        return TL_IO;
+    struct stat info;
+    if (fstat(descriptor, &info) != 0 || !S_ISREG(info.st_mode)) {
+        close(descriptor);
+        return TL_IO;
+    }
+    *out = fdopen(descriptor, "rb");
+    if (*out == NULL) {
+        close(descriptor);
+        return TL_IO;
+    }
+    return TL_OK;
+}
 tl_status potion_load(const char *filename, size_t budget_bytes, tl_embedder **out) {
     if (out == NULL)
         return TL_INVALID;
     *out = NULL;
     if (filename == NULL || budget_bytes == 0)
         return TL_INVALID;
-    FILE *file = fopen(filename, "rb");
-    if (file == NULL)
-        return TL_IO;
+    FILE *file = NULL;
+    tl_status status = open_model(filename, &file);
+    if (status != TL_OK)
+        return status;
     struct potion *model = calloc(1, sizeof(*model));
     unsigned char header[HEADER_BYTES];
-    tl_status status = model == NULL ? TL_NOMEM : TL_OK;
+    status = model == NULL ? TL_NOMEM : TL_OK;
     if (status == TL_OK)
         status = fread(header, 1, sizeof(header), file) == sizeof(header) ? TL_OK : TL_IO;
     if (status == TL_OK)

@@ -7,6 +7,8 @@
 /** Load a TLSTAT01 model exported by scripts/export_potion.py into owned RAM.
  * No mappings or runtime downloads. Validate sizes, vocabulary, finite weights
  * and SHA256 payload; budget includes the payload (not hash-map overhead).
+ * Accept regular files, including symlinks to them; reject FIFOs, directories
+ * and devices with TL_IO without waiting for a stream producer.
  * out NULL on failure; TL_INVALID/IO/NOMEM/LIMIT/STATE. Returned adapter is
  * caller-owned and serialized; free with embedder_destroy. emb_gen derives
  * from the complete model payload and explicit preprocessing/backend versions.

@@ -62,6 +62,11 @@ void test_fuzzy(void);
 /** Check the embedder adapter's metadata, ownership and error contracts. */
 void test_embed(void);
 void test_potion(void);
+/** Write an analytic TLSTAT01 table to borrowed path; caller removes the file.
+ * No ownership transfer; abort on unexpected write failure. */
+void test_potion_file(const char *path);
+/** Check semantic response retries and cancellation preserve pinned job lifetimes. */
+void test_semantic(void);
 /** Compare cosine retrieval to independent scalar arithmetic and reader checks. */
 void test_vector(void);
 /** Check RRF scores, exact-match protection and lexical fallback. */
