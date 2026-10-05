@@ -142,6 +142,8 @@ the root [README](../README.md) for commands, and
   records the provisional backend, owned metadata snapshots and measured limits.
 - [0024: M4 response backpressure and model inputs](adr/0024-m4-response-backpressure-and-model-inputs.md)
   keeps large two-phase responses bounded, preserves status and rejects blocking model streams.
+- [0025: M4 cache staging retries](adr/0025-m4-cache-staging-retries.md)
+  retains partial embedding builds when cache transactions cannot begin during reconciliation.
 
 ## Keeping docs current
 

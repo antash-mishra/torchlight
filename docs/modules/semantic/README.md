@@ -2,7 +2,7 @@
 
 > **Status:** Implemented M4 opt-in two-phase execution; large-catalog latency
 > acceptance remains open. Buffer retries and per-phase status are regression-tested.
-> Enable with `torchlightd --model PATH.tlm`.
+> Cache BEGIN failures retain staged progress. Enable with `torchlightd --model PATH.tlm`.
 
 Public contract: [semantic.h](../../../include/torchlight/semantic.h).
 
@@ -60,10 +60,22 @@ query snapshots. Bad replacement files keep the last valid snapshot, or lexical
 fallback when no valid snapshot exists. Full metadata/vector rebuild remains a
 baseline; startup and update costs are measured, not claimed incremental.
 
+Reconciliation can hold SQLite's writer lock longer than the cache connection's
+busy timeout. A failed cache `BEGIN IMMEDIATE` leaves all rows untouched, so the
+service retains the staged vectors, metadata and position and retries after a
+bounded wait. Interactive jobs can wake that wait. Source generations are still
+checked before retrying; an obsolete stage is discarded. Failures after a batch
+begins still abandon staging because rows/text ownership may have changed.
+`building` remains true and `last_error` reports the failed attempt until progress
+resumes. See [ADR 0025](../../adr/0025-m4-cache-staging-retries.md).
+
 [Lifecycle tests](../../../tests/test_semantic.py) use independent analytic
 models and cover restart/cache, rename/delete, application removal, replacement,
 missing models, blocked-writer deadlines, injected running cancellation,
 queue saturation, write-half-close completion, large two-phase responses,
-degraded status and FIFO model shutdown. [Unit tests](../../../tests/unit/test_semantic.c)
+degraded status, injected cache contention and FIFO model shutdown. Cache tests
+hold repeated BEGIN failures, check retained progress and lexical availability,
+then release contention and require a hybrid final.
+[Unit tests](../../../tests/unit/test_semantic.c)
 check buffer-limit retries and snapshot release. Trained-model
 and large-catalog measurements are in [M4 evaluation](../../m4-model-evaluation.md).

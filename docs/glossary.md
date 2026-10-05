@@ -85,6 +85,9 @@
   Potion uses this without a contextual transformer runtime.
 - **Prepared-text cache:** Versioned background storage keyed by exact semantic
   input and emb_gen, allowing unchanged metadata to reuse validated vectors.
+- **Cache write contention:** A cache transaction cannot acquire SQLite's writer
+  lock while reconciliation or another writer holds it. Unstarted cache batches
+  retry without losing the partial resident embedding build.
 - **Sign-bit shortlist:** Experimental Hamming candidate selection before int8
   cosine rescoring; recall must pass evaluation before it becomes a default.
 - **desktop_gen:** Session-local immutable desktop metadata sequence, separate

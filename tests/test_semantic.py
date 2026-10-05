@@ -74,6 +74,7 @@ class Service:
         self.model.write_bytes(model_bytes())
         self.deadline = deadline
         self.marker = base / 'stall-marker'
+        self.busy_marker = base / 'busy-marker'
         self.process = None
 
     def start(self):
@@ -84,7 +85,8 @@ class Service:
             preload = [STALL]
             if 'sanitized' in BINARY:
                 preload.insert(0, subprocess.check_output(['cc', '-print-file-name=libasan.so'], text=True).strip())
-            env.update(LD_PRELOAD=':'.join(preload), TORCHLIGHT_TEST_SEMANTIC_STALL=str(self.marker))
+            env.update(LD_PRELOAD=':'.join(preload), TORCHLIGHT_TEST_SEMANTIC_STALL=str(self.marker),
+                       TORCHLIGHT_TEST_SEMANTIC_BUSY=str(self.busy_marker))
         self.log = tempfile.TemporaryFile()
         self.process = subprocess.Popen([BINARY, '--config', str(self.config), '--db', str(self.database),
             '--socket', str(self.path), '--model', str(self.model), '--rescan-ms', '100',
@@ -201,6 +203,41 @@ def check_degraded_status(base):
             for phase in phases:
                 assert phase['indexing']['degraded'] and phase['indexing']['offline_roots'] == 1
     finally:
+        service.stop()
+
+
+def check_cache_contention(base):
+    if not STALL:
+        return
+    service = Service(base)
+    for index in range(10000):
+        (service.root / f'invoice-{index:05d}.pdf').touch()
+    try:
+        service.start()
+        def partial():
+            status = service.query('status', operation='status')[0]
+            semantic = status['semantic']
+            return status if (semantic['total'] >= 10000 and
+                              0 < semantic['processed'] < semantic['total'] and
+                              semantic['building']) else None
+        before = wait(partial)
+        service.busy_marker.touch()
+        def blocked():
+            status = service.query('status', operation='status')[0]
+            return status if status['semantic']['last_error'] == 'I/O failure' else None
+        failed = wait(blocked)
+        assert failed['catalog_gen'] == before['catalog_gen']
+        assert failed['semantic']['building'], failed
+        assert failed['semantic']['total'] == before['semantic']['total'], failed
+        assert failed['semantic']['processed'] >= before['semantic']['processed'], failed
+        time.sleep(.15)  # More than one retry must preserve the same progress.
+        retried = service.query('status', operation='status')[0]['semantic']
+        assert retried['building'] and retried['processed'] == failed['semantic']['processed'], retried
+        assert service.query('invoice')[0]['results']
+        service.busy_marker.unlink()
+        service.hybrid('bill')
+    finally:
+        service.busy_marker.unlink(missing_ok=True)
         service.stop()
 
 
@@ -339,7 +376,7 @@ with tempfile.TemporaryDirectory(prefix='torchlight-semantic-') as temp:
         assert phases[0]['results'][0]['path'] == str(invoice)
     finally:
         service.stop()
-for check in (check_large_responses, check_degraded_status, check_fifo_model):
+for check in (check_large_responses, check_degraded_status, check_cache_contention, check_fifo_model):
     with tempfile.TemporaryDirectory(prefix='torchlight-semantic-regression-') as temp:
         check(Path(temp))
 print('Semantic daemon lifecycle checks passed.')

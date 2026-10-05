@@ -20,7 +20,8 @@ remain open. See [model research and measured evaluation](m4-model-evaluation.md
 - Schema v4 staged model descriptors, persistent prepared-text cache, bounded
   background cache batches, reuse of unchanged texts and stale-row pruning.
 - Background generation validation, model replacement, restart/cache recovery,
-  owned file/desktop metadata snapshots and bounded reclamation.
+  owned file/desktop metadata snapshots and bounded reclamation. Cache BEGIN
+  failures retry without discarding an unchanged partial embedding build.
 - Immediate lexical phase, bounded per-client semantic jobs, coherent generation
   pairs, eventfd completion, cancellation and deadline/error/unavailable fallback.
 - Reviewed output backpressure with retryable buffer limits, current status on
@@ -37,7 +38,8 @@ Contracts: [potion](../include/torchlight/potion.h),
 [rank](../include/torchlight/rank.h), [storage](../include/torchlight/store.h).
 Decisions: [initial foundation](adr/0022-m4-semantic-foundation.md),
 [native backend and publication](adr/0023-m4-native-potion-and-two-phase-search.md),
-[response backpressure and model inputs](adr/0024-m4-response-backpressure-and-model-inputs.md).
+[response backpressure and model inputs](adr/0024-m4-response-backpressure-and-model-inputs.md),
+[cache staging retries](adr/0025-m4-cache-staging-retries.md).
 
 ## Remaining acceptance work
 

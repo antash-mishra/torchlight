@@ -500,22 +500,26 @@ static tl_status prepare_background(tl_semantic *service) {
         return TL_OK;
     return begin_stage(service);
 }
-static void background(tl_semantic *service) {
+static tl_status background(tl_semantic *service) {
     tl_status status = prepare_background(service);
     if (status != TL_OK || service->stage == NULL) {
         update_progress(service, status);
-        return;
+        return status;
     }
     status = store_embedding_batch_begin(service->store);
-    if (status == TL_OK) {
-        for (size_t i = 0; i < BACKGROUND_BATCH && status == TL_OK &&
-                           service->stage->position < vec_count(service->stage->entries);
-             i++)
-            status = embed_row(service, service->stage);
-        tl_status committed = store_embedding_batch_end(service->store, status == TL_OK);
-        if (committed != TL_OK)
-            status = committed;
+    if (status != TL_OK) {
+        /* No row changed before BEGIN succeeds. Keep the resident progress when
+         * a reconciliation holds SQLite's writer lock beyond its busy timeout. */
+        update_progress(service, status);
+        return status;
     }
+    for (size_t i = 0; i < BACKGROUND_BATCH && status == TL_OK &&
+                       service->stage->position < vec_count(service->stage->entries);
+         i++)
+        status = embed_row(service, service->stage);
+    tl_status committed = store_embedding_batch_end(service->store, status == TL_OK);
+    if (committed != TL_OK)
+        status = committed;
     if (status == TL_OK && service->stage->position == vec_count(service->stage->entries))
         status = finish_stage(service);
     if (status != TL_OK) {
@@ -523,6 +527,7 @@ static void background(tl_semantic *service) {
         service->stage = NULL;
     }
     update_progress(service, status);
+    return status;
 }
 
 static void *worker(void *context) {
@@ -533,8 +538,8 @@ static void *worker(void *context) {
             run_job(service, job);
             continue;
         }
-        background(service);
-        if (service->stage != NULL)
+        tl_status status = background(service);
+        if (service->stage != NULL && status == TL_OK)
             continue;
         struct timespec deadline;
         clock_gettime(CLOCK_REALTIME, &deadline);

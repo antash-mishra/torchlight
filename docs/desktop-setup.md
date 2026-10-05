@@ -55,6 +55,27 @@ The supplied unit assumes the per-user default prefix; adjust ExecStart if using
 a different PREFIX. Installation does not replace desktop keyboard bindings or
 automatically enable/start services.
 
+## Enable M4 semantics
+
+Building includes the native backend; loading model weights requires `--model`.
+Export the pinned Potion model using the [M4 evaluation instructions](m4-model-evaluation.md).
+Keep the exported file outside `build/`, for example under
+`~/.local/share/torchlight/models/potion-retrieval-32M-256.tlm`, so cleaning build
+artifacts does not remove it. For the default per-user installation, add this
+override with `systemctl --user edit torchlightd.service`:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=%h/.local/bin/torchlightd --model %h/.local/share/torchlight/models/potion-retrieval-32M-256.tlm
+```
+
+Run `systemctl --user daemon-reload` and `systemctl --user restart torchlightd.service`.
+`torchlight status --json` reports semantic building progress and availability.
+Initial queries use lexical fallback until the matching embedding snapshot is
+published; ready eligible queries then receive lexical and hybrid final phases.
+See the [semantic service](modules/semantic/README.md) for cache retry/deadline behavior.
+
 ## Cinnamon shortcut
 
 Open System Settings → Keyboard → Shortcuts → Custom Shortcuts. Add **Torchlight**
