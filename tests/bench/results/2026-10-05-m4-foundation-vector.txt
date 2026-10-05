@@ -1,0 +1,14 @@
+./build/bench_vector 50000
+synthetic_float_reference model=none inference=excluded ipc=excluded
+rows=50000 dimensions=256 index_bytes=51600064 build_s=0.075 resident_kib=52304
+first_scan_ms=12.992
+float_scan_ms n=64 p50=15.476 p95=21.171 p99=24.768 max=24.768
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=52224
+rrf_2x1000_ms n=64 p50=0.368 p95=0.660 p99=0.750 max=0.750
+./build/bench_vector 500000
+synthetic_float_reference model=none inference=excluded ipc=excluded
+rows=500000 dimensions=256 index_bytes=516000064 build_s=0.735 resident_kib=505840
+first_scan_ms=159.029
+float_scan_ms n=64 p50=149.671 p95=161.457 p99=217.347 max=217.347
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=505856
+rrf_2x1000_ms n=64 p50=0.314 p95=0.567 p99=0.731 max=0.731

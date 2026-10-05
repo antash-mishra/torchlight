@@ -16,6 +16,9 @@ int main(void) {
     test_prefix();
     test_subseq();
     test_fuzzy();
+    test_embed();
+    test_vector();
+    test_rank();
     test_trigram();
     test_typo();
     test_dirtree();

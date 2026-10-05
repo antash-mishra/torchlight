@@ -59,6 +59,12 @@ void test_typo(void);
 void test_dirtree(void);
 /** Run scorer checks, aborting on failure. */
 void test_fuzzy(void);
+/** Check the embedder adapter's metadata, ownership and error contracts. */
+void test_embed(void);
+/** Compare cosine retrieval to independent scalar arithmetic and reader checks. */
+void test_vector(void);
+/** Check RRF scores, exact-match protection and lexical fallback. */
+void test_rank(void);
 /** Run orchestrator/ordering/workspace checks, aborting on failure. */
 void test_lexical(void);
 /** Run resident snapshot lifetime, capacity and concurrent-publication checks. */

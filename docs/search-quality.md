@@ -7,7 +7,8 @@ personal recommendations in [the plan](../PLAN.md) and
 [ADR 0019](adr/0019-search-quality-before-semantic-personalization.md). M3 Part 2 is now implemented in
 [ADR 0020](adr/0020-m3-part2-search-quality.md);
 [its verification](m3-part2-completion.md) records held-out relevance and latency
-tradeoffs. M4/M5 and model choices below still require evaluation.
+tradeoffs. M4's [initial C foundation](m4-implementation.md) is implemented;
+trained-model choice, production retrieval and M5 still require evaluation.
 
 For Torchlight, the recommended direction is hybrid retrieval: indexed name
 search with better autocomplete and ranking, plus optional local semantic

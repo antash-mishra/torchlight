@@ -9,7 +9,7 @@
 | **Lexical channel** | One candidate source: `prefix`, `trigram`, `subseq` or `typo`. `lexical` merges them. |
 | **Prefix bonus** | Bounded caller-selected addition to each basename/token/initials prefix hit, fixed before sealing. The desktop engine uses it for name relevance; file engines default to zero. |
 | **Prefix edit matching** | Comparing a query word to the beginning of an indexed word with a small edit budget; the untyped suffix does not count as an error. Implemented with one-edit sorted-range traversal for five-symbol or longer unfinished words. |
-| **Hybrid retrieval** | Combining lexical and semantic result lists, with explicit exact-name/path priority in Torchlight's planned ranking. |
+| **Hybrid retrieval** | Combining lexical and semantic result lists with explicit exact-name/path priority. The M4 fusion module is implemented; resident integration is pending. |
 | **BM25** | A lexical relevance formula using word occurrence, word rarity and document length. Implemented as an offline exact-token field comparison; the resident engine uses lexical channels. |
 | **Implicit token trie** | Lexicographically sorted distinct tokens whose shared prefixes form contiguous ranges; bounded edit rows traverse those ranges without storing additional trie nodes. |
 | **Token completeness** | Evidence that a query word consumes an entire indexed token rather than just its beginning; a bounded ranking bonus. |
@@ -24,6 +24,9 @@
 | **Edit distance** | Number of insertions, deletions, and substitutions between strings; used for bounded typo matching. |
 | **Fuzzy score** | fzf/fzy-style subsequence match quality against a path; edit scoring handles other typos separately. |
 | **Embedding** | A fixed-size float vector representing a path's meaning. |
+| **Prepared embedding text** | Versioned UTF-8 input for a model, derived from names/context/metadata. Raw byte paths retain their separate exact identity for matching and actions. |
+| **Cosine reference** | Exhaustive search of L2-normalized float embeddings by dot product, used to evaluate model relevance and reduced/quantized retrieval loss. |
+| **Exact-match tier** | Explicit ranking priority: an exact path precedes an exact basename, and both precede ordinary hybrid scores. |
 | **Binary quantization** | Keeping only the sign bit of each embedding dimension, so vectors can be compared with XOR + popcount. |
 | **Rescoring** | Re-ranking the top binary hits with more precise int8 vectors. |
 | **RRF** | Reciprocal Rank Fusion: merges ranked lists via `Σ 1/(k + rank)`. |

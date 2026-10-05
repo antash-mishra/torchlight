@@ -1,0 +1,47 @@
+cc -I/usr/include/gio-unix-2.0 -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -pthread -I/usr/include/libmount -I/usr/include/blkid  -Iinclude -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -D_DEFAULT_SOURCE -D_GNU_SOURCE -I/tmp/torchlight-deps/usr/include -std=c17 -O3 -DNDEBUG -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror src/core/common.c src/core/vec.c src/core/hashmap.c src/core/config.c src/core/json.c src/core/path.c src/core/sort.c src/core/mask.c src/core/parallel.c src/index/tokenize.c src/index/prefix.c src/index/subseq.c src/index/fuzzy.c src/index/trigram.c src/index/typo.c src/index/dirtree.c src/index/lexical.c src/index/embed.c src/index/vector.c src/index/rank.c src/index/desktop.c src/index/lexical_query.c src/index/catalog.c src/fs/crawl.c src/fs/watch.c src/storage/store.c src/ipc/ipc.c src/ipc/async.c src/ipc/client.c src/service/writer.c src/service/daemon.c tests/bench/bench_lexical.c tests/bench/corpus.c tests/bench/queries.c -L/tmp/torchlight-deps/usr/lib/x86_64-linux-gnu -Wl,-rpath,/tmp/torchlight-deps/usr/lib/x86_64-linux-gnu -lgio-2.0 -lgobject-2.0 -lglib-2.0  -pthread -lm -lsqlite3 -lutf8proc -o build/bench_lexical
+./build/bench_lexical --synthetic 50000
+paths=50000 mean_path_bytes=71.4 build_s=0.300 engine_rss_kib=30256
+typing_ms n=12406 p50=0.053 p95=0.956 p99=2.872 max=9.522
+whole_query_ms n=1200 p50=0.112 p95=1.079 p99=3.302 max=4.417
+cold_workspace_query_ms n=60 p50=0.137 p95=0.862 p99=1.570 max=1.570
+quality tuning/exact n=200 recall@1=0.980 recall@10=1.000 mrr@10=0.987 candidate_recall@1000=1.000
+quality tuning/prefix n=200 recall@1=0.260 recall@10=0.545 mrr@10=0.371 candidate_recall@1000=1.000
+quality tuning/abbreviation n=200 recall@1=0.550 recall@10=0.795 mrr@10=0.630 candidate_recall@1000=0.940
+quality tuning/typo n=200 recall@1=0.755 recall@10=0.865 mrr@10=0.802 candidate_recall@1000=0.965
+quality tuning/partial_typo n=200 recall@1=0.055 recall@10=0.105 mrr@10=0.072 candidate_recall@1000=0.960
+quality tuning/parent n=200 recall@1=0.295 recall@10=0.615 mrr@10=0.398 candidate_recall@1000=1.000
+quality tuning/all n=1200 recall@1=0.482 recall@10=0.654 mrr@10=0.543 candidate_recall@1000=0.978
+quality held_out/exact n=200 recall@1=0.970 recall@10=1.000 mrr@10=0.980 candidate_recall@1000=1.000
+quality held_out/prefix n=200 recall@1=0.245 recall@10=0.430 mrr@10=0.309 candidate_recall@1000=1.000
+quality held_out/abbreviation n=200 recall@1=0.470 recall@10=0.725 mrr@10=0.549 candidate_recall@1000=0.920
+quality held_out/typo n=200 recall@1=0.755 recall@10=0.850 mrr@10=0.791 candidate_recall@1000=0.990
+quality held_out/partial_typo n=200 recall@1=0.050 recall@10=0.075 mrr@10=0.060 candidate_recall@1000=0.960
+quality held_out/parent n=200 recall@1=0.280 recall@10=0.560 mrr@10=0.360 candidate_recall@1000=0.995
+quality held_out/all n=1200 recall@1=0.462 recall@10=0.607 mrr@10=0.508 candidate_recall@1000=0.978
+fixtures=9/9
+steady_rss_kib=39964
+catalog_query_ms n=1200 p50=0.107 p95=1.075 p99=3.331 max=4.531
+peak_rss_kib=46396
+./build/bench_lexical --synthetic 500000
+paths=500000 mean_path_bytes=79.6 build_s=3.091 engine_rss_kib=255944
+typing_ms n=12477 p50=1.183 p95=7.799 p99=13.651 max=32.617
+whole_query_ms n=1200 p50=1.497 p95=8.402 p99=15.964 max=21.306
+cold_workspace_query_ms n=60 p50=1.359 p95=10.554 p99=16.107 max=16.107
+quality tuning/exact n=200 recall@1=0.990 recall@10=1.000 mrr@10=0.995 candidate_recall@1000=1.000
+quality tuning/prefix n=200 recall@1=0.140 recall@10=0.395 mrr@10=0.217 candidate_recall@1000=0.940
+quality tuning/abbreviation n=200 recall@1=0.240 recall@10=0.500 mrr@10=0.308 candidate_recall@1000=0.895
+quality tuning/typo n=200 recall@1=0.590 recall@10=0.795 mrr@10=0.667 candidate_recall@1000=0.985
+quality tuning/partial_typo n=200 recall@1=0.080 recall@10=0.090 mrr@10=0.085 candidate_recall@1000=0.395
+quality tuning/parent n=200 recall@1=0.255 recall@10=0.395 mrr@10=0.302 candidate_recall@1000=0.925
+quality tuning/all n=1200 recall@1=0.383 recall@10=0.529 mrr@10=0.429 candidate_recall@1000=0.857
+quality held_out/exact n=200 recall@1=0.980 recall@10=1.000 mrr@10=0.987 candidate_recall@1000=1.000
+quality held_out/prefix n=200 recall@1=0.145 recall@10=0.395 mrr@10=0.210 candidate_recall@1000=0.925
+quality held_out/abbreviation n=200 recall@1=0.270 recall@10=0.570 mrr@10=0.356 candidate_recall@1000=0.910
+quality held_out/typo n=200 recall@1=0.585 recall@10=0.830 mrr@10=0.673 candidate_recall@1000=0.995
+quality held_out/partial_typo n=200 recall@1=0.040 recall@10=0.055 mrr@10=0.048 candidate_recall@1000=0.335
+quality held_out/parent n=200 recall@1=0.220 recall@10=0.385 mrr@10=0.270 candidate_recall@1000=0.945
+quality held_out/all n=1200 recall@1=0.373 recall@10=0.539 mrr@10=0.424 candidate_recall@1000=0.852
+fixtures=9/9
+steady_rss_kib=334748
+catalog_query_ms n=1200 p50=1.356 p95=7.266 p99=13.491 max=17.138
+peak_rss_kib=399192

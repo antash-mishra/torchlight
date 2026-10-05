@@ -14,6 +14,10 @@ M3 adds installed application/settings search, the GTK4 popup and service integr
 [GUI design](docs/m3-gui-design.md) and [interactive preview](docs/m3-gui-preview.html).
 Full index rebuild cost remains later performance work.
 
+M4's [initial semantic foundation](docs/m4-implementation.md) provides a
+swappable embedder interface, float cosine reference and exact-priority RRF.
+Model selection, background embeddings and two-phase daemon queries are pending.
+
 ## Build and use
 
 On Debian/Ubuntu/Mint, install `build-essential`, `pkg-config`, `libsqlite3-dev`,
@@ -113,6 +117,7 @@ make test    # ASan + UBSan + leak checks, unit, CLI and daemon integration test
 make lint    # clang-tidy and cppcheck, warnings fail the build
 make format
 make bench   # release engine: latency and labeled ranking quality, 50k/500k paths
+make bench-vector # M4 synthetic float reference and fusion cost, 50k/500k vectors
 make test-ui # Cinnamon/X11 keyboard acceptance (requires xdotool)
 make bench-daemon # release daemon: startup, IPC, indexing load, update lag and RSS
 ```

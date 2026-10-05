@@ -3,7 +3,7 @@
 M1, M2 and M3 have their planned features implemented. M3's review bugs are fixed
 and covered by regression tests. Detailed evidence and remaining desktop checks
 are in [M3 verification](m3-completion.md).
-M3 Part 2 is implemented; the next sequence is M4, then M5, as recorded in [the plan](../PLAN.md).
+M3 Part 2 is implemented; M4 has started, followed by M5, as recorded in [the plan](../PLAN.md).
 
 | Milestone | In simple words | Status |
 |---|---|---|
@@ -11,7 +11,7 @@ M3 Part 2 is implemented; the next sequence is M4, then M5, as recorded in [the 
 | M2 | Keep a background service running, remember the file list, and update it when files change. | Implemented |
 | M3 | Show a keyboard popup; search apps, settings, files and folders; open or reveal the selected item. | Implemented; review fixes verified |
 | M3 Part 2 | Improve name search, unfinished typos, abbreviations and ranking; test useful results among competing apps and files. | Implemented; held-out relevance and performance measured |
-| M4 | Combine improved name search with optional local embeddings and vector retrieval for meaning-based matches. | Planned after M3 Part 2 |
+| M4 | Combine improved name search with optional local embeddings and vector retrieval for meaning-based matches. | Started: embedder interface, float reference and RRF; model and daemon integration pending |
 | M5 | Use optional opening history to recommend personally useful files and apps higher, with privacy and history controls. | Planned after M4 |
 
 M3 Part 2 now keeps names, generic names, keywords and folders distinct, finds
@@ -22,7 +22,10 @@ BM25, with target families separated between tuning and held-out queries.
 the extra latency cost. Exact names/paths and allocation-free queries are preserved.
 The small fixture establishes regressions, not universal best search quality.
 
-M4 still needs model comparison, background creation of numeric representations
+M4's initial C foundation implements the embedder interface, exact float vector
+matching and protected fusion. Its [implementation report](m4-implementation.md)
+records tests, measured costs and the remaining sequence. M4 still needs
+English model comparison, background creation of numeric representations
 of paths and application metadata, fast vector matching, and combining those
 matches with the improved name search. Ordinary name search must remain
 available when the model is slow or unavailable. This milestone uses names,

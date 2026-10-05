@@ -37,6 +37,12 @@ capacity exhaustion and round trips of all 255 non-NUL byte values.
 `path.h` / `src/core/path.c` provide component-aware byte scope checks without
 filesystem I/O. These stateless buffer/value utilities need no mutable context.
 
+`sort_items` orders caller-owned fixed-size records with a context-bearing
+comparison callback, checked size arithmetic and in-place heapsort. M4 uses it
+for fusion grouping/order and vector result ordering without query allocation.
+Tests cover record payload preservation, both directions, ties, all small heap
+sizes and overflow. The optimized integer implementation remains unchanged.
+
 `sort_u64` orders caller-owned integers with an in-place heapsort, constant
 scratch and no allocation. Trigram deduplication uses it because libc `qsort`
 can allocate temporary storage even when the caller supplies a fixed array.

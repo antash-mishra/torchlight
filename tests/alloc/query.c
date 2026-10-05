@@ -1,6 +1,8 @@
 /* Interpose the platform allocator to detect library/indirect query allocation.
  * Separate from ASan: its allocator interposition would mask the libc path. */
 #include "torchlight/lexical.h"
+#include "torchlight/rank.h"
+#include "torchlight/vector.h"
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -101,6 +103,50 @@ static tl_status check_workers(void) {
     return status;
 }
 
+static tl_status check_hybrid(void) {
+    enum { ALLOCATION_VECTOR_ROWS = 1000, ALLOCATION_VECTOR_DIMENSIONS = 4 };
+    tl_vector *index = NULL;
+    tl_vector_workspace *workspace = NULL;
+    tl_rank *ranker = NULL;
+    const float query[] = {1, -2, 3, -4};
+    tl_rank_candidate lexical[ALLOCATION_VECTOR_ROWS], semantic[ALLOCATION_VECTOR_ROWS];
+    tl_vector_result neighbors[ALLOCATION_VECTOR_ROWS];
+    tl_rank_result fused[ALLOCATION_VECTOR_ROWS];
+    tl_status status =
+        vector_create(1, ALLOCATION_VECTOR_DIMENSIONS, ALLOCATION_VECTOR_ROWS, SIZE_MAX, &index);
+    for (size_t i = 0; i < ALLOCATION_VECTOR_ROWS && status == TL_OK; i++) {
+        float values[] = {(float)(i + 1), -2, 3, -4};
+        status = vector_add(index, i + 1, 1, values, ALLOCATION_VECTOR_DIMENSIONS);
+        lexical[i] = (tl_rank_candidate){i + 1, "/root/shared", RANK_REGULAR};
+        semantic[i] = (tl_rank_candidate){ALLOCATION_VECTOR_ROWS - i, "/root/shared", RANK_REGULAR};
+    }
+    if (status == TL_OK)
+        status = vector_finish(index);
+    if (status == TL_OK)
+        status = vector_workspace_create(index, &workspace);
+    if (status == TL_OK)
+        status = rank_create(ALLOCATION_VECTOR_ROWS * 2, RANK_DEFAULT_RRF_K, &ranker);
+    atomic_store(&allocations, 0);
+    atomic_store(&probing, true);
+    for (size_t i = 0; i < 20 && status == TL_OK; i++) {
+        size_t count = 0;
+        status = vector_query(index, workspace, 1, query, ALLOCATION_VECTOR_DIMENSIONS, neighbors,
+                              ALLOCATION_VECTOR_ROWS, &count);
+        if (status == TL_OK)
+            status = rank_fuse(ranker, lexical, ALLOCATION_VECTOR_ROWS, semantic,
+                               ALLOCATION_VECTOR_ROWS, fused, ALLOCATION_VECTOR_ROWS, &count);
+    }
+    atomic_store(&probing, false);
+    if (atomic_load(&allocations) != 0) {
+        fprintf(stderr, "vector/fusion query allocated %zu times\n", atomic_load(&allocations));
+        status = TL_STATE;
+    }
+    rank_destroy(ranker);
+    vector_workspace_destroy(workspace);
+    vector_destroy(index);
+    return status;
+}
+
 int main(void) {
     tl_lexical *engine = NULL;
     tl_lexical_workspace *workspace = NULL;
@@ -120,6 +166,8 @@ int main(void) {
     lexical_destroy(engine);
     if (status == TL_OK)
         status = check_workers();
+    if (status == TL_OK)
+        status = check_hybrid();
     if (status == TL_OK)
         puts("Allocation-free query checks passed.");
     return status == TL_OK ? 0 : 1;

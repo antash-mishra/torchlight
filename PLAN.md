@@ -17,6 +17,14 @@ See [desktop setup](docs/desktop-setup.md) and the
 limits. The [interactive preview](docs/m3-gui-preview.html) remains the original
 file-result design reference.
 
+M4 has started with a swappable embedder adapter, owned float cosine reference
+and bounded RRF baseline with exact-match priority. English is the first model
+evaluation target. Model comparison, trained C backend, compression, background
+embedding persistence and coherent two-phase service remain pending. See
+[M4 implementation and measurements](docs/m4-implementation.md) and
+[ADR 0022](docs/adr/0022-m4-semantic-foundation.md); the daemon still searches
+lexically, and no semantic model/runtime has been selected.
+
 M3 Part 2 strengthens the existing name search before adding embeddings:
 field-aware ranking, unfinished-word typo retrieval, better fuzzy scoring and
 real launcher relevance tests. The application-name weighting and stable tie
@@ -449,8 +457,9 @@ actions, installable desktop entry and systemd user unit. See
 [desktop setup](docs/desktop-setup.md), [M3 verification](docs/m3-completion.md)
 and [ADR 0015](docs/adr/0015-m3-desktop-catalog-and-launcher.md).
 M3 Part 2 search quality is implemented; see
-[its verification and measured tradeoffs](docs/m3-part2-completion.md). M4 hybrid
-semantic search and M5 personal recommendations are next.
+[its verification and measured tradeoffs](docs/m3-part2-completion.md). M4's
+semantic foundation is started; trained models and resident hybrid integration
+remain pending. M5 personal recommendations follow M4.
 Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
 tracked explicitly in the verification report.
 
@@ -527,6 +536,10 @@ tracked explicitly in the verification report.
    deadline/error fallback and selection stability. Name results appear
    immediately; semantic work never delays the first response. File contents
    remain a possible later extension.
+   Started in [ADR 0022](docs/adr/0022-m4-semantic-foundation.md): embedder adapter,
+   float reference and exact-priority RRF. See [implementation and remaining
+   gates](docs/m4-implementation.md); trained models and resident hybrid queries
+   are not yet implemented.
 6. **M5: Personal recommendations and ranking.** After M4, use optional
    resident frecency and query-to-open summaries for both files and applications.
    Apply bounded boosts for frequently/recently opened and previously selected

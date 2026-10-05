@@ -20,8 +20,12 @@ term ranges, complete-token scoring and optimal fuzzy alignment up to 512
 symbols. Queries remain allocation-free; the large-text greedy fallback and
 all existing capacity/cache contracts remain bounded. See
 [ADR 0020](adr/0020-m3-part2-search-quality.md) and
-[measured relevance/performance](m3-part2-completion.md). M4 embedding/vector
-retrieval and hybrid fusion are next, followed by M5 optional personalization.
+[measured relevance/performance](m3-part2-completion.md). M4 has started with
+an owned float cosine reference, swappable embedder adapter and bounded RRF
+fusion. These modules are not yet wired into the daemon; trained inference,
+persisted/background vectors and coherent two-phase snapshots remain pending.
+See [M4 implementation](m4-implementation.md) and
+[ADR 0022](adr/0022-m4-semantic-foundation.md). M5 optional personalization follows.
 
 ADR 0012 adds filesystem incarnation checks during scans and schema v2 identity
 storage. Replacements retire old ids and descendants before publication, with

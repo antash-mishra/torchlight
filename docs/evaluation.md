@@ -9,6 +9,9 @@ Current M1/M2 acceptance and its measurements are in the
 [3 October readiness results](#2026-10-03-m1m2-readiness-adr-0013).
 The latest ranking regression and benchmark are in the
 [application-name check](#2026-10-05-application-name-ranking-adr-0018).
+The [M4 foundation measurements](m4-implementation.md#initial-measurements)
+record the exhaustive float cosine reference and RRF cost at 50k/500k synthetic
+vectors. These exclude inference and are not model relevance or hybrid latency.
 
 - Curate labeled queries for names, extensions, prefixes, abbreviations, short
   queries, insertions/deletions/substitutions, Unicode, non-UTF-8 bytes,

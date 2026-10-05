@@ -24,7 +24,10 @@ The [M3 review fixes](adr/0017-m3-snapshot-cancellation-and-acceptance.md) cover
 consistent desktop replacement, action cancellation, keyboard Retry, accessible
 input and scaled placement. [Milestone status](milestone-status.md) explains
 what is done and what remains in plain language. M3 Part 2 search quality is
-implemented, followed next by M4 hybrid semantic search and M5 recommendations.
+implemented. M4 has started with the embedder adapter, float cosine reference
+and RRF fusion baseline; trained models, background vectors and two-phase
+service integration remain pending. See [M4 implementation](m4-implementation.md)
+and [ADR 0022](adr/0022-m4-semantic-foundation.md). M5 recommendations follow M4.
 [Part 2 verification](m3-part2-completion.md) records indexed prefix edits,
 explicit metadata fields, optimal fuzzy alignment, held-out/BM25 comparisons,
 latency and RSS. The [search quality review](search-quality.md) explains the
@@ -131,6 +134,8 @@ the root [README](../README.md) for commands, and
   adds explicit fields, indexed prefix edits and bounded optimal alignment.
 - [0021: first-token completion](adr/0021-first-token-completeness.md)
   preserves the completion bonus at basename strength without growing the index.
+- [0022: M4 semantic foundation](adr/0022-m4-semantic-foundation.md)
+  starts the swappable embedder, float cosine reference and bounded exact-priority RRF.
 
 ## Keeping docs current
 
