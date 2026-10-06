@@ -1,20 +1,44 @@
 # ui
 
-> **Status:** Implemented (M3), review fixes verified: GTK4 popup, asynchronous IPC, native desktop actions
-> **Source:** `ui/gtk/{launcher,model,actions}.c`, `src/bin/torchlight-gtk.c`
+> **Status:** Implemented (M3 + Quiet System), verified: GTK4 popup, asynchronous IPC, native desktop actions
+> **Source:** `ui/gtk/{launcher,model,actions,view,path_label}.c`, `ui/gtk/quiet-system.css`, `src/bin/torchlight-gtk.c`
 > **Headers:** `include/torchlight/{launcher,popup,async}.h`
-> **Tests:** `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`
+> **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`
 
 The thin executable owns an opaque launcher. GtkApplication enforces one instance;
 `torchlight-gtk --toggle` shows/focuses or dismisses its window. Showing clears the
-query and results, shows `Type to search` and focuses the entry. Empty or
+query and results, shows only the wordmark/search area and focuses the entry. Empty or
 whitespace-only input cancels pending query work, invalidates old responses and
 leaves no actionable selection. No empty-query IPC request or search-history
 entry is created by the popup. Escape and focus loss
 hide it. Arrow selection keeps entry focus; Enter opens; Ctrl+Enter reveals;
 clicks use the same resolve path. The scroller displays eight 58-pixel rows.
 
-The native themed surface follows [the GUI specification](../../m3-gui-design.md).
+The native surface implements the accepted Quiet System direction in
+[the GUI specification](../../m3-gui-design.md) and
+[ADR 0027](../../adr/0027-quiet-system-native-popup.md). `tl_popup_view` owns the
+shader-free presentation: embedded CSS, plain GtkEntry, 24px preferred JetBrains
+Mono query, underscore caret, quiet wordmark and six-pixel graphite surface.
+Installed monospace/sans fonts are fallbacks; no new dependency is added.
+GtkText supplies shaped cursor extents, so native editing, Unicode, selection,
+clipboard, undo and scrolling stay intact. Preedit uses GTK's native caret.
+Caret blinking honors GTK settings and stops on inactivity, dismissal or teardown.
+
+Empty search collapses to the 116px search area. No-match/offline/limit feedback
+is inside that area; results and footer appear only with matches. Entry position
+and X11 window top remain fixed. Chrome is measured before limiting scroll height
+against the work area, including scaled/small screens. A faint edge lights on
+editing, holds until 700ms idle and fades over 420ms; continuous input extends one
+timer. Blur/dismiss/destroy cancel it. Disabled GTK animations remove transitions
+and blinking. Selection has a quiet fill and rail with a 100ms color transition.
+
+`path_label` measures safe UTF-8 display paths using Pango when allocated.
+It substitutes `~` for the home directory, drops earlier ancestors while retaining
+the final folders, then shortens a giant final folder in the middle with bounded
+width probes. Tooltips and accessible labels retain the full safe path; action
+resolution still uses exact bytes. Font/width changes recalculate displayed paths.
+The native build contains no shader, PNG art or experimental browser renderer.
+
 Files and folders have symbolic icons, desktop entries use their application
 icons, and settings/application subtitles identify their action type. Labels
 escape controls and never become launch targets. Footer status and selection
@@ -37,7 +61,7 @@ pending edit, 16 ms coalescing and a delayed Searching indicator after 120 ms.
 Each uses a fresh same-user connection, so idle expiry and daemon restart do not
 reuse old connection identities. Supplementary status polls have a separate
 slot, preserve good results and reconnect/requery after service recovery.
-Retry is keyboard accessible; Enter on its focused button follows GTK's normal
+Retry is keyboard accessible; Enter in the entry retries an unavailable search with no selection; Enter on its focused button follows GTK's normal
 button activation rather than the result-opening shortcut.
 
 Actions first resolve the id. A separate GTask performs desktop revision checking,
@@ -68,7 +92,8 @@ It does not auto-start unrelated portal/secret services. A test-only preload
 observer records native GTK after-paint frames and entry-edit timestamps;
 production binaries have no measurement I/O. Small-screen theme/scale checks,
 error/restart recovery, no-history mode and 500k rebuild timings are repeatable
-through `make test-ui-isolated` and `make bench-ui`. These checks supplement the
+through `make test-ui-isolated` and `make bench-ui`. Native presentation tests inspect actual Cairo caret pixels, selection/IME,
+large pasted queries, Unicode paths, geometry and timer destruction. These checks supplement the
 recorded Cinnamon tests; font overrides do not validate real fractional scaling.
 
 See [desktop setup](../../desktop-setup.md), [M3 verification](../../m3-completion.md),

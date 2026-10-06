@@ -8,7 +8,7 @@
 #include <string.h>
 struct popup_probe {
     char *filename;
-    GtkWidget *entry, *list, *status, *retry;
+    GtkWidget *entry, *list, *status, *retry, *search, *footer, *scroll;
     gint64 changed;
     unsigned retry_clicks;
     bool painted;
@@ -68,6 +68,17 @@ static GtkWidget *find_widget(GtkWidget *parent, GType type) {
     }
     return NULL;
 }
+static GtkWidget *find_named(GtkWidget *parent, const char *name) {
+    if (strcmp(gtk_widget_get_name(parent), name) == 0)
+        return parent;
+    for (GtkWidget *child = gtk_widget_get_first_child(parent); child != NULL;
+         child = gtk_widget_get_next_sibling(child)) {
+        GtkWidget *found = find_named(child, name);
+        if (found != NULL)
+            return found;
+    }
+    return NULL;
+}
 static void entry_changed(GtkEditable *entry, gpointer context) {
     (void)entry;
     struct popup_probe *probe = context;
@@ -91,6 +102,10 @@ static void write_frame(struct popup_probe *probe, bool ready) {
         if (GTK_IS_LIST_BOX_ROW(child))
             rows++;
     GtkListBoxRow *selected = gtk_list_box_get_selected_row(GTK_LIST_BOX(probe->list));
+    GtkWidget *window = GTK_WIDGET(gtk_widget_get_root(probe->entry));
+    graphene_rect_t bounds = GRAPHENE_RECT_INIT(0, 0, 0, 0);
+    if (!gtk_widget_compute_bounds(probe->entry, window, &bounds))
+        return;
     FILE *file = fopen(probe->filename, "a");
     if (file != NULL) {
         int written = fprintf(
@@ -98,12 +113,22 @@ static void write_frame(struct popup_probe *probe, bool ready) {
             "{\"paint_us\":%lld,\"changed_us\":%lld,\"first\":%s,"
             "\"ready\":%s,\"rows\":%zu,\"query_b64\":\"%s\","
             "\"status_b64\":\"%s\",\"retry\":%s,"
-            "\"retry_focus\":%s,\"retry_clicks\":%u,\"selected\":%d}\n",
+            "\"retry_focus\":%s,\"retry_clicks\":%u,\"selected\":%d,"
+            "\"results_visible\":%s,\"footer_visible\":%s,\"typing\":%s,"
+            "\"entry_x\":%.1f,\"entry_y\":%.1f,\"entry_width\":%.1f,\"clear_icon\":%s}\n",
             (long long)painted, (long long)probe->changed, probe->painted ? "false" : "true",
             ready ? "true" : "false", rows, encoded_query, encoded_status,
             gtk_widget_get_visible(probe->retry) ? "true" : "false",
             gtk_widget_has_focus(probe->retry) ? "true" : "false", probe->retry_clicks,
-            selected == NULL ? -1 : gtk_list_box_row_get_index(selected));
+            selected == NULL ? -1 : gtk_list_box_row_get_index(selected),
+            gtk_widget_get_visible(probe->scroll) ? "true" : "false",
+            gtk_widget_get_visible(probe->footer) ? "true" : "false",
+            gtk_widget_has_css_class(probe->search, "typing") ? "true" : "false",
+            (double)bounds.origin.x, (double)bounds.origin.y, (double)bounds.size.width,
+            gtk_entry_get_icon_storage_type(GTK_ENTRY(probe->entry), GTK_ENTRY_ICON_SECONDARY) ==
+                    GTK_IMAGE_EMPTY
+                ? "false"
+                : "true");
         if (written < 0)
             fputs("Could not record popup frame\n", stderr);
         if (fclose(file) != 0)
@@ -139,15 +164,17 @@ void gtk_window_present(GtkWindow *window) {
         return;
     struct popup_probe *probe = g_new0(struct popup_probe, 1);
     probe->filename = g_strdup(filename);
-    probe->entry = find_widget(GTK_WIDGET(window), GTK_TYPE_SEARCH_ENTRY);
+    probe->entry = find_widget(GTK_WIDGET(window), GTK_TYPE_ENTRY);
     probe->list = find_widget(GTK_WIDGET(window), GTK_TYPE_LIST_BOX);
-    GtkWidget *box = gtk_window_get_child(window);
-    GtkWidget *footer = box == NULL ? NULL : gtk_widget_get_last_child(box);
-    probe->status = footer == NULL ? NULL : gtk_widget_get_first_child(footer);
-    probe->retry = probe->status == NULL ? NULL : gtk_widget_get_next_sibling(probe->status);
+    probe->status = find_named(GTK_WIDGET(window), "popup-status");
+    probe->retry = find_named(GTK_WIDGET(window), "popup-retry");
+    probe->search = find_named(GTK_WIDGET(window), "popup-search");
+    probe->footer = find_named(GTK_WIDGET(window), "popup-footer");
+    probe->scroll = find_named(GTK_WIDGET(window), "popup-results");
     GdkFrameClock *clock = gtk_widget_get_frame_clock(GTK_WIDGET(window));
     if (probe->entry == NULL || probe->list == NULL || !GTK_IS_LABEL(probe->status) ||
-        probe->retry == NULL || clock == NULL) {
+        probe->retry == NULL || probe->search == NULL || probe->footer == NULL ||
+        probe->scroll == NULL || clock == NULL) {
         probe_destroy(probe);
         return;
     }

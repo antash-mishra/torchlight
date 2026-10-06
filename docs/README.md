@@ -5,6 +5,8 @@ browser. It shows the current system, the planned system, and the next steps.
 The implemented M3 popup follows the [GUI specification](m3-gui-design.md) and
 [interactive design preview](m3-gui-preview.html), including Cinnamon X11 focus,
 keyboard actions, status/error states and asynchronous IPC requirements.
+The GTK popup now implements the minimal, shader-free Quiet System presentation;
+see [ADR 0027](adr/0027-quiet-system-native-popup.md) and [native captures](ui/native-empty.png).
 
 Start here. Read in this order:
 
@@ -144,6 +146,9 @@ the root [README](../README.md) for commands, and
   keeps large two-phase responses bounded, preserves status and rejects blocking model streams.
 - [0025: M4 cache staging retries](adr/0025-m4-cache-staging-retries.md)
   retains partial embedding builds when cache transactions cannot begin during reconciliation.
+
+- [0027: Quiet System native popup](adr/0027-quiet-system-native-popup.md)
+  implements the accepted minimal layout, shaped underscore cursor and typing light without shaders.
 
 ## Keeping docs current
 

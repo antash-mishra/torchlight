@@ -3,6 +3,7 @@
 #include "actions.h"
 #include "torchlight/async.h"
 #include "torchlight/popup.h"
+#include "view.h"
 #include <gio/gdesktopappinfo.h>
 #include <gtk/gtk.h>
 #ifdef GDK_WINDOWING_X11
@@ -16,8 +17,9 @@
 #define POPUP_STATUS_MS 2000
 struct popup {
     GtkApplication *application;
-    GtkWidget *window, *entry, *list, *status, *retry, *scroll;
+    GtkWidget *window, *entry, *list, *retry, *scroll;
     tl_popup_model *model;
+    tl_popup_view *view;
     char *socket_path;
     uint64_t sequence;
     char request_id[IPC_REQUEST_ID_BYTES + 1];
@@ -28,9 +30,7 @@ struct popup {
 };
 static void start_query(struct popup *popup);
 static void set_status(struct popup *popup, const char *text) {
-    gtk_label_set_text(GTK_LABEL(popup->status), text);
-    gtk_accessible_announce(GTK_ACCESSIBLE(popup->status), text,
-                            GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_MEDIUM);
+    popup_view_set_status(popup->view, text);
 }
 static void remove_timer(guint *timer) {
     if (*timer != 0)
@@ -46,6 +46,7 @@ static bool query_empty(struct popup *popup) {
 }
 static void close_popup(struct popup *popup) {
     popup->visible = false;
+    popup_view_set_active(popup->view, false);
     popup->dirty = false;
     remove_timer(&popup->debounce);
     remove_timer(&popup->pending);
@@ -80,54 +81,17 @@ static void select_row(struct popup *popup) {
     else if (bottom > value + page)
         gtk_adjustment_set_value(adjustment, bottom - page);
 }
-static GtkWidget *result_widget(const tl_popup_row *row) {
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    GtkWidget *image =
-        gtk_image_new_from_icon_name(row->folder ? "folder-symbolic" : "text-x-generic-symbolic");
-    if (row->application) {
-        GIcon *icon = row->icon[0] == 0 ? NULL : g_icon_new_for_string(row->icon, NULL);
-        if (icon != NULL) {
-            gtk_image_set_from_gicon(GTK_IMAGE(image), icon);
-            g_object_unref(icon);
-        } else
-            gtk_image_set_from_icon_name(GTK_IMAGE(image), "application-x-executable-symbolic");
-    }
-    gtk_image_set_pixel_size(GTK_IMAGE(image), 24);
-    gtk_box_append(GTK_BOX(box), image);
-    GtkWidget *text = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-    gtk_widget_set_hexpand(text, true);
-    GtkWidget *name = gtk_label_new(row->name);
-    gtk_label_set_xalign(GTK_LABEL(name), 0);
-    gtk_label_set_ellipsize(GTK_LABEL(name), PANGO_ELLIPSIZE_END);
-    gtk_widget_add_css_class(name, "result-name");
-    gtk_box_append(GTK_BOX(text), name);
-    char parent[POPUP_PATH_BYTES];
-    g_strlcpy(parent, row->display, sizeof(parent));
-    char *slash = strrchr(parent, '/');
-    if (slash != NULL && slash != parent)
-        *slash = 0;
-    const char *subtitle = row->application ? (row->settings ? "Settings" : "Application") : parent;
-    GtkWidget *detail = gtk_label_new(subtitle);
-    gtk_label_set_xalign(GTK_LABEL(detail), 0);
-    gtk_label_set_ellipsize(GTK_LABEL(detail), PANGO_ELLIPSIZE_MIDDLE);
-    gtk_widget_add_css_class(detail, "dim-label");
-    gtk_widget_add_css_class(detail, "result-detail");
-    gtk_box_append(GTK_BOX(text), detail);
-    gtk_box_append(GTK_BOX(box), text);
-    gtk_widget_set_size_request(box, -1, 58);
-    gtk_widget_set_tooltip_text(box, row->display);
-    return box;
-}
 static void render(struct popup *popup) {
     gtk_list_box_remove_all(GTK_LIST_BOX(popup->list));
     size_t count = popup_model_count(popup->model);
     for (size_t i = 0; i < count; i++)
         gtk_list_box_append(GTK_LIST_BOX(popup->list),
-                            result_widget(popup_model_row(popup->model, i)));
+                            popup_view_result(popup_model_row(popup->model, i)));
+    popup_view_set_results(popup->view, count);
     gtk_widget_set_sensitive(popup->list, true);
     select_row(popup);
     if (query_empty(popup))
-        set_status(popup, "Type to search");
+        set_status(popup, "");
     else if (count == 0)
         set_status(popup, "No matches. Try a name or part of its folder path.");
     else if (popup_model_degraded(popup->model))
@@ -357,6 +321,8 @@ static gboolean key_pressed(GtkEventControllerKey *controller, guint key, guint 
         return true;
     }
     if (key == GDK_KEY_Return || key == GDK_KEY_KP_Enter) {
+        if (gtk_widget_get_visible(popup->retry) && popup_model_selected(popup->model) == NULL)
+            return gtk_widget_activate(popup->retry);
         activate_selected(popup, (modifiers & GDK_CONTROL_MASK) != 0);
         return true;
     }
@@ -468,8 +434,7 @@ static void place_window(GtkWidget *widget, gpointer context) {
             continue;
         int width = MIN(680, MAX(240, area.width - 48));
         gtk_window_set_default_size(GTK_WINDOW(popup->window), width, -1);
-        gtk_scrolled_window_set_max_content_height(
-            GTK_SCROLLED_WINDOW(popup->scroll), MIN(8 * 58, MAX(58, area.height * 7 / 10 - 150)));
+        popup_view_configure(popup->view, width, area.height * 7 / 10);
         GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(popup->window));
         if (surface == NULL)
             break;
@@ -483,64 +448,21 @@ static void place_window(GtkWidget *widget, gpointer context) {
     (void)popup;
 #endif
 }
-static GtkWidget *create_footer(struct popup *popup) {
-    GtkWidget *footer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_widget_add_css_class(footer, "footer");
-    gtk_widget_set_size_request(footer, -1, 32);
-    popup->status = gtk_label_new("Type to search");
-    gtk_label_set_xalign(GTK_LABEL(popup->status), 0);
-    gtk_label_set_ellipsize(GTK_LABEL(popup->status), PANGO_ELLIPSIZE_END);
-    gtk_widget_set_hexpand(popup->status, true);
-    gtk_box_append(GTK_BOX(footer), popup->status);
-    popup->retry = gtk_button_new_with_label("Retry");
-    gtk_widget_set_visible(popup->retry, false);
-    gtk_box_append(GTK_BOX(footer), popup->retry);
-    GtkWidget *hints = gtk_label_new("↑↓ Select  Enter Open  Ctrl+Enter Reveal  Esc Close");
-    gtk_widget_add_css_class(hints, "dim-label");
-    gtk_label_set_ellipsize(GTK_LABEL(hints), PANGO_ELLIPSIZE_END);
-    gtk_box_append(GTK_BOX(footer), hints);
-    return footer;
-}
-static GtkWidget *create_search_entry(void) {
-    const char *label = "Search apps, settings, files and folders";
-    GtkWidget *entry = gtk_search_entry_new();
-    gtk_search_entry_set_placeholder_text(GTK_SEARCH_ENTRY(entry), label);
-    gtk_widget_set_size_request(entry, -1, 52);
-    gtk_accessible_update_property(GTK_ACCESSIBLE(entry), GTK_ACCESSIBLE_PROPERTY_LABEL, label, -1);
-    /* GTK exposes the internal editable text separately to AT-SPI. Give it
-     * the same name so screen readers can identify the actual input control. */
-    GtkEditable *editable = gtk_editable_get_delegate(GTK_EDITABLE(entry));
-    if (GTK_IS_ACCESSIBLE(editable))
-        gtk_accessible_update_property(GTK_ACCESSIBLE(editable), GTK_ACCESSIBLE_PROPERTY_LABEL,
-                                       label, -1);
-    return entry;
-}
-static void build_window(struct popup *popup) {
+static tl_status build_window(struct popup *popup) {
     popup->window = gtk_application_window_new(popup->application);
     gtk_window_set_title(GTK_WINDOW(popup->window), "Torchlight");
     gtk_window_set_decorated(GTK_WINDOW(popup->window), false);
     gtk_window_set_resizable(GTK_WINDOW(popup->window), false);
     gtk_window_set_default_size(GTK_WINDOW(popup->window), 680, -1);
     gtk_widget_add_css_class(popup->window, "torchlight");
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    gtk_widget_set_margin_start(box, 16);
-    gtk_widget_set_margin_end(box, 16);
-    gtk_widget_set_margin_top(box, 16);
-    gtk_widget_set_margin_bottom(box, 16);
-    gtk_window_set_child(GTK_WINDOW(popup->window), box);
-    popup->entry = create_search_entry();
-    gtk_box_append(GTK_BOX(box), popup->entry);
-    popup->list = gtk_list_box_new();
-    gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(popup->list), true);
-    gtk_widget_set_focusable(popup->list, false);
-    popup->scroll = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(popup->scroll), GTK_POLICY_NEVER,
-                                   GTK_POLICY_AUTOMATIC);
-    gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(popup->scroll), true);
-    gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(popup->scroll), 8 * 58);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(popup->scroll), popup->list);
-    gtk_box_append(GTK_BOX(box), popup->scroll);
-    gtk_box_append(GTK_BOX(box), create_footer(popup));
+    tl_status result = popup_view_create(popup->window, &popup->view);
+    if (result != TL_OK)
+        return result;
+    tl_popup_widgets widgets = popup_view_widgets(popup->view);
+    popup->entry = widgets.entry;
+    popup->list = widgets.list;
+    popup->scroll = widgets.scroll;
+    popup->retry = widgets.retry;
     GtkEventController *keys = gtk_event_controller_key_new();
     gtk_event_controller_set_propagation_phase(keys, GTK_PHASE_CAPTURE);
     g_signal_connect(keys, "key-pressed", G_CALLBACK(key_pressed), popup);
@@ -551,17 +473,8 @@ static void build_window(struct popup *popup) {
     g_signal_connect(popup->window, "close-request", G_CALLBACK(close_requested), popup);
     g_signal_connect(popup->window, "notify::is-active", G_CALLBACK(active_changed), popup);
     g_signal_connect(popup->window, "map", G_CALLBACK(place_window), popup);
-    GtkCssProvider *css = gtk_css_provider_new();
-    gtk_css_provider_load_from_string(
-        css, ".torchlight { border-radius: 12px; } searchentry { font-size: 20px; } "
-             ".footer { font-size: 12px; } .result-name { font-size: 15px; } .result-detail { "
-             "font-size: 12px; } "
-             "row { padding: 0 8px; border-radius: 6px; } row:selected .dim-label { opacity: 1; }");
-    gtk_style_context_add_provider_for_display(gtk_widget_get_display(popup->window),
-                                               GTK_STYLE_PROVIDER(css),
-                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-    g_object_unref(css);
     popup->status_timer = g_timeout_add(POPUP_STATUS_MS, poll_status, popup);
+    return TL_OK;
 }
 static int command_line(GApplication *application, GApplicationCommandLine *command,
                         gpointer context) {
@@ -583,13 +496,20 @@ static int command_line(GApplication *application, GApplicationCommandLine *comm
             return 1;
         }
     }
-    if (popup->window == NULL)
-        build_window(popup);
-    else if (popup->visible && gtk_window_is_active(GTK_WINDOW(popup->window))) {
+    if (popup->window == NULL) {
+        tl_status status = build_window(popup);
+        if (status != TL_OK) {
+            gtk_window_destroy(GTK_WINDOW(popup->window));
+            popup->window = NULL;
+            g_application_command_line_printerr(command, "Could not build launcher window\n");
+            return 1;
+        }
+    } else if (popup->visible && gtk_window_is_active(GTK_WINDOW(popup->window))) {
         close_popup(popup);
         return 0;
     }
     popup->visible = true;
+    popup_view_set_active(popup->view, false);
     gtk_editable_set_text(GTK_EDITABLE(popup->entry), "");
     changed(GTK_EDITABLE(popup->entry), popup);
     /* Clamp before mapping: window managers otherwise constrain an initially
@@ -598,6 +518,7 @@ static int command_line(GApplication *application, GApplicationCommandLine *comm
     place_window(popup->window, popup);
     gtk_window_present(GTK_WINDOW(popup->window));
     gtk_widget_grab_focus(popup->entry);
+    popup_view_set_active(popup->view, true);
     return 0;
 }
 tl_status launcher_create(tl_launcher **out) {
@@ -633,6 +554,8 @@ tl_status launcher_run(tl_launcher *launcher, int argc, char **argv, int *exit_c
 void launcher_destroy(tl_launcher *popup) {
     if (popup == NULL)
         return;
+    if (popup->view != NULL)
+        close_popup(popup);
     remove_timer(&popup->debounce);
     remove_timer(&popup->pending);
     remove_timer(&popup->status_timer);
@@ -648,6 +571,9 @@ void launcher_destroy(tl_launcher *popup) {
     if (popup->launch_cancel != NULL)
         g_object_unref(popup->launch_cancel);
     popup->launch_cancel = NULL;
+    if (popup->window != NULL)
+        gtk_window_destroy(GTK_WINDOW(popup->window));
+    popup_view_destroy(popup->view);
     g_object_unref(popup->application);
     ipc_path_destroy(popup->socket_path);
     popup_model_destroy(popup->model);

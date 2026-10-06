@@ -1,0 +1,222 @@
+{
+  "environment": "GTK 4.14.5 / Pango 1.52.1 / private Xvfb, Metacity and D-Bus / Cairo",
+  "date": "2026-10-07",
+  "commands": [
+    "make test",
+    "make lint",
+    "make test-ui-isolated",
+    "python3 tests/run_popup_checks.py --a11y"
+  ],
+  "native_view": "ASan + UBSan: caret pixels, selection/IME, 300-character query scroll, UTF-8 paths, timer destruction and fixed geometry passed",
+  "font_behavior": "Installed JetBrains Mono / Space Grotesk with system monospace / sans fallback",
+  "matrix": [
+    {
+      "configuration": "light-100",
+      "first_focus_ms": 156.156,
+      "first_paint_ms": 129.208,
+      "repeat_focus_ms": 40.934,
+      "geometry": {
+        "WINDOW": 4194308,
+        "X": 60,
+        "Y": 120,
+        "WIDTH": 680,
+        "HEIGHT": 116,
+        "SCREEN": 0
+      },
+      "input_to_paint_ms": [
+        32.481,
+        26.305,
+        8.677,
+        38.067,
+        25.168,
+        22.401,
+        28.308,
+        32.502,
+        37.27,
+        45.456,
+        23.936,
+        36.783,
+        32.525,
+        30.589,
+        28.499,
+        24.452
+      ],
+      "no_history": false,
+      "accessibility": false
+    },
+    {
+      "configuration": "dark-font-150",
+      "first_focus_ms": 152.026,
+      "first_paint_ms": 120.148,
+      "repeat_focus_ms": 53.656,
+      "geometry": {
+        "WINDOW": 4194308,
+        "X": 60,
+        "Y": 120,
+        "WIDTH": 680,
+        "HEIGHT": 116,
+        "SCREEN": 0
+      },
+      "input_to_paint_ms": [
+        33.996,
+        25.501,
+        2.478,
+        25.546,
+        23.924,
+        30.79,
+        29.869,
+        33.509,
+        42.667,
+        38.446,
+        31.505,
+        22.292,
+        27.162,
+        37.401,
+        37.613,
+        31.231
+      ],
+      "no_history": false,
+      "accessibility": false
+    },
+    {
+      "configuration": "contrast-200",
+      "first_focus_ms": 174.583,
+      "first_paint_ms": 141.083,
+      "repeat_focus_ms": 45.521,
+      "geometry": {
+        "WINDOW": 4194308,
+        "X": 48,
+        "Y": 120,
+        "WIDTH": 704,
+        "HEIGHT": 232,
+        "SCREEN": 0
+      },
+      "input_to_paint_ms": [
+        47.324,
+        33.707,
+        3.72,
+        31.42,
+        39.58,
+        37.919,
+        41.109,
+        37.508,
+        33.655,
+        40.336,
+        28.566,
+        38.334,
+        36.53,
+        36.749,
+        35.381,
+        41.865
+      ],
+      "no_history": false,
+      "accessibility": false
+    },
+    {
+      "configuration": "pointer-on-panel",
+      "first_focus_ms": 140.61,
+      "first_paint_ms": 104.363,
+      "repeat_focus_ms": 58.533,
+      "geometry": {
+        "WINDOW": 4194308,
+        "X": 60,
+        "Y": 152,
+        "WIDTH": 680,
+        "HEIGHT": 116,
+        "SCREEN": 0
+      },
+      "input_to_paint_ms": [
+        34.628,
+        37.761,
+        8.522,
+        24.979,
+        36.87,
+        23.544,
+        30.654,
+        36.461,
+        36.701,
+        42.097,
+        33.854,
+        32.031,
+        30.733,
+        22.684,
+        33.521,
+        32.76
+      ],
+      "no_history": false,
+      "accessibility": false
+    }
+  ],
+  "accessibility": {
+    "first_focus_ms": 153.419,
+    "first_paint_ms": 132.334,
+    "repeat_focus_ms": 66.124,
+    "geometry": {
+      "WINDOW": 6291460,
+      "X": 60,
+      "Y": 120,
+      "WIDTH": 680,
+      "HEIGHT": 116,
+      "SCREEN": 0
+    },
+    "input_to_paint_ms": [
+      38.961,
+      29.006,
+      7.538,
+      24.971,
+      33.3,
+      27.589,
+      36.948,
+      36.015,
+      38.847,
+      46.65,
+      30.276,
+      35.97,
+      30.016,
+      33.031,
+      31.609,
+      24.961
+    ],
+    "no_history": false,
+    "accessibility": true
+  },
+  "final_native": {
+    "first_focus_ms": 153.676,
+    "first_paint_ms": 127.809,
+    "repeat_focus_ms": 59.098,
+    "geometry": {
+      "WINDOW": 4194308,
+      "X": 60,
+      "Y": 120,
+      "WIDTH": 680,
+      "HEIGHT": 116,
+      "SCREEN": 0
+    },
+    "input_to_paint_ms": [
+      40.037,
+      33.738,
+      10.581,
+      42.96,
+      23.864,
+      25.213,
+      33.196,
+      28.062,
+      41.716,
+      38.82,
+      25.353,
+      30.602,
+      33.105,
+      23.13,
+      26.692,
+      31.877
+    ],
+    "no_history": false,
+    "accessibility": false
+  },
+  "limits": [
+    "Native view disables LeakSanitizer for process-global GTK/font caches; ASan and UBSan remain enabled.",
+    "X11 placement tested on private display; Wayland placement remains compositor-controlled.",
+    "Preedit signal fallback tested; a live external IME engine was not exercised.",
+    "Timing samples are acceptance observations, not a production performance budget."
+  ]
+}

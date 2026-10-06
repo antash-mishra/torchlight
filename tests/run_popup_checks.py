@@ -56,10 +56,13 @@ with tempfile.TemporaryDirectory(prefix="torchlight-gtk-session-") as temporary:
             # A single session owns both the WM and launcher; its last child is
             # waited before the display and temporary runtime directory go away.
             wrapper = base / "session.py"
-            wrapper.write_text("""import subprocess, sys, time
+            wrapper.write_text("""import os, subprocess, sys, time
+from pathlib import Path
 wm = subprocess.Popen([sys.argv[1], '--sm-disable'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:
     time.sleep(.5)
+    if 'tests/bench/bench_popup.py' not in sys.argv and Path('build/test_popup_view').exists():
+        subprocess.run(['build/test_popup_view'], check=True, env=dict(os.environ, ASAN_OPTIONS='detect_leaks=0', G_DEBUG='fatal-warnings'))
     raise SystemExit(subprocess.run(sys.argv[2:]).returncode)
 finally:
     wm.terminate()

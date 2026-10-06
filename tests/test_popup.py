@@ -172,6 +172,19 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
         if env.get("TORCHLIGHT_TEST_PANEL"):
             assert abs(geometry["Y"] - (40 + (screen_height - 40) // 5)) <= 2, geometry
         empty_entry()
+        idle = driver.read_frames()[-1]
+        assert not idle["results_visible"] and not idle["footer_visible"] and not idle["clear_icon"], idle
+        empty_geometry = driver.geometry()
+        # Growth follows the fixed search anchor; typing never moves or narrows it.
+        result = type_query("display")
+        assert result["results_visible"] and result["footer_visible"] and result["typing"], result
+        for key in ["entry_x", "entry_y", "entry_width"]:
+            assert result[key] == idle[key], (key, idle, result)
+        assert driver.geometry()["Y"] == empty_geometry["Y"], "Results moved window top"
+        quiet = driver.frame(lambda f: f["query"] == "display" and not f["typing"], after=result["paint_us"] + 1)
+        assert quiet["entry_y"] == idle["entry_y"]
+        empty_entry()
+        assert driver.geometry()["HEIGHT"] == empty_geometry["HEIGHT"], "Clearing did not shrink window"
         assert_no_blank_searches()
         # Escape dismisses; the next invocation reuses the first process/window.
         xdo("key", "Escape")
@@ -285,6 +298,8 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
         xdo("key", "ctrl+a")
         xdo("type", "--clearmodifiers", "--delay", "0", "display")
         failed = driver.frame(lambda f: f["retry"] and f["query"] == "display", after=before)
+        xdo("key", "Return")
+        input_retry = driver.frame(lambda f: f["retry_clicks"] > failed["retry_clicks"], timeout=2, after=before)
         for _ in range(6):
             xdo("key", "Tab")
             time.sleep(.05)
@@ -292,7 +307,7 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
                 break
         assert driver.read_frames()[-1]["retry_focus"], "Retry must be reachable by keyboard"
         xdo("key", "Return")
-        driver.frame(lambda f: f["retry_clicks"] > failed["retry_clicks"], timeout=2, after=before)
+        driver.frame(lambda f: f["retry_clicks"] > input_retry["retry_clicks"], timeout=2, after=before)
         daemon = subprocess.Popen(daemon_command, env=env, stdout=daemon_log, stderr=daemon_log)
         wait_for(ready)
         driver.frame(lambda f: f["query"] == "display" and f["rows"] > 0 and f["ready"] and not f["retry"],

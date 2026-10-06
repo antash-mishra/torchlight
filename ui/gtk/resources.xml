@@ -1,0 +1,4 @@
+<!-- Native popup style embedded in the executable; no runtime CSS path lookup. -->
+<gresources><gresource prefix="/org/torchlight/launcher">
+  <file>quiet-system.css</file>
+</gresource></gresources>

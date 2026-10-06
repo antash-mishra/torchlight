@@ -43,11 +43,18 @@ CPPCHECK ?= cppcheck
 .PHONY: all test lint format bench bench-vector bench-daemon clean
 GTK_CPPFLAGS = $(subst -I,-isystem ,$(shell $(PKG_CONFIG) --cflags 'gtk4 >= 4.14' x11))
 GTK_LDLIBS = $(shell $(PKG_CONFIG) --libs 'gtk4 >= 4.14' x11)
-UI_SOURCES = ui/gtk/model.c ui/gtk/actions.c ui/gtk/launcher.c src/bin/torchlight-gtk.c
+UI_SOURCES = ui/gtk/model.c ui/gtk/actions.c ui/gtk/launcher.c ui/gtk/view.c ui/gtk/path_label.c src/bin/torchlight-gtk.c
 POPUP_FIXTURE_SOURCE = tests/fixtures/popup_probe.c
 all: build/torchlight build/torchlightd build/torchlight-gtk
-build/torchlight-gtk: $(OBJECTS) $(UI_SOURCES) ui/gtk/actions.h $(HEADERS)
-	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(UI_SOURCES) $(OBJECTS) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
+UI_HEADERS = $(wildcard ui/gtk/*.h)
+UI_RESOURCES = build/ui/gtk/resources.c
+$(UI_RESOURCES): ui/gtk/resources.xml ui/gtk/quiet-system.css
+	@mkdir -p $(@D)
+	glib-compile-resources --sourcedir=ui/gtk --generate-source --target=$@ --c-name=torchlight_ui $<
+build/torchlight-gtk: $(OBJECTS) $(UI_SOURCES) $(UI_HEADERS) $(UI_RESOURCES) $(HEADERS)
+	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(UI_SOURCES) $(UI_RESOURCES) $(OBJECTS) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
+build/test_popup_view: ui/gtk/view.c ui/gtk/path_label.c tests/gtk/test_view.c $(UI_HEADERS) $(UI_RESOURCES)
+	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(SAN_FLAGS) ui/gtk/view.c ui/gtk/path_label.c tests/gtk/test_view.c $(UI_RESOURCES) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
 build/test_popup_probe.so: $(POPUP_FIXTURE_SOURCE)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) -fPIC -shared $< $(GTK_LDLIBS) -ldl -o $@
@@ -88,10 +95,10 @@ lint:
 	@command -v $(CPPCHECK) >/dev/null || { echo 'cppcheck is required'; exit 1; }
 	$(CLANG_TIDY) $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
 	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE)
-	$(CLANG_TIDY) $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 $(WARNINGS)
-	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE)
+	$(CLANG_TIDY) $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) tests/gtk/test_view.c --warnings-as-errors='*' -- $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 $(WARNINGS)
+	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE --library=gtk -Iinclude $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) tests/gtk/test_view.c
 format:
-	clang-format -i $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) ui/gtk/actions.h $(SOURCES) $(BIN_SOURCES) $(HEADERS) tests/unit/*.h $(TEST_SOURCES) tests/bench/*.c tests/bench/*.h $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE)
+	clang-format -i tests/gtk/test_view.c $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(UI_HEADERS) $(SOURCES) $(BIN_SOURCES) $(HEADERS) tests/unit/*.h $(TEST_SOURCES) tests/bench/*.c tests/bench/*.h $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE)
 build/bench_lexical: $(SOURCES) $(BENCH_SOURCES) $(HEADERS) $(wildcard tests/bench/*.h)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) $(SOURCES) $(BENCH_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
@@ -130,7 +137,7 @@ install: all
 	install -m 644 packaging/torchlightd.service $(DESTDIR)$(PREFIX)/lib/systemd/user/
 test-ui: all build/test_popup_probe.so
 	python3 tests/test_popup.py --xdotool $(XDOTOOL)
-test-ui-isolated: all build/test_popup_probe.so
+test-ui-isolated: all build/test_popup_probe.so build/test_popup_view
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --matrix
 bench-ui: all build/test_popup_probe.so build/torchlightd-release build/bench_fixture
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --bench
