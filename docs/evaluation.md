@@ -406,3 +406,15 @@ small target-family splits, native parity, quantized/approximate reference recal
 two-phase daemon latency/RSS and the private Documents aggregate smoke check.
 M4 functionality is opt-in; 500k latency and broader model/relevance acceptance
 remain open. Normal sanitizer tests require no downloaded model.
+
+## M6 step 1: search thread and persistence owner (2026-10-07)
+
+Step 1 moves search onto a dedicated thread with per-client request queues and
+cooperative cancellation, and splits the writer into indexing and persistence
+threads. It is a responsiveness change, so the acceptance check is that search
+cost is unchanged and typing bursts leave no obsolete backlog. Recorded runs:
+[daemon benchmark](../tests/bench/results/2026-10-07-m6-step1-daemon.jsonl)
+and [lexical benchmark](../tests/bench/results/2026-10-07-m6-step1-lexical.txt);
+the comparison table is in the [M6 plan](m6-plan.md). Regression coverage adds
+rapid typing with interleaved status frames, abandoned connections, engine
+cancellation and history draining while publication is blocked.

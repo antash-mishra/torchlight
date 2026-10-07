@@ -1,0 +1,154 @@
+{
+  "checks": "passed",
+  "collapsed": {
+    "x": 380,
+    "y": 198,
+    "width": 680,
+    "height": 116
+  },
+  "states": {
+    "results": {
+      "query": {
+        "x": 438.8125,
+        "y": 255,
+        "width": 596.1875,
+        "height": 34
+      },
+      "popup": {
+        "x": 380,
+        "y": 198,
+        "width": 680,
+        "height": 467
+      }
+    },
+    "none": {
+      "query": {
+        "x": 438.8125,
+        "y": 255,
+        "width": 596.1875,
+        "height": 34
+      },
+      "popup": {
+        "x": 380,
+        "y": 198,
+        "width": 680,
+        "height": 116
+      }
+    },
+    "offline": {
+      "query": {
+        "x": 438.8125,
+        "y": 255,
+        "width": 596.1875,
+        "height": 34
+      },
+      "popup": {
+        "x": 380,
+        "y": 198,
+        "width": 680,
+        "height": 116
+      }
+    },
+    "idle": {
+      "query": {
+        "x": 438.8125,
+        "y": 255,
+        "width": 596.1875,
+        "height": 34
+      },
+      "popup": {
+        "x": 380,
+        "y": 198,
+        "width": 680,
+        "height": 116
+      }
+    }
+  },
+  "variants": {
+    "0": {
+      "variant": 0,
+      "program": true,
+      "error": 0
+    },
+    "1": {
+      "variant": 1,
+      "program": true,
+      "error": 0
+    },
+    "2": {
+      "variant": 2,
+      "program": true,
+      "error": 0
+    }
+  },
+  "mobile": {
+    "320": [
+      {
+        "text": "~/\u2026/include/torchlight",
+        "full": "~/workspace/torchlight/include/torchlight",
+        "fits": true
+      },
+      {
+        "text": "~/\u2026/torchlight/src/core",
+        "full": "~/workspace/torchlight/src/core",
+        "fits": true
+      },
+      {
+        "text": "~/workspace/dotfiles",
+        "full": "~/workspace/dotfiles",
+        "fits": true
+      },
+      {
+        "text": "System settings",
+        "full": "Application \u00b7 System settings",
+        "fits": true
+      },
+      {
+        "text": "~/Documents/project-kit",
+        "full": "~/Documents/project-kit",
+        "fits": true
+      }
+    ],
+    "390": [
+      {
+        "text": "~/\u2026/torchlight/include/torchlight",
+        "full": "~/workspace/torchlight/include/torchlight",
+        "fits": true
+      },
+      {
+        "text": "~/workspace/torchlight/src/core",
+        "full": "~/workspace/torchlight/src/core",
+        "fits": true
+      },
+      {
+        "text": "~/workspace/dotfiles",
+        "full": "~/workspace/dotfiles",
+        "fits": true
+      },
+      {
+        "text": "Application \u00b7 System settings",
+        "full": "Application \u00b7 System settings",
+        "fits": true
+      },
+      {
+        "text": "~/Documents/project-kit",
+        "full": "~/Documents/project-kit",
+        "fits": true
+      }
+    ]
+  },
+  "typingLight": {
+    "opacity": "1",
+    "border": "rgba(184, 212, 157, 0.44)",
+    "continuousInput": true,
+    "stationary": true,
+    "quietAfterIdle": true,
+    "navigationQuiet": true,
+    "timerCleanup": true,
+    "reducedMotion": true,
+    "clearIconRemoved": true,
+    "keyboardClear": true
+  },
+  "contextRecovery": true,
+  "browserErrors": []
+}

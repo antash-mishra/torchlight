@@ -157,6 +157,9 @@ the root [README](../README.md) for commands, and
 
 - [0027: Quiet System native popup](adr/0027-quiet-system-native-popup.md)
   implements the accepted minimal layout, shaped underscore cursor and typing light without shaders.
+- [0028: M6 step 1, search thread and persistence owner](adr/0028-m6-search-thread-and-persistence-owner.md)
+  moves search off the IPC thread with per-client queues and cancellation, and
+  splits the writer into indexing and persistence threads.
 
 ## Keeping docs current
 

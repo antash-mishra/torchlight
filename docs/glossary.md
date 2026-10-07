@@ -37,7 +37,8 @@
 | **Retired snapshot** | A catalog view replaced by publication, retained until all reader leases release it and background reclamation frees it. |
 | **Embedding generation (`emb_gen`)** | Vectors sharing a model revision, tokenizer/preprocessing, dimension, and quantization format. |
 | **Generation** | Never used alone in code or docs: always `catalog_gen` or `emb_gen`. |
-| **Newest-pending slot** | The single query a client has waiting for the search thread; a newer query replaces it and marks a running search cancelled (M6 step 1). |
+| **Newest-pending slot** | Of a client's bounded request queue, only the newest query is searched in full; a newer query marks the older queued ones superseded and cancels a running one, and they answer as cancelled (M6 step 1). |
+| **Persistence thread** | The writer thread that owns the SQLite write connection and applies catalog batches, history and retention; the indexing thread crawls and builds engines without holding a write transaction (M6 step 1). |
 | **Base segment / delta segment** | M6 step 3 engine layout: the large immutable published engine plus a small engine holding entries changed since, queried together with a tombstone set for retired ids. |
 | **Compaction** | Background rebuild of a new base segment from base plus delta once the delta exceeds its size bound; published like any other `catalog_gen`. |
 | **Scoped reconcile** | Crawling and upserting only the directories named by coalesced watch events, instead of every root (M6 step 3a). |

@@ -14,6 +14,9 @@ path is implemented, with acceptance gates still open. The next priority is
 as one milestone. M5 personalization follows M6 and the remaining M4 acceptance
 work. Existing milestone identifiers are retained; M6 executes next despite
 being appended after M5. See [ADR 0026](docs/adr/0026-search-workers-simd-and-incremental-indexing.md).
+M6 step 1 is implemented: a dedicated search thread with per-client request
+queues, supersession and cooperative cancellation, and a writer split into
+indexing and persistence threads ([ADR 0028](docs/adr/0028-m6-search-thread-and-persistence-owner.md)).
 M3 adds installed application/settings search and the GTK4 popup described in the
 [GUI design](docs/m3-gui-design.md).
 See [desktop setup](docs/desktop-setup.md) and the

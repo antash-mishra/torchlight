@@ -89,3 +89,9 @@ flags originate in store_load and the writer's lexical_add_entry builder.
 Metadata pins retain snapshots without reserving lexical workspaces; scoped
 context paths exclude parents outside the indexed roots. Background consumers
 copy metadata, release pins and reclaim through the existing lifecycle.
+
+## Cancellation passthrough (M6 step 1)
+
+`catalog_reader_cancel` attaches a cancellation flag to a lease's workspace
+(see the lexical module). The daemon sets it per query lease so a superseded
+search stops early and the lease is released promptly.

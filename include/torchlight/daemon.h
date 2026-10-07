@@ -15,16 +15,20 @@ typedef struct {
     bool history;
 } tl_daemon_options;
 /** Create owned daemon with socket/database singleton locks, saved resident
- * catalog, writer and preallocated client buffers. config must outlive daemon.
- * Blocks SIGINT/SIGTERM on this thread before creating workers; destroy restores
- * its signal mask. Call run/destroy on the creating thread. TL_INVALID/NOMEM/
- * IO/STATE/LIMIT; out NULL on errors. No synchronous filesystem crawl. */
+ * catalog, writer, preallocated client buffers and a search thread. config must
+ * outlive daemon. Blocks SIGINT/SIGTERM on this thread before creating workers;
+ * destroy restores its signal mask. Call run/destroy on the creating thread.
+ * TL_INVALID/NOMEM/IO/STATE/LIMIT; out NULL on errors. No synchronous crawl. */
 tl_status daemon_create(const tl_daemon_options *options, tl_daemon **out);
 /** Serve until SIGINT/SIGTERM, then return TL_OK; poll/accept failures TL_IO.
- * One run call at a time, on creating thread. Query execution performs no SQL,
- * filesystem reads or heap allocation. Slow clients close after five seconds. */
+ * One run call at a time, on creating thread. This thread only reads, frames
+ * and writes sockets; the search thread serves each client's bounded request
+ * queue in order. A newer query supersedes that client's queued queries and
+ * cancels a running one; they still answer as cancelled. Query execution
+ * performs no SQL, filesystem reads or heap allocation. Slow clients close
+ * after five seconds; peers that close outright drop their pending work. */
 tl_status daemon_run(tl_daemon *daemon);
-/** Join writer, release sockets/locks/snapshots and restore signal mask.
+/** Join search thread and writer, release sockets/locks/snapshots and restore signal mask.
  * NULL allowed. TL_STATE if an internal catalog lease remains (daemon remains
  * owned by caller for retry). Call after run and all borrowed results finish. */
 tl_status daemon_destroy(tl_daemon *daemon);

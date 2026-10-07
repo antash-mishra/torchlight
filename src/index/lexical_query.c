@@ -44,6 +44,7 @@ enum {
      * Small engines/batches avoid thread lifecycle and dispatch overhead. */
     LEXICAL_PARALLEL_ENGINE_MIN = 65536,
     LEXICAL_PARALLEL_BATCH_MIN = 4096,
+    LEXICAL_CANCEL_STRIDE = 1024,
     LEXICAL_PARALLEL_PARTICIPANTS = 4,
     /* Retain filename/context words through fallback without a table for every
      * possible query word. Timestamp names commonly need four words. */
@@ -125,6 +126,10 @@ struct tl_lexical_workspace {
     tl_typo_scratch *typo;
     tl_mask_scratch *name_masks;
     tl_parallel *parallel;
+    /* Optional caller-owned flag polled between batches and every
+     * LEXICAL_CANCEL_STRIDE scored entries, so an obsolete query stops
+     * within a fraction of a millisecond without per-entry overhead. */
+    const atomic_bool *cancel;
     struct entry_match *batch;
     struct heap_item heap[LEXICAL_MAX_RESULTS];
     size_t heap_count;
@@ -537,9 +542,15 @@ struct batch_query {
     const uint32_t *slots;
     bool membership;
 };
+static bool cancelled(const tl_lexical_workspace *workspace) {
+    return workspace->cancel != NULL &&
+           atomic_load_explicit(workspace->cancel, memory_order_relaxed);
+}
 static tl_status score_range(void *context, size_t begin, size_t end) {
     const struct batch_query *query = context;
     for (size_t i = begin; i < end; i++) {
+        if ((i - begin) % LEXICAL_CANCEL_STRIDE == 0 && cancelled(query->workspace))
+            return TL_CANCELLED;
         size_t slot = query->slots == NULL ? i : query->slots[i];
         struct entry_match *match = &query->workspace->batch[i];
         int sub = 0;
@@ -558,6 +569,8 @@ static tl_status score_range(void *context, size_t begin, size_t end) {
 static tl_status score_batch(tl_lexical_workspace *workspace, const struct word *word,
                              const uint32_t *slots, size_t count, bool membership) {
     struct batch_query query = {workspace, word, slots, membership};
+    if (cancelled(workspace))
+        return TL_CANCELLED;
     if (workspace->parallel == NULL || word->path || count < LEXICAL_PARALLEL_BATCH_MIN)
         return score_range(&query, 0, count);
     tl_status status = score_directories(workspace, word->text);
@@ -1043,6 +1056,10 @@ static void reset_workspace(tl_lexical_workspace *workspace) {
         workspace->total[workspace->deferred[i]] = 0;
     workspace->candidate_count = workspace->deferred_count = 0;
     workspace->heap_count = 0;
+}
+void lexical_workspace_cancel(tl_lexical_workspace *workspace, const atomic_bool *flag) {
+    if (workspace != NULL)
+        workspace->cancel = flag;
 }
 tl_status lexical_query(const tl_lexical *engine, tl_lexical_workspace *workspace,
                         const char *query, tl_result *results, size_t capacity, size_t *out_count) {

@@ -1,4 +1,7 @@
-/* Resident two-phase query loop; sockets never retain a lexical workspace lease. */
+/* Resident two-phase query service. An IPC thread owns sockets and framing; a
+ * search thread owns catalog leases, scoring and encoding. Each client keeps a
+ * bounded request queue whose newest query supersedes older queued queries and
+ * cancels a running one. Sockets never retain a lexical workspace lease. */
 #include "torchlight/daemon.h"
 #include "torchlight/desktop.h"
 #include "torchlight/semantic.h"
@@ -6,14 +9,24 @@
 #include <poll.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/eventfd.h>
 #include <sys/random.h>
 #include <sys/signalfd.h>
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
+enum pending_state { PENDING_QUEUED, PENDING_RUNNING };
+/* One decoded request waiting for, or being served by, the search thread. */
+struct pending {
+    tl_ipc_request request;
+    tl_status decoded;
+    bool repeated, superseded;
+    enum pending_state state;
+};
 struct client {
     tl_semantic *semantic;
     size_t slot;
@@ -27,8 +40,14 @@ struct client {
     size_t output_length, sent;
     char active[DAEMON_ACTIVE_REQUESTS][IPC_REQUEST_ID_BYTES + 1];
     size_t active_count;
-    bool closing;
+    bool closing, abort;
     uint64_t deadline;
+    /* FIFO shared with the search thread under the daemon lock. At most one
+     * entry (the head) is running at any time. */
+    struct pending queue[DAEMON_ACTIVE_REQUESTS];
+    size_t queue_head, queue_count;
+    /* Advances on close so a completion for a reused slot is discarded. */
+    uint64_t generation;
 };
 struct tl_daemon {
     tl_catalog *catalog;
@@ -36,12 +55,23 @@ struct tl_daemon {
     tl_writer *writer;
     tl_semantic *semantic;
     tl_ipc_listener *listener;
-    int signal_fd, database_lock;
+    int signal_fd, database_lock, done_fd;
     sigset_t old_mask;
     bool masked;
     char session[33];
     uint64_t search_sequence;
     uint64_t engine_ns;
+    /* Search-thread state: lock/wake guard every client's queue, output
+     * accounting and semantic bookkeeping; cancel targets the running query. */
+    pthread_mutex_t lock;
+    pthread_cond_t wake;
+    pthread_t search_thread;
+    bool search_started, lock_ready;
+    atomic_bool stop, cancel;
+    size_t next_client;
+    char *scratch;
+    /* The job the search thread is serving; copied out of its client's queue. */
+    struct pending job;
     struct client clients[DAEMON_MAX_CLIENTS];
     tl_result results[LEXICAL_MAX_RESULTS];
     tl_result applications[LEXICAL_MAX_RESULTS];
@@ -57,6 +87,14 @@ static uint64_t nanoseconds(void) {
     if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
         return 0;
     return (uint64_t)now.tv_sec * UINT64_C(1000000000) + (uint64_t)now.tv_nsec;
+}
+static void lock_daemon(tl_daemon *daemon) {
+    int code = pthread_mutex_lock(&daemon->lock);
+    (void)code;
+}
+static void unlock_daemon(tl_daemon *daemon) {
+    int code = pthread_mutex_unlock(&daemon->lock);
+    (void)code;
 }
 static tl_status session_id(char out[33]) {
     unsigned char bytes[16];
@@ -87,16 +125,24 @@ static void discard_semantic(struct client *client) {
         client->semantic_pending = false;
     }
 }
-static void close_client(struct client *client) {
+/* IPC thread only, under the daemon lock. A running search for this client
+ * is cancelled and its completion dropped through the generation check. */
+static void close_client(tl_daemon *daemon, struct client *client) {
     discard_semantic(client);
     if (client->fd >= 0)
         close(client->fd);
+    if (client->queue_count != 0 && client->queue[client->queue_head].state == PENDING_RUNNING)
+        atomic_store(&daemon->cancel, true);
     client->fd = -1;
     client->input_length = 0;
     client->output_length = 0;
     client->sent = 0;
     client->active_count = 0;
     client->closing = false;
+    client->abort = false;
+    client->queue_head = 0;
+    client->queue_count = 0;
+    client->generation++;
 }
 static tl_status signals(tl_daemon *daemon) {
     sigset_t mask;
@@ -109,31 +155,8 @@ static tl_status signals(tl_daemon *daemon) {
     daemon->signal_fd = signalfd(-1, &mask, SFD_CLOEXEC | SFD_NONBLOCK);
     return daemon->signal_fd < 0 ? TL_IO : TL_OK;
 }
-tl_status daemon_create(const tl_daemon_options *options, tl_daemon **out) {
-    if (out == NULL)
-        return TL_INVALID;
-    *out = NULL;
-    if (options == NULL || options->config == NULL || options->socket_path == NULL)
-        return TL_INVALID;
-    tl_daemon *daemon = calloc(1, sizeof(*daemon));
-    if (daemon == NULL)
-        return TL_NOMEM;
-    daemon->signal_fd = -1;
-    daemon->database_lock = -1;
-    for (size_t i = 0; i < DAEMON_MAX_CLIENTS; i++)
-        daemon->clients[i].fd = -1;
-    tl_status status = ipc_database_lock(config_database(options->config), &daemon->database_lock);
-    if (status == TL_OK)
-        status = signals(daemon);
-    if (status == TL_OK)
-        status = session_id(daemon->session);
-    if (status == TL_OK)
-        status = catalog_create(2, &daemon->catalog);
-    for (size_t i = 0; i < DAEMON_MAX_CLIENTS && status == TL_OK; i++) {
-        daemon->clients[i].output = malloc(IPC_RESPONSE_BYTES);
-        if (daemon->clients[i].output == NULL)
-            status = TL_NOMEM;
-    }
+static void *search_worker(void *context);
+static tl_status create_services(tl_daemon *daemon, const tl_daemon_options *options) {
     tl_writer_options writer_options = {.config = options->config,
                                         .catalog = daemon->catalog,
                                         .socket_path = options->socket_path,
@@ -144,8 +167,7 @@ tl_status daemon_create(const tl_daemon_options *options, tl_daemon **out) {
                                         .history_days = options->history_days,
                                         .history = options->history,
                                         .readers = 1};
-    if (status == TL_OK)
-        status = writer_create(&writer_options, &daemon->writer);
+    tl_status status = writer_create(&writer_options, &daemon->writer);
     if (status == TL_OK)
         status = desktop_create(&daemon->desktop);
     if (status == TL_OK && options->model_path != NULL) {
@@ -166,37 +188,112 @@ tl_status daemon_create(const tl_daemon_options *options, tl_daemon **out) {
     }
     if (status == TL_OK)
         status = ipc_listener_create(options->socket_path, &daemon->listener);
+    return status;
+}
+tl_status daemon_create(const tl_daemon_options *options, tl_daemon **out) {
+    if (out == NULL)
+        return TL_INVALID;
+    *out = NULL;
+    if (options == NULL || options->config == NULL || options->socket_path == NULL)
+        return TL_INVALID;
+    tl_daemon *daemon = calloc(1, sizeof(*daemon));
+    if (daemon == NULL)
+        return TL_NOMEM;
+    daemon->signal_fd = -1;
+    daemon->database_lock = -1;
+    daemon->done_fd = -1;
+    atomic_init(&daemon->stop, false);
+    atomic_init(&daemon->cancel, false);
+    for (size_t i = 0; i < DAEMON_MAX_CLIENTS; i++)
+        daemon->clients[i].fd = -1;
+    tl_status status = TL_OK;
+    if (pthread_mutex_init(&daemon->lock, NULL) != 0 || pthread_cond_init(&daemon->wake, NULL) != 0)
+        status = TL_IO;
+    else
+        daemon->lock_ready = true;
+    if (status == TL_OK)
+        status = ipc_database_lock(config_database(options->config), &daemon->database_lock);
+    if (status == TL_OK)
+        status = signals(daemon);
+    if (status == TL_OK)
+        status = session_id(daemon->session);
+    if (status == TL_OK)
+        status = catalog_create(2, &daemon->catalog);
+    if (status == TL_OK) {
+        daemon->done_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+        daemon->scratch = malloc(IPC_RESPONSE_BYTES);
+        if (daemon->done_fd < 0)
+            status = TL_IO;
+        else if (daemon->scratch == NULL)
+            status = TL_NOMEM;
+    }
+    for (size_t i = 0; i < DAEMON_MAX_CLIENTS && status == TL_OK; i++) {
+        daemon->clients[i].output = malloc(IPC_RESPONSE_BYTES);
+        if (daemon->clients[i].output == NULL)
+            status = TL_NOMEM;
+    }
+    if (status == TL_OK)
+        status = create_services(daemon, options);
+    if (status == TL_OK && pthread_create(&daemon->search_thread, NULL, search_worker, daemon) != 0)
+        status = TL_IO;
     if (status != TL_OK) {
         tl_status cleanup = daemon_destroy(daemon);
         if (cleanup != TL_OK)
             return cleanup;
         return status;
     }
+    daemon->search_started = true;
     *out = daemon;
     return TL_OK;
+}
+static void stop_search(tl_daemon *daemon) {
+    atomic_store(&daemon->stop, true);
+    atomic_store(&daemon->cancel, true);
+    if (!daemon->search_started)
+        return;
+    lock_daemon(daemon);
+    int code = pthread_cond_broadcast(&daemon->wake);
+    unlock_daemon(daemon);
+    (void)code;
+    code = pthread_join(daemon->search_thread, NULL);
+    (void)code;
+    daemon->search_started = false;
 }
 tl_status daemon_destroy(tl_daemon *daemon) {
     if (daemon == NULL)
         return TL_OK;
+    if (daemon->lock_ready)
+        stop_search(daemon);
     for (size_t i = 0; i < DAEMON_MAX_CLIENTS; i++) {
-        close_client(&daemon->clients[i]);
+        close_client(daemon, &daemon->clients[i]);
         free(daemon->clients[i].output);
         daemon->clients[i].output = NULL;
     }
     ipc_listener_destroy(daemon->listener);
     daemon->listener = NULL;
     semantic_destroy(daemon->semantic);
+    daemon->semantic = NULL;
     desktop_destroy(daemon->desktop);
+    daemon->desktop = NULL;
     writer_destroy(daemon->writer);
     daemon->writer = NULL;
     tl_status status = catalog_destroy(daemon->catalog);
     if (status != TL_OK)
         return status;
     daemon->catalog = NULL;
+    if (daemon->done_fd >= 0)
+        close(daemon->done_fd);
+    free(daemon->scratch);
     if (daemon->signal_fd >= 0)
         close(daemon->signal_fd);
     if (daemon->masked) {
         int code = pthread_sigmask(SIG_SETMASK, &daemon->old_mask, NULL);
+        (void)code;
+    }
+    if (daemon->lock_ready) {
+        int code = pthread_mutex_destroy(&daemon->lock);
+        (void)code;
+        code = pthread_cond_destroy(&daemon->wake);
         (void)code;
     }
     ipc_unlock(daemon->database_lock);
@@ -238,6 +335,8 @@ static void indexing_status(tl_json_buffer *b, const tl_writer_stats *stats,
     json_number(b, stats->history_dropped);
     json_raw(b, ",\"failures\":");
     json_number(b, stats->history_failures);
+    json_raw(b, ",\"written\":");
+    json_number(b, stats->history_written);
     json_raw(b, "}");
     if (semantic != NULL) {
         json_raw(b, ",\"semantic\":{\"available\":");
@@ -324,6 +423,36 @@ static tl_status resolve_application(tl_daemon *daemon, const tl_ipc_request *re
     tl_status status = writer_history(daemon->writer, &event, NULL);
     return status == TL_STATE ? TL_OK : status;
 }
+/* Search thread only: run the query/resolve/open against the leased view. */
+static tl_status execute_leased(tl_daemon *daemon, const tl_ipc_request *request, size_t *count,
+                                uint64_t *catalog_gen, tl_catalog_reader **reader) {
+    tl_status status = catalog_acquire(daemon->catalog, reader);
+    if (status != TL_OK)
+        return status;
+    *catalog_gen = catalog_reader_gen(*reader);
+    if (request->operation == IPC_QUERY) {
+        catalog_reader_cancel(*reader, &daemon->cancel);
+        uint64_t start = nanoseconds();
+        status = catalog_query(*reader, request->query, daemon->results, request->limit, count);
+        if (status == TL_OK)
+            status = merge_applications(daemon, request, count);
+        uint64_t end = nanoseconds();
+        daemon->engine_ns = end >= start ? end - start : 0;
+        return status;
+    }
+    const char *path = NULL;
+    status = catalog_resolve(*reader, request->file_id, &path);
+    if (status != TL_OK)
+        return status;
+    daemon->results[0] = (tl_result){request->file_id, path, 0};
+    *count = 1;
+    if (request->operation == IPC_OPEN) {
+        status = writer_history(daemon->writer, request, NULL);
+        if (status == TL_STATE)
+            status = TL_OK;
+    }
+    return status;
+}
 static tl_status execute(tl_daemon *daemon, const tl_ipc_request *request,
                          char search_id[IPC_HISTORY_ID_BYTES + 1], size_t *count,
                          uint64_t *catalog_gen, tl_catalog_reader **reader, bool superseded) {
@@ -345,33 +474,8 @@ static tl_status execute(tl_daemon *daemon, const tl_ipc_request *request,
         request->file_id >= DESKTOP_ID_BASE)
         return resolve_application(daemon, request, count);
     if (request->operation == IPC_QUERY || request->operation == IPC_RESOLVE ||
-        request->operation == IPC_OPEN) {
-        tl_status status = catalog_acquire(daemon->catalog, reader);
-        if (status != TL_OK)
-            return status;
-        *catalog_gen = catalog_reader_gen(*reader);
-        if (request->operation == IPC_QUERY) {
-            uint64_t start = nanoseconds();
-            status = catalog_query(*reader, request->query, daemon->results, request->limit, count);
-            if (status == TL_OK)
-                status = merge_applications(daemon, request, count);
-            uint64_t end = nanoseconds();
-            daemon->engine_ns = end >= start ? end - start : 0;
-            return status;
-        }
-        const char *path = NULL;
-        status = catalog_resolve(*reader, request->file_id, &path);
-        if (status != TL_OK)
-            return status;
-        daemon->results[0] = (tl_result){request->file_id, path, 0};
-        *count = 1;
-        if (request->operation == IPC_OPEN) {
-            status = writer_history(daemon->writer, request, NULL);
-            if (status == TL_STATE)
-                status = TL_OK;
-        }
-        return status;
-    }
+        request->operation == IPC_OPEN)
+        return execute_leased(daemon, request, count, catalog_gen, reader);
     if (request->operation == IPC_RECONCILE) {
         desktop_refresh(daemon->desktop);
         return writer_reconcile(daemon->writer);
@@ -380,10 +484,16 @@ static tl_status execute(tl_daemon *daemon, const tl_ipc_request *request,
         return writer_history(daemon->writer, request, NULL);
     return TL_OK;
 }
+/* Under the daemon lock: ids answered but unsent, pending semantic, or queued. */
 static bool duplicate(const struct client *client, const char *id) {
     for (size_t i = 0; i < client->active_count; i++)
         if (strcmp(client->active[i], id) == 0)
             return true;
+    for (size_t i = 0; i < client->queue_count; i++) {
+        size_t index = (client->queue_head + i) % DAEMON_ACTIVE_REQUESTS;
+        if (strcmp(client->queue[index].request.request_id, id) == 0)
+            return true;
+    }
     return false;
 }
 static const char *response_reason(const tl_ipc_request *request, tl_status status,
@@ -445,18 +555,20 @@ static void encode_result(tl_daemon *daemon, tl_catalog_reader *reader, tl_json_
     json_quote(buffer, entry->icon == NULL ? "application-x-executable-symbolic" : entry->icon);
     json_raw(buffer, "}");
 }
-static tl_status encode_completion(tl_daemon *daemon, struct client *client,
-                                   const struct completion *completion, size_t *length) {
-    char *output = client->output + client->output_length;
-    size_t capacity = IPC_RESPONSE_BYTES - client->output_length;
+/* Encode one frame into the search thread's scratch. A frame that cannot fit
+ * the whole buffer becomes a terminal response_limit error (overflow set). */
+static tl_status encode_completion(tl_daemon *daemon, const struct completion *completion,
+                                   size_t *length, bool *overflow) {
     const char *status = completion->status == TL_OK ? "ok"
                          : completion->superseded    ? "cancelled"
                                                      : "error";
+    const tl_semantic_stats *semantic = daemon->semantic == NULL ? NULL : &completion->semantic;
     tl_json_buffer b;
-    json_buffer_init(&b, output, capacity);
+    *overflow = false;
+    json_buffer_init(&b, daemon->scratch, IPC_RESPONSE_BYTES);
     response_prefix(&b, completion->request, completion->catalog_gen, completion->search_id, status,
                     completion->reason, &completion->stats, completion->lexical_phase,
-                    completion->emb_gen, daemon->semantic == NULL ? NULL : &completion->semantic);
+                    completion->emb_gen, semantic);
     for (size_t i = 0;
          i < completion->count && i < completion->request->limit && completion->status == TL_OK;
          i++) {
@@ -468,81 +580,150 @@ static tl_status encode_completion(tl_daemon *daemon, struct client *client,
     json_number(&b, daemon->engine_ns / 1000);
     json_raw(&b, "}}\n");
     if (b.status != TL_OK) {
-        discard_semantic(client);
-        json_buffer_init(&b, output, capacity);
+        *overflow = true;
+        json_buffer_init(&b, daemon->scratch, IPC_RESPONSE_BYTES);
         response_prefix(&b, completion->request, completion->catalog_gen, completion->search_id,
                         "error", "response_limit", &completion->stats, false, completion->emb_gen,
-                        daemon->semantic == NULL ? NULL : &completion->semantic);
+                        semantic);
         json_raw(&b, "]}\n");
     }
     *length = b.status == TL_OK ? b.length : 0;
     return b.status;
 }
+/* Under the daemon lock, before encoding: the lexical frame's reason depends on
+ * whether the semantic worker accepted the job. */
 static void queue_semantic(tl_daemon *daemon, struct client *client,
                            struct completion *completion) {
     const tl_ipc_request *request = completion->request;
-    bool superseded = completion->superseded;
-    if (daemon->semantic != NULL && request->operation == IPC_QUERY &&
-        completion->status == TL_OK && !superseded && client->semantic_token < UINT64_MAX) {
-        tl_status queued = semantic_submit(daemon->semantic, client->slot, ++client->semantic_token,
-                                           request, completion->search_id, completion->catalog_gen,
-                                           desktop_gen(daemon->desktop), daemon->results,
-                                           completion->count, &completion->emb_gen);
-        if (queued == TL_OK) {
-            completion->lexical_phase = true;
-            completion->reason = "semantic_pending";
-            client->semantic_pending = true;
-            memcpy(client->pending_id, request->request_id, strlen(request->request_id) + 1);
-        } else {
-            completion->reason =
-                queued == TL_LIMIT ? "semantic_queue_full" : "semantic_unavailable";
-        }
+    if (daemon->semantic == NULL || request->operation != IPC_QUERY ||
+        completion->status != TL_OK || completion->superseded ||
+        client->semantic_token == UINT64_MAX)
+        return;
+    tl_status queued = semantic_submit(daemon->semantic, client->slot, ++client->semantic_token,
+                                       request, completion->search_id, completion->catalog_gen,
+                                       desktop_gen(daemon->desktop), daemon->results,
+                                       completion->count, &completion->emb_gen);
+    if (queued == TL_OK) {
+        completion->lexical_phase = true;
+        completion->reason = "semantic_pending";
+        client->semantic_pending = true;
+        memcpy(client->pending_id, request->request_id, strlen(request->request_id) + 1);
+    } else {
+        completion->reason = queued == TL_LIMIT ? "semantic_queue_full" : "semantic_unavailable";
     }
 }
-static void respond(tl_daemon *daemon, struct client *client, const tl_ipc_request *request,
-                    tl_status decoded, bool superseded) {
-    struct completion completion = {.request = request, .superseded = superseded};
+static void wake_ipc(tl_daemon *daemon) {
+    uint64_t one = 1;
+    ssize_t count = write(daemon->done_fd, &one, sizeof(one));
+    (void)count;
+}
+/* Under the daemon lock: hand the encoded frame to the client's output queue
+ * and retire the served queue head. Dropped silently once the client closed. */
+static void deliver(tl_daemon *daemon, struct client *client, const struct pending *job,
+                    uint64_t generation, size_t length, bool overflow) {
+    if (client->generation != generation || client->fd < 0)
+        return;
+    if (overflow)
+        discard_semantic(client);
+    if (length == 0 || IPC_RESPONSE_BYTES - client->output_length < length) {
+        client->abort = true;
+        return;
+    }
+    memcpy(client->output + client->output_length, daemon->scratch, length);
+    client->output_length += length;
+    if (client->active_count < DAEMON_ACTIVE_REQUESTS)
+        memcpy(client->active[client->active_count++], job->request.request_id,
+               strlen(job->request.request_id) + 1);
+    if (job->decoded != TL_OK || job->repeated)
+        client->closing = true;
+    client->queue_head = (client->queue_head + 1) % DAEMON_ACTIVE_REQUESTS;
+    client->queue_count--;
+}
+static void serve(tl_daemon *daemon, struct client *client, const struct pending *job,
+                  uint64_t generation) {
+    struct completion completion = {.request = &job->request, .superseded = job->superseded};
     tl_catalog_stats catalog = {0};
     completion.status = writer_stats(daemon->writer, &completion.stats);
     if (completion.status == TL_OK && daemon->semantic != NULL) {
         completion.status = semantic_stats(daemon->semantic, &completion.semantic);
-        if (request->operation == IPC_STATUS)
+        if (job->request.operation == IPC_STATUS)
             completion.emb_gen = completion.semantic.emb_gen;
     }
     if (completion.status == TL_OK)
         completion.status = catalog_stats(daemon->catalog, &catalog);
-    if (decoded != TL_OK)
-        completion.status = decoded;
-    bool repeated = duplicate(client, request->request_id);
-    if (repeated)
+    if (job->decoded != TL_OK)
+        completion.status = job->decoded;
+    if (job->repeated)
         completion.status = TL_INVALID;
     completion.catalog_gen = catalog.catalog_gen;
     tl_catalog_reader *reader = NULL;
     daemon->engine_ns = 0;
     desktop_acquire(daemon->desktop);
-    tl_ipc_request pooled = *request;
-    if (daemon->semantic != NULL && request->operation == IPC_QUERY)
+    tl_ipc_request pooled = job->request;
+    if (daemon->semantic != NULL && job->request.operation == IPC_QUERY)
         pooled.limit = LEXICAL_MAX_RESULTS;
     if (completion.status == TL_OK)
         completion.status = execute(daemon, &pooled, completion.search_id, &completion.count,
-                                    &completion.catalog_gen, &reader, superseded);
+                                    &completion.catalog_gen, &reader, job->superseded);
+    if (completion.status == TL_CANCELLED) {
+        /* A newer query arrived mid-search: answer like a queued supersession. */
+        completion.status = TL_STATE;
+        completion.superseded = true;
+    }
     completion.reader = reader;
-    completion.reason = response_reason(request, completion.status, decoded, repeated, superseded);
-    queue_semantic(daemon, client, &completion);
+    completion.reason = response_reason(&job->request, completion.status, job->decoded,
+                                        job->repeated, completion.superseded);
+    lock_daemon(daemon);
+    if (client->generation == generation && client->fd >= 0)
+        queue_semantic(daemon, client, &completion);
+    unlock_daemon(daemon);
     size_t length = 0;
-    tl_status encoded = encode_completion(daemon, client, &completion, &length);
+    bool overflow = false;
+    tl_status encoded = encode_completion(daemon, &completion, &length, &overflow);
     catalog_release(reader);
     desktop_release(daemon->desktop);
-    if (encoded != TL_OK) {
-        close_client(client);
-        return;
+    lock_daemon(daemon);
+    deliver(daemon, client, job, generation, encoded == TL_OK ? length : 0, overflow);
+    unlock_daemon(daemon);
+    wake_ipc(daemon);
+}
+/* Under the daemon lock: claim the next queued head, rotating across clients
+ * so one busy connection cannot starve the others. */
+static bool take_job(tl_daemon *daemon, struct client **out, struct pending *job,
+                     uint64_t *generation) {
+    for (size_t n = 0; n < DAEMON_MAX_CLIENTS; n++) {
+        size_t i = (daemon->next_client + n) % DAEMON_MAX_CLIENTS;
+        struct client *client = &daemon->clients[i];
+        if (client->fd < 0 || client->queue_count == 0)
+            continue;
+        struct pending *head = &client->queue[client->queue_head];
+        head->state = PENDING_RUNNING;
+        *job = *head;
+        *out = client;
+        *generation = client->generation;
+        atomic_store(&daemon->cancel, false);
+        daemon->next_client = (i + 1) % DAEMON_MAX_CLIENTS;
+        return true;
     }
-    client->output_length += length;
-    if (client->active_count < DAEMON_ACTIVE_REQUESTS)
-        memcpy(client->active[client->active_count++], request->request_id,
-               strlen(request->request_id) + 1);
-    if (decoded != TL_OK || repeated)
-        client->closing = true;
+    return false;
+}
+static void *search_worker(void *context) {
+    tl_daemon *daemon = context;
+    lock_daemon(daemon);
+    while (!atomic_load(&daemon->stop)) {
+        struct client *client = NULL;
+        uint64_t generation = 0;
+        if (!take_job(daemon, &client, &daemon->job, &generation)) {
+            int code = pthread_cond_wait(&daemon->wake, &daemon->lock);
+            (void)code;
+            continue;
+        }
+        unlock_daemon(daemon);
+        serve(daemon, client, &daemon->job, generation);
+        lock_daemon(daemon);
+    }
+    unlock_daemon(daemon);
+    return NULL;
 }
 static tl_status append_semantic_status(tl_daemon *daemon, char *output, size_t capacity,
                                         size_t *length) {
@@ -564,6 +745,7 @@ static tl_status append_semantic_status(tl_daemon *daemon, char *output, size_t 
     *length = buffer.status == TL_OK ? prefix + buffer.length : 0;
     return buffer.status;
 }
+/* IPC thread, under the daemon lock. */
 static void semantic_completion(tl_daemon *daemon, struct client *client, bool cancel) {
     if (!client->semantic_pending)
         return;
@@ -574,7 +756,7 @@ static void semantic_completion(tl_daemon *daemon, struct client *client, bool c
     size_t length = 0;
     size_t capacity = IPC_RESPONSE_BYTES - client->output_length;
     if (capacity <= SEMANTIC_STATUS_BYTES) {
-        close_client(client);
+        close_client(daemon, client);
         return;
     }
     char *output = client->output + client->output_length;
@@ -583,7 +765,7 @@ static void semantic_completion(tl_daemon *daemon, struct client *client, bool c
     if (status == TL_OK && length != 0)
         status = append_semantic_status(daemon, output, capacity, &length);
     if (status != TL_OK) {
-        close_client(client);
+        close_client(daemon, client);
         return;
     }
     if (length != 0) {
@@ -591,76 +773,102 @@ static void semantic_completion(tl_daemon *daemon, struct client *client, bool c
         client->semantic_pending = false;
     }
 }
-static bool newer_query(const char *data, size_t length) {
-    const char *newline = memchr(data, '\n', length);
-    while (newline != NULL) {
-        tl_ipc_request request;
-        if (ipc_decode(data, (size_t)(newline - data), &request) == TL_OK &&
-            request.operation == IPC_QUERY)
-            return true;
-        size_t used = (size_t)(newline - data) + 1;
-        data += used;
-        length -= used;
-        newline = memchr(data, '\n', length);
+/* Under the daemon lock: a new query makes every queued query obsolete and
+ * cancels a running one. Obsolete queries still answer, as cancelled. */
+static void supersede_queries(tl_daemon *daemon, struct client *client) {
+    for (size_t i = 0; i < client->queue_count; i++) {
+        struct pending *entry = &client->queue[(client->queue_head + i) % DAEMON_ACTIVE_REQUESTS];
+        if (entry->decoded != TL_OK || entry->request.operation != IPC_QUERY)
+            continue;
+        entry->superseded = true;
+        if (entry->state == PENDING_RUNNING)
+            atomic_store(&daemon->cancel, true);
     }
-    return false;
+}
+/* Under the daemon lock: decode one frame and queue it for the search thread. */
+static void enqueue(tl_daemon *daemon, struct client *client, const char *line, size_t length) {
+    size_t index = (client->queue_head + client->queue_count) % DAEMON_ACTIVE_REQUESTS;
+    struct pending *entry = &client->queue[index];
+    entry->decoded = ipc_decode(line, length, &entry->request);
+    entry->repeated = duplicate(client, entry->request.request_id);
+    entry->superseded = false;
+    entry->state = PENDING_QUEUED;
+    bool query = entry->decoded == TL_OK && entry->request.operation == IPC_QUERY;
+    /* A repeated active id remains a protocol error, not a cancellation. */
+    if (query && !entry->repeated) {
+        if (client->semantic_pending)
+            semantic_completion(daemon, client, true);
+        if (client->fd < 0)
+            return;
+        supersede_queries(daemon, client);
+    }
+    client->queue_count++;
+    if (entry->decoded != TL_OK || entry->repeated)
+        client->closing = true;
+    int code = pthread_cond_signal(&daemon->wake);
+    (void)code;
 }
 static void requests(tl_daemon *daemon, struct client *client) {
     char *newline = memchr(client->input, '\n', client->input_length);
     while (newline != NULL && !client->closing && client->fd >= 0) {
-        if (client->active_count == DAEMON_ACTIVE_REQUESTS) {
+        if (client->active_count + client->queue_count >= DAEMON_ACTIVE_REQUESTS) {
             client->closing = true;
             break;
         }
         size_t length = (size_t)(newline - client->input);
-        tl_ipc_request request;
-        tl_status decoded = ipc_decode(client->input, length, &request);
+        enqueue(daemon, client, client->input, length);
+        if (client->fd < 0)
+            return;
         size_t rest = client->input_length - length - 1;
-        bool superseded =
-            decoded == TL_OK && request.operation == IPC_QUERY && newer_query(newline + 1, rest);
-        /* A repeated active id remains a protocol error, not a cancellation. */
-        if (decoded == TL_OK && request.operation == IPC_QUERY && client->semantic_pending &&
-            !duplicate(client, request.request_id))
-            semantic_completion(daemon, client, true);
-        if (client->fd < 0)
-            return;
-        respond(daemon, client, &request, decoded, superseded);
-        if (client->fd < 0)
-            return;
         memmove(client->input, newline + 1, rest);
         client->input_length = rest;
         newline = memchr(client->input, '\n', client->input_length);
     }
 }
+/* A peer that closed its socket (not merely its write half) can never read a
+ * reply, so its queued and running work is dropped rather than finished. A
+ * zero-byte send distinguishes the two: only a closed peer answers EPIPE. */
+static bool peer_gone(int fd) {
+    ssize_t count = send(fd, "", 0, MSG_NOSIGNAL);
+    return count < 0 && errno == EPIPE;
+}
 static void receive(tl_daemon *daemon, struct client *client) {
     if (client->input_length == sizeof(client->input)) {
-        close_client(client);
+        close_client(daemon, client);
         return;
     }
     ssize_t count = recv(client->fd, client->input + client->input_length,
                          sizeof(client->input) - client->input_length, 0);
     if (count < 0 && (errno == EAGAIN || errno == EINTR))
         return;
-    if (count == 0 && (client->output_length > client->sent || client->semantic_pending)) {
+    bool pending = client->output_length > client->sent || client->semantic_pending ||
+                   client->queue_count != 0;
+    if (count == 0 && pending && !peer_gone(client->fd)) {
         client->closing = true;
         return;
     }
     if (count <= 0) {
-        close_client(client);
+        close_client(daemon, client);
         return;
     }
     client->input_length += (size_t)count;
     requests(daemon, client);
     if (client->input_length == sizeof(client->input))
-        close_client(client);
+        close_client(daemon, client);
 }
-static void transmit(struct client *client) {
-    ssize_t count = send(client->fd, client->output + client->sent,
-                         client->output_length - client->sent, MSG_NOSIGNAL);
+/* Under the daemon lock, except for the nonblocking send itself. The search
+ * thread only appends, so a shorter snapshot of the queue is still valid. */
+static void transmit(tl_daemon *daemon, struct client *client) {
+    size_t sent = client->sent, pending = client->output_length;
+    unlock_daemon(daemon);
+    ssize_t count = send(client->fd, client->output + sent, pending - sent, MSG_NOSIGNAL);
+    lock_daemon(daemon);
+    if (client->fd < 0)
+        return;
     if (count < 0 && (errno == EAGAIN || errno == EINTR))
         return;
     if (count <= 0) {
-        close_client(client);
+        close_client(daemon, client);
         return;
     }
     client->sent += (size_t)count;
@@ -672,8 +880,8 @@ static void transmit(struct client *client) {
             memcpy(client->active[client->active_count++], client->pending_id,
                    strlen(client->pending_id) + 1);
         client->deadline = milliseconds() + IPC_DEADLINE_MS;
-        if (client->closing && !client->semantic_pending)
-            close_client(client);
+        if (client->closing && !client->semantic_pending && client->queue_count == 0)
+            close_client(daemon, client);
     }
 }
 static tl_status accept_clients(tl_daemon *daemon) {
@@ -685,6 +893,7 @@ static tl_status accept_clients(tl_daemon *daemon) {
         if (status != TL_OK)
             return status;
         size_t slot = 0;
+        lock_daemon(daemon);
         while (slot < DAEMON_MAX_CLIENTS && daemon->clients[slot].fd >= 0)
             slot++;
         if (slot == DAEMON_MAX_CLIENTS)
@@ -693,36 +902,66 @@ static tl_status accept_clients(tl_daemon *daemon) {
             daemon->clients[slot].fd = fd;
             daemon->clients[slot].deadline = milliseconds() + IPC_DEADLINE_MS;
         }
+        unlock_daemon(daemon);
     }
     return TL_OK;
+}
+/* Under the daemon lock: per-client housekeeping before each poll. */
+static void prepare_poll(tl_daemon *daemon, struct pollfd *fds) {
+    uint64_t now = milliseconds();
+    for (size_t i = 0; i < DAEMON_MAX_CLIENTS; i++) {
+        struct client *client = &daemon->clients[i];
+        if (client->fd >= 0 && client->abort)
+            close_client(daemon, client);
+        if (client->fd >= 0)
+            semantic_completion(daemon, client, false);
+        if (client->fd >= 0 && now >= client->deadline)
+            close_client(daemon, client);
+        short events = client->closing ? 0 : POLLIN;
+        if (client->output_length > client->sent)
+            events |= POLLOUT;
+        fds[i + 2] = (struct pollfd){client->fd, events, 0};
+    }
+}
+/* Under the daemon lock: service one client's socket events. */
+static void service_client(tl_daemon *daemon, struct client *client, short events) {
+    if (client->fd < 0)
+        return;
+    /* POLLHUP means both directions are shut: the peer closed, so nothing it
+     * still sent can be answered. Half-closed peers never raise it. */
+    if ((events & (POLLERR | POLLNVAL | POLLHUP)) != 0) {
+        close_client(daemon, client);
+        return;
+    }
+    if ((events & POLLIN) != 0)
+        receive(daemon, client);
+    if (client->fd >= 0 && (events & POLLOUT) != 0 && client->output_length > client->sent)
+        transmit(daemon, client);
 }
 tl_status daemon_run(tl_daemon *daemon) {
     if (daemon == NULL)
         return TL_INVALID;
+    enum { SEMANTIC_SLOT = DAEMON_MAX_CLIENTS + 2, DONE_SLOT = DAEMON_MAX_CLIENTS + 3 };
     for (;;) {
-        struct pollfd fds[DAEMON_MAX_CLIENTS + 3] = {
+        struct pollfd fds[DAEMON_MAX_CLIENTS + 4] = {
             {ipc_listener_descriptor(daemon->listener), POLLIN, 0}, {daemon->signal_fd, POLLIN, 0}};
-        fds[DAEMON_MAX_CLIENTS + 2] =
-            (struct pollfd){semantic_descriptor(daemon->semantic), POLLIN, 0};
-        uint64_t now = milliseconds();
-        for (size_t i = 0; i < DAEMON_MAX_CLIENTS; i++) {
-            struct client *client = &daemon->clients[i];
-            if (client->fd >= 0)
-                semantic_completion(daemon, client, false);
-            if (client->fd >= 0 && now >= client->deadline)
-                close_client(client);
-            short events = client->closing ? 0 : POLLIN;
-            if (client->output_length > client->sent)
-                events |= POLLOUT;
-            fds[i + 2] = (struct pollfd){client->fd, events, 0};
-        }
-        int code = poll(fds, DAEMON_MAX_CLIENTS + 3, daemon->semantic == NULL ? 50 : 10);
+        fds[SEMANTIC_SLOT] = (struct pollfd){semantic_descriptor(daemon->semantic), POLLIN, 0};
+        fds[DONE_SLOT] = (struct pollfd){daemon->done_fd, POLLIN, 0};
+        lock_daemon(daemon);
+        prepare_poll(daemon, fds);
+        unlock_daemon(daemon);
+        int code = poll(fds, DAEMON_MAX_CLIENTS + 4, daemon->semantic == NULL ? 50 : 10);
         if (code < 0 && errno == EINTR)
             continue;
         if (code < 0)
             return TL_IO;
-        if ((fds[DAEMON_MAX_CLIENTS + 2].revents & POLLIN) != 0)
+        if ((fds[SEMANTIC_SLOT].revents & POLLIN) != 0)
             semantic_drain(daemon->semantic);
+        if ((fds[DONE_SLOT].revents & POLLIN) != 0) {
+            uint64_t completions = 0;
+            ssize_t count = read(daemon->done_fd, &completions, sizeof(completions));
+            (void)count;
+        }
         if ((fds[1].revents & POLLIN) != 0) {
             struct signalfd_siginfo event;
             ssize_t count = read(daemon->signal_fd, &event, sizeof(event));
@@ -733,22 +972,9 @@ tl_status daemon_run(tl_daemon *daemon) {
             if (status != TL_OK)
                 return status;
         }
-        for (size_t i = 0; i < DAEMON_MAX_CLIENTS; i++) {
-            struct client *client = &daemon->clients[i];
-            short events = fds[i + 2].revents;
-            if (client->fd < 0)
-                continue;
-            if ((events & (POLLERR | POLLNVAL)) != 0) {
-                close_client(client);
-                continue;
-            }
-            if ((events & POLLIN) != 0)
-                receive(daemon, client);
-            if (client->fd >= 0 && (events & POLLOUT) != 0 && client->output_length > client->sent)
-                transmit(client);
-            if (client->fd >= 0 && (events & POLLHUP) != 0 && (events & POLLIN) == 0 &&
-                client->output_length == client->sent)
-                close_client(client);
-        }
+        lock_daemon(daemon);
+        for (size_t i = 0; i < DAEMON_MAX_CLIENTS; i++)
+            service_client(daemon, &daemon->clients[i], fds[i + 2].revents);
+        unlock_daemon(daemon);
     }
 }

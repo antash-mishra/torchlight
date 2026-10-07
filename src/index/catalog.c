@@ -145,6 +145,10 @@ void catalog_release(tl_catalog_reader *reader) {
     catalog->readers--;
     unlock_catalog(catalog);
 }
+void catalog_reader_cancel(tl_catalog_reader *reader, const atomic_bool *flag) {
+    if (reader != NULL && reader->leased)
+        lexical_workspace_cancel(reader->workspace, flag);
+}
 tl_status catalog_query(tl_catalog_reader *reader, const char *query, tl_result *results,
                         size_t capacity, size_t *out_count) {
     if (out_count == NULL)

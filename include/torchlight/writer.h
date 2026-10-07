@@ -1,4 +1,5 @@
-/* Background catalog reconciliation/publication and bounded asynchronous history. */
+/* Background catalog reconciliation/publication and bounded asynchronous history,
+ * split between an indexing thread and a persistence thread. */
 #ifndef TORCHLIGHT_WRITER_H
 #define TORCHLIGHT_WRITER_H
 #include "torchlight/catalog.h"
@@ -29,13 +30,18 @@ typedef struct {
 } tl_writer_options;
 typedef struct {
     bool indexing, degraded, history_enabled, watch_degraded, recovering;
-    uint64_t reconciliations, watch_overflows, watch_unavailable, history_dropped, history_failures;
+    uint64_t reconciliations, watch_overflows, watch_unavailable, history_dropped, history_failures,
+        history_written;
     size_t watches, history_pending, offline_roots, unreadable_scopes;
     uint64_t last_scan_ms;
 } tl_writer_stats;
 /** Create owned writer, load/publish the saved catalog before crawling and start
- * its worker. config and catalog must outlive it; catalog needs capacity two,
- * with the writer as its only publisher. Config accepts root/allow;
+ * its indexing and persistence threads. The persistence thread owns the SQLite
+ * write connection and serializes catalog batches, history and retention; the
+ * indexing thread crawls into a private batch, builds engines from committed
+ * rows on a read connection and publishes. No scan or index build runs inside
+ * a write transaction. config and catalog must outlive it; catalog needs
+ * capacity two, with the writer as its only publisher. Config accepts root/allow;
  * missing roots are retained and retried. Options are copied, socket path copied.
  * Unavailable inotify instances retain the old watcher if any, continue scans
  * with degraded watch status, and retry watch creation at later reconciliations.
@@ -43,15 +49,16 @@ typedef struct {
  * TL_INVALID/NOMEM/IO/STATE/LIMIT; out NULL on error. SQLite owned by worker
  * after startup; caller must hold the daemon's database singleton lock. */
 tl_status writer_create(const tl_writer_options *options, tl_writer **out);
-/** Stop worker, roll back interrupted scans and join; accepted history drains
- * before exit within a five-second drain deadline plus any bounded in-progress
- * SQLite busy wait. Catalog remains caller-owned. NULL allowed, no errors. */
+/** Stop both threads, roll back interrupted batches and join; accepted history
+ * drains before exit within a five-second drain deadline plus any bounded
+ * in-progress SQLite busy wait. Catalog remains caller-owned. NULL allowed. */
 void writer_destroy(tl_writer *writer);
 /** Request reconciliation (one coalesced pending flag). Thread-safe, bounded,
  * no allocation/I/O. TL_INVALID for NULL; TL_OK otherwise. */
 tl_status writer_reconcile(tl_writer *writer);
 /** Enqueue optional history by copied request/search id; FIFO preserves search
  * before open. QUERY/OPEN/HISTORY_CLEAR only. Thread-safe, no allocation or SQL.
+ * The persistence thread writes events independently of scans and builds.
  * TL_LIMIT on saturation (increments dropped), TL_STATE when history disabled,
  * TL_INVALID for inputs; accepted events may fail asynchronously with counters. */
 tl_status writer_history(tl_writer *writer, const tl_ipc_request *request, const char *search_id);

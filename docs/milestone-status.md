@@ -16,7 +16,7 @@ acceptance work, as recorded in [the plan](../PLAN.md).
 | M3 Part 2 | Improve name search, unfinished typos, abbreviations and ranking; test useful results among competing apps and files. | Implemented; held-out relevance and performance measured |
 | M4 | Combine improved name search with optional local embeddings and vector retrieval for meaning-based matches. | Functional opt-in implementation; native Potion/cache/two-phase RRF tested; performance and broader relevance acceptance open |
 | M5 | Use optional opening history to recommend personally useful files and apps higher, with privacy and history controls. | Planned after M6 and remaining M4 acceptance work |
-| M6 | Separate workers, use Frizbee SIMD matching, then update indexes incrementally. | Planned; next priority, three ordered steps in one milestone |
+| M6 | Separate workers, use Frizbee SIMD matching, then update indexes incrementally. | In progress: step 1 (search thread, request queues, persistence thread) implemented; steps 2 and 3 planned |
 
 M3 Part 2 now keeps names, generic names, keywords and folders distinct, finds
 unfinished one-edit typos (including `proej`), and optimizes fuzzy alignment within

@@ -1,0 +1,18 @@
+{
+  "reference_errors": {
+    "field-kernel": 1
+  },
+  "fault_errors": {
+    "field-kernel-fault": 79,
+    "frozen-time-fault": 134,
+    "resolution-fault": 190
+  },
+  "scale_error": 0,
+  "repeat_error": 0,
+  "temporal_difference": 90,
+  "protected_query_max_alpha": 0,
+  "maximum_alpha": 195,
+  "premultiplication": true,
+  "disabled_max": 0,
+  "variants": 3
+}

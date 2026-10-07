@@ -1,6 +1,6 @@
 # lexical
 
-> **Status:** Implemented (M3 Part 2): explicit fields, prefix edits, optimal alignment and first-token completion
+> **Status:** Implemented (M3 Part 2, plus M6 cooperative cancellation): explicit fields, prefix edits, optimal alignment and first-token completion
 > **Source:** `src/index/lexical.c` (build), `src/index/lexical_query.c` (search),
 > `src/index/lexical_internal.h` · **Header:** `include/torchlight/lexical.h`
 > **Tests:** `tests/unit/test_lexical.c`, `tests/alloc/query.c`
@@ -150,3 +150,12 @@ M3 Part 2 adds exhaustive scorer/edit references and a [mixed relevance evaluato
 The entry/context APIs expose immutable sorted metadata and context clipped at
 indexed roots. lexical_exactness exposes exact tiers without leaking numeric
 score constants to fusion. Query scoring algorithms remain unchanged.
+
+## Cooperative cancellation (M6 step 1)
+
+`lexical_workspace_cancel` attaches a caller-owned atomic flag to a workspace.
+`lexical_query` polls it before each scoring batch and every 1024 scored
+entries inside parallel batches, returning `TL_CANCELLED` with the workspace
+reusable; a cleared or detached flag restores normal answers. The daemon's
+search thread uses it to abandon a query the client has already typed past.
+See [ADR 0028](../../adr/0028-m6-search-thread-and-persistence-owner.md).

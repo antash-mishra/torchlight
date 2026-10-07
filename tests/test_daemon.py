@@ -278,6 +278,28 @@ def live_catalog(service):
             with connection.makefile("rb") as stream:
                 assert json.loads(stream.readline())["status"] == "cancelled"
                 assert json.loads(stream.readline())["results"][0]["id"] == original
+        # Rapid typing: every older queued query answers cancelled/superseded
+        # in order, while non-query frames between them are still served.
+        with service.connect() as connection:
+            typed = ["p", "proj", "projectNotes.md"]
+            frames = [dict(version=1, request_id=f"type-{i}", op="query", query=q)
+                      for i, q in enumerate(typed)]
+            frames.insert(1, dict(version=1, request_id="status-between", op="status"))
+            connection.sendall(b"".join(json.dumps(f).encode() + b"\n" for f in frames))
+            with connection.makefile("rb") as stream:
+                replies = [json.loads(stream.readline()) for _ in frames]
+            assert [r["request_id"] for r in replies] == [f["request_id"] for f in frames]
+            assert [r["status"] for r in replies] == ["cancelled", "ok", "cancelled", "ok"]
+            assert replies[0]["reason"] == replies[2]["reason"] == "superseded"
+            assert replies[1]["reason"] == "accepted"
+            assert replies[3]["results"][0]["id"] == original
+            assert replies[3]["search_id"] is not None
+        # A peer that closes outright leaves no obsolete backlog: the next
+        # client is answered immediately and the status counters keep moving.
+        abandoned = service.connect()
+        abandoned.sendall(json.dumps(dict(version=1, request_id="gone", op="query", query="project")).encode() + b"\n")
+        abandoned.close()
+        assert service.call("query", query="projectNotes.md")["results"][0]["id"] == original
         with service.connect() as connection:
             connection.sendall(b'{"version":1,"request_id":"half-close","op":"status"}\n')
             connection.shutdown(socket.SHUT_WR)

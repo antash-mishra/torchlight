@@ -128,6 +128,10 @@ Rules the diagram encodes:
 
 ### Step 1: search thread and persistence owner
 
+**Status: implemented** (2026-10-07), see
+[ADR 0028](adr/0028-m6-search-thread-and-persistence-owner.md). The recorded
+step-1 run is referenced from the measurements section below.
+
 Goal: the IPC loop never blocks on a search, a scan or a history write.
 
 - Add a search thread owned by `tl_daemon`. Move `execute` and
@@ -238,6 +242,29 @@ Exit criteria: `bench-daemon` update lag for 100 touched files below 500 ms at
 500k; peak RSS during a small update within 10% of steady RSS; catalog crash
 tests and rename tests pass against the segmented engine; compaction runs
 without a query stall.
+
+## Step 1 recorded run (2026-10-07)
+
+Lexical-only daemon and engine benchmarks after step 1, same synthetic corpus
+and machine as the baseline, with a load average near 6 from a preceding lint
+run. Step 1 changes responsiveness, not search cost, and the numbers agree:
+
+| Measurement at 500k | Baseline | Step 1 | Source |
+|---|---|---|---|
+| Daemon round trip p95 | 7.27 ms | 7.30 ms | `2026-10-07-m6-step1-daemon.jsonl` |
+| Daemon engine p95 | 6.93 ms | 7.06 ms | same |
+| Round trip p95 during indexing | 10.8 ms | 8.17 ms | same |
+| Update lag, 100 touched files | 4.97 s | 4.03 s | same |
+| RSS before → after rebuild | 275 → 549 MB, peak 661 MB | 277 → 497 MB, peak 677 MB | same |
+| Engine typing p95 / whole-query p95 | 8.55 / 9.62 ms | 7.36 / 7.33 ms | `2026-10-07-m6-step1-lexical.txt` |
+
+The engine-only improvement is within run-to-run variance of this machine and
+is not claimed as a step-1 effect; the cancellation polls cost nothing
+measurable. The peak-RSS increase is the private crawl batch; step 3a removes
+it for routine updates. A live check against a real 35k-entry workspace folder
+answered every query under 1.5 ms round trip, answered a four-frame typing
+burst in 0.3 ms with three `cancelled/superseded` replies and one result, and
+served popup-style one-connection-per-keystroke typing at 0.1 to 0.4 ms per key.
 
 ## Measurements recorded at the end of M6
 

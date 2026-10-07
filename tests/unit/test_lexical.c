@@ -1,6 +1,7 @@
 /* Complete scans, deterministic top-k, query edits and byte-safe exact paths. */
 #include "test.h"
 #include "torchlight/lexical.h"
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 static void expect(tl_lexical *engine, tl_lexical_workspace *workspace, const char *query,
@@ -380,7 +381,37 @@ static void quality_fields(void) {
     lexical_workspace_destroy(workspace);
     lexical_destroy(engine);
 }
+/* A set cancel flag stops a query before scoring and leaves the workspace
+ * reusable; a cleared or detached flag restores normal answers. */
+static void cooperative_cancellation(void) {
+    tl_lexical *engine = NULL;
+    tl_lexical_workspace *workspace = NULL;
+    CHECK(lexical_create(&engine) == TL_OK);
+    CHECK(lexical_add(engine, 1, "/work/projectNotes.md", false) == TL_OK);
+    CHECK(lexical_add(engine, 2, "/work/project.md", false) == TL_OK);
+    CHECK(lexical_finish(engine) == TL_OK);
+    CHECK(lexical_workspace_create(engine, &workspace) == TL_OK);
+    atomic_bool cancel;
+    atomic_init(&cancel, true);
+    lexical_workspace_cancel(workspace, &cancel);
+    tl_result results[4];
+    size_t count = 7;
+    CHECK(lexical_query(engine, workspace, "proj", results, 4, &count) == TL_CANCELLED);
+    CHECK(count == 0);
+    CHECK(lexical_query(engine, workspace, "notes proj", results, 4, &count) == TL_CANCELLED);
+    atomic_store(&cancel, false);
+    CHECK(lexical_query(engine, workspace, "proj", results, 4, &count) == TL_OK);
+    CHECK(count == 2 && results[0].id == 2);
+    atomic_store(&cancel, true);
+    lexical_workspace_cancel(workspace, NULL);
+    CHECK(lexical_query(engine, workspace, "notes proj", results, 4, &count) == TL_OK);
+    CHECK(count == 1 && results[0].id == 1);
+    lexical_workspace_cancel(NULL, &cancel);
+    lexical_workspace_destroy(workspace);
+    lexical_destroy(engine);
+}
 void test_lexical(void) {
+    cooperative_cancellation();
     first_token_completeness();
     quality_fields();
     prefix_bonus_ranking();

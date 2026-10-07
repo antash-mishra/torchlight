@@ -45,6 +45,10 @@ tl_status catalog_acquire(tl_catalog *catalog, tl_catalog_reader **out);
  * different leases, but caller must finish all access to this lease first.
  * Borrowed paths become invalid immediately. No errors, allocation or I/O. */
 void catalog_release(tl_catalog_reader *reader);
+/** Attach an optional cancellation flag to a lease's workspace; see
+ * lexical_workspace_cancel. Ignored for NULL/unleased readers. Detach with
+ * NULL before the flag's lifetime ends. No allocation/I/O/errors. */
+void catalog_reader_cancel(tl_catalog_reader *reader, const atomic_bool *flag);
 /** Query a leased snapshot. Same inputs/errors as lexical_query; out_count zero
  * on error. Paths borrow the lease, including across publication. One thread
  * per lease; separate leases can query concurrently without the lifecycle lock. */

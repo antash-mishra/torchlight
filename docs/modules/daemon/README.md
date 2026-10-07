@@ -1,7 +1,7 @@
 # daemon
 
-> **Status:** Implemented (M4): opt-in two-phase hybrid service, bounded clients
-> and reviewed response backpressure/status handling
+> **Status:** Implemented (M6 step 1): dedicated search thread with per-client
+> request queues, supersession and cancellation, over the M4 two-phase service
 > **Source:** `src/service/daemon.c`, `src/bin/torchlightd.c`
 > **Header:** `include/torchlight/daemon.h`
 > **Tests:** `tests/test_daemon.py`, `tests/test_semantic.py`,
@@ -14,13 +14,24 @@ descriptor. Configuration outlives the daemon. SIGINT/SIGTERM are blocked before
 creating the worker and consumed through signalfd; destruction joins the worker
 and restores the creating thread's signal mask.
 
-The query loop leases a resident immutable catalog, searches, encodes results
-and releases its lease before sending. It performs no SQLite calls, filesystem
-reads or heap allocation. One query runs at a time; sixteen clients can remain
+Two threads serve clients. The IPC thread reads, frames and writes sockets.
+The search thread takes the head of one client's queue at a time (rotating
+across clients), leases the resident catalog and desktop snapshot, searches,
+encodes into a private scratch buffer and appends the frame to the client's
+output under the daemon lock before releasing its leases. It performs no SQLite
+calls, filesystem reads or heap allocation. Sixteen clients can remain
 connected. Inputs are 8 KiB, total queued output is 1 MiB per client, and four
-request ids may be active. Slow/partial clients expire after five seconds and
-cannot pin old catalogs. Superseded query frames already in the input buffer
-receive cancelled completion; duplicate active ids are rejected.
+request ids may be outstanding (queued, running or answered but unsent). Slow
+or partial clients expire after five seconds and cannot pin old catalogs.
+
+A new query marks that client's queued queries superseded and sets the engine's
+cancellation flag if its query is already running; those queries still answer,
+in order, with `status: cancelled` and `reason: superseded`, and non-query
+frames between them are served. Duplicate outstanding ids are rejected. A peer
+that closes its socket outright (as the popup does when a newer keystroke
+replaces an exchange) is closed at once and its queued or running work is
+dropped; a peer that only shut its write half still receives every reply. See
+[ADR 0028](../../adr/0028-m6-search-thread-and-persistence-owner.md).
 
 Every M2 request ends with `phase: final`; query completion uses
 `reason: lexical_only` when no model is configured. With `--model`, ready matching
@@ -30,15 +41,16 @@ stale ids return `stale_result`. Open recording is asynchronous and validates th
 current catalog id, without launching an external application.
 
 Status includes active indexing, degraded/recovering state, offline roots,
-unreadable scopes, watch coverage and loss counters, history pending/drop/failure
-counts, and last reconciliation duration. `timing.engine_us` measures lexical
+unreadable scopes, watch coverage and loss counters, history
+pending/dropped/failures/written counts, and last reconciliation duration. `timing.engine_us` measures lexical
 search only; IPC acceptance, encoding and socket queues belong to round-trip
 timing. See [evaluation](../../evaluation.md) for benchmarks and limitations.
 
 Tests exercise live changes/moves, raw paths/newlines, stable/stale ids, concurrent
 clients/updates, SQL lock isolation, failure rollback, restart reconciliation,
 unavailable roots, watch exhaustion, disabled/deduplicated history, malformed
-requests, cancellation, duplicate ids, size bounds and client deadlines.
+requests, cancellation, rapid typing with interleaved status frames, abandoned
+connections, duplicate ids, size bounds and client deadlines.
 
 See [writer](../writer/README.md), [IPC](../ipc/README.md) and
 [ADR 0011](../../adr/0011-m2-daemon-writer-and-reconciliation.md).

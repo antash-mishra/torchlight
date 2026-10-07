@@ -14,6 +14,8 @@ const char *tl_status_string(tl_status status) {
         return "resource limit exceeded";
     case TL_STATE:
         return "invalid lifecycle state";
+    case TL_CANCELLED:
+        return "cancelled";
     }
     return "unknown status";
 }

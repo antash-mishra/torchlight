@@ -122,17 +122,26 @@ void test_writer(void) {
     CHECK(store_load_catalog(reader, loaded_count, &count, &catalog_gen) == TL_OK &&
           catalog_gen == 1 && count == 3);
     create_file(second);
-    for (size_t i = 0; i < WRITER_HISTORY_CAPACITY; i++) {
+    /* Publication is still blocked, yet history keeps draining because the
+     * persistence thread owns the write connection on its own. Enqueueing is
+     * faster than SQLite writes, so the ring saturates exactly once. */
+    size_t accepted = 0;
+    tl_status enqueued = TL_OK;
+    for (size_t i = 0; i < 100000 && enqueued == TL_OK; i++) {
         tl_ipc_request request = {.operation = IPC_QUERY};
         char search_id[64];
         memcpy(request.query, "first", 6);
         CHECK(snprintf(search_id, sizeof(search_id), "search-%zu", i) > 0);
-        CHECK(writer_history(writer, &request, search_id) == TL_OK);
+        enqueued = writer_history(writer, &request, search_id);
+        accepted += enqueued == TL_OK;
     }
-    tl_ipc_request request = {.operation = IPC_QUERY};
-    CHECK(writer_history(writer, &request, "saturated") == TL_LIMIT);
-    CHECK(current_stats(writer).history_pending == WRITER_HISTORY_CAPACITY &&
-          current_stats(writer).history_dropped == 1);
+    CHECK(enqueued == TL_LIMIT && accepted >= WRITER_HISTORY_CAPACITY);
+    for (size_t i = 0; i < 10000 && current_stats(writer).history_written < accepted; i++)
+        pause_briefly();
+    tl_writer_stats drained = current_stats(writer);
+    CHECK(drained.history_written == accepted && drained.history_pending == 0 &&
+          drained.history_dropped == 1 && drained.history_failures == 0);
+    CHECK(atomic_load(&faults.hold) && !has_query(catalog, "first"));
     atomic_store(&faults.hold, false);
     for (size_t i = 0; i < 10000 && !current_stats(writer).recovering; i++)
         pause_briefly();

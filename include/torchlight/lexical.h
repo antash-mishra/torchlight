@@ -2,6 +2,7 @@
 #ifndef TORCHLIGHT_LEXICAL_H
 #define TORCHLIGHT_LEXICAL_H
 #include "torchlight/common.h"
+#include <stdatomic.h>
 #include <stdbool.h>
 #define LEXICAL_QUERY_BYTES 256
 #define LEXICAL_MAX_RESULTS 1000
@@ -61,6 +62,13 @@ tl_status lexical_workspace_create(const tl_lexical *engine, tl_lexical_workspac
 /** Join owned workers and free scratch, leaving engine untouched; NULL allowed.
  * Finish all queries before destroying this workspace. */
 void lexical_workspace_destroy(tl_lexical_workspace *workspace);
+/** Attach an optional cooperative cancellation flag to a workspace. Queries
+ * poll it between scoring batches and inside long scans; when it reads true
+ * they stop with TL_CANCELLED and leave the workspace reusable. The flag must
+ * outlive the workspace or be detached with NULL. Not thread-safe against a
+ * running query on the same workspace; the flag itself may be set from any
+ * thread. NULL workspace is ignored. No allocation/I/O/errors. */
+void lexical_workspace_cancel(tl_lexical_workspace *workspace, const atomic_bool *flag);
 /** Query sealed engine with its workspace. Copy at most capacity results to
  * caller buffer (1..LEXICAL_MAX_RESULTS); out_count is zero on error. Paths are
  * borrowed until engine destruction. Query <= LEXICAL_QUERY_BYTES raw non-NUL
@@ -71,7 +79,7 @@ void lexical_workspace_destroy(tl_lexical_workspace *workspace);
  * prefix/subsequence within one parent directory name below the indexed roots. A word containing
  * '/' may instead match across the full path. Exact raw paths, then exact basenames, have priority.
  * Ties order by raw path bytes, then id. No I/O/heap allocation. TL_INVALID/STATE/LIMIT on contract
- * violations; scratch is reusable on failure. */
+ * violations, TL_CANCELLED when the attached flag is set; scratch is reusable on failure. */
 tl_status lexical_query(const tl_lexical *engine, tl_lexical_workspace *workspace,
                         const char *query, tl_result *results, size_t capacity, size_t *out_count);
 /** Return number of entries; zero for NULL, no errors. */

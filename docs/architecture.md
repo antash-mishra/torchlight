@@ -5,10 +5,15 @@
 M3 runs as a resident file/application daemon with a GTK4 popup. `torchlight query` uses Unix-socket IPC;
 explicit `--db` retains the M1 local query mode. Offline `index` still wires
 config -> crawl -> store, under the same database singleton lock as the daemon.
-The poll loop searches immutable catalog leases and releases them after encoding
-lexical results. With an explicitly configured model, a matching owned semantic
-metadata snapshot supports the asynchronous final phase. Its worker owns SQLite, inotify,
-reconciliation, full-engine staging/publication and asynchronous history.
+An IPC thread owns sockets; a search thread serves each client's bounded request
+queue, leasing immutable catalog views and releasing them after encoding lexical
+results, with newer queries superseding or cancelling older ones (M6 step 1,
+[ADR 0028](adr/0028-m6-search-thread-and-persistence-owner.md)). With an
+explicitly configured model, a matching owned semantic metadata snapshot
+supports the asynchronous final phase. The writer's indexing thread owns inotify,
+crawling into private batches, full-engine construction from committed rows and
+publication; its persistence thread owns the SQLite write connection, applying
+batches, history and retention.
 Saved entries serve before background reconciliation. Status and restart/failure
 recovery are implemented. Optional semantics are implemented; personalization
 ranking remains planned. See ADR 0011 for the full-rebuild baseline and
@@ -56,9 +61,9 @@ Frizbee is the selected production fuzzy matcher through its C ABI; there is no
 library-selection phase. Retrieval channels, normalization/raw-byte paths,
 field weights and exact-match priority remain contracts. Incremental changes
 will share unchanged blocks and reconcile affected scopes, keeping full rebuilds
-for recovery/compaction. A mapped binary index is not required. The current poll
-loop search, shared writer and full rebuilds described below remain implemented
-until these steps land. See [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md)
+for recovery/compaction. A mapped binary index is not required. Step 1 (search thread, request
+queues, persistence thread) is implemented; the full rebuilds described below
+remain until step 3 lands. See [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md)
 and the [M6 working plan](m6-plan.md) for the target thread and data flow.
 
 ## Components

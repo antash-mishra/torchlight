@@ -1,0 +1,69 @@
+<!doctype html>
+<!-- Quiet System: an isolated, interactive Torchlight design study. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Torchlight — Quiet System</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="study-header">
+    <span>torchlight <span class="subtle">/ design study</span></span>
+    <span class="study-name">04 — quiet system</span>
+  </header>
+  <main class="stage">
+    <div class="launcher-slot">
+    <section class="launcher" data-state="idle" aria-label="Torchlight launcher design">
+      <div class="search-surface">
+        <div class="search-art-fallback" aria-hidden="true"></div>
+        <canvas id="search-art" aria-hidden="true" hidden></canvas>
+      <div class="identity">
+        <span class="wordmark"><svg aria-hidden="true" viewBox="0 0 16 16"><path d="M4 12 9 3M8 13l4-7"/></svg>torchlight</span>
+      </div>
+      <div class="search-line">
+        <span class="prompt" aria-hidden="true">/</span>
+        <div class="query-shell">
+          <input id="query" type="text" aria-label="Search apps, settings, files and folders" autocomplete="off" spellcheck="false" placeholder="Search">
+          <span id="underline-caret" aria-hidden="true" hidden></span>
+        </div>
+      </div>
+      <div id="message" class="message" role="status" hidden>
+        <p id="message-title"></p>
+        <button id="retry" hidden>Retry <span aria-hidden="true">↵</span></button>
+      </div>
+      </div>
+      <div id="results" class="results" role="listbox" aria-label="Search results" hidden></div>
+      <footer class="launcher-footer" hidden>
+        <span id="status" role="status">5 matches</span>
+        <div class="key-hints" aria-label="Keyboard shortcuts">
+          <span><kbd>↑↓</kbd> select</span><span><kbd>↵</kbd> open</span>
+          <span class="reveal-hint"><kbd>ctrl ↵</kbd> reveal</span><span><kbd>esc</kbd> close</span>
+        </div>
+      </footer>
+    </section>
+    </div>
+    <div class="preview-controls" aria-label="Preview states">
+      <span class="controls-label">preview</span>
+      <button data-state="idle" aria-pressed="true">empty</button>
+      <button data-state="results" aria-pressed="false">results</button>
+      <button data-state="none" aria-pressed="false">no matches</button>
+      <button data-state="offline" aria-pressed="false">offline</button>
+    </div>
+    <div class="art-controls" aria-label="Artwork studies">
+      <span class="controls-label">artwork</span>
+      <button data-art-variant="0" aria-pressed="true">spectral silk</button>
+      <button data-art-variant="1" aria-pressed="false">ion cloud</button>
+      <button data-art-variant="2" aria-pressed="false">prism fold</button>
+    </div>
+    <p id="action-note" class="action-note" role="status"></p>
+  </main>
+  <footer class="study-footer">
+    <span>JetBrains Mono <span class="subtle">+ Space Grotesk</span></span>
+    <span>minimal. local. keyboard first.</span>
+  </footer>
+  <script src="search-art.js"></script>
+  <script src="preview.js"></script>
+</body>
+</html>

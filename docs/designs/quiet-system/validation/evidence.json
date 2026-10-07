@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "subject": {
+    "feature": "three spectral search-field shader studies",
+    "revision": "fdd7f3b5e01beb839029de3ecbb3ff6c1ff97ac9",
+    "dirty": true,
+    "claim": "Original spectral silk, ion cloud and folded prism shaders; complex-plane field reference, bounded premultiplied composition and lifecycle-safe animation"
+  },
+  "environment": {
+    "build_type": "browser design preview",
+    "compiler": "Chrome GLSL ES compiler",
+    "gpu": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+    "driver": "WebGL 1.0 (OpenGL ES 2.0 Chromium)",
+    "api": "WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)",
+    "asset_hash": "sha256:88fd9fd2b3f1b0c9bfb8daa7cf53183adb7036815a39292e2288467facef2977",
+    "resolution": "96x32, 288x96",
+    "seed": 0
+  },
+  "checks": [
+    {
+      "id": "shader.build",
+      "category": "build",
+      "required": true,
+      "method": "Compile/link actual fragment shader; numeric draw and eight independent resource ownership cycles.",
+      "command": "npm exec --yes --package=@playwright/cli -- playwright-cli -s=shader-study run-code --filename docs/designs/quiet-system/validation/check-shader.js",
+      "artifacts": [
+        "gpu.json",
+        "reference.json"
+      ],
+      "assertions": [
+        {
+          "name": "GL errors",
+          "op": "max_abs_le",
+          "actual": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": "shader.reference",
+      "category": "shader-contract",
+      "required": true,
+      "method": "Compare the actual four-scale field kernel with an independent double-precision complex-plane harmonic series; validate final output invariants separately.",
+      "command": "npm exec --yes --package=@playwright/cli -- playwright-cli -s=shader-study run-code --filename docs/designs/quiet-system/validation/check-shader.js",
+      "artifacts": [
+        "gpu.json",
+        "reference.json"
+      ],
+      "assertions": [
+        {
+          "name": "Maximum CPU/GPU error",
+          "op": "max_abs_le",
+          "actual": [
+            1
+          ],
+          "expected": 2
+        }
+      ]
+    },
+    {
+      "id": "shader.invariants",
+      "category": "numeric-invariants",
+      "required": true,
+      "method": "Read complete buffers; require protected query region transparency, bounded opacity and premultiplied channels.",
+      "command": "npm exec --yes --package=@playwright/cli -- playwright-cli -s=shader-study run-code --filename docs/designs/quiet-system/validation/check-shader.js",
+      "artifacts": [
+        "gpu.json",
+        "reference.json"
+      ],
+      "assertions": [
+        {
+          "name": "Protected alpha",
+          "op": "eq",
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "Opacity cap",
+          "op": "le",
+          "actual": 195,
+          "expected": 200
+        },
+        {
+          "name": "Premultiplied",
+          "op": "eq",
+          "actual": true,
+          "expected": true
+        }
+      ]
+    },
+    {
+      "id": "shader.scenes",
+      "category": "controlled-scenes",
+      "required": true,
+      "method": "Check repeat draws at fixed time and temporal change at eight seconds.",
+      "command": "npm exec --yes --package=@playwright/cli -- playwright-cli -s=shader-study run-code --filename docs/designs/quiet-system/validation/check-shader.js",
+      "artifacts": [
+        "gpu.json",
+        "reference.json"
+      ],
+      "assertions": [
+        {
+          "name": "Repeat error",
+          "op": "eq",
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "Temporal difference",
+          "op": "gt",
+          "actual": 90,
+          "expected": 2
+        }
+      ]
+    },
+    {
+      "id": "shader.ablation",
+      "category": "ablation",
+      "required": true,
+      "method": "Set strength uniform to zero and redraw; require every output byte to vanish.",
+      "command": "npm exec --yes --package=@playwright/cli -- playwright-cli -s=shader-study run-code --filename docs/designs/quiet-system/validation/check-shader.js",
+      "artifacts": [
+        "gpu.json",
+        "reference.json"
+      ],
+      "assertions": [
+        {
+          "name": "Disabled output",
+          "op": "eq",
+          "actual": 0,
+          "expected": 0
+        }
+      ]
+    },
+    {
+      "id": "shader.scale",
+      "category": "metamorphic",
+      "required": true,
+      "method": "Scale both viewport dimensions by three; compare corresponding normalized pixel centers.",
+      "command": "npm exec --yes --package=@playwright/cli -- playwright-cli -s=shader-study run-code --filename docs/designs/quiet-system/validation/check-shader.js",
+      "artifacts": [
+        "gpu.json",
+        "reference.json"
+      ],
+      "assertions": [
+        {
+          "name": "Resolution invariance",
+          "op": "le",
+          "actual": 0,
+          "expected": 2
+        }
+      ]
+    },
+    {
+      "id": "shader.lifecycle",
+      "category": "lifecycle",
+      "required": true,
+      "method": "Eight create/draw/pause/resume/destroy cycles; test missing WebGL, failed shader compilation and actual loss/recovery. Exercise query expansion, collapse and reduced motion.",
+      "command": "npm exec --yes --package=@playwright/cli -- playwright-cli -s=shader-study run-code --filename docs/designs/quiet-system/validation/check-shader.js",
+      "artifacts": [
+        "gpu.json",
+        "preview.json"
+      ],
+      "assertions": [
+        {
+          "name": "Resource objects remaining",
+          "op": "max_abs_le",
+          "actual": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "expected": 0
+        },
+        {
+          "name": "Final resource objects",
+          "op": "eq",
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "Compile fallback",
+          "op": "eq",
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "No WebGL fallback",
+          "op": "eq",
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "Context recovery",
+          "op": "eq",
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "UI checks",
+          "op": "eq",
+          "actual": "passed",
+          "expected": "passed"
+        },
+        {
+          "name": "Artwork variants verified",
+          "op": "eq",
+          "actual": 3,
+          "expected": 3
+        }
+      ]
+    },
+    {
+      "id": "shader.sensitivity",
+      "category": "test-sensitivity",
+      "required": true,
+      "method": "Zero the actual field amplitude, freeze time and overwrite the resolution binding. All faults must be detected.",
+      "command": "npm exec --yes --package=@playwright/cli -- playwright-cli -s=shader-study run-code --filename docs/designs/quiet-system/validation/check-shader.js",
+      "artifacts": [
+        "gpu.json",
+        "reference.json"
+      ],
+      "assertions": [
+        {
+          "name": "Field kernel fault detected",
+          "op": "gt",
+          "actual": 79,
+          "expected": 2
+        },
+        {
+          "name": "Frozen time detected",
+          "op": "gt",
+          "actual": 134,
+          "expected": 2
+        },
+        {
+          "name": "Resolution binding detected",
+          "op": "gt",
+          "actual": 190,
+          "expected": 2
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Chrome/SwiftShader validation; hardware GPU and native GTK rendering not validated.",
+    "GPU timer queries unavailable; CPU dispatch samples are diagnostic, not a GPU performance budget or benchmark.",
+    "Frozen PNG fallback captures shader time zero; future hardware/native GTK color behavior has not been validated."
+  ]
+}

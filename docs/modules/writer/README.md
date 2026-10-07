@@ -1,14 +1,23 @@
 # writer
 
-> **Status:** Implemented (M2/M3): async reconciliation, scan-only fallback, publication and history
+> **Status:** Implemented (M6 step 1): indexing and persistence threads, private
+> scan batches, builds from committed rows; M2/M3 reconciliation contracts retained
 > **Source:** `src/service/writer.c` · **Header:** `include/torchlight/writer.h`
 > **Tests:** `tests/unit/test_writer.c`, `tests/unit/test_writer_fallback.c`, `tests/test_daemon.py`
 
-The writer owns one SQLite connection and worker thread. Creation loads/publishes
-the saved catalog before starting the worker. Configuration and the catalog
-registry remain caller-owned; the registry must have room for two views. All
-crawls, index construction, commits and reclamation happen off the query thread.
-Its mutex protects only short status/history operations, never I/O or builds.
+The writer owns two threads and two SQLite connections. The indexing thread
+drains inotify, crawls selected roots into a private batch (copied entries,
+kept offline roots and rename pairs), hands it to the persistence thread and
+waits, then builds the engine from the committed rows on its own read-only
+connection and publishes the snapshot. The persistence thread owns the write
+connection: it applies each batch in one short transaction, drains the history
+ring and runs retention. No crawl or index build runs inside a write
+transaction, so history writes wait at most for one batch commit. Creation
+loads/publishes the saved catalog before starting either thread. Configuration
+and the catalog registry remain caller-owned; the registry must have room for
+two views. The mutex protects status, the history ring and the batch handoff,
+never I/O or builds. See
+[ADR 0028](../../adr/0028-m6-search-thread-and-persistence-owner.md).
 
 An event burst schedules one reconciliation, coalesced for 100 ms. The worker
 resolves/deduplicates configured roots each time, installs a replacement watch
@@ -29,11 +38,13 @@ replacement retires stale ids even when notifications were coalesced or missed.
 Directory replacement retires descendants; failed batches restore ids/history.
 Paired moves retain ids subject to validation of the filesystem object key.
 
-Catalog changes are private: scan/upsert/prune, build and validate a candidate
-from the pending transaction, commit, then publish its `catalog_gen`. Preparation
-or SQL failure rolls back the batch and retains paired moves for the retry, so
-renamed files keep their ids after a failed transaction. Failed post-commit publication sets
-recovering/degraded status and gates later catalog batches on committed reload.
+Catalog changes are private: crawl into a batch, apply renames/upserts/prune in
+one transaction, commit, then build the committed view and publish its
+`catalog_gen`. SQL failure rolls back the batch and retains paired moves for the
+retry, so renamed files keep their ids after a failed transaction. Renames
+received before the crawl apply before upserts; those received during it apply
+after upserts and before pruning. A failed build or publication after the commit
+sets recovering/degraded status and gates later catalog batches on committed reload.
 The old view remains searchable. No-change scans roll back temporary bookkeeping
 and avoid a rebuild. Snapshot exhaustion retries after reclamation.
 
@@ -49,15 +60,17 @@ assigned in memory by the daemon. Accepted searches precede their opens, retries
 deduplicate by event id, and missing retained searches become NULL. Full history
 queues increment a drop counter; failed writes increment a failure counter.
 History is optional, retention runs periodically, and clear also works when
-recording is disabled. Shutdown interrupts scans, rolls back unfinished work,
-joins the worker and drains history within a five-second deadline (a currently
-blocked SQLite operation can add its bounded busy timeout).
+recording is disabled. A written counter complements pending/dropped/failures.
+Shutdown interrupts scans, rolls back unfinished work, joins the indexing thread,
+then lets the persistence thread answer any pending batch and drain history
+within a five-second deadline (a currently blocked SQLite operation can add its
+bounded busy timeout).
 
 Publication and event-source adapters permit deterministic failure/overflow
 replay without production environment-variable test modes. Tests hold a committed
-candidate before failed publication, query the old view, exhaust history slots,
-gate subsequent catalog writes, recover by reload and repair an unwatched subtree
-after replayed overflow.
+candidate before failed publication, query the old view, exhaust history slots
+and watch them drain while publication is still blocked, gate subsequent catalog
+writes, recover by reload and repair an unwatched subtree after replayed overflow.
 
 The watcher factory adapter additionally validates periodic publication with no
 inotify instance, replacement identity without notifications, restoration of

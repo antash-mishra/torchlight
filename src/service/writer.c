@@ -1,4 +1,8 @@
-/* One worker serializes bounded reconciliation, snapshot publication and history. */
+/* Two workers: an indexing thread crawls roots into a private batch, builds
+ * engines from committed rows and publishes snapshots; a persistence thread owns
+ * the SQLite write connection and serializes catalog batches, history and
+ * retention. Filesystem scans and index construction never run inside a write
+ * transaction, so history writes wait at most for one short batch commit. */
 #include "torchlight/writer.h"
 #include "torchlight/path.h"
 #include "torchlight/store.h"
@@ -15,6 +19,7 @@
 #define WRITER_TICK_MS 50
 #define WRITER_COALESCE_MS 100
 #define WRITER_RETRY_MS 1000
+#define WRITER_RETENTION_MS 60000
 #define SECONDS_PER_DAY 86400
 struct history {
     tl_ipc_request request;
@@ -31,27 +36,53 @@ struct paths {
     size_t count;
     bool unresolved;
 };
+/* One crawled entry with its owned path copy; entry.path aliases path. */
+struct batch_entry {
+    char *path;
+    tl_crawl_entry entry;
+};
+/* Everything one reconciliation wants persisted, prepared by the indexing
+ * thread and applied by the persistence thread in one short transaction.
+ * Renames before index pre were received before the crawl and apply before
+ * upserts; later ones apply after upserts, before pruning. */
+struct batch {
+    tl_vec *entries; /* struct batch_entry */
+    tl_vec *keep;    /* char *: offline roots whose saved rows stay */
+    size_t rename_pre;
+};
+enum job_state { JOB_NONE, JOB_PENDING, JOB_DONE };
 struct tl_writer {
     tl_writer_options options;
     char *socket_path, *database;
-    tl_store *store;
+    /* store: persistence thread's write connection (creating thread until the
+     * workers start). reader: indexing thread's read-only connection. */
+    tl_store *store, *reader;
     tl_watch *watch, *building_watch;
     tl_crawl *crawler;
     struct paths roots;
-    pthread_t thread;
+    pthread_t thread, persistence_thread;
     pthread_mutex_t mutex;
-    bool started, requested;
-    atomic_bool stop;
+    /* persist_wake: persistence thread sleeps here; job_done: indexing waits. */
+    pthread_cond_t persist_wake, job_done;
+    bool started, persistence_started, requested;
+    /* stop ends both loops; the persistence thread also waits for the
+     * indexing thread to exit so no batch can be posted after it leaves. */
+    atomic_bool stop, indexing_exited;
     tl_writer_stats stats;
     struct history history[WRITER_HISTORY_CAPACITY];
     size_t history_head, history_count;
     struct rename_pair renames[WRITER_RENAME_CAPACITY];
-    size_t rename_count, applied_renames;
+    size_t rename_count;
     bool dirty, reload;
     uint64_t due;
     uint64_t shutdown_due;
     tl_status callback_status;
     size_t scan_entries, offline_roots, unreadable_scopes;
+    /* Batch handoff, guarded by mutex. */
+    struct batch *job;
+    enum job_state job_state;
+    tl_status job_status;
+    bool job_changed;
 };
 static uint64_t milliseconds(void) {
     struct timespec now;
@@ -163,13 +194,13 @@ static tl_status build_entry(void *context, const tl_store_entry *entry) {
     }
     return status;
 }
-static tl_status make_snapshot(tl_writer *writer, bool pending, tl_catalog_snapshot **out) {
+/* Indexing thread: build a snapshot from one committed read view. */
+static tl_status make_snapshot(tl_writer *writer, tl_catalog_snapshot **out) {
     struct builder builder = {.options = &writer->options};
     uint64_t catalog_gen = 0;
     tl_status status = lexical_create(&builder.engine);
     if (status == TL_OK)
-        status = pending ? store_prepare_catalog(writer->store, build_entry, &builder, &catalog_gen)
-                         : store_load_catalog(writer->store, build_entry, &builder, &catalog_gen);
+        status = store_load_catalog(writer->reader, build_entry, &builder, &catalog_gen);
     if (status == TL_OK)
         status = lexical_finish(builder.engine);
     if (status == TL_OK)
@@ -187,7 +218,7 @@ static tl_status publish(tl_writer *writer, tl_catalog_snapshot **snapshot) {
 }
 static tl_status load_saved(tl_writer *writer) {
     tl_catalog_snapshot *snapshot = NULL;
-    tl_status status = make_snapshot(writer, false, &snapshot);
+    tl_status status = make_snapshot(writer, &snapshot);
     if (status == TL_OK)
         status = publish(writer, &snapshot);
     catalog_snapshot_destroy(snapshot);
@@ -199,7 +230,6 @@ static void clear_renames(tl_writer *writer) {
         free(writer->renames[i].new_path);
     }
     writer->rename_count = 0;
-    writer->applied_renames = 0;
 }
 static tl_status changed(void *context, const tl_watch_event *event) {
     tl_writer *writer = context;
@@ -255,20 +285,56 @@ static bool eligible(tl_writer *writer, const char *path, bool directory) {
     free(parent);
     return covered;
 }
-static tl_status apply_renames(tl_writer *writer) {
-    tl_status status = TL_OK;
-    for (size_t i = writer->applied_renames; i < writer->rename_count && status == TL_OK; i++) {
+/* Indexing thread: drop pairs outside indexed scope so the persistence thread
+ * applies the rest without filesystem or crawler access. */
+static void filter_renames(tl_writer *writer) {
+    size_t kept = 0;
+    for (size_t i = 0; i < writer->rename_count; i++) {
         struct rename_pair *pair = &writer->renames[i];
         if (eligible(writer, pair->old_path, pair->is_dir) &&
-            eligible(writer, pair->new_path, pair->is_dir))
-            status = store_move(writer->store, pair->old_path, pair->new_path);
-        if (status == TL_OK)
-            writer->applied_renames = i + 1;
+            eligible(writer, pair->new_path, pair->is_dir)) {
+            writer->renames[kept++] = *pair;
+            continue;
+        }
+        free(pair->old_path);
+        free(pair->new_path);
     }
+    writer->rename_count = kept;
+}
+static void batch_free(struct batch *batch) {
+    struct batch_entry *entries = vec_data(batch->entries);
+    for (size_t i = 0; i < vec_count(batch->entries); i++)
+        free(entries[i].path);
+    char **keep = vec_data(batch->keep);
+    for (size_t i = 0; i < vec_count(batch->keep); i++)
+        free(keep[i]);
+    vec_destroy(batch->entries);
+    vec_destroy(batch->keep);
+    *batch = (struct batch){0};
+}
+static tl_status batch_init(struct batch *batch) {
+    *batch = (struct batch){0};
+    tl_status status = vec_create(sizeof(struct batch_entry), &batch->entries);
+    if (status == TL_OK)
+        status = vec_create(sizeof(char *), &batch->keep);
     return status;
 }
+static tl_status batch_keep(struct batch *batch, const char *path) {
+    char *copy = strdup(path);
+    if (copy == NULL)
+        return TL_NOMEM;
+    tl_status status = vec_append(batch->keep, &copy);
+    if (status != TL_OK)
+        free(copy);
+    return status;
+}
+struct scan {
+    tl_writer *writer;
+    struct batch *batch;
+};
 static tl_status scan_entry(void *context, const tl_crawl_entry *entry) {
-    tl_writer *writer = context;
+    struct scan *scan = context;
+    tl_writer *writer = scan->writer;
     if (atomic_load(&writer->stop))
         return writer->callback_status = TL_STATE;
     if (excluded(writer, entry->path))
@@ -282,9 +348,45 @@ static tl_status scan_entry(void *context, const tl_crawl_entry *entry) {
         if (watched != TL_OK && watched != TL_IO && watched != TL_LIMIT)
             return writer->callback_status = watched;
     }
-    tl_status status = store_put(writer->store, entry);
-    if (status != TL_OK)
+    struct batch_entry copy = {.path = strdup(entry->path), .entry = *entry};
+    if (copy.path == NULL)
+        return writer->callback_status = TL_NOMEM;
+    copy.entry.path = copy.path;
+    tl_status status = vec_append(scan->batch->entries, &copy);
+    if (status != TL_OK) {
+        free(copy.path);
         writer->callback_status = status;
+    }
+    return status;
+}
+/* Indexing thread: crawl selected roots into the batch, installing watches. */
+static tl_status scan_roots(tl_writer *writer, struct batch *batch) {
+    writer->scan_entries = 0;
+    writer->offline_roots = 0;
+    writer->unreadable_scopes = 0;
+    writer->callback_status = TL_OK;
+    struct scan scan = {writer, batch};
+    tl_status status = TL_OK;
+    for (size_t i = 0; i < writer->roots.count && status == TL_OK; i++) {
+        if (!writer->roots.selected[i])
+            continue;
+        tl_status scanned = crawl_run(writer->crawler, writer->roots.items[i], scan_entry, &scan);
+        if (writer->callback_status != TL_OK)
+            return writer->callback_status;
+        if (scanned != TL_OK && scanned != TL_IO)
+            return scanned;
+        writer->roots.scanned[i] = scanned == TL_OK;
+        if (scanned == TL_IO) {
+            writer->offline_roots++;
+            status = batch_keep(batch, writer->roots.items[i]);
+        }
+    }
+    /* Cookies received during the scan apply before pruning old rows. The next
+     * pass reconciles any directories changed after their visit. */
+    if (status == TL_OK && writer->watch != NULL)
+        status = drain_watch(writer);
+    if (status == TL_OK)
+        filter_renames(writer);
     return status;
 }
 static tl_status forget_root(void *context, const char *root) {
@@ -295,37 +397,72 @@ static tl_status forget_root(void *context, const char *root) {
     return writer->roots.unresolved ? store_keep(writer->store, root)
                                     : store_forget_root(writer->store, root);
 }
-static tl_status scan_roots(tl_writer *writer) {
-    writer->scan_entries = 0;
-    writer->offline_roots = 0;
-    writer->unreadable_scopes = 0;
-    writer->callback_status = TL_OK;
-    tl_status status = apply_renames(writer);
-    for (size_t i = 0; i < writer->roots.count && status == TL_OK; i++) {
-        if (!writer->roots.selected[i])
-            continue;
-        tl_status scanned = crawl_run(writer->crawler, writer->roots.items[i], scan_entry, writer);
-        if (writer->callback_status != TL_OK)
-            return writer->callback_status;
-        if (scanned != TL_OK && scanned != TL_IO)
-            return scanned;
-        writer->roots.scanned[i] = scanned == TL_OK;
-        if (scanned == TL_IO) {
-            writer->offline_roots++;
-            status = store_keep(writer->store, writer->roots.items[i]);
-        }
+static tl_status apply_renames(tl_writer *writer, size_t begin, size_t end) {
+    tl_status status = TL_OK;
+    for (size_t i = begin; i < end && status == TL_OK; i++)
+        status =
+            store_move(writer->store, writer->renames[i].old_path, writer->renames[i].new_path);
+    return status;
+}
+/* Persistence thread, inside the transaction: renames, upserts, kept scopes,
+ * root bookkeeping and pruning of successfully scanned roots. The indexing
+ * thread is blocked meanwhile, so its roots and renames are stable. */
+static tl_status apply_entries(tl_writer *writer, const struct batch *batch) {
+    tl_status status = apply_renames(writer, 0, batch->rename_pre);
+    const struct batch_entry *entries = vec_const_data(batch->entries);
+    for (size_t i = 0; i < vec_count(batch->entries) && status == TL_OK; i++) {
+        if (atomic_load(&writer->stop))
+            return TL_STATE;
+        status = store_put(writer->store, &entries[i].entry);
     }
-    /* Apply cookies received during the scan before pruning old rows. The next
-     * pass reconciles any directories changed after their visit. */
-    if (status == TL_OK && writer->watch != NULL)
-        status = drain_watch(writer);
+    char *const *keep = vec_const_data(batch->keep);
+    for (size_t i = 0; i < vec_count(batch->keep) && status == TL_OK; i++)
+        status = store_keep(writer->store, keep[i]);
     if (status == TL_OK)
-        status = apply_renames(writer);
+        status = apply_renames(writer, batch->rename_pre, writer->rename_count);
     if (status == TL_OK)
         status = store_roots(writer->store, forget_root, writer);
     for (size_t i = 0; i < writer->roots.count && status == TL_OK; i++)
         if (writer->roots.scanned[i])
             status = store_prune(writer->store, writer->roots.items[i]);
+    return status;
+}
+/* Persistence thread: one short write transaction per reconciliation.
+ * Unchanged catalogs roll back their temporary bookkeeping. */
+static tl_status apply_batch(tl_writer *writer, const struct batch *batch, bool *changed) {
+    *changed = false;
+    tl_status status = store_begin(writer->store);
+    if (status != TL_OK)
+        return status;
+    status = apply_entries(writer, batch);
+    if (status == TL_OK)
+        status = store_catalog_changed(writer->store, changed);
+    if (status == TL_OK && *changed)
+        status = store_commit(writer->store);
+    if (status == TL_OK && !*changed)
+        status = store_rollback(writer->store);
+    if (status != TL_OK) {
+        tl_status rollback = store_rollback(writer->store);
+        (void)rollback;
+    }
+    return status;
+}
+/* Indexing thread: hand the batch to the persistence thread and wait. */
+static tl_status persist(tl_writer *writer, struct batch *batch, bool *changed) {
+    lock_writer(writer);
+    writer->job = batch;
+    writer->job_state = JOB_PENDING;
+    int code = pthread_cond_signal(&writer->persist_wake);
+    (void)code;
+    while (writer->job_state != JOB_DONE) {
+        code = pthread_cond_wait(&writer->job_done, &writer->mutex);
+        (void)code;
+    }
+    tl_status status = writer->job_status;
+    *changed = writer->job_changed;
+    writer->job = NULL;
+    writer->job_state = JOB_NONE;
+    unlock_writer(writer);
     return status;
 }
 static void update_watch_stats(tl_writer *writer, const tl_watch *watch) {
@@ -352,6 +489,17 @@ static tl_status prepare_watch(tl_writer *writer) {
     unlock_writer(writer);
     return TL_OK;
 }
+static void swap_watch(tl_writer *writer) {
+    if (writer->building_watch == NULL)
+        return;
+    watch_destroy(writer->watch);
+    writer->watch = writer->building_watch;
+    writer->building_watch = NULL;
+    update_watch_stats(writer, writer->watch);
+}
+/* Indexing thread: scan privately, persist through the owner, then build the
+ * committed view and publish it. A failed build or publication after a commit
+ * sets reload so the saved catalog is republished before later batches. */
 static tl_status reconcile(tl_writer *writer) {
     tl_catalog_stats catalog;
     catalog_reclaim(writer->options.catalog);
@@ -359,50 +507,35 @@ static tl_status reconcile(tl_writer *writer) {
     if (status != TL_OK || catalog.snapshots >= 2)
         return status == TL_OK ? TL_LIMIT : status;
     writer->dirty = false;
-    writer->applied_renames = 0;
-    status = prepare_paths(writer);
+    struct batch batch;
+    status = batch_init(&batch);
+    if (status == TL_OK)
+        status = prepare_paths(writer);
     if (status == TL_OK)
         status = prepare_watch(writer);
-    if (status == TL_OK)
-        status = store_begin(writer->store);
-    bool transaction = status == TL_OK;
-    if (status == TL_OK)
-        status = scan_roots(writer);
+    if (status == TL_OK) {
+        filter_renames(writer);
+        batch.rename_pre = writer->rename_count;
+        status = scan_roots(writer, &batch);
+        /* An overflow during the scan discards every pair, including earlier ones. */
+        if (batch.rename_pre > writer->rename_count)
+            batch.rename_pre = writer->rename_count;
+    }
     bool catalog_changed = false;
     if (status == TL_OK)
-        status = store_catalog_changed(writer->store, &catalog_changed);
-    if (status == TL_OK && !catalog_changed) {
-        status = store_rollback(writer->store);
-        if (status == TL_OK)
-            transaction = false;
+        status = persist(writer, &batch, &catalog_changed);
+    batch_free(&batch);
+    if (status == TL_OK) {
+        clear_renames(writer);
+        swap_watch(writer);
     }
     tl_catalog_snapshot *snapshot = NULL;
     if (status == TL_OK && catalog_changed)
-        status = make_snapshot(writer, true, &snapshot);
-    if (status == TL_OK && catalog_changed) {
-        status = store_commit(writer->store);
-        if (status == TL_OK)
-            transaction = false;
-    }
-    if (transaction) {
-        tl_status rollback = store_rollback(writer->store);
-        if (rollback != TL_OK)
-            status = rollback;
-    }
-    if (status == TL_OK) {
-        clear_renames(writer);
-        if (catalog_changed) {
-            status = publish(writer, &snapshot);
-            if (status != TL_OK)
-                writer->reload = true;
-        }
-        if (writer->building_watch != NULL) {
-            watch_destroy(writer->watch);
-            writer->watch = writer->building_watch;
-            writer->building_watch = NULL;
-            update_watch_stats(writer, writer->watch);
-        }
-    }
+        status = make_snapshot(writer, &snapshot);
+    if (status == TL_OK && catalog_changed)
+        status = publish(writer, &snapshot);
+    if (status != TL_OK && catalog_changed)
+        writer->reload = true;
     catalog_snapshot_destroy(snapshot);
     watch_destroy(writer->building_watch);
     writer->building_watch = NULL;
@@ -420,6 +553,21 @@ static bool pop_history(tl_writer *writer, struct history *event) {
     unlock_writer(writer);
     return found;
 }
+static tl_status write_history(tl_writer *writer, const struct history *event) {
+    const tl_ipc_request *request = &event->request;
+    const char *search = request->search_id[0] == 0 ? NULL : request->search_id;
+    if (request->operation == IPC_QUERY)
+        return store_search(writer->store, event->search_id, request->query, event->timestamp);
+    if (request->operation == IPC_OPEN && request->desktop_id[0] != 0)
+        return store_desktop_open(writer->store, request->event_id, request->desktop_id, search,
+                                  event->timestamp);
+    if (request->operation == IPC_OPEN)
+        return store_open_event(writer->store, request->event_id, request->file_id, search,
+                                event->timestamp);
+    return store_history_prune(writer->store, 0, true);
+}
+/* Persistence thread: write queued events; past the shutdown deadline the
+ * rest is counted as dropped rather than delaying exit. */
 static void drain_history(tl_writer *writer) {
     struct history event;
     for (size_t i = 0; i < WRITER_HISTORY_CAPACITY && pop_history(writer, &event); i++) {
@@ -429,25 +577,22 @@ static void drain_history(tl_writer *writer) {
             unlock_writer(writer);
             continue;
         }
-        tl_status status = TL_OK;
-        if (event.request.operation == IPC_QUERY)
-            status =
-                store_search(writer->store, event.search_id, event.request.query, event.timestamp);
-        else if (event.request.operation == IPC_OPEN && event.request.desktop_id[0] != 0)
-            status = store_desktop_open(
-                writer->store, event.request.event_id, event.request.desktop_id,
-                event.request.search_id[0] == 0 ? NULL : event.request.search_id, event.timestamp);
-        else if (event.request.operation == IPC_OPEN)
-            status = store_open_event(
-                writer->store, event.request.event_id, event.request.file_id,
-                event.request.search_id[0] == 0 ? NULL : event.request.search_id, event.timestamp);
-        else
-            status = store_history_prune(writer->store, 0, true);
-        if (status != TL_OK) {
-            lock_writer(writer);
+        tl_status status = write_history(writer, &event);
+        lock_writer(writer);
+        if (status != TL_OK)
             writer->stats.history_failures++;
-            unlock_writer(writer);
-        }
+        else
+            writer->stats.history_written++;
+        unlock_writer(writer);
+    }
+}
+static void prune_retention(tl_writer *writer) {
+    int64_t cutoff = (int64_t)time(NULL) - (int64_t)writer->options.history_days * SECONDS_PER_DAY;
+    tl_status status = store_history_prune(writer->store, cutoff < 0 ? 0 : cutoff, false);
+    if (status != TL_OK) {
+        lock_writer(writer);
+        writer->stats.history_failures++;
+        unlock_writer(writer);
     }
 }
 static void scan_cycle(tl_writer *writer) {
@@ -478,7 +623,7 @@ static void *worker(void *context) {
     tl_writer *writer = context;
     writer->dirty = true;
     writer->due = 0;
-    uint64_t periodic = 0, retention = 0;
+    uint64_t periodic = 0;
     while (!atomic_load(&writer->stop)) {
         lock_writer(writer);
         bool requested = writer->requested;
@@ -495,31 +640,99 @@ static void *worker(void *context) {
                 writer->due = 0;
             }
         }
-        drain_history(writer);
         uint64_t now = milliseconds();
         if ((writer->dirty && now >= writer->due) || now >= periodic ||
             (writer->reload && now >= writer->due)) {
             scan_cycle(writer);
             periodic = milliseconds() + writer->options.rescan_ms;
         }
-        if (writer->options.history && now >= retention) {
-            int64_t cutoff =
-                (int64_t)time(NULL) - (int64_t)writer->options.history_days * SECONDS_PER_DAY;
-            tl_status status = store_history_prune(writer->store, cutoff < 0 ? 0 : cutoff, false);
-            if (status != TL_OK) {
-                lock_writer(writer);
-                writer->stats.history_failures++;
-                unlock_writer(writer);
-            }
-            retention = now + 60000;
-        }
         catalog_reclaim(writer->options.catalog);
         struct pollfd fd = {watch_descriptor(writer->watch), POLLIN, 0};
         int code = poll(&fd, 1, WRITER_TICK_MS);
         (void)code;
     }
-    drain_history(writer);
+    lock_writer(writer);
+    atomic_store(&writer->indexing_exited, true);
+    int code = pthread_cond_broadcast(&writer->persist_wake);
+    (void)code;
+    unlock_writer(writer);
     return NULL;
+}
+/* Under the mutex: sleep until there is a batch, history, shutdown or the
+ * next retention tick (wait milliseconds away). */
+static void await_work(tl_writer *writer, uint64_t wait) {
+    if (wait > WRITER_RETENTION_MS)
+        wait = WRITER_RETENTION_MS;
+    struct timespec deadline;
+    if (clock_gettime(CLOCK_MONOTONIC, &deadline) != 0)
+        return;
+    deadline.tv_sec += (time_t)(wait / 1000);
+    deadline.tv_nsec += (long)(wait % 1000) * 1000000L;
+    if (deadline.tv_nsec >= 1000000000L) {
+        deadline.tv_sec++;
+        deadline.tv_nsec -= 1000000000L;
+    }
+    while (!atomic_load(&writer->stop) && !atomic_load(&writer->indexing_exited) &&
+           writer->job_state != JOB_PENDING && writer->history_count == 0) {
+        int code = pthread_cond_timedwait(&writer->persist_wake, &writer->mutex, &deadline);
+        if (code == ETIMEDOUT)
+            break;
+    }
+}
+/* Persistence thread: the only SQLite writer once started. A pending batch is
+ * always answered, even during shutdown, so the indexing thread can exit. */
+static void *persistence_worker(void *context) {
+    tl_writer *writer = context;
+    uint64_t retention = 0;
+    for (;;) {
+        uint64_t now = milliseconds();
+        uint64_t wait = !writer->options.history ? WRITER_RETENTION_MS
+                        : retention > now        ? retention - now
+                                                 : 0;
+        lock_writer(writer);
+        if (writer->job_state != JOB_PENDING && writer->history_count == 0)
+            await_work(writer, wait);
+        bool job = writer->job_state == JOB_PENDING;
+        unlock_writer(writer);
+        if (job) {
+            bool changed = false;
+            tl_status status = apply_batch(writer, writer->job, &changed);
+            lock_writer(writer);
+            writer->job_status = status;
+            writer->job_changed = changed;
+            writer->job_state = JOB_DONE;
+            int code = pthread_cond_broadcast(&writer->job_done);
+            (void)code;
+            unlock_writer(writer);
+        }
+        drain_history(writer);
+        now = milliseconds();
+        if (writer->options.history && now >= retention) {
+            prune_retention(writer);
+            retention = now + WRITER_RETENTION_MS;
+        }
+        if (atomic_load(&writer->stop) && atomic_load(&writer->indexing_exited)) {
+            lock_writer(writer);
+            bool pending = writer->job_state == JOB_PENDING || writer->history_count != 0;
+            unlock_writer(writer);
+            if (!pending)
+                return NULL;
+        }
+    }
+}
+static tl_status init_sync(tl_writer *writer) {
+    pthread_condattr_t attributes;
+    if (pthread_mutex_init(&writer->mutex, NULL) != 0)
+        return TL_IO;
+    if (pthread_condattr_init(&attributes) != 0)
+        return TL_IO;
+    int code = pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC);
+    if (code == 0)
+        code = pthread_cond_init(&writer->persist_wake, &attributes);
+    if (code == 0)
+        code = pthread_cond_init(&writer->job_done, NULL);
+    pthread_condattr_destroy(&attributes);
+    return code == 0 ? TL_OK : TL_IO;
 }
 tl_status writer_create(const tl_writer_options *options, tl_writer **out) {
     if (out == NULL)
@@ -536,7 +749,8 @@ tl_status writer_create(const tl_writer_options *options, tl_writer **out) {
         return TL_NOMEM;
     writer->options = *options;
     atomic_init(&writer->stop, false);
-    if (pthread_mutex_init(&writer->mutex, NULL) != 0) {
+    atomic_init(&writer->indexing_exited, false);
+    if (init_sync(writer) != TL_OK) {
         free(writer);
         return TL_IO;
     }
@@ -548,7 +762,14 @@ tl_status writer_create(const tl_writer_options *options, tl_writer **out) {
     if (status == TL_OK)
         status = store_create(writer->database, &writer->store);
     if (status == TL_OK)
+        status = store_create(writer->database, &writer->reader);
+    if (status == TL_OK)
         status = load_saved(writer);
+    if (status == TL_OK &&
+        pthread_create(&writer->persistence_thread, NULL, persistence_worker, writer) != 0)
+        status = TL_IO;
+    if (status == TL_OK)
+        writer->persistence_started = true;
     if (status == TL_OK && pthread_create(&writer->thread, NULL, worker, writer) != 0)
         status = TL_IO;
     if (status != TL_OK) {
@@ -564,11 +785,20 @@ void writer_destroy(tl_writer *writer) {
         return;
     writer->shutdown_due = milliseconds() + IPC_DEADLINE_MS;
     atomic_store(&writer->stop, true);
-    if (writer->started) {
-        int code = pthread_join(writer->thread, NULL);
-        (void)code;
-    }
+    int code = 0;
+    if (writer->started)
+        code = pthread_join(writer->thread, NULL);
+    (void)code;
+    lock_writer(writer);
+    atomic_store(&writer->indexing_exited, true);
+    code = pthread_cond_broadcast(&writer->persist_wake);
+    (void)code;
+    unlock_writer(writer);
+    if (writer->persistence_started)
+        code = pthread_join(writer->persistence_thread, NULL);
+    (void)code;
     store_destroy(writer->store);
+    store_destroy(writer->reader);
     watch_destroy(writer->watch);
     watch_destroy(writer->building_watch);
     crawl_destroy(writer->crawler);
@@ -576,7 +806,11 @@ void writer_destroy(tl_writer *writer) {
     clear_renames(writer);
     free(writer->socket_path);
     free(writer->database);
-    int code = pthread_mutex_destroy(&writer->mutex);
+    code = pthread_cond_destroy(&writer->persist_wake);
+    (void)code;
+    code = pthread_cond_destroy(&writer->job_done);
+    (void)code;
+    code = pthread_mutex_destroy(&writer->mutex);
     (void)code;
     free(writer);
 }
@@ -588,26 +822,29 @@ tl_status writer_reconcile(tl_writer *writer) {
     unlock_writer(writer);
     return TL_OK;
 }
-tl_status writer_history(tl_writer *writer, const tl_ipc_request *request, const char *search_id) {
-    if (writer == NULL || request == NULL ||
-        (request->operation != IPC_QUERY && request->operation != IPC_OPEN &&
-         request->operation != IPC_HISTORY_CLEAR) ||
-        (request->operation == IPC_QUERY &&
-         (search_id == NULL || search_id[0] == 0 ||
-          strnlen(search_id, IPC_HISTORY_ID_BYTES + 1) > IPC_HISTORY_ID_BYTES ||
-          !json_utf8(search_id))))
-        return TL_INVALID;
+static bool valid_history(const tl_ipc_request *request, const char *search_id) {
+    if (request->operation != IPC_QUERY && request->operation != IPC_OPEN &&
+        request->operation != IPC_HISTORY_CLEAR)
+        return false;
+    if (request->operation == IPC_QUERY &&
+        (search_id == NULL || search_id[0] == 0 ||
+         strnlen(search_id, IPC_HISTORY_ID_BYTES + 1) > IPC_HISTORY_ID_BYTES ||
+         !json_utf8(search_id)))
+        return false;
     if (memchr(request->query, 0, sizeof(request->query)) == NULL || !json_utf8(request->query) ||
         memchr(request->search_id, 0, sizeof(request->search_id)) == NULL ||
         !json_utf8(request->search_id) ||
         memchr(request->event_id, 0, sizeof(request->event_id)) == NULL ||
         !json_utf8(request->event_id))
-        return TL_INVALID;
+        return false;
     if (memchr(request->desktop_id, 0, sizeof(request->desktop_id)) == NULL ||
         !json_utf8(request->desktop_id))
-        return TL_INVALID;
-    if (request->operation == IPC_OPEN &&
-        (request->event_id[0] == 0 || request->file_id == 0 || request->file_id > INT64_MAX))
+        return false;
+    return request->operation != IPC_OPEN ||
+           (request->event_id[0] != 0 && request->file_id != 0 && request->file_id <= INT64_MAX);
+}
+tl_status writer_history(tl_writer *writer, const tl_ipc_request *request, const char *search_id) {
+    if (writer == NULL || request == NULL || !valid_history(request, search_id))
         return TL_INVALID;
     lock_writer(writer);
     tl_status status =
@@ -624,6 +861,8 @@ tl_status writer_history(tl_writer *writer, const tl_ipc_request *request, const
             memcpy(event->search_id, search_id, strlen(search_id) + 1);
         writer->history_count++;
         writer->stats.history_pending = writer->history_count;
+        int code = pthread_cond_signal(&writer->persist_wake);
+        (void)code;
     }
     unlock_writer(writer);
     return status;
