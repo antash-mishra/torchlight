@@ -1,10 +1,13 @@
-/* Owned float/int8 cosine and experimental binary shortlist; bounded query scratch. */
+/* Owned float/int8 cosine, a two-pass prefix shortlist for large int8 indexes
+ * and an experimental binary shortlist; bounded query scratch. */
 #ifndef TORCHLIGHT_VECTOR_H
 #define TORCHLIGHT_VECTOR_H
 #include "torchlight/common.h"
 
 #define VECTOR_MAX_DIMENSIONS 4096
 #define VECTOR_MAX_RESULTS 1000
+/* Prefix lengths are whole blocks so the first pass needs no remainder loop. */
+#define VECTOR_PREFIX_BLOCK 16
 typedef struct tl_vector tl_vector;
 typedef struct tl_vector_workspace tl_vector_workspace;
 /** Create exhaustive int8 cosine index. Same ownership/errors as vector_create;
@@ -21,6 +24,25 @@ tl_status vector_create_int8(uint64_t emb_gen, size_t dimensions, size_t capacit
  * search on the target corpus before selecting this approximate format. */
 tl_status vector_create_binary_int8(uint64_t emb_gen, size_t dimensions, size_t capacity,
                                     size_t shortlist, size_t budget_bytes, tl_vector **out);
+/** Two-pass int8 cosine for large indexes. Rows use vector_create_int8's
+ * quantization (int8-l2-1) and full cosines are bit-identical to it; only
+ * candidate selection differs. When more than shortlist rows are searchable, a
+ * first pass ranks every row by int8 cosine over its first prefix_dimensions
+ * components (exact integer arithmetic with an int16-rounded query, AVX2 when
+ * the CPU supports it, identical results either way) and keeps the best
+ * shortlist rows, ties by position; the second pass scores only those with the
+ * full cosine. Otherwise, or for a query whose prefix is all zero, every row is
+ * scored. Top-k is therefore approximate: valid only for embeddings whose
+ * leading components form a meaningful embedding (Matryoshka truncation or a
+ * variance-ordered projection); measure recall against vector_create_int8.
+ * prefix_dimensions is a positive multiple of VECTOR_PREFIX_BLOCK below
+ * dimensions and shortlist is nonzero, else TL_INVALID. Query output capacity
+ * must not exceed shortlist (TL_LIMIT). Budget covers ids, components, full and
+ * prefix inverse norms; workspaces add O(prefix + shortlist) scratch. Other
+ * ownership/errors as vector_create_int8. */
+tl_status vector_create_prefix_int8(uint64_t emb_gen, size_t dimensions, size_t capacity,
+                                    size_t prefix_dimensions, size_t shortlist, size_t budget_bytes,
+                                    tl_vector **out);
 typedef struct {
     uint64_t id;
     double cosine;
@@ -52,7 +74,8 @@ tl_status vector_add(tl_vector *index, uint64_t id, uint64_t emb_gen, const floa
  * *position untouched then. No allocation/I/O. */
 tl_status vector_position(const tl_vector *index, uint64_t id, size_t *position);
 /** Append source's stored row at position, under its id, to an unsealed
- * builder of the same emb_gen, dimensions and storage format, copying the
+ * builder of the same emb_gen, dimensions and storage format (including the
+ * prefix length; shortlists may differ), copying the
  * normalized or quantized data exactly so the row scores bit-identically
  * without re-embedding. Ids must still strictly increase. TL_INVALID for
  * arguments, ids or a format mismatch, TL_STATE if sealed or emb_gen

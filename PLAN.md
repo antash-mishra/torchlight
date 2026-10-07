@@ -32,6 +32,12 @@ file-result design reference.
 M4's functional English-first path is implemented: native Potion 256d,
 float/int8 retrieval, versioned background cache, exact-priority RRF and coherent
 two-phase service. It is opt-in with `torchlightd --model PATH.tlm`.
+Remaining M4 acceptance work started after M6: a prefix-shortlist vector search
+([ADR 0031](docs/adr/0031-m4-prefix-shortlist-vector-search.md)) keeps 0.9956
+recall@10 against exhaustive int8 and cuts 500k final p95 from 95 to 24 ms;
+semantic search is then parked as an opt-in feature: its remaining M4
+acceptance gates are deferred and M5 follows M6
+([ADR 0032](docs/adr/0032-park-semantic-search.md)).
 [M4 implementation](docs/m4-implementation.md),
 [model evaluation](docs/m4-model-evaluation.md) and
 [ADR 0023](docs/adr/0023-m4-native-potion-and-two-phase-search.md) record the
@@ -115,7 +121,8 @@ ancestor pruning, recovery and injected SQLite write failures.
   machine.
   These are targets to measure, not established performance numbers. Roughly
   6ms lexical p95 was accepted for starting M3; M6 now targets the lexical
-  optimization, while final hybrid latency remains an open M4 acceptance gate.
+  optimization, while final hybrid latency remains an M4 acceptance gate,
+  deferred while semantic search is parked (ADR 0032).
 - Report engine latency and client round-trip latency separately, including
   query embedding in hybrid measurements. Also measure first query, startup,
   crawl time, update lag, peak memory, and latency during indexing.
@@ -283,6 +290,10 @@ characters. [SQLite FTS5 documentation](https://www.sqlite.org/fts5.html)
   Persist int8 scales and normalization metadata needed for comparable scores.
 - Measure scan time, total latency, and recall at 50k and 500k paths. Introduce
   ANN only if measured latency/recall requires it; no 1–2ms scan is assumed.
+  The sign-bit shortlist missed the recall gate. The service now shortlists
+  rows by their 128-component Matryoshka prefix and rescores 8000 exactly
+  (0.9956 recall@10 against exhaustive int8 at 500k;
+  [ADR 0031](docs/adr/0031-m4-prefix-shortlist-vector-search.md)).
 - In M4, fuse lists with RRF as the first baseline and compare a tuned score
   combination on held-out queries; select from measured quality. Give exact
   basename/path matches explicit priority and retain lexical-only behavior when
@@ -486,7 +497,8 @@ M3 Part 2 search quality is implemented; see
 [its verification and measured tradeoffs](docs/m3-part2-completion.md). M4 implements opt-in native semantics, background cache and two-phase hybrid
 queries; large-catalog latency and broader relevance acceptance remain open.
 M6 worker separation, Frizbee SIMD search and incremental indexing are
-implemented; M5 personal recommendations follow the remaining M4 acceptance work.
+implemented; semantic search is parked (ADR 0032) and M5 personal
+recommendations follow M6.
 Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
 tracked explicitly in the verification report.
 
@@ -569,13 +581,16 @@ tracked explicitly in the verification report.
    and [measured model/daemon evaluation](docs/m4-model-evaluation.md); 500k latency
    and broader model/relevance acceptance remain open.
    M6 is implemented; these remaining M4 acceptance gates were re-measured at
-   its end and remain open (see the [M6 plan](docs/m6-plan.md)).
-6. **M5: Personal recommendations and ranking.** After M6 and remaining M4
-   acceptance work, use optional resident frecency and query-to-open summaries
+   its end and remain open (see the [M6 plan](docs/m6-plan.md)). ADR 0031 cut
+   500k final p95 to 24 ms; the gates are then deferred and semantic search is
+   parked as opt-in ([ADR 0032](docs/adr/0032-park-semantic-search.md)).
+6. **M5: Personal recommendations and ranking.** After M6 (M4 acceptance is
+   deferred, ADR 0032), use optional resident frecency and query-to-open summaries
    for both files and applications.
    Apply bounded boosts for frequently/recently opened and previously selected
    results. Respect disabled history, clearing and retention in persisted and
-   resident state. Compare hybrid ranking with/without personalization on
+   resident state. Compare lexical ranking (and hybrid ranking where a model is
+   enabled) with/without personalization on
    held-out usage scenarios; improve personally useful results without burying
    exact matches or strong name evidence. Existing history recording is
    implemented; recommendation scoring is future work.

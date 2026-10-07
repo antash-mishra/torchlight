@@ -7,6 +7,13 @@
 #define SEMANTIC_CLIENTS 16
 #define SEMANTIC_DEADLINE_MS 200
 #define SEMANTIC_VECTOR_BYTES (150U * 1024U * 1024U)
+/* Two-pass vector search (vector_create_prefix_int8) for models whose leading
+ * components form an embedding: the first pass ranks rows by their first 128
+ * components and the best 8000 are rescored in full. Measured on Potion 256d
+ * at 500k paths: mean recall@10 0.9956 against exhaustive int8, top-1
+ * agreement 1.0 (docs/adr/0031-m4-prefix-shortlist-vector-search.md). */
+#define SEMANTIC_PREFIX_DIMENSIONS 128U
+#define SEMANTIC_SHORTLIST 8000U
 /* Leave room for the coordinator's current indexing/history status. */
 #define SEMANTIC_STATUS_BYTES 1024U
 #define SEMANTIC_RESPONSE_BYTES (IPC_RESPONSE_BYTES - SEMANTIC_STATUS_BYTES)

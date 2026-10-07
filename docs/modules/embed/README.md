@@ -30,6 +30,11 @@ The wrapper uses no heap allocation or I/O, but a backend may allocate.
 The owned descriptor records `emb_gen`, model id/revision, tokenizer version,
 preprocessing version, dimension, projection version and quantization version.
 All versions must be explicit, including `none` for an unused projection.
+`nested_prefixes` declares that leading components form a usable smaller
+embedding (Potion sets it: its exports truncate a Matryoshka-trained model). It
+describes the model, not stored vectors, so it is not part of `emb_gen`; the
+semantic service uses it to choose the prefix-shortlist vector search
+([ADR 0031](../../adr/0031-m4-prefix-shortlist-vector-search.md)).
 The caller assigns a nonzero `emb_gen` uniquely for the complete descriptor;
 persisted identity and replacement publication belong to later service/storage
 work. There is no model activation or snapshot registry in this adapter.
@@ -50,7 +55,7 @@ The adapter itself still owns no activation registry; the service provides it.
 
 ## Testing
 
-Fixture callbacks test metadata copying, query/document roles, Unicode input,
+Fixture callbacks test metadata copying (including `nested_prefixes`), query/document roles, Unicode input,
 failure ownership, destructor calls, malformed/oversized text, backend errors,
 zero/NaN/infinite vectors, normalization and reuse after failure. They test the
 adapter contract and do not establish trained-model parity or semantic quality.

@@ -28,7 +28,9 @@
 | **Cosine reference** | Exhaustive search of L2-normalized float embeddings by dot product, used to evaluate model relevance and reduced/quantized retrieval loss. |
 | **Exact-match tier** | Explicit ranking priority: an exact path precedes an exact basename, and both precede ordinary hybrid scores. |
 | **Binary quantization** | Keeping only the sign bit of each embedding dimension, so vectors can be compared with XOR + popcount. |
-| **Rescoring** | Re-ranking the top binary hits with more precise int8 vectors. |
+| **Rescoring** | Re-ranking shortlisted rows with the full int8 vectors (after a sign-bit or prefix first pass). |
+| **Nested prefixes** | A model property (`tl_emb_model.nested_prefixes`): the leading components of an embedding are themselves a usable lower-dimensional embedding, as with Matryoshka training. Not part of `emb_gen`. |
+| **Prefix shortlist** | Two-pass vector search: rank every row by int8 cosine over its first components (here 128), keep the best rows (here 8000), then rescore those with the full int8 cosine. Approximate top-k; rescored cosines equal the exhaustive ones (ADR 0031). |
 | **RRF** | Reciprocal Rank Fusion: merges ranked lists via `Σ 1/(k + rank)`. |
 | **Frecency** | A score combining how frequently and how recently a path was opened. |
 | **Open** | An accepted launch request, optionally logged to `opens`; does not confirm external application success. |

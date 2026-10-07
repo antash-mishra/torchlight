@@ -645,6 +645,18 @@ static void stage_failed(tl_semantic *service, tl_status status) {
     service->progress.last_error = status;
     pthread_mutex_unlock(&service->lock);
 }
+/* Every stage of one model uses the same vector format, so derived stages can
+ * copy base rows. A model with nested prefixes gets the two-pass search; it is
+ * exhaustive while a segment holds at most SEMANTIC_SHORTLIST rows. */
+static tl_status create_vectors(const tl_semantic *service, const tl_emb_model *model, size_t rows,
+                                tl_vector **out) {
+    if (model->nested_prefixes && model->dimensions > SEMANTIC_PREFIX_DIMENSIONS)
+        return vector_create_prefix_int8(model->emb_gen, model->dimensions, rows,
+                                         SEMANTIC_PREFIX_DIMENSIONS, SEMANTIC_SHORTLIST,
+                                         service->options.vector_budget, out);
+    return vector_create_int8(model->emb_gen, model->dimensions, rows,
+                              service->options.vector_budget, out);
+}
 static tl_status begin_stage(tl_semantic *service) {
     pthread_mutex_lock(&service->lock);
     service->progress.building = true;
@@ -661,8 +673,7 @@ static tl_status begin_stage(tl_semantic *service) {
     service->stage = snapshot;
     const tl_emb_model *model = embedder_model(service->model->embedder);
     if (status == TL_OK)
-        status = vector_create_int8(model->emb_gen, model->dimensions, vec_count(snapshot->entries),
-                                    service->options.vector_budget, &snapshot->vectors);
+        status = create_vectors(service, model, vec_count(snapshot->entries), &snapshot->vectors);
     /* Only a stage that reuses nothing re-stages the descriptor: reused rows
      * never touch the cache, so only such a stage may sweep it. */
     if (status == TL_OK && snapshot->origin == NULL)

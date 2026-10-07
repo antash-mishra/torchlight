@@ -1,0 +1,37 @@
+ 23:44:20 up 32 days, 11:52,  1 user,  load average: 3.25, 4.08, 4.20
+synthetic_float_reference model=none inference=excluded ipc=excluded
+rows=50000 dimensions=256 index_bytes=51600128 build_s=0.070 resident_kib=52348
+first_scan_ms=13.973
+float_scan_ms n=64 p50=13.003 p95=22.619 p99=24.324 max=24.324
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=52352
+rrf_2x1000_ms n=64 p50=0.317 p95=0.368 p99=0.778 max=0.778
+synthetic_float_reference model=none inference=excluded ipc=excluded
+rows=500000 dimensions=256 index_bytes=516000128 build_s=0.724 resident_kib=505864
+first_scan_ms=157.619
+float_scan_ms n=64 p50=143.576 p95=160.008 p99=164.022 max=164.022
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=505600
+rrf_2x1000_ms n=64 p50=0.326 p95=0.441 p99=0.535 max=0.535
+synthetic_int8_exhaustive model=none inference=excluded ipc=excluded
+rows=50000 dimensions=256 index_bytes=13400128 build_s=0.111 resident_kib=15044
+first_scan_ms=3.217
+float_scan_ms n=64 p50=3.585 p95=5.006 p99=6.140 max=6.140
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=15104
+rrf_2x1000_ms n=64 p50=0.332 p95=0.451 p99=0.586 max=0.586
+synthetic_int8_exhaustive model=none inference=excluded ipc=excluded
+rows=500000 dimensions=256 index_bytes=134000128 build_s=1.166 resident_kib=132796
+first_scan_ms=31.822
+float_scan_ms n=64 p50=34.463 p95=48.146 p99=49.550 max=49.550
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=132864
+rrf_2x1000_ms n=64 p50=0.325 p95=0.468 p99=0.483 max=0.483
+synthetic_int8_prefix_shortlist model=none inference=excluded ipc=excluded prefix=128 shortlist=8000
+rows=50000 dimensions=256 index_bytes=13600128 build_s=0.137 resident_kib=15240
+first_scan_ms=2.942
+float_scan_ms n=64 p50=1.905 p95=3.393 p99=4.990 max=4.990
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=15232
+rrf_2x1000_ms n=64 p50=0.324 p95=0.395 p99=0.488 max=0.488
+synthetic_int8_prefix_shortlist model=none inference=excluded ipc=excluded prefix=128 shortlist=8000
+rows=500000 dimensions=256 index_bytes=136000128 build_s=1.151 resident_kib=134784
+first_scan_ms=11.607
+float_scan_ms n=64 p50=9.511 p95=16.320 p99=20.987 max=20.987
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=134784
+rrf_2x1000_ms n=64 p50=0.320 p95=0.395 p99=0.496 max=0.496

@@ -83,6 +83,7 @@ void test_potion(void) {
     CHECK(fd >= 0 && write(fd, bytes, length) == (ssize_t)length && close(fd) == 0);
     tl_embedder *model = NULL;
     CHECK(potion_load(path, POTION_MODEL_BYTES, &model) == TL_OK);
+    CHECK(embedder_model(model)->nested_prefixes); /* Matryoshka truncations */
     check_encoding(model, "HELLO world", 6.5F);
     check_encoding(model, "Café cafe\xcc\x81", 8);
     check_encoding(model, "playing", 9.5F);

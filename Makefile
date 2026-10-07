@@ -43,6 +43,7 @@ HEADERS = $(wildcard include/torchlight/*.h) $(wildcard src/*/*.h)
 TEST_SOURCES = $(wildcard tests/unit/test_*.c)
 BENCH_SOURCES = tests/bench/bench_lexical.c tests/bench/corpus.c tests/bench/queries.c
 VECTOR_BENCH_SOURCE = tests/bench/bench_vector.c
+VECTOR_EVAL_SOURCE = tests/bench/eval_vector.c
 FIXTURE_SOURCE = tests/bench/fixture/export.c
 DESKTOP_FIXTURE_SOURCE = tests/fixtures/desktop_replace.c
 SEMANTIC_FIXTURE_SOURCE = tests/fixtures/semantic_stall.c
@@ -52,7 +53,7 @@ BENCH_PATHS ?=
 SAN_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie
 CLANG_TIDY ?= clang-tidy
 CPPCHECK ?= cppcheck
-.PHONY: all test lint format bench bench-vector bench-daemon clean
+.PHONY: all test lint format bench bench-vector eval-vector bench-daemon clean
 GTK_CPPFLAGS = $(subst -I,-isystem ,$(shell $(PKG_CONFIG) --cflags 'gtk4 >= 4.14' x11))
 GTK_LDLIBS = $(shell $(PKG_CONFIG) --libs 'gtk4 >= 4.14' x11)
 UI_SOURCES = ui/gtk/model.c ui/gtk/actions.c ui/gtk/launcher.c ui/gtk/view.c ui/gtk/path_label.c src/bin/torchlight-gtk.c
@@ -108,8 +109,8 @@ test: build/tests build/torchlight-sanitized build/torchlightd-sanitized build/t
 lint:
 	@command -v $(CLANG_TIDY) >/dev/null || { echo 'clang-tidy is required'; exit 1; }
 	@command -v $(CPPCHECK) >/dev/null || { echo 'cppcheck is required'; exit 1; }
-	$(CLANG_TIDY) $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
-	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE)
+	$(CLANG_TIDY) $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(VECTOR_EVAL_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
+	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(VECTOR_EVAL_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE)
 	$(CLANG_TIDY) $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) tests/gtk/test_view.c --warnings-as-errors='*' -- $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 $(WARNINGS)
 	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE --library=gtk -Iinclude $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) tests/gtk/test_view.c
 format:
@@ -127,6 +128,22 @@ build/bench_vector: src/core/common.c src/core/sort.c src/index/vector.c src/ind
 bench-vector: build/bench_vector
 	./build/bench_vector 50000
 	./build/bench_vector 500000
+	./build/bench_vector 50000 --int8
+	./build/bench_vector 500000 --int8
+	./build/bench_vector 50000 --prefix
+	./build/bench_vector 500000 --prefix
+# Shortlist recall on trained embeddings; needs an exported model, e.g.
+# make eval-vector MODEL=build/models/potion-256.tlm (see docs/m4-model-evaluation.md).
+MODEL ?= build/models/potion-256.tlm
+build/eval_vector: $(SOURCES) tests/bench/corpus.c tests/bench/queries.c $(VECTOR_EVAL_SOURCE) $(HEADERS) $(wildcard tests/bench/*.h) $(FRIZBEE_LIB)
+	@mkdir -p build
+	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) $(SOURCES) tests/bench/corpus.c tests/bench/queries.c $(VECTOR_EVAL_SOURCE) $(LDFLAGS) $(LDLIBS) -o $@
+build/semantic_queries.txt: tests/quality/semantic.json
+	@mkdir -p build
+	python3 -c 'import json,sys; print("\n".join(q["text"] for q in json.load(open(sys.argv[1]))["queries"]))' $< > $@
+eval-vector: build/eval_vector build/semantic_queries.txt
+	./build/eval_vector $(MODEL) 50000 build/semantic_queries.txt
+	./build/eval_vector $(MODEL) 500000 build/semantic_queries.txt
 build/torchlightd-release: $(SOURCES) src/bin/torchlightd.c $(HEADERS) $(FRIZBEE_LIB)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) $(SOURCES) src/bin/torchlightd.c $(LDFLAGS) $(LDLIBS) -o $@

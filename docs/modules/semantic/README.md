@@ -1,7 +1,7 @@
 # Semantic service
 
-> **Status:** Implemented M4 opt-in two-phase execution and M6 derived
-> (segmented) snapshots; large-catalog final-phase latency acceptance remains open. Buffer retries and per-phase status are regression-tested.
+> **Status:** Implemented M4 opt-in two-phase execution, M6 derived
+> (segmented) snapshots and the prefix-shortlist vector search; parked as opt-in ([ADR 0032](../../adr/0032-park-semantic-search.md)); large-catalog final-phase latency acceptance is deferred. Buffer retries and per-phase status are regression-tested.
 > Cache BEGIN failures retain staged progress. Enable with `torchlightd --model PATH.tlm`.
 
 Public contract: [semantic.h](../../../include/torchlight/semantic.h).
@@ -20,7 +20,7 @@ icons, names and revisions for both phases. Submission requires matching file
 catalog_gen and desktop_gen. Lexical ids are resolved into that owned snapshot;
 publication cannot invalidate a pending final. No long desktop mutex lease or
 lexical workspace lease is held across inference. The copied metadata budget
-is 256 MiB per snapshot; the exhaustive int8 vector budget is 150 MiB. Model,
+is 256 MiB per snapshot; the int8 vector budget is 150 MiB. Model,
 metadata, workspaces, client buffers and old/staging views count separately in
 whole-process RSS. At most active, retired and one staging snapshot coexist;
 publication waits for retirement rather than accumulating old versions.
@@ -119,3 +119,19 @@ derive two views from one base and check counts, that replaced and removed base
 rows are neither hits nor metadata, that base metadata still resolves, and that
 a later full stage reuses rows of both segments and frees them. See
 [ADR 0030](../../adr/0030-m6-incremental-indexing.md).
+
+## Vector search format
+
+A model that declares `nested_prefixes` and has more than
+`SEMANTIC_PREFIX_DIMENSIONS` (128) components gets
+`vector_create_prefix_int8` with a `SEMANTIC_SHORTLIST` (8000) row shortlist;
+other models keep exhaustive int8. Every stage of a model uses the same format,
+so derived stages copy base rows unchanged, and a segment of at most 8000 rows
+(every derived snapshot's own rows, any small catalog) is still searched
+exhaustively. The ten semantic hits per segment are approximate on larger
+segments: mean recall@10 0.9956 against exhaustive int8 at 500k trained Potion
+rows, top-1 agreement 1.0, scores bit-identical. See
+[ADR 0031](../../adr/0031-m4-prefix-shortlist-vector-search.md). The daemon
+check `check_prefix_shortlist` uses a 144-component analytic model and 8101
+embedded rows, so the first pass prunes, and requires the only matching row to
+survive it, before and after a derived stage.

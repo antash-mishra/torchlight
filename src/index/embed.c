@@ -28,9 +28,10 @@ static tl_status copy_model(const tl_emb_model *model, tl_embedder *embedder) {
             return TL_INVALID;
         memcpy(embedder->metadata[i], fields[i], length + 1);
     }
-    embedder->model = (tl_emb_model){
-        model->emb_gen,        model->dimensions,     embedder->metadata[0], embedder->metadata[1],
-        embedder->metadata[2], embedder->metadata[3], embedder->metadata[4], embedder->metadata[5]};
+    embedder->model =
+        (tl_emb_model){model->emb_gen,        model->dimensions,     embedder->metadata[0],
+                       embedder->metadata[1], embedder->metadata[2], embedder->metadata[3],
+                       embedder->metadata[4], embedder->metadata[5], model->nested_prefixes};
     return TL_OK;
 }
 

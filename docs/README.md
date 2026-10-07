@@ -31,14 +31,17 @@ caching and coherent two-phase RRF. Large-catalog latency and broader model
 acceptance remain open. See [M4 implementation](m4-implementation.md)
 and [ADR 0022](adr/0022-m4-semantic-foundation.md). M6 executes next: worker
 separation, then the selected Frizbee SIMD matcher, then incremental indexing,
-as three steps in one milestone. M5 recommendations follow M6 and remaining M4
-acceptance work. See [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md)
+as three steps in one milestone. M5 recommendations follow M6; semantic
+search is parked as opt-in and its M4 acceptance is deferred
+([ADR 0032](adr/0032-park-semantic-search.md)). See [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md)
 and the [M6 working plan](m6-plan.md), which has the target thread/flow diagram,
 the measured baseline and per-step exit criteria. All three M6 steps are now
 implemented: the search thread ([ADR 0028](adr/0028-m6-search-thread-and-persistence-owner.md)),
 Frizbee scoring with cross-query word caches ([ADR 0029](adr/0029-m6-frizbee-scoring-and-candidate-volume.md))
 and incremental indexing with scoped rescans, delta segments and incremental
 semantic stages ([ADR 0030](adr/0030-m6-incremental-indexing.md)).
+Remaining M4 acceptance work started with a two-pass prefix-shortlist vector
+search ([ADR 0031](adr/0031-m4-prefix-shortlist-vector-search.md)).
 [Part 2 verification](m3-part2-completion.md) records indexed prefix edits,
 explicit metadata fields, optimal fuzzy alignment, held-out/BM25 comparisons,
 latency and RSS. The [search quality review](search-quality.md) explains the
@@ -171,6 +174,12 @@ the root [README](../README.md) for commands, and
 - [0030: M6 step 3, incremental indexing](adr/0030-m6-incremental-indexing.md)
   rescans only event directories, publishes deltas over a shared base with
   compaction, and reuses semantic vectors for unchanged rows.
+- [0031: M4 acceptance, prefix-shortlist vector search](adr/0031-m4-prefix-shortlist-vector-search.md)
+  shortlists rows by their Matryoshka prefix and rescores them exactly: 0.9956
+  recall@10 against exhaustive int8 at 500k with a four times faster scan.
+- [0032: Park semantic search](adr/0032-park-semantic-search.md)
+  keeps semantic search opt-in and tested, defers its M4 acceptance gates and
+  moves M5 next.
 
 ## Keeping docs current
 

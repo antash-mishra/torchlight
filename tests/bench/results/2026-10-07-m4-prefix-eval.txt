@@ -1,0 +1,15 @@
+ 23:28:19 up 32 days, 11:36,  1 user,  load average: 3.89, 4.13, 3.95
+./build/eval_vector build/models/potion-256.tlm 50000 build/semantic_queries.txt
+trained_prefix_shortlist model=minishlab/potion-retrieval-32M rows=50000 prefix=128 shortlist=8000 limit=10
+build_s=0.5
+embedded_rows=50000 exact_bytes=13400128 prefix_bytes=13600128 queries=412
+mean_recall10=0.9998 worst_recall10=0.90 top1_agreement=1.0000 score_mismatches=0
+exhaustive_int8_ms n=412 p50=3.346 p95=5.830 p99=7.706 max=11.656
+prefix_shortlist_ms n=412 p50=2.182 p95=5.451 p99=7.812 max=10.120
+./build/eval_vector build/models/potion-256.tlm 500000 build/semantic_queries.txt
+trained_prefix_shortlist model=minishlab/potion-retrieval-32M rows=500000 prefix=128 shortlist=8000 limit=10
+build_s=4.1
+embedded_rows=500000 exact_bytes=134000128 prefix_bytes=136000128 queries=412
+mean_recall10=0.9956 worst_recall10=0.80 top1_agreement=1.0000 score_mismatches=0
+exhaustive_int8_ms n=412 p50=35.511 p95=56.696 p99=62.546 max=64.032
+prefix_shortlist_ms n=412 p50=9.378 p95=23.018 p99=30.971 max=39.344

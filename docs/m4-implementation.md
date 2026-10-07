@@ -4,7 +4,8 @@ M4's functional English-first hybrid path is implemented and opt-in through
 `torchlightd --model PATH.tlm`. Potion 256d runs natively in C; background caching,
 versioned publication, RRF and two-phase IPC are connected. **M4 acceptance is
 not complete:** the 500k latency targets and broader model/relevance comparison
-remain open. See [model research and measured evaluation](m4-model-evaluation.md).
+remain open and are deferred while semantic search is parked
+([ADR 0032](adr/0032-park-semantic-search.md)). See [model research and measured evaluation](m4-model-evaluation.md).
 
 ## Implemented
 
@@ -49,7 +50,12 @@ Decisions: [initial foundation](adr/0022-m4-semantic-foundation.md),
    the Documents check currently validates exact names, not semantic labels.
 2. Reduce final 500k latency below 10 ms without losing reference/human relevance.
    Binary shortlists of 10k/20k are implemented but miss the measured recall gate.
-   Exhaustive int8 remains the opt-in default, with bounded deadline fallback.
+   The service now uses a prefix shortlist (first 128 components, 8000 rows
+   rescored exactly) with 0.9956 recall@10 against exhaustive int8 at 500k;
+   final p95 fell from 95.0 to 24.3 ms at 500k and to 9.95 ms at 50k
+   ([ADR 0031](adr/0031-m4-prefix-shortlist-vector-search.md)). Still open at
+   500k, and deferred (ADR 0032): overlap the semantic search with the lexical
+   phase and parallelize the bandwidth-bound first pass.
 3. Optimize initial embedding/cache throughput and full staging/update cost;
    measure complete semantic update lag and model-replacement peak RSS at scale.
    Current file-publication lag and process RSS measurements are explicit in the
@@ -66,7 +72,8 @@ See [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md).
 
 ## Verification
 
-Run `make test`, `make lint`, `make bench`, `make bench-vector`. Normal tests use
+Run `make test`, `make lint`, `make bench`, `make bench-vector`, and with an
+exported model `make eval-vector MODEL=build/models/potion-256.tlm`. Normal tests use
 independent analytic models and no ML dependencies. Trained-model evaluation is
 optional and reproducible from pinned artifacts; large model binaries stay in
 ignored `build/models/`. Relevant artifacts are linked in the evaluation report.

@@ -32,7 +32,7 @@ static void destroy_fixture(void *context) {
 
 static const tl_embedder_backend FIXTURE_BACKEND = {encode_fixture, destroy_fixture};
 static const tl_emb_model FIXTURE_MODEL = {
-    5, 2, "fixture", "revision-1", "tokenizer-1", "prepared-text-1", "none", "float32-l2-1"};
+    5, 2, "fixture", "revision-1", "tokenizer-1", "prepared-text-1", "none", "float32-l2-1", false};
 
 static void check_adapter(void) {
     struct backend_fixture fixture = {.status = TL_OK, .values = {3, 4}};
@@ -44,6 +44,7 @@ static void check_adapter(void) {
     revision[0] = 'X';
     CHECK(strcmp(embedder_model(embedder)->model_revision, "revision-1") == 0);
     CHECK(embedder_model(embedder)->emb_gen == 5 && embedder_model(embedder)->dimensions == 2);
+    CHECK(!embedder_model(embedder)->nested_prefixes);
     float out[2];
     CHECK(embedder_encode(embedder, EMBED_QUERY, "tax receipts", out, 2) == TL_OK);
     CHECK(fixture.calls == 1 && fixture.role == EMBED_QUERY);
@@ -53,6 +54,13 @@ static void check_adapter(void) {
     CHECK(fixture.role == EMBED_DOCUMENT);
     embedder_destroy(embedder);
     CHECK(fixture.destroys == 1);
+    /* The nested-prefix declaration is copied with the descriptor. */
+    model.nested_prefixes = true;
+    CHECK(embedder_create(&model, &FIXTURE_BACKEND, &fixture, &embedder) == TL_OK);
+    model.nested_prefixes = false;
+    CHECK(embedder_model(embedder)->nested_prefixes);
+    embedder_destroy(embedder);
+    CHECK(fixture.destroys == 2);
     embedder_destroy(NULL);
     CHECK(embedder_model(NULL) == NULL);
 }

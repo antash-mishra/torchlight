@@ -1,5 +1,9 @@
-/* Synthetic float scan/fusion costs, excluding inference, catalog and IPC. */
+/* Synthetic float, int8 and two-pass prefix scan/fusion costs, excluding
+ * inference, catalog and IPC. Random vectors measure latency only: they have
+ * no ordered prefix, so prefix-shortlist recall is measured separately on
+ * trained embeddings (tests/bench/eval_vector.c). */
 #include "torchlight/rank.h"
+#include "torchlight/semantic.h"
 #include "torchlight/vector.h"
 #include <errno.h>
 #include <stdbool.h>
@@ -63,13 +67,28 @@ static void report(const char *label, double *samples) {
            samples[(count * 99 + 99) / 100 - 1], samples[count - 1]);
 }
 
-static tl_status build(size_t rows, bool compact, tl_vector **index,
+enum format { FORMAT_FLOAT, FORMAT_INT8, FORMAT_PREFIX };
+
+static tl_status create(enum format format, size_t rows, tl_vector **index) {
+    switch (format) {
+    case FORMAT_INT8:
+        return vector_create_int8(1, VECTOR_BENCH_DIMENSIONS, rows, SIZE_MAX, index);
+    case FORMAT_PREFIX:
+        return vector_create_prefix_int8(1, VECTOR_BENCH_DIMENSIONS, rows,
+                                         SEMANTIC_PREFIX_DIMENSIONS, SEMANTIC_SHORTLIST, SIZE_MAX,
+                                         index);
+    case FORMAT_FLOAT:
+    default:
+        return vector_create(1, VECTOR_BENCH_DIMENSIONS, rows, SIZE_MAX, index);
+    }
+}
+
+static tl_status build(size_t rows, enum format format, tl_vector **index,
                        tl_vector_workspace **workspace) {
     double start = 0, end = 0;
     tl_status status = now(&start);
     if (status == TL_OK)
-        status = compact ? vector_create_int8(1, VECTOR_BENCH_DIMENSIONS, rows, SIZE_MAX, index)
-                         : vector_create(1, VECTOR_BENCH_DIMENSIONS, rows, SIZE_MAX, index);
+        status = create(format, rows, index);
     for (size_t i = 0; i < rows && status == TL_OK; i++) {
         float values[VECTOR_BENCH_DIMENSIONS];
         embedding(i + 1, values);
@@ -159,10 +178,18 @@ static tl_status fusion(void) {
     return status;
 }
 
+static const char *const FORMAT_LABELS[] = {
+    "synthetic_float_reference", "synthetic_int8_exhaustive", "synthetic_int8_prefix_shortlist"};
+
 int main(int argc, char **argv) {
+    enum format format = FORMAT_FLOAT;
+    if (argc == 3 && strcmp(argv[2], "--int8") == 0)
+        format = FORMAT_INT8;
+    else if (argc == 3 && strcmp(argv[2], "--prefix") == 0)
+        format = FORMAT_PREFIX;
     if ((argc != 2 && argc != 3) || argv[1][0] < '0' || argv[1][0] > '9' ||
-        (argc == 3 && strcmp(argv[2], "--int8") != 0)) {
-        fprintf(stderr, "usage: bench_vector ROWS [--int8] (256 dimensions, synthetic)\n");
+        (argc == 3 && format == FORMAT_FLOAT)) {
+        fprintf(stderr, "usage: bench_vector ROWS [--int8|--prefix] (256 dimensions, synthetic)\n");
         return 1;
     }
     errno = 0;
@@ -170,11 +197,13 @@ int main(int argc, char **argv) {
     unsigned long long value = strtoull(argv[1], &end, 10);
     if (errno != 0 || *end != 0 || value == 0 || value > SIZE_MAX)
         return 1;
-    puts(argc == 3 ? "synthetic_int8_exhaustive model=none inference=excluded ipc=excluded"
-                   : "synthetic_float_reference model=none inference=excluded ipc=excluded");
+    printf("%s model=none inference=excluded ipc=excluded", FORMAT_LABELS[format]);
+    if (format == FORMAT_PREFIX)
+        printf(" prefix=%u shortlist=%u", SEMANTIC_PREFIX_DIMENSIONS, SEMANTIC_SHORTLIST);
+    putchar('\n');
     tl_vector *index = NULL;
     tl_vector_workspace *workspace = NULL;
-    tl_status status = build((size_t)value, argc == 3, &index, &workspace);
+    tl_status status = build((size_t)value, format, &index, &workspace);
     if (status == TL_OK)
         status = scan(index, workspace);
     if (status == TL_OK)

@@ -16,8 +16,10 @@ Full index rebuilds were the M2/M3 update path; M6 replaced them for routine cha
 
 M4's [functional opt-in semantic path](docs/m4-implementation.md) provides native
 Potion, float/int8 retrieval, background embedding caches and two-phase daemon
-queries with exact-priority RRF. Large-catalog latency and broader relevance
-acceptance remain open; personalization is planned for M5.
+queries with exact-priority RRF. Semantic search is **parked**: it stays
+available and tested behind `--model`, but its large-catalog latency and broader
+relevance acceptance are deferred ([ADR 0032](docs/adr/0032-park-semantic-search.md)).
+Personalization (M5) is next.
 
 **M6** (implemented) makes search responsive and updates incremental:
 
@@ -31,9 +33,11 @@ acceptance remain open; personalization is planned for M5.
   appear in about 110 ms at 500k instead of 4 s, without doubling memory.
 
 On a real 213k-path home directory the resident daemon answers typing in
-0.4 ms p50 and 1.9 ms p95 (optimized build). The hybrid final phase is still
-dominated by a full vector scan (about 30 to 50 ms there, 95 ms p95 at 500k),
-so that M4 gate stays open. M5 (personalization) follows. See
+0.4 ms p50 and 1.9 ms p95 (optimized build). With a model, the hybrid final
+phase now shortlists vectors by their first 128 components and rescores 8000
+exactly, keeping 99.6% of the exhaustive top ten: 24 ms p95 at 500k synthetic
+paths instead of 95 ms ([ADR 0031](docs/adr/0031-m4-prefix-shortlist-vector-search.md)).
+The 10 ms M4 gate is deferred with the rest of semantic acceptance. See
 [the plan](PLAN.md), the [M6 plan and measurements](docs/m6-plan.md) and
 [milestone status](docs/milestone-status.md).
 
@@ -148,7 +152,8 @@ make test    # ASan + UBSan + leak checks, unit, CLI and daemon integration test
 make lint    # clang-tidy and cppcheck, warnings fail the build
 make format
 make bench   # release engine: latency and labeled ranking quality, 50k/500k paths
-make bench-vector # M4 synthetic float reference and fusion cost, 50k/500k vectors
+make bench-vector # synthetic float, int8 and prefix-shortlist scans and fusion, 50k/500k vectors
+make eval-vector MODEL=build/models/potion-256.tlm # shortlist recall on trained vectors
 make test-ui # Cinnamon/X11 keyboard acceptance (requires xdotool)
 make bench-daemon # release daemon: startup, IPC, indexing load, update lag and RSS
 ```
@@ -176,8 +181,9 @@ nearby folders and app metadata in the background; contents are not read.
 Lexical results appear first, followed by a semantic final or bounded fallback.
 Model loading is local and does not require Python in the launcher. Without
 `--model` the daemon runs fuzzy (lexical) search only and answers each query in
-a single frame; with it, every query also pays the vector scan for its final
-phase. To switch an installed user service to fuzzy-only, override its
+a single frame; with it, every query also pays a vector search for its final
+phase (a two-pass prefix shortlist above 8000 embedded entries). Semantic search
+is parked: supported and tested, but not accepted at large catalogs. To switch an installed user service to fuzzy-only, override its
 `ExecStart` without `--model` (`systemctl --user edit torchlightd`) and restart
 it.
 [Model research, setup and measured limits](docs/m4-model-evaluation.md) explain

@@ -19,10 +19,12 @@ STALL = str(Path(sys.argv[2]).resolve()) if len(sys.argv) > 2 else None
 CLI = str(Path(sys.argv[3]).resolve()) if len(sys.argv) > 3 else None
 
 
-def model_bytes(replace=False):
+def model_bytes(replace=False, dimensions=4):
+    """Analytic table: invoice/bill/receipt on component 0, tax/return on 1,
+    browser/surf on 2; wider models pad with zero components."""
     words = ['[PAD]', '[UNK]', '[CLS]', '[SEP]', '[MASK]', 'invoice', 'bill', 'tax',
              'return', 'browser', 'surf', 'pdf', 'finance', 'receipt']
-    table = [[0., 0., 0., 0.] for _ in words]
+    table = [[0.] * dimensions for _ in words]
     for index in (5, 6, 13):
         table[index][1 if replace and index == 5 else 0] = 1
     for index in (7, 8):
@@ -36,8 +38,9 @@ def model_bytes(replace=False):
         vocabulary += word.encode() + b'\0'
     offsets.append(len(vocabulary))
     body = struct.pack(f'<{len(offsets)}I', *offsets) + vocabulary
-    body += struct.pack(f'<{len(words) * 4}f', *sum(table, []))
-    return b'TLSTAT01' + struct.pack('<III', len(words), 4, len(vocabulary)) + b'0' * 168 + hashlib.sha256(body).digest() + body
+    body += struct.pack(f'<{len(words) * dimensions}f', *sum(table, []))
+    return (b'TLSTAT01' + struct.pack('<III', len(words), dimensions, len(vocabulary)) + b'0' * 168 +
+            hashlib.sha256(body).digest() + body)
 
 
 def wait(predicate, timeout=15):
@@ -282,6 +285,40 @@ def check_cache_contention(base):
         service.stop()
 
 
+def check_prefix_shortlist(base):
+    """A model wider than the shortlist prefix uses the two-pass vector search.
+    More embedded rows than the shortlist make the first pass prune; the target
+    shares no component with the noise rows, so it must survive the prefix
+    pass. A later file is served from a derived snapshot over the same base."""
+    service = Service(base, deadline=2000)
+    service.model.write_bytes(model_bytes(dimensions=144))
+    noise = service.root / 'noise'
+    noise.mkdir()
+    for index in range(8100):  # SEMANTIC_SHORTLIST is 8000
+        (noise / f'tax-{index:05d}.pdf').touch()
+    invoice = service.root / 'invoice.pdf'
+    invoice.touch()
+    try:
+        service.start()
+        # 8101 embedded rows; the prefix format adds a 4-byte prefix norm to the
+        # 144 components, 8-byte id and 4-byte norm of each int8 row.
+        def published():
+            semantic = service.query('status', operation='status')[0]['semantic']
+            return semantic if semantic['available'] and semantic['vector_bytes'] >= 8101 * 160 else None
+        before = wait(published, timeout=60)
+        assert service.hybrid('bill')[1]['results'][0]['path'] == str(invoice)
+        receipt = service.root / 'receipt.pdf'
+        receipt.touch()
+        def derived():
+            semantic = service.query('status', operation='status')[0]['semantic']
+            return semantic if semantic['derived_stages'] > before['derived_stages'] else None
+        wait(derived, timeout=30)
+        top = {row['path'] for row in service.hybrid('bill')[1]['results'][:2]}
+        assert top == {str(invoice), str(receipt)}, top
+    finally:
+        service.stop()
+
+
 def check_fifo_model(base):
     service = Service(base)
     invoice = service.root / 'invoice.pdf'
@@ -418,7 +455,7 @@ with tempfile.TemporaryDirectory(prefix='torchlight-semantic-') as temp:
     finally:
         service.stop()
 for check in (check_large_responses, check_phase_order, check_degraded_status, check_cache_contention,
-              check_fifo_model):
+              check_prefix_shortlist, check_fifo_model):
     with tempfile.TemporaryDirectory(prefix='torchlight-semantic-regression-') as temp:
         check(Path(temp))
 print('Semantic daemon lifecycle checks passed.')

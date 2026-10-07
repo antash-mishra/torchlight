@@ -1,4 +1,5 @@
-/* Float cosine reference checked against independent long-double arithmetic. */
+/* Float cosine reference checked against independent long-double arithmetic;
+ * int8, prefix-shortlist and binary formats checked against analytic cases. */
 #include "test.h"
 #include "torchlight/vector.h"
 #include <float.h>
@@ -299,7 +300,258 @@ static void check_row_copy(void) {
     vector_destroy(floats);
     vector_destroy(compact);
 }
+/* ---- prefix shortlist ------------------------------------------------------ */
+
+enum {
+    PREFIX_ROWS = 40,
+    PREFIX_WIDE = 38, /* a 22-component tail ends with a two-component remainder */
+    PREFIX_HEAD = 16,
+    PREFIX_NARROW = 32
+};
+
+static void prefix_row(size_t row, float *out) {
+    for (size_t j = 0; j < PREFIX_WIDE; j++)
+        out[j] = (float)((int)((row * 29 + j * 17 + row * j * 5) % 71) - 35);
+}
+
+static tl_vector_workspace *sealed(tl_vector *index) {
+    tl_vector_workspace *workspace = NULL;
+    CHECK(vector_finish(index) == TL_OK && vector_workspace_create(index, &workspace) == TL_OK);
+    return workspace;
+}
+
+/* Rescored cosines are bit-identical to vector_create_int8, and a shortlist
+ * covering every row returns exactly its results at every output capacity. */
+static void check_prefix_matches_int8(void) {
+    tl_vector *exact = NULL, *covering = NULL, *narrow = NULL;
+    CHECK(vector_create_int8(5, PREFIX_WIDE, PREFIX_ROWS, SIZE_MAX, &exact) == TL_OK);
+    CHECK(vector_create_prefix_int8(5, PREFIX_WIDE, PREFIX_ROWS, PREFIX_HEAD, PREFIX_ROWS, SIZE_MAX,
+                                    &covering) == TL_OK);
+    CHECK(vector_create_prefix_int8(5, PREFIX_WIDE, PREFIX_ROWS, PREFIX_HEAD, 12, SIZE_MAX,
+                                    &narrow) == TL_OK);
+    float values[PREFIX_WIDE];
+    for (size_t i = 0; i < PREFIX_ROWS; i++) {
+        prefix_row(i, values);
+        CHECK(vector_add(exact, i + 1, 5, values, PREFIX_WIDE) == TL_OK);
+        CHECK(vector_add(covering, i + 1, 5, values, PREFIX_WIDE) == TL_OK);
+        CHECK(vector_add(narrow, i + 1, 5, values, PREFIX_WIDE) == TL_OK);
+    }
+    tl_vector_workspace *a = sealed(exact), *b = sealed(covering), *c = sealed(narrow);
+    tl_vector_result expected[PREFIX_ROWS], actual[PREFIX_ROWS];
+    for (size_t target = 0; target < PREFIX_ROWS; target += 7) {
+        prefix_row(target, values);
+        size_t na = 0, nb = 0;
+        for (size_t capacity = 1; capacity <= PREFIX_ROWS; capacity++) {
+            CHECK(vector_query(exact, a, 5, values, PREFIX_WIDE, expected, capacity, &na) == TL_OK);
+            CHECK(vector_query(covering, b, 5, values, PREFIX_WIDE, actual, capacity, &nb) ==
+                  TL_OK);
+            CHECK(na == capacity && nb == capacity);
+            for (size_t i = 0; i < na; i++)
+                CHECK(actual[i].id == expected[i].id && actual[i].cosine == expected[i].cosine);
+        }
+        /* A narrow shortlist still finds the row itself, with the same score. */
+        CHECK(vector_query(narrow, c, 5, values, PREFIX_WIDE, actual, 3, &nb) == TL_OK && nb == 3);
+        CHECK(actual[0].id == target + 1 && actual[0].id == expected[0].id &&
+              actual[0].cosine == expected[0].cosine);
+        for (size_t i = 0; i < nb; i++)
+            for (size_t j = 0; j < PREFIX_ROWS; j++)
+                CHECK(expected[j].id != actual[i].id || expected[j].cosine == actual[i].cosine);
+    }
+    vector_workspace_destroy(a);
+    vector_workspace_destroy(b);
+    vector_workspace_destroy(c);
+    vector_destroy(exact);
+    vector_destroy(covering);
+    vector_destroy(narrow);
+}
+
+/* Unit vector e_i plus weight * e_j over PREFIX_NARROW components. */
+static void axis_row(float *out, size_t i, float weight_i, size_t j, float weight_j) {
+    for (size_t k = 0; k < PREFIX_NARROW; k++)
+        out[k] = 0;
+    out[i] += weight_i;
+    out[j] += weight_j;
+}
+
+static tl_vector *axis_index(size_t shortlist, const float rows[][PREFIX_NARROW], size_t count) {
+    tl_vector *index = NULL;
+    CHECK(vector_create_prefix_int8(9, PREFIX_NARROW, count, PREFIX_HEAD, shortlist, SIZE_MAX,
+                                    &index) == TL_OK);
+    for (size_t i = 0; i < count; i++)
+        CHECK(vector_add(index, i + 1, 9, rows[i], PREFIX_NARROW) == TL_OK);
+    return index;
+}
+
+static size_t top_ids(tl_vector *index, tl_vector_workspace *workspace, const float *query,
+                      size_t capacity, uint64_t *ids) {
+    tl_vector_result results[4];
+    size_t count = 0;
+    CHECK(vector_query(index, workspace, 9, query, PREFIX_NARROW, results, capacity, &count) ==
+          TL_OK);
+    for (size_t i = 0; i < count; i++)
+        ids[i] = results[i].id;
+    return count;
+}
+
+/* The first pass keeps the best prefix cosines, so the full cosine can only
+ * choose among them. Excluded rows take no slot; a zero prefix scans all. */
+static void check_prefix_first_pass(void) {
+    float rows[4][PREFIX_NARROW], query[PREFIX_NARROW];
+    axis_row(rows[0], 0, 1, 16, -1);  /* prefix cosine 1, full cosine 0 */
+    axis_row(rows[1], 0, 0.6F, 1, 0); /* prefix cosine 0.6, full cosine 0.8 */
+    rows[1][1] = 0.8F;
+    rows[1][16] = 1;
+    axis_row(rows[2], 2, 1, 17, 1);
+    axis_row(rows[3], 1, 1, 16, 1);
+    axis_row(query, 0, 1, 16, 1);
+    uint64_t ids[4];
+    for (size_t shortlist = 1; shortlist <= 2; shortlist++) {
+        tl_vector *index = axis_index(shortlist, (const float(*)[PREFIX_NARROW])rows, 4);
+        tl_vector_workspace *workspace = sealed(index);
+        CHECK(top_ids(index, workspace, query, 1, ids) == 1);
+        CHECK(ids[0] == (shortlist == 1 ? 1 : 2));
+        tl_vector_result results[3];
+        size_t count = 9;
+        CHECK(vector_query(index, workspace, 9, query, PREFIX_NARROW, results, shortlist + 1,
+                           &count) == TL_LIMIT &&
+              count == 0);
+        const uint64_t excluded[] = {1};
+        vector_workspace_exclude(workspace, excluded);
+        CHECK(top_ids(index, workspace, query, 1, ids) == 1 && ids[0] == 2);
+        vector_workspace_exclude(workspace, NULL);
+        float tail_only[PREFIX_NARROW];
+        axis_row(tail_only, 16, 1, 16, 0);
+        CHECK(top_ids(index, workspace, tail_only, 1, ids) == 1 && ids[0] == 2);
+        vector_workspace_destroy(workspace);
+        vector_destroy(index);
+    }
+}
+
+/* Equal prefix scores keep the earlier rows, whatever their full cosines:
+ * only a shortlist of three reaches row 3, the best full match. */
+static void check_prefix_ties(void) {
+    float rows[4][PREFIX_NARROW], query[PREFIX_NARROW];
+    for (size_t i = 0; i < 3; i++)
+        axis_row(rows[i], 0, 1, 16 + i, 1);
+    axis_row(rows[3], 1, 1, 16, 1);
+    axis_row(query, 0, 1, 18, 1);
+    uint64_t ids[4];
+    for (size_t shortlist = 1; shortlist <= 3; shortlist++) {
+        tl_vector *index = axis_index(shortlist, (const float(*)[PREFIX_NARROW])rows, 4);
+        tl_vector_workspace *workspace = sealed(index);
+        CHECK(top_ids(index, workspace, query, 1, ids) == 1 && ids[0] == (shortlist == 3 ? 3 : 1));
+        vector_workspace_destroy(workspace);
+        vector_destroy(index);
+    }
+}
+
+static void check_prefix_limits(void) {
+    tl_vector *index = NULL, *other = NULL;
+    CHECK(vector_create_prefix_int8(1, 32, 4, 16, 2, SIZE_MAX, NULL) == TL_INVALID);
+    CHECK(vector_create_prefix_int8(1, 32, 4, 0, 2, SIZE_MAX, &index) == TL_INVALID);
+    CHECK(vector_create_prefix_int8(1, 32, 4, 32, 2, SIZE_MAX, &index) == TL_INVALID);
+    CHECK(vector_create_prefix_int8(1, 40, 4, 24, 2, SIZE_MAX, &index) == TL_INVALID);
+    CHECK(vector_create_prefix_int8(1, 32, 4, 16, 0, SIZE_MAX, &index) == TL_INVALID);
+    CHECK(vector_create_prefix_int8(0, 32, 4, 16, 2, SIZE_MAX, &index) == TL_INVALID);
+    CHECK(vector_create_prefix_int8(1, VECTOR_MAX_DIMENSIONS + 16, 4, 16, 2, SIZE_MAX, &index) ==
+          TL_INVALID);
+    CHECK(vector_create_prefix_int8(1, 32, SIZE_MAX, 16, 2, SIZE_MAX, &index) == TL_LIMIT);
+    CHECK(index == NULL);
+    CHECK(vector_create_int8(1, 32, 4, SIZE_MAX, &other) == TL_OK);
+    CHECK(vector_create_prefix_int8(1, 32, 4, 16, 2, SIZE_MAX, &index) == TL_OK);
+    /* Splitting rows costs one prefix inverse norm per row. */
+    size_t bytes = vector_bytes(index);
+    CHECK(bytes == vector_bytes(other) + 4 * sizeof(float));
+    vector_destroy(index);
+    CHECK(vector_create_prefix_int8(1, 32, 4, 16, 2, bytes - 1, &index) == TL_LIMIT);
+    CHECK(vector_create_prefix_int8(1, 32, 4, 16, 2, bytes, &index) == TL_OK);
+    vector_destroy(index);
+    vector_destroy(other);
+    CHECK(vector_create_prefix_int8(1, 32, 0, 16, 2, SIZE_MAX, &index) == TL_OK);
+    tl_vector_workspace *workspace = sealed(index);
+    float query[32] = {1};
+    tl_vector_result result;
+    size_t count = 9;
+    CHECK(vector_query(index, workspace, 1, query, 32, &result, 1, &count) == TL_OK && count == 0);
+    vector_workspace_destroy(workspace);
+    vector_destroy(index);
+}
+
+/* Prefix rows copy bit-identically between prefix indexes (the shortlist may
+ * differ) but not into a different prefix length or the unsplit int8 format. */
+static void check_prefix_row_copy(void) {
+    tl_vector *source = NULL, *copy = NULL, *longer = NULL, *unsplit = NULL;
+    float values[PREFIX_WIDE];
+    CHECK(vector_create_prefix_int8(5, PREFIX_WIDE, 2, PREFIX_HEAD, 1, SIZE_MAX, &source) == TL_OK);
+    for (size_t i = 0; i < 2; i++) {
+        prefix_row(i, values);
+        CHECK(vector_add(source, i + 1, 5, values, PREFIX_WIDE) == TL_OK);
+    }
+    tl_vector_workspace *a = sealed(source);
+    CHECK(vector_create_prefix_int8(5, PREFIX_WIDE, 2, PREFIX_HEAD, 2, SIZE_MAX, &copy) == TL_OK);
+    CHECK(vector_create_prefix_int8(5, PREFIX_WIDE, 2, 32, 2, SIZE_MAX, &longer) == TL_OK);
+    CHECK(vector_create_int8(5, PREFIX_WIDE, 2, SIZE_MAX, &unsplit) == TL_OK);
+    CHECK(vector_add_row(longer, source, 0) == TL_INVALID);
+    CHECK(vector_add_row(unsplit, source, 0) == TL_INVALID);
+    CHECK(vector_add_row(copy, source, 0) == TL_OK && vector_add_row(copy, source, 1) == TL_OK);
+    tl_vector_workspace *b = sealed(copy);
+    tl_vector_result from_source[1], from_copy[2];
+    size_t na = 0, nb = 0;
+    CHECK(vector_query(source, a, 5, values, PREFIX_WIDE, from_source, 1, &na) == TL_OK);
+    CHECK(vector_query(copy, b, 5, values, PREFIX_WIDE, from_copy, 2, &nb) == TL_OK && nb == 2);
+    CHECK(na == 1 && from_copy[0].id == from_source[0].id &&
+          from_copy[0].cosine == from_source[0].cosine);
+    vector_workspace_destroy(a);
+    vector_workspace_destroy(b);
+    vector_destroy(source);
+    vector_destroy(copy);
+    vector_destroy(longer);
+    vector_destroy(unsplit);
+}
+
+/* The largest size with the shortest tail: one dominant component over 4095
+ * small ones makes long integer sums, and every self match still wins with the
+ * exhaustive int8 score. */
+static void check_prefix_extremes(void) {
+    enum { ROWS = 3 };
+    float(*rows)[VECTOR_MAX_DIMENSIONS] = calloc(ROWS, sizeof(*rows));
+    CHECK(rows != NULL);
+    for (size_t i = 0; i < ROWS; i++)
+        for (size_t j = 0; j < VECTOR_MAX_DIMENSIONS; j++)
+            rows[i][j] = j == i ? 64.0F : i == 2 ? -1.0F : 1.0F;
+    tl_vector *exact = NULL, *index = NULL;
+    CHECK(vector_create_int8(3, VECTOR_MAX_DIMENSIONS, ROWS, SIZE_MAX, &exact) == TL_OK);
+    CHECK(vector_create_prefix_int8(3, VECTOR_MAX_DIMENSIONS, ROWS,
+                                    VECTOR_MAX_DIMENSIONS - VECTOR_PREFIX_BLOCK, 1, SIZE_MAX,
+                                    &index) == TL_OK);
+    for (size_t i = 0; i < ROWS; i++) {
+        CHECK(vector_add(exact, i + 1, 3, rows[i], VECTOR_MAX_DIMENSIONS) == TL_OK);
+        CHECK(vector_add(index, i + 1, 3, rows[i], VECTOR_MAX_DIMENSIONS) == TL_OK);
+    }
+    tl_vector_workspace *a = sealed(exact), *b = sealed(index);
+    for (size_t i = 0; i < ROWS; i++) {
+        tl_vector_result expected, actual;
+        size_t na = 0, nb = 0;
+        CHECK(vector_query(exact, a, 3, rows[i], VECTOR_MAX_DIMENSIONS, &expected, 1, &na) ==
+              TL_OK);
+        CHECK(vector_query(index, b, 3, rows[i], VECTOR_MAX_DIMENSIONS, &actual, 1, &nb) == TL_OK);
+        CHECK(na == 1 && nb == 1 && actual.id == i + 1 && expected.id == i + 1);
+        CHECK(actual.cosine == expected.cosine);
+    }
+    vector_workspace_destroy(a);
+    vector_workspace_destroy(b);
+    vector_destroy(exact);
+    vector_destroy(index);
+    free(rows);
+}
+
 void test_vector(void) {
+    check_prefix_matches_int8();
+    check_prefix_first_pass();
+    check_prefix_ties();
+    check_prefix_limits();
+    check_prefix_row_copy();
+    check_prefix_extremes();
     check_row_copy();
     check_binary();
     check_int8();

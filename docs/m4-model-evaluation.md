@@ -102,6 +102,43 @@ against exhaustive int8. These miss the experiment's 0.98 mean recall gate and
 Artifacts: [10k shortlist](../tests/quality/results/2026-10-05-potion-binary-500k.json),
 [20k shortlist](../tests/quality/results/2026-10-05-potion-binary-20k-500k.json).
 
+## Prefix-shortlist retrieval (2026-10-07)
+
+[ADR 0031](adr/0031-m4-prefix-shortlist-vector-search.md) replaces the service's
+exhaustive int8 scan with a two-pass search for models with nested prefixes:
+a first pass ranks every row by int8 cosine over its first 128 components and
+keeps 8000 rows, which are rescored with the unchanged full int8 cosine.
+Potion is Matryoshka-trained and the 256d export truncates it, so the prefix
+is the model's own 128d embedding.
+
+Against exhaustive int8 on the same trained vectors (`make eval-vector`, 412
+queries: the 52 fixture texts plus held-out launcher queries, ten results):
+
+| Rows | Mean recall@10 | Worst query | Top-1 agreement | Score mismatches | Two-pass p50 / p95 |
+|---:|---:|---:|---:|---:|---:|
+| 50k | 0.9998 | 0.90 | 1.0000 | 0 | 2.18 / 5.45 ms |
+| 500k | 0.9956 | 0.80 | 1.0000 | 0 | 9.38 / 23.0 ms |
+
+This passes the 0.98 recall gate that rejected the sign-bit shortlist (0.9445
+at a 10k shortlist). It measures agreement with exhaustive neighbors, not human
+relevance; the small labeled fixture's catalogs fit inside the shortlist and
+are still searched exhaustively. An SSE4.1 kernel with the same lane
+arithmetic halves exhaustive int8 (35.5 ms p50 at 500k on trained vectors).
+
+Resident daemon, 1200 held-out queries, final-phase round trip:
+
+| Catalog | End of M6 p50 / p95 / p99 | Prefix shortlist p50 / p95 / p99 |
+|---:|---:|---:|
+| 49,569 | 7.45 / 13.5 / 16.8 ms | 3.43 / 9.95 / 13.9 ms |
+| 494,362 | 68.8 / 95.0 / 104.8 ms | 12.8 / 24.3 / 33.7 ms |
+
+The 500k final-phase gate (p95 below 10 ms) remains open: the lexical phase
+(8.05 ms p95) and the vector search run sequentially, and the first pass is
+bound by memory bandwidth on the loaded reference host. Artifacts:
+[evaluation](../tests/bench/results/2026-10-07-m4-prefix-eval.txt),
+[synthetic scans](../tests/bench/results/2026-10-07-m4-prefix-vector.txt),
+[daemon](../tests/bench/results/2026-10-07-m4-prefix-hybrid-daemon.jsonl).
+
 ## Resident scale and updates
 
 [Daemon benchmark](../tests/bench/results/2026-10-05-m4-hybrid-daemon.jsonl):

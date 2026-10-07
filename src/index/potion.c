@@ -321,9 +321,11 @@ static tl_status create_adapter(struct potion *model, const unsigned char header
     emb_gen = hashmap_hash(emb_gen, VERSIONS, sizeof(VERSIONS) - 1);
     if (emb_gen == 0)
         emb_gen = 1;
+    /* Potion retrieval is Matryoshka-trained and exports truncate it, so every
+     * prefix of an exported row is the smaller model's embedding. */
     tl_emb_model descriptor = {emb_gen,    model->dimensions, "minishlab/potion-retrieval-32M",
                                revision,   tokenizer_hash,    "launcher-text-1",
-                               projection, "int8-l2-1"};
+                               projection, "int8-l2-1",       true};
     const tl_embedder_backend backend = {potion_encode, potion_destroy};
     return embedder_create(&descriptor, &backend, model, out);
 }

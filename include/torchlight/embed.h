@@ -2,16 +2,23 @@
 #ifndef TORCHLIGHT_EMBED_H
 #define TORCHLIGHT_EMBED_H
 #include "torchlight/common.h"
+#include <stdbool.h>
 
 #define EMBED_METADATA_BYTES 256
 #define EMBED_TEXT_BYTES 16384
 typedef struct tl_embedder tl_embedder;
 typedef enum { EMBED_QUERY, EMBED_DOCUMENT } tl_embed_input;
+/* nested_prefixes declares that the leading components of an embedding are
+ * themselves a usable lower-dimensional embedding (Matryoshka training or a
+ * variance-ordered projection), which lets vector search shortlist rows by a
+ * prefix. It describes the model, not the stored vectors, so it is not part of
+ * emb_gen. */
 typedef struct {
     uint64_t emb_gen;
     size_t dimensions;
     const char *model_id, *model_revision, *tokenizer_version, *preprocessing_version;
     const char *projection_version, *quantization_version;
+    bool nested_prefixes;
 } tl_emb_model;
 typedef struct {
     /** Encode prepared UTF-8 text into exactly dimensions caller-owned floats.

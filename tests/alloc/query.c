@@ -2,7 +2,8 @@
  * Separate from ASan: its allocator interposition would mask the libc path.
  * Queries may allocate only to compile Frizbee matchers for words a workspace
  * has not cached (bounded per word and scoring thread); a repeated query, a
- * cached one-symbol answer and vector/fusion queries allocate nothing. */
+ * cached one-symbol answer and vector/fusion queries (including the two-pass
+ * prefix shortlist) allocate nothing. */
 #include "torchlight/fuzzy.h"
 #include "torchlight/lexical.h"
 #include "torchlight/rank.h"
@@ -220,6 +221,42 @@ static tl_status check_hybrid(void) {
     return status;
 }
 
+/* The first pass, its candidate trims and the rescoring use workspace scratch. */
+static tl_status check_prefix_shortlist(void) {
+    enum { PREFIX_ROWS = 600, PREFIX_DIMENSIONS = 32, PREFIX_LENGTH = 16, PREFIX_SHORTLIST = 50 };
+    tl_vector *index = NULL;
+    tl_vector_workspace *workspace = NULL;
+    tl_status status = vector_create_prefix_int8(1, PREFIX_DIMENSIONS, PREFIX_ROWS, PREFIX_LENGTH,
+                                                 PREFIX_SHORTLIST, SIZE_MAX, &index);
+    float values[PREFIX_DIMENSIONS];
+    for (size_t i = 0; i < PREFIX_ROWS && status == TL_OK; i++) {
+        for (size_t j = 0; j < PREFIX_DIMENSIONS; j++)
+            values[j] = (float)((int)((i * 31 + j * 7 + i * j) % 23) - 11);
+        status = vector_add(index, i + 1, 1, values, PREFIX_DIMENSIONS);
+    }
+    if (status == TL_OK)
+        status = vector_finish(index);
+    if (status == TL_OK)
+        status = vector_workspace_create(index, &workspace);
+    atomic_store(&allocations, 0);
+    atomic_store(&probing, true);
+    for (size_t i = 0; i < 20 && status == TL_OK; i++) {
+        tl_vector_result neighbors[PREFIX_SHORTLIST];
+        size_t count = 0;
+        values[i % PREFIX_DIMENSIONS] += 1;
+        status = vector_query(index, workspace, 1, values, PREFIX_DIMENSIONS, neighbors,
+                              PREFIX_SHORTLIST, &count);
+    }
+    atomic_store(&probing, false);
+    if (atomic_load(&allocations) != 0) {
+        fprintf(stderr, "prefix shortlist query allocated %zu times\n", atomic_load(&allocations));
+        status = TL_STATE;
+    }
+    vector_workspace_destroy(workspace);
+    vector_destroy(index);
+    return status;
+}
+
 int main(void) {
     calibrate();
     if (matcher_allocations == 0) {
@@ -246,6 +283,8 @@ int main(void) {
         status = check_workers();
     if (status == TL_OK)
         status = check_hybrid();
+    if (status == TL_OK)
+        status = check_prefix_shortlist();
     if (status == TL_OK)
         puts("Allocation-free query checks passed.");
     return status == TL_OK ? 0 : 1;
