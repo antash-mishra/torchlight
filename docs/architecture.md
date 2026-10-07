@@ -10,9 +10,10 @@ lexical results. With an explicitly configured model, a matching owned semantic
 metadata snapshot supports the asynchronous final phase. Its worker owns SQLite, inotify,
 reconciliation, full-engine staging/publication and asynchronous history.
 Saved entries serve before background reconciliation. Status and restart/failure
-recovery are implemented. Semantics and personalization ranking below remain the target architecture. See ADR 0011 for the full-rebuild baseline and
+recovery are implemented. Optional semantics are implemented; personalization
+ranking remains planned. See ADR 0011 for the full-rebuild baseline and
 structural bounds. Roughly 6 ms p95 at 500k paths is accepted for starting M3;
-the original 5 ms target is later optimization work. See
+the original 5 ms lexical target is now tracked in M6. See
 [readiness](m3-readiness.md) and the [GUI specification](m3-gui-design.md).
 
 M3 Part 2 adds explicit generic-name/keyword fields beside primary names and
@@ -27,7 +28,8 @@ and copied metadata snapshots; the coordinator sends lexical results immediately
 and enforces cancellation/deadline fallback. See [M4 implementation](m4-implementation.md),
 [measured model evaluation](m4-model-evaluation.md) and
 [ADR 0023](adr/0023-m4-native-potion-and-two-phase-search.md). Large-catalog latency
-and broader relevance acceptance remain open. M5 personalization follows.
+and broader relevance acceptance remain open. M6 performance work executes next;
+M5 personalization follows M6 and remaining M4 acceptance work.
 
 ADR 0012 adds filesystem incarnation checks during scans and schema v2 identity
 storage. Replacements retire old ids and descendants before publication, with
@@ -38,6 +40,26 @@ ADR 0013 adds complete resident bitmap filtering, four per-query word evidence
 caches and bounded scoring workers. Large batches resolve directory evidence
 before dispatch; workers write disjoint outputs and the coordinator orders
 results. Query evaluation retains the same complete matching and ranking rules.
+
+## Next implementation priority: M6
+
+M6 is one planned milestone with three ordered steps: worker separation,
+Frizbee SIMD search, then incremental indexing. The GTK main thread continues
+asynchronous IPC and worker-based launch actions. A dedicated daemon search
+worker frees the IPC loop to receive newer requests, with one newest pending
+query per client, cooperative cancellation and stale-completion suppression.
+Search pins immutable file/application snapshots; indexing prepares changes
+privately. A history/persistence worker serializes catalog/history commits, with
+filesystem scans and index construction outside database write transactions.
+
+Frizbee is the selected production fuzzy matcher through its C ABI; there is no
+library-selection phase. Retrieval channels, normalization/raw-byte paths,
+field weights and exact-match priority remain contracts. Incremental changes
+will share unchanged blocks and reconcile affected scopes, keeping full rebuilds
+for recovery/compaction. A mapped binary index is not required. The current poll
+loop search, shared writer and full rebuilds described below remain implemented
+until these steps land. See [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md)
+and the [M6 working plan](m6-plan.md) for the target thread and data flow.
 
 ## Components
 

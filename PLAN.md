@@ -8,9 +8,13 @@ later extension.
 
 ## Implementation progress
 
-M1, M2, M3 and M3 Part 2 are implemented. The next sequence is
-**M4: hybrid semantic search → M5: personal recommendations**. M3 adds installed
-application/settings search and the GTK4 popup described in the
+M1, M2, M3 and M3 Part 2 are implemented. M4's functional opt-in semantic
+path is implemented, with acceptance gates still open. The next priority is
+**M6: worker separation → Frizbee SIMD search → incremental indexing**, grouped
+as one milestone. M5 personalization follows M6 and the remaining M4 acceptance
+work. Existing milestone identifiers are retained; M6 executes next despite
+being appended after M5. See [ADR 0026](docs/adr/0026-search-workers-simd-and-incremental-indexing.md).
+M3 adds installed application/settings search and the GTK4 popup described in the
 [GUI design](docs/m3-gui-design.md).
 See [desktop setup](docs/desktop-setup.md) and the
 [M3 verification report](docs/m3-completion.md) for usage, checks and measured
@@ -43,10 +47,13 @@ and multiple-monitor testing, human screen-reader use and Wayland remain
 separate platform validation. See [milestone status](docs/milestone-status.md)
 for a plain-language account of completed and future work.
 
-The user accepted roughly 6 ms p95 lexical latency at 500k paths for starting M3;
-optimization toward the original 5 ms target resumes after the whole system is
-built. Full-engine update rebuilds remain the initial strategy. Historical
-pre-M3 measurements are in the [readiness report](docs/m3-readiness.md).
+The user accepted roughly 6 ms p95 lexical latency at 500k paths for starting M3.
+After the search-quality work, the recorded native lexical run has 8.551 ms
+typing p95 and 9.622 ms whole-query p95 at 500k paths, excluding IPC/UI.
+See [the recorded run](tests/bench/results/2026-10-05-m4-native-lexical.txt).
+Full-engine update rebuilds remain implemented; M6 now owns optimization toward
+the original 5 ms lexical target and incremental file updates. Historical pre-M3
+measurements are in the [readiness report](docs/m3-readiness.md).
 
 The readiness fixes (ADR 0013) remove trigram sorting's indirect heap allocation
 and enforce the documented 3–32-symbol typo-query range. Complete resident bitmap
@@ -98,7 +105,8 @@ ancestor pruning, recovery and injected SQLite write failures.
   below 5ms and final (hybrid) phase p95 below 10ms on a documented reference
   machine.
   These are targets to measure, not established performance numbers. Roughly
-  6ms lexical p95 is accepted for starting M3; reaching 5ms is deferred.
+  6ms lexical p95 was accepted for starting M3; M6 now targets the lexical
+  optimization, while final hybrid latency remains an open M4 acceptance gate.
 - Report engine latency and client round-trip latency separately, including
   query embedding in hybrid measurements. Also measure first query, startup,
   crawl time, update lag, peak memory, and latency during indexing.
@@ -134,9 +142,18 @@ torchlightd (C)
   └─ background writer + SQLite (WAL)
 ```
 
-SQLite is the durable catalog. Queries use resident paths, lexical indexes,
-vectors, and usage summaries. Load saved entries and serve them before background
-reconciliation finishes; startup does not require a synchronous full-home crawl.
+SQLite is the durable catalog. Queries use resident paths, lexical indexes and
+vectors; resident usage summaries remain planned for M5. Load saved entries and
+serve them before background reconciliation finishes; startup does not require
+a synchronous full-home crawl.
+
+M6 separates the daemon IPC loop from a dedicated search worker, indexing work,
+and history/persistence work. The GTK main thread retains asynchronous IPC and
+the existing launch worker. Search pins immutable file/application snapshots;
+indexing prepares replacements privately, and persistence serializes catalog and
+history commits without doing filesystem scans or index construction. Frizbee is
+the selected SIMD fuzzy matcher. Resident indexes remain the baseline; a mapped
+binary index is not a prerequisite for these changes.
 
 ## Lexical retrieval
 
@@ -458,7 +475,9 @@ actions, installable desktop entry and systemd user unit. See
 and [ADR 0015](docs/adr/0015-m3-desktop-catalog-and-launcher.md).
 M3 Part 2 search quality is implemented; see
 [its verification and measured tradeoffs](docs/m3-part2-completion.md). M4 implements opt-in native semantics, background cache and two-phase hybrid
-queries; large-catalog latency and broader relevance acceptance remain open. M5 personal recommendations follow M4.
+queries; large-catalog latency and broader relevance acceptance remain open.
+M6 worker separation, Frizbee SIMD search and incremental indexing execute next;
+M5 personal recommendations follow M6 and remaining M4 acceptance work.
 Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
 tracked explicitly in the verification report.
 
@@ -540,24 +559,66 @@ tracked explicitly in the verification report.
    two-phase RRF. See [implementation and acceptance gates](docs/m4-implementation.md)
    and [measured model/daemon evaluation](docs/m4-model-evaluation.md); 500k latency
    and broader model/relevance acceptance remain open.
-6. **M5: Personal recommendations and ranking.** After M4, use optional
-   resident frecency and query-to-open summaries for both files and applications.
+   M6 is the next implementation priority; these remaining M4 acceptance gates
+   remain open and do not block starting M6.
+6. **M5: Personal recommendations and ranking.** After M6 and remaining M4
+   acceptance work, use optional resident frecency and query-to-open summaries
+   for both files and applications.
    Apply bounded boosts for frequently/recently opened and previously selected
    results. Respect disabled history, clearing and retention in persisted and
    resident state. Compare hybrid ranking with/without personalization on
    held-out usage scenarios; improve personally useful results without burying
    exact matches or strong name evidence. Existing history recording is
    implemented; recommendation scoring is future work.
+7. **M6: Search responsiveness and indexing performance.** Planned; execute
+   next in this order, as three steps within one milestone:
+
+   - **Worker separation.** Keep UI rendering/input and daemon IPC responsive
+     while a dedicated search worker retrieves and ranks file/application
+     results. Retain only the newest pending query per client, cancel obsolete
+     work between batches, and reject stale completions. Separate indexing from
+     history/persistence; serialize catalog/history commits through the database
+     owner, with scans and index builds outside write transactions. Preserve
+     immutable snapshot leases, semantic deadlines, launch actions and shutdown.
+   - **Frizbee SIMD search.** Integrate Frizbee through its C ABI as the production
+     fuzzy matcher; pin the dependency and document its build. The user selected
+     this library; no library-selection or comparative matcher evaluation phase
+     is required. Keep prefix/subsequence/trigram/typo retrieval, explicit field
+     weights, exact-name/path priority, Unicode normalization and raw-byte paths.
+     Adapt scratch and score bounds; reuse one bounded scoring pool where needed.
+   - **Incremental indexing.** Apply coalesced filesystem changes to affected
+     entries and directories without routinely scanning every root or rebuilding
+     the full engine. Share unchanged immutable blocks, batch publication and
+     compact in the background. Preserve commit-before-publication, rename and
+     replacement identity, semantic invalidation, overflow reconciliation and
+     restart recovery; retain full rebuilds for recovery and compaction.
+
+   Acceptance: sanitizer/lint and existing search-quality regressions pass;
+   rapid typing serves the latest request without an obsolete-query backlog;
+   query work remains allocation-free and does not wait for SQL or filesystem
+   I/O. Record engine/IPC p50/p95/p99, indexing-load latency, update lag, history
+   queue counters and steady/peak RSS at 50k/500k. Target warm lexical p95 below
+   5 ms and demonstrate lower small-update lag and peak RSS against the recorded
+   full-rebuild baseline. These are implementation checks, not a library choice.
+   M6 does not add personalization, document-content search or a required mmap
+   file format. See [ADR 0026](docs/adr/0026-search-workers-simd-and-incremental-indexing.md).
+   The [M6 working plan](docs/m6-plan.md) refines these steps from a code
+   survey and a 500k profile: scoring is about 46% of query time, so step 2
+   pairs Frizbee with candidate-volume reduction; step 3 splits into scoped
+   reconcile, a base-plus-delta segmented engine, and incremental semantic
+   snapshots. It records the baseline numbers each step must beat.
 
 ## Evaluation
 
 The labeled query set, metrics, regression scenarios and benchmark reporting
 rules are in [`docs/evaluation.md`](docs/evaluation.md).
 The [search quality review](docs/search-quality.md) records observed relevance
-gaps, the implemented application-name ranking fix, and the comparisons planned
-for M3 Part 2, M4 and M5. It includes an updated model shortlist before M4
-selection. These milestones must demonstrate relevance, latency and memory on
-real launcher queries; feature completion does not establish best search quality.
+gaps and the implemented application-name ranking fix. M3 Part 2 and M4 have
+recorded quality/performance results; M4 acceptance and M5 personalization retain
+their evaluation work. M6 validates the selected Frizbee integration and worker/
+indexing changes against existing quality contracts and measured latency/memory.
+It does not reopen matcher selection. Feature completion does not establish best
+search quality.
 
 ## Build
 
@@ -565,7 +626,9 @@ real launcher queries; feature completion does not establish best search quality
   utf8proc, GIO/GIO-Unix, GTK4 4.14+ and X11. ONNX Runtime is a possible M4
   dependency if the selected backend needs it; ncurses remains optional.
   IPC uses the bounded core JSON codec rather than adding cJSON.
-  Discuss additions before implementation, following `AGENTS.md`.
+  Frizbee is selected and authorized for M6 through its C ABI; pin its Rust
+  library/build tooling during integration. Discuss other additions before
+  implementation, following `AGENTS.md`.
 - Run sanitizers, unit/integration checks, lint, and relevant benchmarks as
   milestones introduce code. Planning changes require document consistency.
 

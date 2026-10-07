@@ -59,7 +59,10 @@ Decisions: [initial foundation](adr/0022-m4-semantic-foundation.md),
    More Unicode/tokenizer coverage is also needed before broader language claims.
 
 These are acceptance/optimization gates, not unimplemented cache or daemon
-scaffolding. M5 personalization remains separate work after M4 acceptance.
+scaffolding. M6 worker separation, selected Frizbee SIMD integration and
+incremental indexing are the next implementation priority; these M4 gates remain
+open and do not block starting M6. M5 personalization follows M6 and M4 acceptance.
+See [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md).
 
 ## Verification
 

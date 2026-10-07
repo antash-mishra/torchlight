@@ -12,11 +12,17 @@ IPC, asynchronous catalog/history writing, live inotify updates, reconciliation,
 file-id resolution and status. Startup serves the saved catalog before scanning.
 M3 adds installed application/settings search, the GTK4 popup and service integration, following the
 [GUI design](docs/m3-gui-design.md) and [interactive preview](docs/m3-gui-preview.html).
-Full index rebuild cost remains later performance work.
+Full index rebuild cost is tracked in the next performance milestone, M6.
 
-M4's [initial semantic foundation](docs/m4-implementation.md) provides a
-swappable embedder interface, float cosine reference and exact-priority RRF.
-Model selection, background embeddings and two-phase daemon queries are pending.
+M4's [functional opt-in semantic path](docs/m4-implementation.md) provides native
+Potion, float/int8 retrieval, background embedding caches and two-phase daemon
+queries with exact-priority RRF. Large-catalog latency and broader relevance
+acceptance remain open; personalization is planned for M5.
+
+Next is **M6: worker separation → Frizbee SIMD search → incremental indexing**,
+as three ordered steps in one milestone. Frizbee is selected for integration.
+M5 follows M6 and the remaining M4 acceptance work. See [the plan](PLAN.md) and
+[milestone status](docs/milestone-status.md).
 
 ## Build and use
 

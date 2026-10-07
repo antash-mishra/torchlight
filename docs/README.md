@@ -29,7 +29,12 @@ what is done and what remains in plain language. M3 Part 2 search quality is
 implemented. M4 implements opt-in native Potion, float/int8 retrieval, versioned background
 caching and coherent two-phase RRF. Large-catalog latency and broader model
 acceptance remain open. See [M4 implementation](m4-implementation.md)
-and [ADR 0022](adr/0022-m4-semantic-foundation.md). M5 recommendations follow M4.
+and [ADR 0022](adr/0022-m4-semantic-foundation.md). M6 executes next: worker
+separation, then the selected Frizbee SIMD matcher, then incremental indexing,
+as three steps in one milestone. M5 recommendations follow M6 and remaining M4
+acceptance work. See [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md)
+and the [M6 working plan](m6-plan.md), which has the target thread/flow diagram,
+the measured baseline and per-step exit criteria.
 [Part 2 verification](m3-part2-completion.md) records indexed prefix edits,
 explicit metadata fields, optimal fuzzy alignment, held-out/BM25 comparisons,
 latency and RSS. The [search quality review](search-quality.md) explains the
@@ -39,8 +44,8 @@ original Chrome/prefix-typo failures and future M4 model selection.
 staged sequence, implemented for Part 2 in [ADR 0020](adr/0020-m3-part2-search-quality.md).
 
 M3 proceeded with the user's acceptance of roughly 6 ms p95 at 500k paths.
-The original 5 ms target and full-engine rebuild cost remain later optimization
-work. The [readiness report](m3-readiness.md) records pre-M3 verification
+The original 5 ms lexical target and full-engine rebuild cost are now tracked in
+M6. The [readiness report](m3-readiness.md) records pre-M3 verification
 and measurements. Query-contract fixes and exact resident filtering
 are described in [ADR 0013](adr/0013-query-contracts-and-resident-filters.md).
 
@@ -146,6 +151,9 @@ the root [README](../README.md) for commands, and
   keeps large two-phase responses bounded, preserves status and rejects blocking model streams.
 - [0025: M4 cache staging retries](adr/0025-m4-cache-staging-retries.md)
   retains partial embedding builds when cache transactions cannot begin during reconciliation.
+- [0026: search workers, SIMD and incremental indexing](adr/0026-search-workers-simd-and-incremental-indexing.md)
+  appends one M6 milestone with worker separation, selected Frizbee integration
+  and incremental indexing in that order; M6 executes before M5.
 
 - [0027: Quiet System native popup](adr/0027-quiet-system-native-popup.md)
   implements the accepted minimal layout, shaped underscore cursor and typing light without shaders.

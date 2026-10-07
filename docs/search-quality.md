@@ -7,8 +7,11 @@ personal recommendations in [the plan](../PLAN.md) and
 [ADR 0019](adr/0019-search-quality-before-semantic-personalization.md). M3 Part 2 is now implemented in
 [ADR 0020](adr/0020-m3-part2-search-quality.md);
 [its verification](m3-part2-completion.md) records held-out relevance and latency
-tradeoffs. M4's [initial C foundation](m4-implementation.md) is implemented;
-trained-model choice, production retrieval and M5 still require evaluation.
+tradeoffs. M4's [functional opt-in semantic path](m4-implementation.md) is
+implemented; broader model/relevance and large-catalog latency acceptance remain
+open. The 2026-10-07 roadmap update makes M6 the next priority: worker separation,
+selected Frizbee SIMD integration, then incremental indexing. M5 follows M6 and
+remaining M4 acceptance work. See [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md).
 
 For Torchlight, the recommended direction is hybrid retrieval: indexed name
 search with better autocomplete and ranking, plus optional local semantic
