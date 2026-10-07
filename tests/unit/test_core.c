@@ -20,6 +20,11 @@ static void vectors(void) {
     CHECK(((const size_t *)vec_const_data(vec))[1002] == 9);
     vec_shrink(vec);
     CHECK(vec_count(vec) == 1003);
+    vec_truncate(vec, 2000); /* not smaller: unchanged */
+    CHECK(vec_count(vec) == 1003);
+    vec_truncate(vec, 2);
+    CHECK(vec_count(vec) == 2 && ((const size_t *)vec_const_data(vec))[1] == 1);
+    vec_truncate(NULL, 0);
     vec_clear(vec);
     CHECK(vec_count(vec) == 0 && vec_reserve(vec, 5000) == TL_OK);
     vec_destroy(vec);

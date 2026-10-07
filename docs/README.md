@@ -34,7 +34,11 @@ separation, then the selected Frizbee SIMD matcher, then incremental indexing,
 as three steps in one milestone. M5 recommendations follow M6 and remaining M4
 acceptance work. See [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md)
 and the [M6 working plan](m6-plan.md), which has the target thread/flow diagram,
-the measured baseline and per-step exit criteria.
+the measured baseline and per-step exit criteria. All three M6 steps are now
+implemented: the search thread ([ADR 0028](adr/0028-m6-search-thread-and-persistence-owner.md)),
+Frizbee scoring with cross-query word caches ([ADR 0029](adr/0029-m6-frizbee-scoring-and-candidate-volume.md))
+and incremental indexing with scoped rescans, delta segments and incremental
+semantic stages ([ADR 0030](adr/0030-m6-incremental-indexing.md)).
 [Part 2 verification](m3-part2-completion.md) records indexed prefix edits,
 explicit metadata fields, optimal fuzzy alignment, held-out/BM25 comparisons,
 latency and RSS. The [search quality review](search-quality.md) explains the
@@ -98,6 +102,7 @@ the root [README](../README.md) for commands, and
 | ipc | Socket protocol | [ipc](modules/ipc/README.md) |
 | service | Resident daemon | [daemon](modules/daemon/README.md) |
 | service | Background writer/history | [writer](modules/writer/README.md) |
+| service | Incremental delta publication | [delta](modules/delta/README.md) |
 | bin | CLI client | [cli](modules/cli/README.md) |
 | ui | GTK4 popup & optional TUI | [ui](modules/ui/README.md) |
 
@@ -160,6 +165,12 @@ the root [README](../README.md) for commands, and
 - [0028: M6 step 1, search thread and persistence owner](adr/0028-m6-search-thread-and-persistence-owner.md)
   moves search off the IPC thread with per-client queues and cancellation, and
   splits the writer into indexing and persistence threads.
+- [0029: M6 step 2, Frizbee scoring and candidate volume](adr/0029-m6-frizbee-scoring-and-candidate-volume.md)
+  vendors Frizbee, scores on the portable scale, and reuses word evidence across
+  queries; typing p95 at 500k drops below 5 ms with unchanged recall.
+- [0030: M6 step 3, incremental indexing](adr/0030-m6-incremental-indexing.md)
+  rescans only event directories, publishes deltas over a shared base with
+  compaction, and reuses semantic vectors for unchanged rows.
 
 ## Keeping docs current
 

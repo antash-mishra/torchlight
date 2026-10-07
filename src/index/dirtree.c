@@ -10,6 +10,7 @@ enum { DIRTREE_SYMBOLS_PER_BYTE = 4 };
 struct node {
     uint32_t parent, raw_offset, raw_length, name_offset, name_length, path_length;
     uint64_t name_mask, path_mask;
+    bool ascii; /* raw name bytes are all ASCII, one symbol per byte */
 };
 struct tl_dirtree {
     tl_vec *nodes, *raw, *symbols, *boundaries, *scratch_symbols, *scratch_boundaries,
@@ -112,6 +113,9 @@ static tl_status store_name(tl_dirtree *tree, const char *name, size_t length, s
     node->name_offset = (uint32_t)offset;
     node->name_length = (uint32_t)text.length;
     node->name_mask = text.mask;
+    node->ascii = text.length == length;
+    for (size_t i = 0; i < length && node->ascii; i++)
+        node->ascii = (unsigned char)name[i] < 0x80;
     return status;
 }
 static tl_status add_node(tl_dirtree *tree, uint32_t parent, const char *name, size_t length,
@@ -220,6 +224,12 @@ tl_text dirtree_name(const tl_dirtree *tree, uint32_t node) {
     text.length = found->name_length;
     text.mask = found->name_mask;
     return text;
+}
+const char *dirtree_ascii_name(const tl_dirtree *tree, uint32_t node) {
+    const struct node *found = find(tree, node);
+    if (found == NULL || found->name_length == 0 || !found->ascii)
+        return NULL;
+    return (const char *)vec_const_data(tree->raw) + found->raw_offset;
 }
 uint64_t dirtree_path_mask(const tl_dirtree *tree, uint32_t node) {
     const struct node *found = find(tree, node);

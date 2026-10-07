@@ -1,6 +1,6 @@
 # watch
 
-> **Status:** Implemented (M2): bounded inotify collection and rename pairing
+> **Status:** Implemented (M2; M6 created flag): bounded inotify collection and rename pairing
 > **Source:** `src/fs/watch.c` · **Header:** `include/torchlight/watch.h`
 > **Tests:** `tests/unit/test_watch.c`, `tests/unit/test_writer.c`, `tests/test_daemon.py`
 
@@ -33,3 +33,11 @@ Writer factory-failure tests cover complete instance exhaustion and recovery.
 
 See [writer](../writer/README.md), [crawl](../crawl/README.md) and
 [ADR 0011](../../adr/0011-m2-daemon-writer-and-reconciliation.md).
+
+## Created entries (M6 step 3)
+
+Events now carry `created`: set for `IN_CREATE` and for `IN_MOVED_TO` without
+a paired source (moved in from an unwatched place). The writer rescans a
+created directory recursively, because nobody has seen its subtree; other
+events only rescan the parent's children. Tests check a fresh file, a paired
+rename (not created) and a directory moved in from outside.

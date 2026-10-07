@@ -1,7 +1,8 @@
 # writer
 
-> **Status:** Implemented (M6 step 1): indexing and persistence threads, private
-> scan batches, builds from committed rows; M2/M3 reconciliation contracts retained
+> **Status:** Implemented (M6 steps 1 and 3): indexing and persistence threads, private
+> scan batches, scoped rescans of event directories, delta publication with compaction;
+> M2/M3 reconciliation contracts retained
 > **Source:** `src/service/writer.c` · **Header:** `include/torchlight/writer.h`
 > **Tests:** `tests/unit/test_writer.c`, `tests/unit/test_writer_fallback.c`, `tests/test_daemon.py`
 
@@ -48,12 +49,10 @@ sets recovering/degraded status and gates later catalog batches on committed rel
 The old view remains searchable. No-change scans roll back temporary bookkeeping
 and avoid a rebuild. Snapshot exhaustion retries after reclamation.
 
-The initial M2 strategy scans configured roots and rebuilds complete engines.
 Entry count and aggregate path bytes bound each catalog (defaults 500k/128 MiB);
-two retained views, one staged candidate, 65,536 watch slots and 256 rename pairs
-bound outstanding work. Staging starts with no retained retired view. These are
-structural limits, not a hard RSS budget. Shared blocks/incremental rebuilds are
-future performance work; large updates incur full build cost.
+two retained views, one staged candidate, 65,536 watch slots, 256 rename pairs
+and 1024 event scopes bound outstanding work. Staging starts with no retained
+retired view. These are structural limits, not a hard RSS budget.
 
 The FIFO history ring holds 256 copied query/open/clear events. Search ids are
 assigned in memory by the daemon. Accepted searches precede their opens, retries
@@ -85,3 +84,41 @@ uses store_desktop_open for desktop launches and store_open_event for files.
 No-history, retention, deduplication, clear and diagnostic counters cover both.
 These writes do not change catalog_gen. Immutable directory flags are loaded
 alongside file paths for presentation, with no query-time filesystem lookup.
+
+## Scoped reconciliation (M6 step 3a)
+
+Watch events become directory **scopes** instead of a bare dirty flag: the
+parent of a changed entry (and of a rename's source) is rescanned for its
+direct children, and a directory that appeared (`created`) is rescanned
+recursively. Before the pass, scopes nested in a recursive scope are dropped and
+every scope must be indexed by some root (`crawl_covers`). `crawl_scope` fills
+the batch and installs watches for new directories into the live watcher; the
+persistence thread applies renames and upserts, then `store_prune_children` or
+`store_prune_tree` per scope that could be listed. A scope that cannot be
+listed (deleted meanwhile) is not pruned; its parent's event accounts for it.
+
+A full scan of every root still runs at startup, for overflow, explicit
+requests, periodic repair, any failure, more than 1024 scopes, a missing
+watcher and any scope above a root (the root itself changed). Events arriving
+during a pass start a fresh scope set. `scoped_reconciliations` counts scoped
+passes. A daemon test runs with periodic repair disabled through creations,
+deletions, a tree moved in from outside the roots, a paired directory rename,
+a deleted subtree and a hidden directory created next to a visible one (a
+use-after-free regression in scope resolution).
+
+## Delta publication (M6 step 3b)
+
+The persistence connection tracks the files rows each catalog transaction
+touches (`store_track_changes`, up to 131072). After a commit it copies them
+for the indexing thread, which publishes through the [delta](../delta/README.md)
+module: it loads the committed rows, merges them into the kept delta entries,
+builds a small engine that references the base and derives the next snapshot,
+retiring the touched ids from the base. A full rebuild compacts instead when the
+delta would exceed max(4096, base/32) entries (`tl_writer_options.delta_entries`
+lowers the minimum for tests), when tracking overflowed, when registered roots
+changed or when the active view is not the writer's last publication. Startup,
+reload after failed publication and compaction use full rebuilds.
+`delta_publications` and `full_builds` count both paths. At 500k entries, 100
+touched files publish in about 110 ms (12 ms of work after the 100 ms coalescing
+window) with RSS growing about 1%, against 4 s and a doubled engine before. See
+[ADR 0030](../../adr/0030-m6-incremental-indexing.md).

@@ -5,9 +5,11 @@
 #define PARALLEL_MAX_PARTICIPANTS 8
 typedef struct tl_parallel tl_parallel;
 /** Process disjoint [begin,end) indexes; context is borrowed until the dispatch
- * returns. Output elements in a range may be independently written. Return
+ * returns. participant is 0 for the calling thread and 1..participants-1 for
+ * workers, stable for a pool's lifetime, so callers can keep per-thread
+ * scratch. Output elements in a range may be independently written. Return
  * TL_OK or an error propagated after every callback has finished. */
-typedef tl_status (*tl_parallel_work)(void *context, size_t begin, size_t end);
+typedef tl_status (*tl_parallel_work)(void *context, size_t participant, size_t begin, size_t end);
 /** Create an owned pool with 1..PARALLEL_MAX_PARTICIPANTS participants including
  * the caller. Workers start here and sleep between runs. out NULL on failure;
  * TL_INVALID/NOMEM/IO/OK. Uses the existing pthread dependency. */

@@ -11,10 +11,16 @@
 #define SEMANTIC_STATUS_BYTES 1024U
 #define SEMANTIC_RESPONSE_BYTES (IPC_RESPONSE_BYTES - SEMANTIC_STATUS_BYTES)
 typedef struct tl_semantic tl_semantic;
+/* reused counts the rows of the current or last stage that were not embedded
+ * (vectors copied from, or rows shared with, the previous snapshot).
+ * derived_stages and full_stages count publications since creation: a derived
+ * snapshot shares a full base's rows and holds only changed rows. entries and
+ * vector_bytes cover both segments of the published snapshot. */
 typedef struct {
     bool available, building;
     uint64_t emb_gen, catalog_gen, desktop_gen;
-    size_t entries, vector_bytes, processed, total;
+    size_t entries, vector_bytes, processed, total, reused;
+    size_t derived_stages, full_stages;
     tl_status last_error;
 } tl_semantic_stats;
 typedef struct {

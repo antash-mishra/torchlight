@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "frizbee"
+description = "Fast typo-resistant fuzzy matching via SIMD smith waterman, similar algorithm to FZF"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+keywords = ["fuzzy", "matching", "search", "simd", "smith-waterman"]
+classifiers = [
+  "Programming Language :: Rust",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Topic :: Text Processing",
+]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/saghen/frizbee"
+
+[tool.maturin]
+module-name = "frizbee"

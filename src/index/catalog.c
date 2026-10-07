@@ -1,16 +1,47 @@
-/* Immutable resident catalog ownership. The lifecycle mutex protects pinning,
- * publication and retirement; queries use exclusive preallocated workspaces. */
+/* Immutable resident catalog ownership. A snapshot is a base lexical engine,
+ * shared and reference-counted across the snapshots derived from it, plus an
+ * optional small delta engine of entries changed since the base and a
+ * tombstone bitmap of base positions they replace or remove. The lifecycle
+ * mutex protects pinning, publication, retirement and workspace leases;
+ * queries use exclusive preallocated workspaces. */
 #include "torchlight/catalog.h"
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdlib.h>
+#include <string.h>
 
-struct tl_catalog_reader {
-    tl_catalog_snapshot *snapshot;
+/* Live-entry map entries above this bit index the delta engine. */
+#define CATALOG_DELTA_BIT UINT32_C(0x80000000)
+
+/* A base engine and its reader workspaces. The workspaces outlive individual
+ * snapshots, so their word caches stay warm across small updates. */
+struct base_workspace {
     tl_lexical_workspace *workspace;
     bool leased;
 };
-struct tl_catalog_snapshot {
+struct catalog_base {
     tl_lexical *engine;
+    uint64_t catalog_gen; /* when the base engine was built */
+    struct base_workspace *workspaces;
+    size_t capacity;
+    atomic_size_t references;
+};
+struct tl_catalog_reader {
+    tl_catalog_snapshot *snapshot;
+    tl_lexical_workspace *delta_workspace; /* NULL without a delta */
+    size_t base_workspace;                 /* leased base workspace while leased */
+    tl_result *merge;                      /* 2 * LEXICAL_MAX_RESULTS, delta snapshots only */
+    bool leased;
+};
+struct tl_catalog_snapshot {
+    struct catalog_base *base;
+    tl_lexical *delta;
+    uint64_t *tombstones; /* bit per base position, NULL without tombstones */
+    size_t tombstone_count;
+    /* Live entries in ascending id order (base position, or delta position
+     * with CATALOG_DELTA_BIT), NULL for a plain base snapshot. */
+    uint32_t *live;
+    size_t live_count;
     tl_catalog_reader *readers;
     tl_catalog *owner;
     tl_catalog_snapshot *next;
@@ -51,14 +82,69 @@ tl_status catalog_create(size_t snapshot_capacity, tl_catalog **out) {
     *out = catalog;
     return TL_OK;
 }
+/* ---- bases ---------------------------------------------------------------- */
+static void base_release(struct catalog_base *base) {
+    if (base == NULL || atomic_fetch_sub(&base->references, 1) != 1)
+        return;
+    for (size_t i = 0; i < base->capacity; i++)
+        lexical_workspace_destroy(base->workspaces[i].workspace);
+    free(base->workspaces);
+    lexical_destroy(base->engine);
+    free(base);
+}
+static tl_status base_create(tl_lexical *engine, size_t capacity, struct catalog_base **out) {
+    struct catalog_base *base = calloc(1, sizeof(*base));
+    if (base == NULL)
+        return TL_NOMEM;
+    atomic_init(&base->references, 1);
+    base->workspaces = calloc(capacity, sizeof(struct base_workspace));
+    tl_status status = base->workspaces == NULL ? TL_NOMEM : TL_OK;
+    for (size_t i = 0; i < capacity && status == TL_OK; i++) {
+        status = lexical_workspace_create(engine, &base->workspaces[i].workspace);
+        base->capacity = i + 1;
+    }
+    if (status != TL_OK) {
+        base_release(base); /* engine stays with the caller */
+        return status;
+    }
+    base->engine = engine;
+    *out = base;
+    return TL_OK;
+}
+/* ---- snapshots ---------------------------------------------------------------- */
 void catalog_snapshot_destroy(tl_catalog_snapshot *snapshot) {
     if (snapshot == NULL)
         return;
-    for (size_t i = 0; i < snapshot->reader_capacity; i++)
-        lexical_workspace_destroy(snapshot->readers[i].workspace);
+    for (size_t i = 0; i < snapshot->reader_capacity; i++) {
+        lexical_workspace_destroy(snapshot->readers[i].delta_workspace);
+        free(snapshot->readers[i].merge);
+    }
     free(snapshot->readers);
-    lexical_destroy(snapshot->engine);
+    lexical_destroy(snapshot->delta);
+    free(snapshot->tombstones);
+    free(snapshot->live);
+    base_release(snapshot->base);
     free(snapshot);
+}
+/* Reader slots; a delta snapshot gives each its own delta workspace and the
+ * merge buffers that combine both segments without allocating per query. */
+static tl_status create_readers(tl_catalog_snapshot *snapshot, size_t capacity) {
+    snapshot->readers = calloc(capacity, sizeof(*snapshot->readers));
+    if (snapshot->readers == NULL)
+        return TL_NOMEM;
+    tl_status status = TL_OK;
+    for (size_t i = 0; i < capacity && status == TL_OK; i++) {
+        tl_catalog_reader *reader = &snapshot->readers[i];
+        reader->snapshot = snapshot;
+        snapshot->reader_capacity = i + 1;
+        if (snapshot->delta == NULL)
+            continue;
+        status = lexical_workspace_create(snapshot->delta, &reader->delta_workspace);
+        reader->merge = malloc(2 * LEXICAL_MAX_RESULTS * sizeof(tl_result));
+        if (status == TL_OK && reader->merge == NULL)
+            status = TL_NOMEM;
+    }
+    return status;
 }
 tl_status catalog_snapshot_create(tl_lexical **engine, uint64_t catalog_gen, size_t reader_capacity,
                                   tl_catalog_snapshot **out) {
@@ -71,23 +157,145 @@ tl_status catalog_snapshot_create(tl_lexical **engine, uint64_t catalog_gen, siz
     tl_catalog_snapshot *snapshot = calloc(1, sizeof(*snapshot));
     if (snapshot == NULL)
         return TL_NOMEM;
-    snapshot->readers = calloc(reader_capacity, sizeof(*snapshot->readers));
-    tl_status status = snapshot->readers == NULL ? TL_NOMEM : TL_OK;
-    for (size_t i = 0; i < reader_capacity && status == TL_OK; i++) {
-        snapshot->readers[i].snapshot = snapshot;
-        status = lexical_workspace_create(*engine, &snapshot->readers[i].workspace);
-        snapshot->reader_capacity = i + 1;
-    }
+    tl_status status = base_create(*engine, reader_capacity, &snapshot->base);
+    if (status == TL_OK)
+        status = create_readers(snapshot, reader_capacity);
     if (status != TL_OK) {
+        if (snapshot->base != NULL)
+            snapshot->base->engine = NULL; /* ownership returns to the caller */
         catalog_snapshot_destroy(snapshot);
         return status;
     }
-    snapshot->engine = *engine;
     snapshot->catalog_gen = catalog_gen;
+    snapshot->base->catalog_gen = catalog_gen;
     *engine = NULL;
     *out = snapshot;
     return TL_OK;
 }
+static bool tombstoned(const tl_catalog_snapshot *snapshot, size_t position) {
+    return snapshot->tombstones != NULL &&
+           ((snapshot->tombstones[position / 64] >> (position % 64)) & 1U);
+}
+/* Copy the source's tombstones and add the base positions of retired ids. */
+static tl_status build_tombstones(tl_catalog_snapshot *snapshot, const tl_catalog_snapshot *source,
+                                  const uint64_t *retired, size_t retired_count) {
+    const tl_lexical *engine = snapshot->base->engine;
+    size_t words = lexical_count(engine) / 64 + 1;
+    snapshot->tombstones = calloc(words, sizeof(uint64_t));
+    if (snapshot->tombstones == NULL)
+        return TL_NOMEM;
+    if (source->tombstones != NULL)
+        memcpy(snapshot->tombstones, source->tombstones, words * sizeof(uint64_t));
+    snapshot->tombstone_count = source->tombstone_count;
+    for (size_t i = 0; i < retired_count; i++) {
+        size_t position = 0;
+        if (lexical_slot(engine, retired[i], &position) != TL_OK || tombstoned(snapshot, position))
+            continue;
+        snapshot->tombstones[position / 64] |= UINT64_C(1) << (position % 64);
+        snapshot->tombstone_count++;
+    }
+    return TL_OK;
+}
+/* Merge live base positions and delta positions into one id-ordered map. */
+static tl_status build_live(tl_catalog_snapshot *snapshot) {
+    const tl_lexical *engine = snapshot->base->engine;
+    size_t base = lexical_count(engine), delta = lexical_count(snapshot->delta);
+    if (base >= CATALOG_DELTA_BIT || delta >= CATALOG_DELTA_BIT)
+        return TL_LIMIT;
+    snapshot->live = malloc((base + delta + 1) * sizeof(uint32_t));
+    if (snapshot->live == NULL)
+        return TL_NOMEM;
+    size_t b = 0, d = 0, count = 0;
+    while (b < base || d < delta) {
+        uint64_t base_id = b < base ? lexical_id(engine, b) : UINT64_MAX;
+        uint64_t delta_id = d < delta ? lexical_id(snapshot->delta, d) : UINT64_MAX;
+        /* A delta entry supersedes a base entry with its id even untombstoned. */
+        if (b < base && (tombstoned(snapshot, b) || base_id == delta_id)) {
+            b++;
+            continue;
+        }
+        bool from_base = b < base && base_id < delta_id;
+        snapshot->live[count++] = from_base ? (uint32_t)b++ : (uint32_t)d++ | CATALOG_DELTA_BIT;
+    }
+    snapshot->live_count = count;
+    return TL_OK;
+}
+tl_status catalog_snapshot_derive(tl_catalog_snapshot *source, tl_lexical **delta,
+                                  const uint64_t *retired, size_t retired_count,
+                                  uint64_t catalog_gen, size_t reader_capacity,
+                                  tl_catalog_snapshot **out) {
+    if (out == NULL)
+        return TL_INVALID;
+    *out = NULL;
+    if (source == NULL || delta == NULL || (retired == NULL && retired_count != 0) ||
+        reader_capacity == 0 || reader_capacity > CATALOG_MAX_READERS)
+        return TL_INVALID;
+    tl_catalog_snapshot *snapshot = calloc(1, sizeof(*snapshot));
+    if (snapshot == NULL)
+        return TL_NOMEM;
+    snapshot->base = source->base;
+    atomic_fetch_add(&snapshot->base->references, 1);
+    snapshot->delta = *delta;
+    tl_status status = build_tombstones(snapshot, source, retired, retired_count);
+    if (status == TL_OK)
+        status = build_live(snapshot);
+    if (status == TL_OK)
+        status = create_readers(snapshot, reader_capacity);
+    if (status != TL_OK) {
+        snapshot->delta = NULL; /* ownership returns to the caller */
+        catalog_snapshot_destroy(snapshot);
+        return status;
+    }
+    snapshot->catalog_gen = catalog_gen;
+    *delta = NULL;
+    *out = snapshot;
+    return TL_OK;
+}
+const tl_lexical *catalog_snapshot_base(const tl_catalog_snapshot *snapshot) {
+    return snapshot == NULL ? NULL : snapshot->base->engine;
+}
+size_t catalog_snapshot_tombstones(const tl_catalog_snapshot *snapshot) {
+    return snapshot == NULL ? 0 : snapshot->tombstone_count;
+}
+uint64_t catalog_snapshot_base_gen(const tl_catalog_snapshot *snapshot) {
+    return snapshot == NULL ? 0 : snapshot->base->catalog_gen;
+}
+tl_status catalog_snapshot_changes(const tl_catalog_snapshot *snapshot,
+                                   tl_status (*report)(void *context, uint64_t id), void *context) {
+    if (snapshot == NULL || report == NULL)
+        return TL_INVALID;
+    tl_status status = TL_OK;
+    for (size_t i = 0; i < lexical_count(snapshot->delta) && status == TL_OK; i++)
+        status = report(context, lexical_id(snapshot->delta, i));
+    size_t base = lexical_count(snapshot->base->engine);
+    for (size_t word = 0; snapshot->tombstones != NULL && word * 64 < base && status == TL_OK;
+         word++) {
+        /* Skip empty bitmap words: tombstones are few. */
+        for (uint64_t bits = snapshot->tombstones[word]; bits != 0 && status == TL_OK;
+             bits &= bits - 1) {
+            size_t position = word * 64 + (size_t)__builtin_ctzll(bits);
+            status = report(context, lexical_id(snapshot->base->engine, position));
+        }
+    }
+    return status;
+}
+tl_status catalog_snapshot_find(const tl_catalog_snapshot *snapshot, uint64_t id, const char **path,
+                                bool *is_dir, const char **context) {
+    if (snapshot == NULL || path == NULL || is_dir == NULL || context == NULL)
+        return TL_INVALID;
+    const tl_lexical *engine = snapshot->delta;
+    size_t position = 0;
+    if (engine == NULL || lexical_slot(engine, id, &position) != TL_OK) {
+        engine = snapshot->base->engine;
+        if (lexical_slot(engine, id, &position) != TL_OK || tombstoned(snapshot, position))
+            return TL_STATE;
+    }
+    uint64_t found = 0;
+    tl_status status = lexical_entry(engine, position, &found, path, is_dir);
+    *context = status == TL_OK ? lexical_context_path(engine, position) : NULL;
+    return status;
+}
+/* ---- publication and leases -------------------------------------------------- */
 tl_status catalog_publish(tl_catalog *catalog, tl_catalog_snapshot **snapshot) {
     if (catalog == NULL || snapshot == NULL || *snapshot == NULL)
         return TL_INVALID;
@@ -111,6 +319,32 @@ tl_status catalog_publish(tl_catalog *catalog, tl_catalog_snapshot **snapshot) {
     unlock_catalog(catalog);
     return status;
 }
+static tl_lexical_workspace *base_workspace(const tl_catalog_reader *reader) {
+    return reader->snapshot->base->workspaces[reader->base_workspace].workspace;
+}
+/* Under the lifecycle lock: a free reader slot and a free base workspace. */
+static tl_catalog_reader *lease(tl_catalog_snapshot *snapshot) {
+    struct catalog_base *base = snapshot->base;
+    size_t workspace = 0;
+    while (workspace < base->capacity && base->workspaces[workspace].leased)
+        workspace++;
+    if (workspace == base->capacity)
+        return NULL;
+    for (size_t i = 0; i < snapshot->reader_capacity; i++) {
+        tl_catalog_reader *reader = &snapshot->readers[i];
+        if (reader->leased)
+            continue;
+        reader->leased = true;
+        reader->base_workspace = workspace;
+        base->workspaces[workspace].leased = true;
+        /* Tombstones belong to this snapshot; the shared workspace takes them
+         * for the duration of the lease. */
+        lexical_workspace_exclude(base->workspaces[workspace].workspace, snapshot->tombstones);
+        snapshot->leased++;
+        return reader;
+    }
+    return NULL;
+}
 tl_status catalog_acquire(tl_catalog *catalog, tl_catalog_reader **out) {
     if (out == NULL)
         return TL_INVALID;
@@ -120,17 +354,11 @@ tl_status catalog_acquire(tl_catalog *catalog, tl_catalog_reader **out) {
     lock_catalog(catalog);
     tl_catalog_snapshot *snapshot = catalog->active;
     tl_status status = snapshot == NULL ? TL_STATE : TL_LIMIT;
-    if (snapshot != NULL) {
-        for (size_t i = 0; i < snapshot->reader_capacity; i++) {
-            if (snapshot->readers[i].leased)
-                continue;
-            snapshot->readers[i].leased = true;
-            snapshot->leased++;
-            catalog->readers++;
-            *out = &snapshot->readers[i];
-            status = TL_OK;
-            break;
-        }
+    if (snapshot != NULL)
+        *out = lease(snapshot);
+    if (*out != NULL) {
+        catalog->readers++;
+        status = TL_OK;
     }
     unlock_catalog(catalog);
     return status;
@@ -138,16 +366,41 @@ tl_status catalog_acquire(tl_catalog *catalog, tl_catalog_reader **out) {
 void catalog_release(tl_catalog_reader *reader) {
     if (reader == NULL)
         return;
-    tl_catalog *catalog = reader->snapshot->owner;
+    tl_catalog_snapshot *snapshot = reader->snapshot;
+    tl_catalog *catalog = snapshot->owner;
     lock_catalog(catalog);
     reader->leased = false;
-    reader->snapshot->leased--;
+    /* The shared workspace must not keep this lease's flag or tombstones. */
+    lexical_workspace_cancel(base_workspace(reader), NULL);
+    lexical_workspace_exclude(base_workspace(reader), NULL);
+    lexical_workspace_cancel(reader->delta_workspace, NULL);
+    snapshot->base->workspaces[reader->base_workspace].leased = false;
+    snapshot->leased--;
     catalog->readers--;
     unlock_catalog(catalog);
 }
 void catalog_reader_cancel(tl_catalog_reader *reader, const atomic_bool *flag) {
-    if (reader != NULL && reader->leased)
-        lexical_workspace_cancel(reader->workspace, flag);
+    if (reader == NULL || !reader->leased)
+        return;
+    lexical_workspace_cancel(base_workspace(reader), flag);
+    lexical_workspace_cancel(reader->delta_workspace, flag);
+}
+/* ---- queries ------------------------------------------------------------------ */
+/* The engines' shared total order: score, then raw path bytes, then id. */
+static bool before(const tl_result *a, const tl_result *b) {
+    if (a->score != b->score)
+        return a->score > b->score;
+    int order = strcmp(a->path, b->path);
+    return order != 0 ? order < 0 : a->id < b->id;
+}
+/* Merge two ordered result lists into out (capacity), returning the count.
+ * Each list holds its segment's best results, so the merged head is exact. */
+static size_t merge_results(const tl_result *a, size_t na, const tl_result *b, size_t nb,
+                            tl_result *out, size_t capacity) {
+    size_t i = 0, j = 0, count = 0;
+    while (count < capacity && (i < na || j < nb))
+        out[count++] = j == nb || (i < na && before(&a[i], &b[j])) ? a[i++] : b[j++];
+    return count;
 }
 tl_status catalog_query(tl_catalog_reader *reader, const char *query, tl_result *results,
                         size_t capacity, size_t *out_count) {
@@ -156,8 +409,23 @@ tl_status catalog_query(tl_catalog_reader *reader, const char *query, tl_result 
     *out_count = 0;
     if (reader == NULL || !reader->leased)
         return TL_INVALID;
-    return lexical_query(reader->snapshot->engine, reader->workspace, query, results, capacity,
-                         out_count);
+    const tl_catalog_snapshot *snapshot = reader->snapshot;
+    size_t base_count = 0, delta_count = 0;
+    tl_status status = lexical_query(snapshot->base->engine, base_workspace(reader), query, results,
+                                     capacity, &base_count);
+    if (status != TL_OK || snapshot->delta == NULL) {
+        *out_count = status == TL_OK ? base_count : 0;
+        return status;
+    }
+    tl_result *delta = reader->merge, *merged = reader->merge + LEXICAL_MAX_RESULTS;
+    status = lexical_query(snapshot->delta, reader->delta_workspace, query, delta, capacity,
+                           &delta_count);
+    if (status != TL_OK)
+        return status;
+    size_t count = merge_results(results, base_count, delta, delta_count, merged, capacity);
+    memcpy(results, merged, count * sizeof(tl_result));
+    *out_count = count;
+    return TL_OK;
 }
 tl_status catalog_resolve(const tl_catalog_reader *reader, uint64_t id, const char **out) {
     if (out == NULL)
@@ -165,11 +433,31 @@ tl_status catalog_resolve(const tl_catalog_reader *reader, uint64_t id, const ch
     *out = NULL;
     if (reader == NULL || !reader->leased)
         return TL_INVALID;
-    return lexical_resolve(reader->snapshot->engine, id, out);
+    const tl_catalog_snapshot *snapshot = reader->snapshot;
+    if (snapshot->delta != NULL && lexical_resolve(snapshot->delta, id, out) == TL_OK)
+        return TL_OK;
+    size_t position = 0;
+    tl_status status = lexical_slot(snapshot->base->engine, id, &position);
+    if (status == TL_OK && tombstoned(snapshot, position))
+        return TL_STATE;
+    return status == TL_OK ? lexical_resolve(snapshot->base->engine, id, out) : status;
 }
 uint64_t catalog_reader_gen(const tl_catalog_reader *reader) {
     return reader == NULL ? 0 : reader->snapshot->catalog_gen;
 }
+bool catalog_is_dir(const tl_catalog_reader *reader, uint64_t id) {
+    if (reader == NULL || !reader->leased)
+        return false;
+    const tl_catalog_snapshot *snapshot = reader->snapshot;
+    size_t position = 0;
+    if (snapshot->delta != NULL && lexical_slot(snapshot->delta, id, &position) == TL_OK)
+        return lexical_is_dir(snapshot->delta, id);
+    if (lexical_slot(snapshot->base->engine, id, &position) != TL_OK ||
+        tombstoned(snapshot, position))
+        return false;
+    return lexical_is_dir(snapshot->base->engine, id);
+}
+/* ---- retirement and statistics ------------------------------------------------ */
 void catalog_reclaim(tl_catalog *catalog) {
     if (catalog == NULL)
         return;
@@ -198,6 +486,10 @@ void catalog_reclaim(tl_catalog *catalog) {
         garbage = next;
     }
 }
+static size_t live_entries(const tl_catalog_snapshot *snapshot) {
+    return lexical_count(snapshot->base->engine) - snapshot->tombstone_count +
+           lexical_count(snapshot->delta);
+}
 tl_status catalog_stats(tl_catalog *catalog, tl_catalog_stats *out) {
     if (catalog == NULL || out == NULL)
         return TL_INVALID;
@@ -206,7 +498,7 @@ tl_status catalog_stats(tl_catalog *catalog, tl_catalog_stats *out) {
     if (catalog->active != NULL) {
         out->available = true;
         out->catalog_gen = catalog->active->catalog_gen;
-        out->entries = lexical_count(catalog->active->engine);
+        out->entries = live_entries(catalog->active);
     }
     unlock_catalog(catalog);
     return TL_OK;
@@ -223,10 +515,7 @@ tl_status catalog_destroy(tl_catalog *catalog) {
     free(catalog);
     return TL_OK;
 }
-
-bool catalog_is_dir(const tl_catalog_reader *reader, uint64_t id) {
-    return reader != NULL && reader->leased && lexical_is_dir(reader->snapshot->engine, id);
-}
+/* ---- metadata pins -------------------------------------------------------------- */
 tl_status catalog_pin(tl_catalog *catalog, tl_catalog_snapshot **out) {
     if (catalog == NULL || out == NULL)
         return TL_INVALID;
@@ -251,15 +540,35 @@ uint64_t catalog_snapshot_gen(const tl_catalog_snapshot *snapshot) {
     return snapshot == NULL ? 0 : snapshot->catalog_gen;
 }
 size_t catalog_snapshot_count(const tl_catalog_snapshot *snapshot) {
-    return snapshot == NULL ? 0 : lexical_count(snapshot->engine);
+    return snapshot == NULL ? 0 : live_entries(snapshot);
+}
+/* Resolve a live position to its segment engine and position there. */
+static bool locate(const tl_catalog_snapshot *snapshot, size_t position, const tl_lexical **engine,
+                   size_t *slot) {
+    if (snapshot->live == NULL) {
+        *engine = snapshot->base->engine;
+        *slot = position;
+        return position < lexical_count(*engine);
+    }
+    if (position >= snapshot->live_count)
+        return false;
+    uint32_t entry = snapshot->live[position];
+    *engine = (entry & CATALOG_DELTA_BIT) != 0 ? snapshot->delta : snapshot->base->engine;
+    *slot = entry & ~CATALOG_DELTA_BIT;
+    return true;
 }
 tl_status catalog_snapshot_entry(const tl_catalog_snapshot *snapshot, size_t position, uint64_t *id,
                                  const char **path, bool *is_dir) {
-    if (snapshot == NULL)
+    const tl_lexical *engine = NULL;
+    size_t slot = 0;
+    if (snapshot == NULL || !locate(snapshot, position, &engine, &slot))
         return TL_INVALID;
-    return lexical_entry(snapshot->engine, position, id, path, is_dir);
+    return lexical_entry(engine, slot, id, path, is_dir);
 }
-
 const char *catalog_snapshot_context(const tl_catalog_snapshot *snapshot, size_t position) {
-    return snapshot == NULL ? NULL : lexical_context_path(snapshot->engine, position);
+    const tl_lexical *engine = NULL;
+    size_t slot = 0;
+    if (snapshot == NULL || !locate(snapshot, position, &engine, &slot))
+        return NULL;
+    return lexical_context_path(engine, slot);
 }

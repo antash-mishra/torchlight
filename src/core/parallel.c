@@ -43,7 +43,7 @@ static tl_status work_range(tl_parallel *pool, size_t index) {
     size_t base = pool->count / pool->participants, extra = pool->count % pool->participants;
     size_t begin = index * base + (index < extra ? index : extra);
     size_t end = begin + base + (index < extra);
-    return begin == end ? TL_OK : pool->work(pool->context, begin, end);
+    return begin == end ? TL_OK : pool->work(pool->context, index, begin, end);
 }
 static void *worker_loop(void *context) {
     struct worker *worker = context;

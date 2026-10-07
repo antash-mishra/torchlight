@@ -1,0 +1,1876 @@
+{
+  "queries": [
+    {
+      "text": "tax paperwork",
+      "labels": {
+        "tax": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "tax",
+      "top10": [
+        "tax",
+        "invoice"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.9048311039805412,
+        0.9246589615941048
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "income tax return",
+      "labels": {
+        "tax": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "tax",
+      "top10": [
+        "tax",
+        "budget"
+      ],
+      "lexical_top10": [
+        "tax"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.29656291007995605,
+        0.3597112372517586
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "bill sent to client",
+      "labels": {
+        "invoice": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "invoice",
+      "top10": [
+        "invoice"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.2811755985021591,
+        0.3078398294746876
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "March invoice",
+      "labels": {
+        "invoice": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "invoice",
+      "top10": [
+        "invoice",
+        "meeting",
+        "tax"
+      ],
+      "lexical_top10": [
+        "invoice"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.2543977461755276,
+        0.30131684616208076
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "vehicle coverage document",
+      "labels": {
+        "insurance": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "insurance",
+      "top10": [
+        "insurance",
+        "pdf",
+        "passport",
+        "bank",
+        "invoice",
+        "editor"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.1879250630736351,
+        0.2689971588551998
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "car insurance policy",
+      "labels": {
+        "insurance": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "insurance",
+      "top10": [
+        "insurance"
+      ],
+      "lexical_top10": [
+        "insurance"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.20185206085443497,
+        0.24641910567879677
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "airplane ticket",
+      "labels": {
+        "flight": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "flight",
+      "top10": [
+        "flight",
+        "hotel",
+        "<unlabeled-directory>"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.22937729954719543,
+        0.2735583111643791
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "flight booking",
+      "labels": {
+        "flight": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "flight",
+      "top10": [
+        "flight",
+        "hotel",
+        "<unlabeled-directory>"
+      ],
+      "lexical_top10": [
+        "flight"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.2648988738656044,
+        0.3000060096383095
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "my job application CV",
+      "labels": {
+        "resume": 3,
+        "duplicate": 1
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "resume",
+      "top10": [
+        "resume",
+        "duplicate",
+        "contract",
+        "files",
+        "passport"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.23435289040207863,
+        0.2754298038780689
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "software engineer resume",
+      "labels": {
+        "resume": 3,
+        "duplicate": 1
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "resume",
+      "top10": [
+        "resume",
+        "duplicate",
+        "contract",
+        "<unlabeled-directory>",
+        "<unlabeled-directory>",
+        "<unlabeled-directory>",
+        "roadmap",
+        "exam"
+      ],
+      "lexical_top10": [
+        "resume"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.5,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 0.9173194127129571
+      },
+      "phase_ms": [
+        0.22196024656295776,
+        0.25703199207782745
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "class study notes",
+      "labels": {
+        "lecture": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "lecture",
+      "top10": [
+        "lecture",
+        "exam"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.11847401037812233,
+        0.14094309881329536
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "physics lecture",
+      "labels": {
+        "lecture": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "lecture",
+      "top10": [
+        "lecture",
+        "exam"
+      ],
+      "lexical_top10": [
+        "lecture"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.1466795802116394,
+        0.16913097351789474
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "ideas for meat free meals",
+      "labels": {
+        "recipe": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "recipe",
+      "top10": [
+        "unicode",
+        "recipe",
+        "<unlabeled-directory>"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 2,
+        "mrr": 0.5,
+        "top10_success": 1.0,
+        "ndcg10": 0.6309297535714575
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.10609487071633339,
+        0.14188885688781738
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "vegetarian dinner",
+      "labels": {
+        "recipe": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "recipe",
+      "top10": [
+        "recipe",
+        "unicode"
+      ],
+      "lexical_top10": [
+        "recipe"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.16527576372027397,
+        0.18764100968837738
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "notes from team discussion",
+      "labels": {
+        "meeting": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "meeting",
+      "top10": [
+        "lecture",
+        "editor"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.13512978330254555,
+        0.165645033121109
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "quarterly meeting",
+      "labels": {
+        "meeting": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "meeting",
+      "top10": [
+        "meeting",
+        "invoice",
+        "<unlabeled-directory>",
+        "tax",
+        "bank"
+      ],
+      "lexical_top10": [
+        "meeting"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.1837438903748989,
+        0.26442715898156166
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "browse the internet",
+      "labels": {
+        "browser": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "browser",
+      "top10": [
+        "network",
+        "browser"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 2,
+        "mrr": 0.5,
+        "top10_success": 1.0,
+        "ndcg10": 0.6309297535714575
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.11504581198096275,
+        0.14465861022472382
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "Firefox",
+      "labels": {
+        "browser": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "browser",
+      "top10": [
+        "browser",
+        "archive",
+        "log",
+        "<unlabeled-directory>"
+      ],
+      "lexical_top10": [
+        "browser"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.16623502597212791,
+        0.20875409245491028
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "open a PDF document",
+      "labels": {
+        "pdf": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "pdf",
+      "top10": [
+        "pdf",
+        "passport",
+        "duplicate",
+        "bank",
+        "invoice",
+        "tax",
+        "unicode",
+        "lecture",
+        "resume",
+        "exam"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.25796983391046524,
+        0.31604571267962456
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "Document Viewer",
+      "labels": {
+        "pdf": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "pdf",
+      "top10": [
+        "pdf",
+        "files",
+        "passport",
+        "display",
+        "editor",
+        "duplicate",
+        "invoice",
+        "bank"
+      ],
+      "lexical_top10": [
+        "pdf"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.13896124437451363,
+        0.1874021254479885
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "change monitor resolution",
+      "labels": {
+        "display": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "display",
+      "top10": [
+        "display",
+        "pdf"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.15209708362817764,
+        0.20264601334929466
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "Displays",
+      "labels": {
+        "display": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "display",
+      "top10": [
+        "display"
+      ],
+      "lexical_top10": [
+        "display"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.7168627344071865,
+        0.7461397908627987
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "listen to songs",
+      "labels": {
+        "audio": 3
+      },
+      "split": "tuning",
+      "class": "semantic",
+      "target_group": "audio",
+      "top10": [
+        "sound",
+        "music",
+        "<unlabeled-directory>",
+        "<unlabeled-directory>",
+        "audio"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 5,
+        "mrr": 0.2,
+        "top10_success": 1.0,
+        "ndcg10": 0.38685280723454163
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.24729222059249878,
+        0.3011212684214115
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "Rhythmbox",
+      "labels": {
+        "audio": 3
+      },
+      "split": "tuning",
+      "class": "name",
+      "target_group": "audio",
+      "top10": [
+        "audio"
+      ],
+      "lexical_top10": [
+        "audio"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.19766530022025108,
+        0.22397516295313835
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "plan my monthly spending",
+      "labels": {
+        "budget": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "budget",
+      "top10": [
+        "budget"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.16799895092844963,
+        0.19761081784963608
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "household budget",
+      "labels": {
+        "budget": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "budget",
+      "top10": [
+        "budget"
+      ],
+      "lexical_top10": [
+        "budget"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.17493776977062225,
+        0.20657293498516083
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "account transactions document",
+      "labels": {
+        "bank": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "bank",
+      "top10": [
+        "pdf",
+        "bank",
+        "invoice",
+        "passport"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 2,
+        "mrr": 0.5,
+        "top10_success": 1.0,
+        "ndcg10": 0.6309297535714575
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.2932758070528507,
+        0.3410419449210167
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "bank statement",
+      "labels": {
+        "bank": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "bank",
+      "top10": [
+        "bank",
+        "<unlabeled-directory>"
+      ],
+      "lexical_top10": [
+        "bank"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.22901594638824463,
+        0.4786709323525429
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "travel identity document",
+      "labels": {
+        "passport": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "passport",
+      "top10": [
+        "passport",
+        "<unlabeled-directory>",
+        "flight",
+        "pdf",
+        "hotel",
+        "bank",
+        "insurance"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.22667041048407555,
+        0.28269924223423004
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "passport scan",
+      "labels": {
+        "passport": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "passport",
+      "top10": [
+        "passport",
+        "pdf",
+        "<unlabeled-directory>",
+        "holiday"
+      ],
+      "lexical_top10": [
+        "passport"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.1875883899629116,
+        0.22328132763504982
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "place to stay on vacation",
+      "labels": {
+        "hotel": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "hotel",
+      "top10": [
+        "<unlabeled-directory>",
+        "hotel",
+        "holiday"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 2,
+        "mrr": 0.5,
+        "top10_success": 1.0,
+        "ndcg10": 0.6309297535714575
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.13938825577497482,
+        0.1797722652554512
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "hotel reservation",
+      "labels": {
+        "hotel": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "hotel",
+      "top10": [
+        "hotel",
+        "flight"
+      ],
+      "lexical_top10": [
+        "hotel"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.2035996876657009,
+        0.2443026751279831
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "agreement with employer",
+      "labels": {
+        "contract": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "contract",
+      "top10": [
+        "contract"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.1739831641316414,
+        0.2177921123802662
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "employment contract",
+      "labels": {
+        "contract": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "contract",
+      "top10": [
+        "contract",
+        "<unlabeled-directory>"
+      ],
+      "lexical_top10": [
+        "contract"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.447623897343874,
+        0.46993885189294815
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "when are my mathematics tests",
+      "labels": {
+        "exam": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "exam",
+      "top10": [
+        "exam",
+        "calc"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.2858298830688,
+        0.31757308170199394
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "calculus exam schedule",
+      "labels": {
+        "exam": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "exam",
+      "top10": [
+        "exam",
+        "calc",
+        "lecture"
+      ],
+      "lexical_top10": [
+        "exam"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.22883806377649307,
+        0.25000516325235367
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "things to buy at supermarket",
+      "labels": {
+        "shopping": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "shopping",
+      "top10": [
+        "shopping"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.10395795106887817,
+        0.14041876420378685
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "grocery shopping list",
+      "labels": {
+        "shopping": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "shopping",
+      "top10": [
+        "shopping"
+      ],
+      "lexical_top10": [
+        "shopping"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.17664581537246704,
+        0.19292905926704407
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "future product development plans",
+      "labels": {
+        "roadmap": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "roadmap",
+      "top10": [
+        "roadmap",
+        "<unlabeled-directory>"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.13474002480506897,
+        0.16151182353496552
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "product roadmap",
+      "labels": {
+        "roadmap": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "roadmap",
+      "top10": [
+        "roadmap",
+        "readme",
+        "slides"
+      ],
+      "lexical_top10": [
+        "roadmap"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.23704580962657928,
+        0.2704928629100323
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "slideshow for sales talk",
+      "labels": {
+        "slides": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "slides",
+      "top10": [
+        "slides"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.11547701433300972,
+        0.13934681192040443
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "sales presentation",
+      "labels": {
+        "slides": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "slides",
+      "top10": [
+        "slides",
+        "display"
+      ],
+      "lexical_top10": [
+        "slides"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.16762223094701767,
+        0.19444525241851807
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "run shell commands",
+      "labels": {
+        "terminal": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "terminal",
+      "top10": [
+        "terminal",
+        "files",
+        "code"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.09381957352161407,
+        0.14062877744436264
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "GNOME Terminal",
+      "labels": {
+        "terminal": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "terminal",
+      "top10": [
+        "terminal"
+      ],
+      "lexical_top10": [
+        "terminal"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.13320427387952805,
+        0.15933485701680183
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "adjust speaker loudness",
+      "labels": {
+        "sound": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "sound",
+      "top10": [
+        "sound"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.11815596371889114,
+        0.14578504487872124
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "Sound",
+      "labels": {
+        "sound": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "sound",
+      "top10": [
+        "sound",
+        "audio"
+      ],
+      "lexical_top10": [
+        "sound"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.12409500777721405,
+        0.16095908358693123
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "connect to wireless internet",
+      "labels": {
+        "network": 3
+      },
+      "split": "heldout",
+      "class": "semantic",
+      "target_group": "network",
+      "top10": [
+        "network",
+        "browser"
+      ],
+      "lexical_top10": [],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 0.0,
+        "first_useful_rank": 1001,
+        "mrr": 0,
+        "top10_success": 0.0,
+        "ndcg10": 0.0
+      },
+      "phase_ms": [
+        0.1090196892619133,
+        0.15617674216628075
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "Network",
+      "labels": {
+        "network": 3
+      },
+      "split": "heldout",
+      "class": "name",
+      "target_group": "network",
+      "top10": [
+        "network"
+      ],
+      "lexical_top10": [
+        "network"
+      ],
+      "metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "lexical_metrics": {
+        "candidate_recall": 1.0,
+        "first_useful_rank": 1,
+        "mrr": 1.0,
+        "top10_success": 1.0,
+        "ndcg10": 1.0
+      },
+      "phase_ms": [
+        0.11497596278786659,
+        0.15110895037651062
+      ],
+      "reason": "hybrid"
+    },
+    {
+      "text": "quantum banana teleporter",
+      "labels": {},
+      "split": "tuning",
+      "class": "no_match",
+      "target_group": "quantum banana teleporter",
+      "top10": [],
+      "lexical_top10": [],
+      "metrics": {
+        "empty_correct": 1.0
+      },
+      "lexical_metrics": {
+        "empty_correct": 1.0
+      },
+      "phase_ms": [
+        0.09785499423742294,
+        0.13065990060567856
+      ],
+      "reason": "semantic_no_match"
+    },
+    {
+      "text": "zzzzqxxxyyy",
+      "labels": {},
+      "split": "tuning",
+      "class": "no_match",
+      "target_group": "zzzzqxxxyyy",
+      "top10": [],
+      "lexical_top10": [],
+      "metrics": {
+        "empty_correct": 1.0
+      },
+      "lexical_metrics": {
+        "empty_correct": 1.0
+      },
+      "phase_ms": [
+        0.09741820394992828,
+        0.13205409049987793
+      ],
+      "reason": "semantic_no_match"
+    },
+    {
+      "text": "volcano submarine manual",
+      "labels": {},
+      "split": "heldout",
+      "class": "no_match",
+      "target_group": "volcano submarine manual",
+      "top10": [],
+      "lexical_top10": [],
+      "metrics": {
+        "empty_correct": 1.0
+      },
+      "lexical_metrics": {
+        "empty_correct": 1.0
+      },
+      "phase_ms": [
+        0.07553026080131531,
+        0.08850917220115662
+      ],
+      "reason": "semantic_no_match"
+    },
+    {
+      "text": "qzxvjjkk",
+      "labels": {},
+      "split": "heldout",
+      "class": "no_match",
+      "target_group": "qzxvjjkk",
+      "top10": [],
+      "lexical_top10": [],
+      "metrics": {
+        "empty_correct": 1.0
+      },
+      "lexical_metrics": {
+        "empty_correct": 1.0
+      },
+      "phase_ms": [
+        0.06846897304058075,
+        0.08153682574629784
+      ],
+      "reason": "semantic_no_match"
+    }
+  ],
+  "aggregate": {
+    "tuning/all/metrics": {
+      "ndcg10": 0.9020296797657273,
+      "candidate_recall": 0.9583333333333334,
+      "empty_correct": 1.0,
+      "mrr": 0.8833333333333333,
+      "first_useful_rank": 42.916666666666664,
+      "top10_success": 0.9583333333333334
+    },
+    "tuning/all/lexical_metrics": {
+      "ndcg10": 0.4965549755297065,
+      "candidate_recall": 0.4791666666666667,
+      "empty_correct": 1.0,
+      "mrr": 0.5,
+      "first_useful_rank": 501.0,
+      "top10_success": 0.5
+    },
+    "tuning/semantic/metrics": {
+      "ndcg10": 0.8040593595314548,
+      "candidate_recall": 0.9166666666666666,
+      "mrr": 0.7666666666666666,
+      "first_useful_rank": 84.83333333333333,
+      "top10_success": 0.9166666666666666
+    },
+    "tuning/semantic/lexical_metrics": {
+      "ndcg10": 0.0,
+      "candidate_recall": 0.0,
+      "mrr": 0.0,
+      "first_useful_rank": 1001.0,
+      "top10_success": 0.0
+    },
+    "tuning/name/metrics": {
+      "ndcg10": 1.0,
+      "candidate_recall": 1.0,
+      "mrr": 1.0,
+      "first_useful_rank": 1.0,
+      "top10_success": 1.0
+    },
+    "tuning/name/lexical_metrics": {
+      "ndcg10": 0.993109951059413,
+      "candidate_recall": 0.9583333333333334,
+      "mrr": 1.0,
+      "first_useful_rank": 1.0,
+      "top10_success": 1.0
+    },
+    "tuning/no_match/metrics": {
+      "empty_correct": 1.0
+    },
+    "tuning/no_match/lexical_metrics": {
+      "empty_correct": 1.0
+    },
+    "heldout/all/metrics": {
+      "ndcg10": 0.9692441461309548,
+      "candidate_recall": 1.0,
+      "empty_correct": 1.0,
+      "mrr": 0.9583333333333334,
+      "first_useful_rank": 1.0833333333333333,
+      "top10_success": 1.0
+    },
+    "heldout/all/lexical_metrics": {
+      "ndcg10": 0.5,
+      "candidate_recall": 0.5,
+      "empty_correct": 1.0,
+      "mrr": 0.5,
+      "first_useful_rank": 501.0,
+      "top10_success": 0.5
+    },
+    "heldout/semantic/metrics": {
+      "ndcg10": 0.9384882922619097,
+      "candidate_recall": 1.0,
+      "mrr": 0.9166666666666666,
+      "first_useful_rank": 1.1666666666666667,
+      "top10_success": 1.0
+    },
+    "heldout/semantic/lexical_metrics": {
+      "ndcg10": 0.0,
+      "candidate_recall": 0.0,
+      "mrr": 0.0,
+      "first_useful_rank": 1001.0,
+      "top10_success": 0.0
+    },
+    "heldout/name/metrics": {
+      "ndcg10": 1.0,
+      "candidate_recall": 1.0,
+      "mrr": 1.0,
+      "first_useful_rank": 1.0,
+      "top10_success": 1.0
+    },
+    "heldout/name/lexical_metrics": {
+      "ndcg10": 1.0,
+      "candidate_recall": 1.0,
+      "mrr": 1.0,
+      "first_useful_rank": 1.0,
+      "top10_success": 1.0
+    },
+    "heldout/no_match/metrics": {
+      "empty_correct": 1.0
+    },
+    "heldout/no_match/lexical_metrics": {
+      "empty_correct": 1.0
+    }
+  },
+  "ready_ms": 509.4535890966654,
+  "lexical_ms": {
+    "50": 0.1739831641316414,
+    "95": 0.447623897343874,
+    "99": 0.9048311039805412
+  },
+  "final_ms": {
+    "50": 0.20657293498516083,
+    "95": 0.4786709323525429,
+    "99": 0.9246589615941048
+  },
+  "memory_kib": {
+    "VmHWM": 77104,
+    "VmRSS": 77104
+  },
+  "model_sha256": "e96b9212b80ddb57585161a60563586ddf47525eb1ecff4fdfd638160389a109",
+  "scope": "Native end-to-end small fixture; directories included, no file contents."
+}

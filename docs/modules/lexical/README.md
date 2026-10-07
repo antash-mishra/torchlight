@@ -1,6 +1,6 @@
 # lexical
 
-> **Status:** Implemented (M3 Part 2, plus M6 cooperative cancellation): explicit fields, prefix edits, optimal alignment and first-token completion
+> **Status:** Implemented (M3 Part 2; M6 cancellation, Frizbee scoring, cross-query word caches and delta segments): explicit fields, prefix edits, optimal alignment and first-token completion
 > **Source:** `src/index/lexical.c` (build), `src/index/lexical_query.c` (search),
 > `src/index/lexical_internal.h` · **Header:** `include/torchlight/lexical.h`
 > **Tests:** `tests/unit/test_lexical.c`, `tests/alloc/query.c`
@@ -56,7 +56,10 @@ completion bonus. See [ADR 0021](../../adr/0021-first-token-completeness.md).
 indexed prefix channel and mask-filtered fuzzy evidence. Names, metadata and
 folder context remain independent. Auxiliary fields are intended for a small
 application catalog; files without them incur no scan of fields. Fuzzy proximity
-uses optimal alignment up to 512 symbols with a greedy fallback for larger text.
+is scored by the [fuzzy](../fuzzy/README.md) module's Frizbee matcher on the
+portable scorer's scale (raw bytes for ASCII names, normalized UTF-8 otherwise),
+with the portable optimal alignment for words with `/`, invalid UTF-8 or more
+than 64 symbols.
 
 A word's score is the best of its evidence; word scores add up. Parent context
 is the nearest matching ancestor. Basenames up to 63 symbols gain
@@ -72,15 +75,21 @@ multiword pruning bounds and the exact-match safety bound include it. M3's
 desktop engine uses this generic mechanism to prioritize typed application
 names when merging catalogs. See [ADR 0018](../../adr/0018-application-name-ranking.md).
 
-**Query evaluation** (`lexical_query.c`), with no I/O, SQL or heap allocation:
+**Query evaluation** (`lexical_query.c`), with no I/O or SQL. The only heap
+allocation compiles a Frizbee matcher for a word the workspace has not cached
+(once per word and scoring participant, never per entry); repeating a query
+allocates nothing:
 
 1. One-symbol queries (`a`–`z`, `0`–`9`) are answered from results computed at
    seal time; they start every typed query and match the most entries.
 2. For each word, channel hits are collected per entry. Directory names are
-   scored lazily for small batches, sequentially in tree order for large ones.
-   Four bounded evidence caches retain channel hits and directory scores when
-   the same word is prepared again within a query. Query epochs prevent reuse
-   after text changes; eviction changes work only.
+   scored lazily for small batches, sequentially in tree order (over
+   contiguous parent and name-mask arrays, scoring only names that hold every
+   symbol of the word) for large ones. Four evidence caches keep channel hits,
+   directory scores and the word's matchers, keyed by the word's symbols and
+   reused across queries with LRU replacement: typing `notes rep` after
+   `notes re` recomputes nothing for `notes`. Eviction changes work only; a
+   failed or cancelled query drops the caches.
 3. Choose the first word using basename-mask counts, possible parent descendants
    and complete cached membership sizes. Estimates choose order only.
    Single- and multiword queries evaluate channel hits before scanning and skip
@@ -98,8 +107,8 @@ own the coordinator plus three prestarted workers. Non-path batches of at least
 4,096 entries score disjoint output positions after all directory context has
 been resolved. Membership recording, candidate compaction and heap ordering
 stay on the coordinator. Smaller batches and `/` reconstruction are serial.
-No threads or buffers are created during a query; workspace destruction joins
-its workers. Each concurrent caller needs its own workspace. Thread startup can
+No threads are created during a query; each participant scores with its own
+matcher (prepared before dispatch), and workspace destruction joins its workers. Each concurrent caller needs its own workspace. Thread startup can
 return `TL_IO`, documented in the public header.
 
 **Incremental narrowing.** Each workspace records the complete subsequence
@@ -159,3 +168,26 @@ entries inside parallel batches, returning `TL_CANCELLED` with the workspace
 reusable; a cleared or detached flag restores normal answers. The daemon's
 search thread uses it to abandon a query the client has already typed past.
 See [ADR 0028](../../adr/0028-m6-search-thread-and-persistence-owner.md).
+
+## Frizbee scoring and word caches (M6 step 2)
+
+Basename and directory subsequences are scored by `fuzzy_matcher_score`. The
+engine keeps a bit per entry for ASCII basenames and a path-offset sentinel, so
+the matcher reads raw bytes (`lexical_ascii_name`); `dirtree_ascii_name` does the
+same for directories. Word caches are tested against fresh workspaces through
+shared, reordered and evicted words and a cancelled query. See
+[ADR 0029](../../adr/0029-m6-frizbee-scoring-and-candidate-volume.md).
+
+## Delta segments (M6 step 3)
+
+`lexical_set_reference(delta, base)` before sealing makes an engine a delta
+segment of a base: the base's roots also bound parent context and display
+context, and the base's trigram index decides which trigrams are frequent, so
+an entry scores exactly as in a full rebuild (tested against one).
+`lexical_workspace_exclude` attaches a bitmap of absent positions (tombstones):
+excluded entries never become results or candidates, including exact matches,
+roots and cached one-symbol answers (a truncated cache falls back to normal
+evaluation). Exclusion applies only when ranking, so word evidence and
+subsequence caches stay valid. `lexical_slot` and `lexical_id` map ids and
+positions. The [catalog](../catalog/README.md) composes segments; see
+[ADR 0030](../../adr/0030-m6-incremental-indexing.md).

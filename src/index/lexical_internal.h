@@ -14,16 +14,19 @@
  * columns they read (masks and directory links for most entries). */
 struct lexical_columns {
     const uint64_t *ids;
-    const uint64_t *masks;        /* basename symbol mask */
-    const uint64_t *repeats;      /* mask bits of symbols occurring twice or more */
-    const uint64_t *contexts;     /* basename mask | every ancestor directory's path mask */
-    const uint32_t *path_offsets; /* into paths: exact raw bytes, NUL-terminated */
+    const uint64_t *masks;    /* basename symbol mask */
+    const uint64_t *repeats;  /* mask bits of symbols occurring twice or more */
+    const uint64_t *contexts; /* basename mask | every ancestor directory's path mask */
+    /* into paths: exact raw bytes, NUL-terminated. One extra final entry holds
+     * the total byte size, so a path's length is the next offset minus one. */
+    const uint32_t *path_offsets;
     const uint32_t *name_offsets; /* into symbols/boundaries: normalized basename */
     const uint32_t *name_lengths; /* basename symbol count */
     const uint32_t *dirs;         /* parent directory node in the dirtree */
     const uint32_t *path_order;   /* slots sorted by raw path bytes, then id */
     const uint32_t *path_rank;    /* inverse of path_order: deterministic tie-break */
     const uint32_t *roots;        /* slots flagged as indexed roots */
+    const uint64_t *ascii_names;  /* bit per slot: raw basename bytes are all ASCII */
     const char *paths;
     const uint32_t *symbols;
     const uint8_t *boundaries;
@@ -50,13 +53,16 @@ struct tl_lexical {
      * for root /home/user): they say nothing about where a file is. */
     uint8_t *usable;
     uint32_t *path_order, *path_rank;
-    uint64_t *contexts;
+    uint64_t *contexts, *ascii_names;
     tl_mask_index *name_masks;
     /* Parent directory -> entry slots, so matching directory context can be
      * unioned with basename mask candidates without scanning every entry. */
     uint32_t *dir_starts, *dir_entries;
     uint64_t *dir_masks;
     uint32_t *dir_descendants;
+    /* dirtree_parent of every node, contiguous so per-word directory passes
+     * stay a tight loop over plain arrays. */
+    uint32_t *dir_parents;
     tl_prefix *prefix, *dir_prefix;
     tl_trigram *trigram;
     tl_typo *typo;
@@ -66,6 +72,8 @@ struct tl_lexical {
     tl_result *symbol_results;
     size_t symbol_counts[LEXICAL_SYMBOL_QUERIES];
     int prefix_bonus;
+    /* Base engine this delta complements (see lexical_set_reference). */
+    const tl_lexical *reference;
     bool symbols_ready;
     size_t count, root_count, max_path_symbols;
     bool finished, failed;
@@ -105,5 +113,14 @@ static inline tl_text lexical_name(const tl_lexical *engine, size_t slot) {
                     .length = columns->name_lengths[slot],
                     .mask = columns->masks[slot]};
     return text;
+}
+/** Borrow slot's raw basename bytes when they are all ASCII, else NULL. They
+ * are exactly lexical_name(engine, slot).length bytes whose ASCII lower case
+ * equals the normalized symbols, as fuzzy_matcher_score expects. */
+static inline const char *lexical_ascii_name(const tl_lexical *engine, size_t slot) {
+    const struct lexical_columns *columns = &engine->columns;
+    if (((columns->ascii_names[slot / 64] >> (slot % 64)) & 1U) == 0)
+        return NULL;
+    return columns->paths + columns->path_offsets[slot + 1] - 1 - columns->name_lengths[slot];
 }
 #endif

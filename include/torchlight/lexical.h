@@ -45,6 +45,18 @@ tl_status lexical_add_entry(tl_lexical *engine, uint64_t id, const char *path, b
  * Generic-name prefixes outrank keywords, both below primary-name prefixes. */
 tl_status lexical_add_fields(tl_lexical *engine, uint64_t id, const char *path,
                              const char *generic_name, const char *keywords);
+/** Before finish, name a sealed reference engine that this one complements as
+ * a delta segment: its indexed roots also bound parent context (directories
+ * above them carry no evidence) and display context, and its trigram index
+ * decides which query trigrams are frequent, so entries score the same in
+ * either segment. Borrowed: reference must outlive this engine. NULL clears.
+ * TL_INVALID for NULL engine or an unsealed reference, TL_STATE after finish
+ * or builder failure. No allocation. */
+tl_status lexical_set_reference(tl_lexical *engine, const tl_lexical *reference);
+/** Find the position of nonzero id in a sealed engine by binary search.
+ * TL_INVALID for NULL arguments or zero id, TL_STATE when unsealed or absent;
+ * *slot untouched on error. No allocation/I/O. */
+tl_status lexical_slot(const tl_lexical *engine, uint64_t id, size_t *slot);
 /** Read directory metadata for sealed engine/id; false if unknown/unmarked.
  * No allocation/I/O, engine must remain alive. Legacy lexical_add marks no dirs. */
 bool lexical_is_dir(const tl_lexical *engine, uint64_t id);
@@ -55,7 +67,9 @@ tl_status lexical_finish(tl_lexical *engine);
  * must outlive workspace. TL_INVALID/STATE/NOMEM/LIMIT/IO; out NULL on failure.
  * Separate workspaces permit concurrent queries without shared mutable state.
  * A workspace remembers the last word's complete subsequence membership to
- * narrow the next query that extends it; results never depend on that cache.
+ * narrow the next query that extends it, and caches the evidence and fuzzy
+ * matchers of recently used words for later queries; results never depend on
+ * either cache.
  * Large-engine workspaces own a fixed worker pool created here. One coordinator per
  * workspace; its workers score disjoint batches against read-only context. */
 tl_status lexical_workspace_create(const tl_lexical *engine, tl_lexical_workspace **out);
@@ -69,6 +83,14 @@ void lexical_workspace_destroy(tl_lexical_workspace *workspace);
  * running query on the same workspace; the flag itself may be set from any
  * thread. NULL workspace is ignored. No allocation/I/O/errors. */
 void lexical_workspace_cancel(tl_lexical_workspace *workspace, const atomic_bool *flag);
+/** Attach an optional exclusion bitmap (bit p of word p/64 set: position p is
+ * absent) for later queries, or NULL to clear. Excluded entries never become
+ * results or candidates, including exact matches, roots and cached
+ * one-symbol answers; word evidence and subsequence caches stay valid because
+ * exclusion is applied only when ranking. Borrowed until replaced; it must
+ * cover lexical_count positions. Not thread-safe against a running query on
+ * the same workspace. NULL workspace ignored. No allocation/I/O/errors. */
+void lexical_workspace_exclude(tl_lexical_workspace *workspace, const uint64_t *excluded);
 /** Query sealed engine with its workspace. Copy at most capacity results to
  * caller buffer (1..LEXICAL_MAX_RESULTS); out_count is zero on error. Paths are
  * borrowed until engine destruction. Query <= LEXICAL_QUERY_BYTES raw non-NUL
@@ -78,8 +100,11 @@ void lexical_workspace_cancel(tl_lexical_workspace *workspace, const atomic_bool
  * enough shared basename trigrams; an explicit generic-name/keyword prefix or subsequence; or a
  * prefix/subsequence within one parent directory name below the indexed roots. A word containing
  * '/' may instead match across the full path. Exact raw paths, then exact basenames, have priority.
- * Ties order by raw path bytes, then id. No I/O/heap allocation. TL_INVALID/STATE/LIMIT on contract
- * violations, TL_CANCELLED when the attached flag is set; scratch is reusable on failure. */
+ * Ties order by raw path bytes, then id. No I/O. The only heap allocation is compiling a Frizbee
+ * matcher for a word the workspace has not cached: at most one per word and scoring thread, never
+ * per entry; repeating a query allocates nothing. TL_INVALID/STATE/LIMIT on contract violations,
+ * TL_NOMEM, TL_CANCELLED when the attached flag is set; scratch is reusable on failure, and a
+ * failed or cancelled query drops its word caches. */
 tl_status lexical_query(const tl_lexical *engine, tl_lexical_workspace *workspace,
                         const char *query, tl_result *results, size_t capacity, size_t *out_count);
 /** Return number of entries; zero for NULL, no errors. */
@@ -93,6 +118,9 @@ tl_status lexical_resolve(const tl_lexical *engine, uint64_t id, const char **ou
  * engine destruction. Caller owns output pointers, path remains engine-owned. */
 tl_status lexical_entry(const tl_lexical *engine, size_t position, uint64_t *id, const char **path,
                         bool *is_dir);
+/** Return the id at sorted position of a sealed engine; zero for NULL,
+ * unsealed or out-of-range input. No allocation/I/O/errors. */
+uint64_t lexical_id(const tl_lexical *engine, size_t position);
 /** Borrow path suffix starting at the nearest indexed root's basename for a
  * sealed entry position. NULL for invalid/unsealed input. Metadata consumers
  * can exclude parents outside indexing scope. Borrow until engine destruction;

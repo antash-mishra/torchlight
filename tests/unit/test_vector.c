@@ -238,7 +238,69 @@ static void check_binary(void) {
     vector_destroy(index);
 }
 
+/* Copied rows score bit-identically to their source rows (float, int8 and
+ * binary formats), interleave with new rows by id, and reject mismatches. */
+static void check_row_copy(void) {
+    float first[] = {1, -1, 1, -1, 1}, second[] = {0.3F, 0.1F, -0.9F, 0, 0.2F};
+    for (int format = 0; format < 3; format++) {
+        tl_vector *source = NULL, *copy = NULL;
+        tl_status created = format == 0 ? vector_create(11, 5, 3, SIZE_MAX, &source)
+                            : format == 1
+                                ? vector_create_int8(11, 5, 3, SIZE_MAX, &source)
+                                : vector_create_binary_int8(11, 5, 3, 3, SIZE_MAX, &source);
+        CHECK(created == TL_OK);
+        CHECK(vector_add(source, 2, 11, first, 5) == TL_OK &&
+              vector_add(source, 5, 11, second, 5) == TL_OK);
+        CHECK(vector_finish(source) == TL_OK);
+        created = format == 0   ? vector_create(11, 5, 3, SIZE_MAX, &copy)
+                  : format == 1 ? vector_create_int8(11, 5, 3, SIZE_MAX, &copy)
+                                : vector_create_binary_int8(11, 5, 3, 3, SIZE_MAX, &copy);
+        CHECK(created == TL_OK);
+        size_t position = 9;
+        CHECK(vector_position(source, 5, &position) == TL_OK && position == 1);
+        CHECK(vector_position(source, 3, &position) == TL_STATE && position == 1);
+        CHECK(vector_add_row(copy, source, 0) == TL_OK);
+        CHECK(vector_add(copy, 3, 11, second, 5) == TL_OK);   /* a new row between copies */
+        CHECK(vector_add_row(copy, source, 0) == TL_INVALID); /* ids must increase */
+        CHECK(vector_add_row(copy, source, 2) == TL_INVALID);
+        CHECK(vector_add_row(copy, source, 1) == TL_OK && vector_finish(copy) == TL_OK);
+        CHECK(vector_add_row(copy, source, 1) == TL_STATE);
+        tl_vector_workspace *a = NULL, *b = NULL;
+        CHECK(vector_workspace_create(source, &a) == TL_OK &&
+              vector_workspace_create(copy, &b) == TL_OK);
+        tl_vector_result from_source[2], from_copy[3];
+        size_t na = 0, nb = 0;
+        CHECK(vector_query(source, a, 11, second, 5, from_source, 2, &na) == TL_OK);
+        CHECK(vector_query(copy, b, 11, second, 5, from_copy, 3, &nb) == TL_OK && nb == 3);
+        for (size_t i = 0; i < na; i++) {
+            size_t j = 0;
+            while (j < nb && from_copy[j].id != from_source[i].id)
+                j++;
+            CHECK(j < nb && from_copy[j].cosine == from_source[i].cosine);
+        }
+        /* Excluding position 1 (id 3) hides that row until the bitmap is cleared. */
+        const uint64_t excluded[] = {UINT64_C(1) << 1};
+        vector_workspace_exclude(b, excluded);
+        CHECK(vector_query(copy, b, 11, second, 5, from_copy, 3, &nb) == TL_OK && nb == 2);
+        CHECK(from_copy[0].id != 3 && from_copy[1].id != 3);
+        vector_workspace_exclude(b, NULL);
+        CHECK(vector_query(copy, b, 11, second, 5, from_copy, 3, &nb) == TL_OK && nb == 3);
+        vector_workspace_destroy(a);
+        vector_workspace_destroy(b);
+        vector_destroy(copy);
+        vector_destroy(source);
+    }
+    tl_vector *floats = NULL, *compact = NULL;
+    float values[] = {1, 0, 0, 0, 0};
+    CHECK(vector_create(11, 5, 1, SIZE_MAX, &floats) == TL_OK &&
+          vector_add(floats, 1, 11, values, 5) == TL_OK);
+    CHECK(vector_create_int8(11, 5, 1, SIZE_MAX, &compact) == TL_OK);
+    CHECK(vector_add_row(compact, floats, 0) == TL_INVALID); /* storage formats differ */
+    vector_destroy(floats);
+    vector_destroy(compact);
+}
 void test_vector(void) {
+    check_row_copy();
     check_binary();
     check_int8();
     check_reference();

@@ -1,6 +1,6 @@
 # trigram
 
-> **Status:** Implemented (M1)
+> **Status:** Implemented (M1; M6 shortest-list counting and reference decisions)
 > **Source:** `src/index/trigram.c` · **Header:** `include/torchlight/trigram.h`
 > **Tests:** `tests/unit/test_trigram.c`
 
@@ -22,7 +22,7 @@ trigram channel: prefix, subsequence and typo channels live in their own modules
 | `trigram_add(index, text, slot)` | Index the distinct trigrams of a view; slots strictly increasing. |
 | `trigram_finish(index)` | Build posting lists and seal. |
 | `trigram_scratch_create()` / `trigram_scratch_destroy()` | Per-querier counters. |
-| `trigram_query(index, scratch, query, hit, context)` | Report slots sharing at least half of the query's informative trigrams. |
+| `trigram_query(index, reference, scratch, query, hit, context)` | Report slots sharing at least half of the query's informative trigrams; a non-NULL `reference` index decides which trigrams are frequent. |
 
 Text passed to `trigram_add` is not retained. Scratch belongs to one index and
 must be destroyed before it; one scratch per concurrent querier.
@@ -73,3 +73,18 @@ It runs separately from ASan so sanitizer interposition cannot hide libc calls.
 ## Related
 - [lexical](../lexical/README.md), [typo](../typo/README.md), [tokenize](../tokenize/README.md)
 - ADR: [0008](../../adr/0008-m1-completion-channels-directories-config.md)
+
+## M6 changes
+
+**Shortest-list counting.** A slot sharing at least `needed` of the `present`
+informative lists appears in one of the `present - needed + 1` shortest, so only
+those are scanned for candidates; each longer list is counted per candidate by
+binary search on its sorted postings, or by one pass over the list counting
+only known candidates when they outnumber `length / log2(length)`. Reported
+counts are exact (a brute-force test compares every slot and count). Slots are
+reported in the order the shortest lists first reach them.
+
+**Reference decisions.** A delta segment passes its base index as
+`reference`: the base's posting counts decide frequency, so an entry gets the
+same trigram score in either segment. See
+[ADR 0030](../../adr/0030-m6-incremental-indexing.md).

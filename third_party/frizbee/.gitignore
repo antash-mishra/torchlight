@@ -1,0 +1,10 @@
+/target
+/smith_waterman_macro/target
+/benches/data/*
+!/benches/data/download.sh
+
+# bindings
+/bindings/frizbee-py/*.so
+/bindings/frizbee-wasm/pkg/
+__pycache__/
+.venv/

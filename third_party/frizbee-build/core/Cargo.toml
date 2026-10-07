@@ -1,0 +1,20 @@
+# Torchlight-owned manifest for the vendored Frizbee core crate. It mirrors
+# third_party/frizbee/Cargo.toml without the optional serde dependency, so the
+# build needs no crate registry.
+[package]
+name = "frizbee"
+version = "0.13.0"
+edition = "2024"
+rust-version = "1.89.0"
+license = "MIT"
+publish = false
+
+[lib]
+path = "../../frizbee/src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+serde = []
+match_end_col = []
+safe_read = []

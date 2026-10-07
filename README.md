@@ -4,32 +4,49 @@ A Linux application/settings/file launcher written in C17. M1 provides a local i
 CLI with a SQLite catalog and Unicode-aware matching: prefixes, initials,
 abbreviations (subsequences), one-edit typos, partial-word trigram overlap and
 parent-folder context. The M1/M2 foundation was accepted at roughly 6 ms
-p95 latency at 500k paths. The original 5 ms target remains later optimization
-work; see [readiness](docs/m3-readiness.md) and [evaluation](docs/evaluation.md).
+p95 latency at 500k paths; M6 brought typing p95 under the original 5 ms
+target. See [readiness](docs/m3-readiness.md) and [evaluation](docs/evaluation.md).
 
 M2 provides a [resident daemon](docs/modules/daemon/README.md), bounded Unix-socket
 IPC, asynchronous catalog/history writing, live inotify updates, reconciliation,
 file-id resolution and status. Startup serves the saved catalog before scanning.
 M3 adds installed application/settings search, the GTK4 popup and service integration, following the
 [GUI design](docs/m3-gui-design.md) and [interactive preview](docs/m3-gui-preview.html).
-Full index rebuild cost is tracked in the next performance milestone, M6.
+Full index rebuilds were the M2/M3 update path; M6 replaced them for routine changes.
 
 M4's [functional opt-in semantic path](docs/m4-implementation.md) provides native
 Potion, float/int8 retrieval, background embedding caches and two-phase daemon
 queries with exact-priority RRF. Large-catalog latency and broader relevance
 acceptance remain open; personalization is planned for M5.
 
-Next is **M6: worker separation → Frizbee SIMD search → incremental indexing**,
-as three ordered steps in one milestone. Frizbee is selected for integration.
-M5 follows M6 and the remaining M4 acceptance work. See [the plan](PLAN.md) and
+**M6** (implemented) makes search responsive and updates incremental:
+
+- Search runs on its own thread; a newer keystroke supersedes queued and
+  running queries, and SQLite writes have their own persistence thread.
+- [Frizbee](third_party/README.md) SIMD Smith-Waterman scores fuzzy matches,
+  with per-word evidence cached across keystrokes. At 500k synthetic paths
+  typing p95 is 3.9 to 5.0 ms (from 7.4 ms) with unchanged recall.
+- Filesystem changes rescan only the affected folders and publish a small
+  delta over the shared index (lexical and semantic), so 100 touched files
+  appear in about 110 ms at 500k instead of 4 s, without doubling memory.
+
+On a real 213k-path home directory the resident daemon answers typing in
+0.4 ms p50 and 1.9 ms p95 (optimized build). The hybrid final phase is still
+dominated by a full vector scan (about 30 to 50 ms there, 95 ms p95 at 500k),
+so that M4 gate stays open. M5 (personalization) follows. See
+[the plan](PLAN.md), the [M6 plan and measurements](docs/m6-plan.md) and
 [milestone status](docs/milestone-status.md).
 
 ## Build and use
 
 On Debian/Ubuntu/Mint, install `build-essential`, `pkg-config`, `libsqlite3-dev`,
 `libutf8proc-dev`, `libgtk-4-dev` (GTK4 ≥ 4.14), `libglib2.0-dev`,
-`libx11-dev`, `clang-format`, `clang-tidy`, and `cppcheck`. SQLite and utf8proc
-were approved for this implementation. No third-party source is vendored.
+`libx11-dev`, `clang-format`, `clang-tidy`, and `cppcheck`, plus a Rust
+toolchain (`cargo`, Rust 1.89 or newer, e.g. from rustup). SQLite, utf8proc and
+Frizbee were approved for this implementation. Frizbee v0.13.0, the SIMD fuzzy
+matcher, is vendored in `third_party/frizbee`; `make` compiles it offline into
+a static library once (about four minutes), see
+[third_party/README.md](third_party/README.md).
 
 ```sh
 make
@@ -47,6 +64,14 @@ In another terminal:
 ./build/torchlight status
 ./build/torchlight reconcile                 # request a background refresh
 ./build/torchlight history-clear             # clear persisted search/open history
+```
+
+`make` builds unoptimized (`-O0 -g3`) binaries for development. For the
+lowest latency run the optimized daemon instead (about half the tail latency):
+
+```sh
+make build/torchlightd-release
+./build/torchlightd-release
 ```
 
 The default socket is `$XDG_RUNTIME_DIR/torchlight.sock`; `--socket PATH` selects
@@ -149,6 +174,11 @@ Export the pinned model using `scripts/export_potion.py`, then pass
 `torchlightd --model /absolute/path/potion-256.tlm`. The daemon embeds names,
 nearby folders and app metadata in the background; contents are not read.
 Lexical results appear first, followed by a semantic final or bounded fallback.
-Model loading is local and does not require Python in the launcher.
+Model loading is local and does not require Python in the launcher. Without
+`--model` the daemon runs fuzzy (lexical) search only and answers each query in
+a single frame; with it, every query also pays the vector scan for its final
+phase. To switch an installed user service to fuzzy-only, override its
+`ExecStart` without `--model` (`systemctl --user edit torchlightd`) and restart
+it.
 [Model research, setup and measured limits](docs/m4-model-evaluation.md) explain
 the optional evaluation tools and remaining 500k performance acceptance.

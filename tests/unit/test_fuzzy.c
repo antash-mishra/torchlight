@@ -1,6 +1,7 @@
 /* Boundary/consecutive bonuses, score bounds and one-edit distance checks. */
 #include "test.h"
 #include "torchlight/fuzzy.h"
+#include <stdbool.h>
 #include <string.h>
 static size_t distance(const char *a, const char *b) {
     tl_tokenized *x = test_text(a), *y = test_text(b);
@@ -93,7 +94,96 @@ static void optimal_alignments(void) {
     tokenize_destroy(text);
     tokenize_destroy(query);
 }
+/* Score text against word through a fresh matcher; raw is optional ASCII. */
+static int matched(const char *text, const char *word, bool raw) {
+    tl_tokenized *t = test_text(text), *w = test_text(word);
+    tl_fuzzy_matcher *matcher = NULL;
+    CHECK(fuzzy_matcher_create(tokenize_view(w), &matcher) == TL_OK);
+    int score = -1;
+    CHECK(fuzzy_matcher_score(matcher, tokenize_view(t), raw ? text : NULL, &score) == TL_OK);
+    fuzzy_matcher_destroy(matcher);
+    tokenize_destroy(t);
+    tokenize_destroy(w);
+    return score;
+}
+static int portable(const char *text, const char *word) {
+    tl_tokenized *t = test_text(text), *w = test_text(word);
+    int score = -1;
+    CHECK(fuzzy_score(tokenize_view(t), tokenize_view(w), &score) == TL_OK);
+    tokenize_destroy(t);
+    tokenize_destroy(w);
+    return score;
+}
+/* Frizbee's weights mirror the portable scorer: runs from the first symbol and
+ * gaps up to the cap score identically; only the leading-gap penalty and
+ * letter/digit boundaries differ. */
+static void matcher_mirrors_portable(void) {
+    const char *same[][2] = {{"readme.md", "readme"}, {"readme.md", "rdm"},
+                             {"notes", "nts"},        {"projectNotes.md", "projectnotes"},
+                             {"projectNotes", "pn"},  {"a_b_c", "abc"}};
+    for (size_t i = 0; i < sizeof(same) / sizeof(same[0]); i++) {
+        int score = matched(same[i][0], same[i][1], false);
+        CHECK(score == portable(same[i][0], same[i][1]));
+        CHECK(score == matched(same[i][0], same[i][1], true)); /* raw bytes, case kept */
+    }
+    /* No leading-gap penalty: a later start scores at least the portable score. */
+    CHECK(matched("xxreadme", "readme", false) >= portable("xxreadme", "readme"));
+    CHECK(matched("projectNotes", "pn", false) > matched("pzzzzn", "pn", false));
+    CHECK(matched("projectNotes", "xyz", false) == 0 && matched("abc", "abcd", false) == 0);
+}
+/* Membership equals fuzzy_score's for ASCII, case, separators and Unicode. */
+static void matcher_membership(void) {
+    static const char alphabet[] = "abAB_-.1";
+    uint64_t state = 3;
+    for (size_t round = 0; round < 3000; round++) {
+        char text[9] = {0}, word[4] = {0};
+        for (size_t i = 0; i < 8; i++) {
+            state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+            text[i] = alphabet[(state >> 33) % 8];
+        }
+        for (size_t i = 0; i < 3; i++) {
+            state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+            word[i] = alphabet[(state >> 40) % 8];
+        }
+        int expected = portable(text, word);
+        int score = matched(text, word, (state >> 20) % 2 == 0);
+        CHECK((score > 0) == (expected > 0));
+        CHECK(score <= fuzzy_score_bound(strlen(word)));
+    }
+    CHECK(matched("Caf\xc3\xa9.pdf", "CAFE\xcc\x81", false) > 0); /* NFC and case folding */
+    CHECK(matched("Caf\xc3\xa9.pdf", "cafe", false) == 0);
+    CHECK(matched("\xce\xb1\xce\xb2\xce\xb3", "\xce\x91\xce\x93", false) > 0);
+}
+/* Text or words Frizbee cannot take use the portable scorer exactly. */
+static void matcher_fallbacks(void) {
+    CHECK(matched("bad\xff.md", "bad", false) == portable("bad\xff.md", "bad"));
+    CHECK(matched("bad\xff.md", "d\xff", false) == portable("bad\xff.md", "d\xff"));
+    char word[FUZZY_MATCHER_MAX_SYMBOLS + 2], text[FUZZY_MATCHER_MAX_BYTES + 8];
+    memset(word, 'a', sizeof(word) - 1);
+    word[sizeof(word) - 1] = 0;
+    memset(text, 'a', sizeof(text) - 1);
+    text[sizeof(text) - 1] = 0;
+    CHECK(matched(text, word, false) == portable(text, word));  /* long word */
+    CHECK(matched(text, "aaa", true) == portable(text, "aaa")); /* long raw text */
+    CHECK(matched(text, "aaa", false) == portable(text, "aaa"));
+    tl_fuzzy_matcher *matcher = NULL;
+    tl_tokenized *w = test_text("abc");
+    int score = 0;
+    CHECK(fuzzy_matcher_create((tl_text){0}, &matcher) == TL_INVALID && matcher == NULL);
+    CHECK(fuzzy_matcher_create(tokenize_view(w), NULL) == TL_INVALID);
+    CHECK(fuzzy_matcher_create(tokenize_view(w), &matcher) == TL_OK);
+    CHECK(fuzzy_matcher_score(matcher, (tl_text){0}, NULL, &score) == TL_INVALID);
+    CHECK(fuzzy_matcher_score(NULL, tokenize_view(w), NULL, &score) == TL_INVALID);
+    CHECK(fuzzy_matcher_score(matcher, tokenize_view(w), NULL, NULL) == TL_INVALID);
+    CHECK(fuzzy_matcher_score(matcher, tokenize_view(w), NULL, &score) == TL_OK && score > 0);
+    fuzzy_matcher_destroy(matcher);
+    fuzzy_matcher_destroy(NULL);
+    tokenize_destroy(w);
+}
 void test_fuzzy(void) {
+    matcher_mirrors_portable();
+    matcher_membership();
+    matcher_fallbacks();
     optimal_alignments();
     tl_tokenized *a = test_text("projectNotes"), *b = test_text("pzzzzn"), *q = test_text("pn");
     int good = 0, bad = 0;

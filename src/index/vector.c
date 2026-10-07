@@ -4,6 +4,7 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
 #include <cpuid.h>
 #define VECTOR_X86_POPCOUNT 1
@@ -26,6 +27,7 @@ struct tl_vector {
 struct tl_vector_workspace {
     const tl_vector *index;
     float *query;
+    const uint64_t *excluded; /* optional row bitmap, see vector_workspace_exclude */
     uint64_t signs[VECTOR_MAX_DIMENSIONS / 64];
 };
 
@@ -141,6 +143,50 @@ tl_status vector_add(tl_vector *index, uint64_t id, uint64_t emb_gen, const floa
     return status;
 }
 
+tl_status vector_position(const tl_vector *index, uint64_t id, size_t *position) {
+    if (index == NULL || position == NULL)
+        return TL_INVALID;
+    size_t low = 0, high = index->count;
+    while (low < high) {
+        size_t middle = low + (high - low) / 2;
+        if (index->ids[middle] < id)
+            low = middle + 1;
+        else
+            high = middle;
+    }
+    if (low == index->count || index->ids[low] != id)
+        return TL_STATE;
+    *position = low;
+    return TL_OK;
+}
+tl_status vector_add_row(tl_vector *index, const tl_vector *source, size_t position) {
+    if (index == NULL || source == NULL || position >= source->count ||
+        index->dimensions != source->dimensions || index->compact != source->compact ||
+        (index->binary == NULL) != (source->binary == NULL))
+        return TL_INVALID;
+    if (index->finished || index->emb_gen != source->emb_gen)
+        return TL_STATE;
+    uint64_t id = source->ids[position];
+    if (index->count != 0 && id <= index->ids[index->count - 1])
+        return TL_INVALID;
+    if (index->count == index->capacity)
+        return TL_LIMIT;
+    size_t dimensions = index->dimensions, row = index->count;
+    if (!index->compact) {
+        memcpy(index->values + row * dimensions, source->values + position * dimensions,
+               dimensions * sizeof(float));
+    } else {
+        memcpy(index->quantized + row * dimensions, source->quantized + position * dimensions,
+               dimensions);
+        index->inverse_norms[row] = source->inverse_norms[position];
+        size_t words = (dimensions + 63) / 64;
+        if (index->binary != NULL)
+            memcpy(index->binary + row * words, source->binary + position * words,
+                   words * sizeof(uint64_t));
+    }
+    index->ids[index->count++] = id;
+    return TL_OK;
+}
 tl_status vector_finish(tl_vector *index) {
     if (index == NULL)
         return TL_INVALID;
@@ -297,6 +343,10 @@ static unsigned hamming_cutoff(const tl_vector *index, tl_vector_workspace *work
     return (unsigned)index->dimensions;
 }
 
+void vector_workspace_exclude(tl_vector_workspace *workspace, const uint64_t *excluded) {
+    if (workspace != NULL)
+        workspace->excluded = excluded;
+}
 tl_status vector_query(const tl_vector *index, tl_vector_workspace *workspace, uint64_t emb_gen,
                        const float *query, size_t dimensions, tl_vector_result *results,
                        size_t capacity, size_t *out_count) {
@@ -317,6 +367,8 @@ tl_status vector_query(const tl_vector *index, tl_vector_workspace *workspace, u
     bool prune = index->binary != NULL && index->count > index->shortlist;
     unsigned cutoff = prune ? hamming_cutoff(index, workspace, &tie_capacity) : 0;
     for (size_t row = 0; row < index->count; row++) {
+        if (workspace->excluded != NULL && ((workspace->excluded[row / 64] >> (row % 64)) & 1U))
+            continue;
         if (prune) {
             unsigned distance = hamming(index, row, workspace->signs);
             if (distance > cutoff || (distance == cutoff && tie_capacity == 0))

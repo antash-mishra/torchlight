@@ -329,6 +329,57 @@ def live_catalog(service):
         service.stop()
 
 
+def scoped_updates(service):
+    """Without periodic repair, watch events alone keep the catalog exact
+    through scoped rescans: creations, deletions, a tree moved in from outside
+    the roots, a deleted subtree, a paired directory rename and a file in a
+    directory the scoped rescan just started watching."""
+    root = service.root
+    (root / "a/b").mkdir(parents=True)
+    (root / "a/b/deep.txt").write_bytes(b"")
+    (root / "a/keep.txt").write_bytes(b"")
+    (root / "d").mkdir()
+    outside = service.base / "outside"
+    (outside / "inner").mkdir(parents=True)
+    (outside / "inner/arrived.txt").write_bytes(b"")
+    service.start()
+    try:
+        deep_id = service.indexed(root / "a/b/deep.txt")
+        keep_id = service.indexed(root / "a/keep.txt")
+        wait_for(lambda: not service.call("status")["indexing"]["active"])
+        before = service.call("status")["indexing"]["scoped_reconciliations"]
+        (root / "a/new.txt").write_bytes(b"")
+        service.indexed(root / "a/new.txt")
+        (root / "a/keep.txt").unlink()
+        wait_for(lambda: service.call("resolve", file_id=keep_id)["reason"] == "stale_result")
+        outside.rename(root / "d/moved")
+        arrived_id = service.indexed(root / "d/moved/inner/arrived.txt")
+        (root / "d/moved/inner/later.txt").write_bytes(b"")
+        service.indexed(root / "d/moved/inner/later.txt")
+        (root / "d/moved").rename(root / "d/renamed")
+        assert service.indexed(root / "d/renamed/inner/arrived.txt") == arrived_id
+        # Regression: a dropped scope (an excluded hidden directory) ahead of a
+        # kept one in the same pass was freed while later scopes still read it.
+        (root / "a/.hidden-new").mkdir()
+        (root / "a/visible-new").mkdir()
+        (root / "a/visible-new/inside.txt").write_bytes(b"")
+        service.indexed(root / "a/visible-new/inside.txt")
+        assert os.fsencode(root / "a/.hidden-new") not in service.paths()
+        (root / "a/b/deep.txt").unlink()
+        (root / "a/b").rmdir()
+        wait_for(lambda: service.call("resolve", file_id=deep_id)["reason"] == "stale_result")
+        assert os.fsencode(root / "a/b") not in service.paths()
+        status = service.call("status")["indexing"]
+        assert status["scoped_reconciliations"] > before
+        # Every update above was scoped: only the startup pass scanned all roots.
+        assert status["reconciliations"] - status["scoped_reconciliations"] == 1, status
+        # And published as deltas: only the saved catalog load and the startup
+        # scan's commit rebuilt the engine (the latter at most).
+        assert status["delta_publications"] >= 5 and status["full_builds"] <= 2, status
+    finally:
+        service.stop()
+
+
 def watch_exhaustion_and_disabled_history(service):
     (service.root / "sub").mkdir()
     (service.root / "sub/saved.txt").write_bytes(b"")
@@ -476,6 +527,9 @@ with tempfile.TemporaryDirectory(prefix="torchlight-daemon-") as temporary:
     replacements = Path(temporary) / "replacements"
     replacements.mkdir(mode=0o700)
     rapid_replacements(Service(replacements))
+    scoped = Path(temporary) / "scoped"
+    scoped.mkdir(mode=0o700)
+    scoped_updates(Service(scoped, "--rescan-ms", "3600000"))
     fallback = Path(temporary) / "fallback"
     fallback.mkdir(mode=0o700)
     watch_exhaustion_and_disabled_history(Service(fallback, "--watch-capacity", "1", "--no-history"))

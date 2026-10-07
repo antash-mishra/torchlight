@@ -77,6 +77,10 @@ void vec_clear(tl_vec *vec) {
     if (vec != NULL)
         vec->count = 0;
 }
+void vec_truncate(tl_vec *vec, size_t count) {
+    if (vec != NULL && count < vec->count)
+        vec->count = count;
+}
 void vec_shrink(tl_vec *vec) {
     if (vec == NULL || vec->count == vec->capacity || vec->count == 0)
         return;

@@ -35,6 +35,9 @@ make format     # clang-format
 make bench      # latency + ranking benchmarks (BENCH_PATHS=file adds a real corpus)
 ```
 
+`make` also compiles the vendored Frizbee matcher (`third_party/frizbee`) with
+`cargo`, offline, into `build/frizbee/` once; Rust 1.89+ is a build dependency.
+
 ## Code rules
 
 **Readable**

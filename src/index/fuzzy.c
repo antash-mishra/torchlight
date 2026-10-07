@@ -1,8 +1,12 @@
-/* Optimal bounded subsequence scoring with a greedy fallback, plus a
- * linear-time check for edit distance within one edit. */
+/* Optimal bounded subsequence scoring with a greedy fallback, a Frizbee SIMD
+ * matcher weighted to produce the same scale, and a linear-time check for edit
+ * distance within one edit. */
 #include "torchlight/fuzzy.h"
+#include <frizbee.h>
 #include <limits.h>
+#include <stdlib.h>
 #include <string.h>
+#include <utf8proc.h>
 enum {
     MATCH_BONUS = 16,
     BOUNDARY_BONUS = 32,
@@ -109,6 +113,158 @@ tl_status fuzzy_score(tl_text text, tl_text query, int *out) {
     if (best != missing)
         *out = best > 0 ? best : 1;
     return TL_OK;
+}
+/* ---- Frizbee matcher ---------------------------------------------------- */
+/* Frizbee's affine Smith-Waterman weights mirror the portable scorer, so one
+ * scale and one bound serve both:
+ *   - a matched symbol earns MATCH + CONSECUTIVE; a gap of g symbols then costs
+ *     the lost consecutive bonus plus g, i.e. gap_open CONSECUTIVE + 1 and
+ *     gap_extend 1, exactly the portable penalty for g <= MAX_GAP_PENALTY;
+ *   - word starts earn BOUNDARY: after a delimiter, at a lower->upper change
+ *     and (as Frizbee's prefix bonus) at the first symbol;
+ *   - a substitution never pays, and exactness/case belong to the orchestrator.
+ * The first symbol carries no consecutive bonus in the portable scorer, so
+ * MATCHER_OFFSET = BASE - CONSECUTIVE makes a consecutive run from the start
+ * score identically. Frizbee's maximum for n symbols is n * (MATCH +
+ * CONSECUTIVE + BOUNDARY), so mapped scores stay within fuzzy_score_bound(n).
+ * Differences that remain: no leading-gap penalty, and no bonus at
+ * letter/digit changes. */
+enum {
+    MATCHER_MATCH = MATCH_BONUS + CONSECUTIVE_BONUS,
+    MATCHER_GAP_OPEN = CONSECUTIVE_BONUS + 1,
+    MATCHER_GAP_EXTEND = 1,
+    MATCHER_MISMATCH = MAX_GAP_PENALTY,
+    MATCHER_OFFSET = BASE_SCORE - CONSECUTIVE_BONUS,
+    ASCII_LIMIT = 0x80
+};
+struct tl_fuzzy_matcher {
+    frizbee_matcher_t *frizbee; /* NULL: the word keeps the portable scorer */
+    tl_text word;               /* views symbols/boundaries below */
+    int bound;
+    char scratch[FUZZY_MATCHER_MAX_BYTES];
+    /* word symbols, then boundaries, follow the struct (one allocation) */
+};
+static frizbee_config_t matcher_config(void) {
+    frizbee_config_t config = frizbee_config_default();
+    config.max_typos = 0; /* ordered subsequence membership, as fuzzy_score */
+    config.casing = FRIZBEE_CASE_IGNORE;
+    config.unicode = FRIZBEE_UNICODE_SMART;
+    config.matching = FRIZBEE_MATCHING_FUZZY;
+    config.scoring = (frizbee_scoring_t){.match_score = MATCHER_MATCH,
+                                         .mismatch_penalty = MATCHER_MISMATCH,
+                                         .gap_open_penalty = MATCHER_GAP_OPEN,
+                                         .gap_extend_penalty = MATCHER_GAP_EXTEND,
+                                         .prefix_bonus = BOUNDARY_BONUS,
+                                         .capitalization_bonus = BOUNDARY_BONUS,
+                                         .matching_case_bonus = 0,
+                                         .exact_match_bonus = 0,
+                                         .delimiter_bonus = BOUNDARY_BONUS};
+    return config;
+}
+static bool lower_ascii(char c) {
+    return c >= 'a' && c <= 'z';
+}
+/* Encode normalized symbols as UTF-8. A lowercase ASCII letter at a tokenizer
+ * boundary right after another lowercase letter is written in upper case, so
+ * Frizbee's capitalization bonus fires at camelCase and acronym boundaries of
+ * the case-folded text. False for opaque symbols or when out is too small. */
+static bool encode_text(tl_text text, char *out, size_t capacity, size_t *length, bool *ascii) {
+    size_t used = 0;
+    *ascii = true;
+    for (size_t i = 0; i < text.length; i++) {
+        uint32_t symbol = text.symbols[i];
+        if (symbol < ASCII_LIMIT && used < capacity) {
+            char c = (char)symbol;
+            bool camel = text.boundaries[i] != 0 && used != 0 && lower_ascii(out[used - 1]);
+            out[used++] = camel && lower_ascii(c) ? (char)(c - 'a' + 'A') : c;
+            continue;
+        }
+        /* utf8proc_encode_char writes at most four bytes. */
+        if (symbol >= TOKENIZE_OPAQUE_BASE || symbol < ASCII_LIMIT || capacity - used < 4)
+            return false;
+        *ascii = false;
+        used +=
+            (size_t)utf8proc_encode_char((utf8proc_int32_t)symbol, (utf8proc_uint8_t *)out + used);
+    }
+    *length = used;
+    return true;
+}
+tl_status fuzzy_matcher_create(tl_text word, tl_fuzzy_matcher **out) {
+    if (out == NULL)
+        return TL_INVALID;
+    *out = NULL;
+    if (word.symbols == NULL || word.boundaries == NULL || word.length == 0)
+        return TL_INVALID;
+    size_t extra = 0;
+    if (tl_size_multiply(word.length, sizeof(uint32_t) + sizeof(uint8_t), &extra) != TL_OK ||
+        extra > SIZE_MAX - sizeof(tl_fuzzy_matcher))
+        return TL_LIMIT;
+    tl_fuzzy_matcher *matcher = malloc(sizeof(*matcher) + extra);
+    if (matcher == NULL)
+        return TL_NOMEM;
+    uint32_t *symbols = (uint32_t *)(matcher + 1);
+    uint8_t *boundaries = (uint8_t *)(symbols + word.length);
+    memcpy(symbols, word.symbols, word.length * sizeof(uint32_t));
+    memcpy(boundaries, word.boundaries, word.length);
+    matcher->word = word;
+    matcher->word.symbols = symbols;
+    matcher->word.boundaries = boundaries;
+    matcher->word.byte_offsets = NULL;
+    matcher->bound = fuzzy_score_bound(word.length);
+    matcher->frizbee = NULL;
+    size_t length = 0;
+    bool ascii = true;
+    if (word.length <= FUZZY_MATCHER_MAX_SYMBOLS &&
+        encode_text(word, matcher->scratch, sizeof(matcher->scratch), &length, &ascii)) {
+        frizbee_config_t config = matcher_config();
+        matcher->frizbee =
+            frizbee_matcher_new((frizbee_str_t){.ptr = matcher->scratch, .len = length}, &config);
+    }
+    *out = matcher;
+    return TL_OK;
+}
+void fuzzy_matcher_destroy(tl_fuzzy_matcher *matcher) {
+    if (matcher == NULL)
+        return;
+    frizbee_matcher_free(matcher->frizbee);
+    free(matcher);
+}
+/* Map a Frizbee score onto the portable scale; a match is always positive. */
+static int mapped_score(const tl_fuzzy_matcher *matcher, uint16_t score) {
+    int value = MATCHER_OFFSET + (int)score;
+    return value < 1 ? 1 : value > matcher->bound ? matcher->bound : value;
+}
+tl_status fuzzy_matcher_score(tl_fuzzy_matcher *matcher, tl_text text, const char *ascii,
+                              int *out) {
+    if (matcher == NULL || out == NULL || text.symbols == NULL || text.boundaries == NULL)
+        return TL_INVALID;
+    *out = 0;
+    tl_text word = matcher->word;
+    if (word.length > text.length || (text.mask & word.mask) != word.mask)
+        return TL_OK;
+    if (matcher->frizbee == NULL)
+        return fuzzy_score(text, word, out);
+    size_t length = text.length;
+    bool plain = true;
+    if (ascii == NULL) {
+        if (!encode_text(text, matcher->scratch, sizeof(matcher->scratch), &length, &plain))
+            return fuzzy_score(text, word, out);
+        ascii = matcher->scratch;
+    } else if (length > FUZZY_MATCHER_MAX_BYTES) {
+        return fuzzy_score(text, word, out);
+    }
+    /* ASCII case-insensitive membership equals the tokenizer's; for other text
+     * the symbols stay the authority and the portable scorer covers the rare
+     * case-mapping disagreement. */
+    if (!plain && !ordered_match(text, word))
+        return TL_OK;
+    frizbee_match_t match;
+    if (frizbee_match_one(matcher->frizbee, (frizbee_str_t){.ptr = ascii, .len = length}, 0,
+                          &match)) {
+        *out = mapped_score(matcher, match.score);
+        return TL_OK;
+    }
+    return plain ? TL_OK : fuzzy_score(text, word, out);
 }
 static bool same_tail(const uint32_t *a, const uint32_t *b, size_t length) {
     return length == 0 || memcmp(a, b, length * sizeof(uint32_t)) == 0;

@@ -14,9 +14,14 @@ path is implemented, with acceptance gates still open. The next priority is
 as one milestone. M5 personalization follows M6 and the remaining M4 acceptance
 work. Existing milestone identifiers are retained; M6 executes next despite
 being appended after M5. See [ADR 0026](docs/adr/0026-search-workers-simd-and-incremental-indexing.md).
-M6 step 1 is implemented: a dedicated search thread with per-client request
-queues, supersession and cooperative cancellation, and a writer split into
-indexing and persistence threads ([ADR 0028](docs/adr/0028-m6-search-thread-and-persistence-owner.md)).
+M6 is implemented in all three steps: a dedicated search thread with per-client
+request queues, supersession and cooperative cancellation, and a writer split
+into indexing and persistence threads ([ADR 0028](docs/adr/0028-m6-search-thread-and-persistence-owner.md));
+Frizbee SIMD scoring with cross-query word caches, bringing 500k typing p95
+under 5 ms with unchanged recall ([ADR 0029](docs/adr/0029-m6-frizbee-scoring-and-candidate-volume.md));
+and incremental indexing with scoped rescans and base-plus-delta snapshots of
+both the lexical engine and the semantic vectors, publishing a 100-file update
+in about 110 ms at 500k ([ADR 0030](docs/adr/0030-m6-incremental-indexing.md)).
 M3 adds installed application/settings search and the GTK4 popup described in the
 [GUI design](docs/m3-gui-design.md).
 See [desktop setup](docs/desktop-setup.md) and the
@@ -54,8 +59,9 @@ The user accepted roughly 6 ms p95 lexical latency at 500k paths for starting M3
 After the search-quality work, the recorded native lexical run has 8.551 ms
 typing p95 and 9.622 ms whole-query p95 at 500k paths, excluding IPC/UI.
 See [the recorded run](tests/bench/results/2026-10-05-m4-native-lexical.txt).
-Full-engine update rebuilds remain implemented; M6 now owns optimization toward
-the original 5 ms lexical target and incremental file updates. Historical pre-M3
+M6 replaced routine full-engine rebuilds with delta publication (full rebuilds
+remain for startup, recovery and compaction) and met the 5 ms typing target;
+see the [M6 plan](docs/m6-plan.md) measurements. Historical pre-M3
 measurements are in the [readiness report](docs/m3-readiness.md).
 
 The readiness fixes (ADR 0013) remove trigram sorting's indirect heap allocation
@@ -479,8 +485,8 @@ and [ADR 0015](docs/adr/0015-m3-desktop-catalog-and-launcher.md).
 M3 Part 2 search quality is implemented; see
 [its verification and measured tradeoffs](docs/m3-part2-completion.md). M4 implements opt-in native semantics, background cache and two-phase hybrid
 queries; large-catalog latency and broader relevance acceptance remain open.
-M6 worker separation, Frizbee SIMD search and incremental indexing execute next;
-M5 personal recommendations follow M6 and remaining M4 acceptance work.
+M6 worker separation, Frizbee SIMD search and incremental indexing are
+implemented; M5 personal recommendations follow the remaining M4 acceptance work.
 Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
 tracked explicitly in the verification report.
 
@@ -562,8 +568,8 @@ tracked explicitly in the verification report.
    two-phase RRF. See [implementation and acceptance gates](docs/m4-implementation.md)
    and [measured model/daemon evaluation](docs/m4-model-evaluation.md); 500k latency
    and broader model/relevance acceptance remain open.
-   M6 is the next implementation priority; these remaining M4 acceptance gates
-   remain open and do not block starting M6.
+   M6 is implemented; these remaining M4 acceptance gates were re-measured at
+   its end and remain open (see the [M6 plan](docs/m6-plan.md)).
 6. **M5: Personal recommendations and ranking.** After M6 and remaining M4
    acceptance work, use optional resident frecency and query-to-open summaries
    for both files and applications.
@@ -573,8 +579,8 @@ tracked explicitly in the verification report.
    held-out usage scenarios; improve personally useful results without burying
    exact matches or strong name evidence. Existing history recording is
    implemented; recommendation scoring is future work.
-7. **M6: Search responsiveness and indexing performance.** Planned; execute
-   next in this order, as three steps within one milestone:
+7. **M6: Search responsiveness and indexing performance.** Implemented
+   (2026-10-07) in this order, as three steps within one milestone:
 
    - **Worker separation.** Keep UI rendering/input and daemon IPC responsive
      while a dedicated search worker retrieves and ranks file/application

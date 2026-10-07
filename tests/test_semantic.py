@@ -75,6 +75,7 @@ class Service:
         self.deadline = deadline
         self.marker = base / 'stall-marker'
         self.busy_marker = base / 'busy-marker'
+        self.lexical_marker = base / 'lexical-marker'
         self.process = None
 
     def start(self):
@@ -86,7 +87,8 @@ class Service:
             if 'sanitized' in BINARY:
                 preload.insert(0, subprocess.check_output(['cc', '-print-file-name=libasan.so'], text=True).strip())
             env.update(LD_PRELOAD=':'.join(preload), TORCHLIGHT_TEST_SEMANTIC_STALL=str(self.marker),
-                       TORCHLIGHT_TEST_SEMANTIC_BUSY=str(self.busy_marker))
+                       TORCHLIGHT_TEST_SEMANTIC_BUSY=str(self.busy_marker),
+                       TORCHLIGHT_TEST_LEXICAL_STALL=str(self.lexical_marker))
         self.log = tempfile.TemporaryFile()
         self.process = subprocess.Popen([BINARY, '--config', str(self.config), '--db', str(self.database),
             '--socket', str(self.path), '--model', str(self.model), '--rescan-ms', '100',
@@ -202,6 +204,45 @@ def check_degraded_status(base):
             assert len(phases) == 2, phases
             for phase in phases:
                 assert phase['indexing']['degraded'] and phase['indexing']['offline_roots'] == 1
+    finally:
+        service.stop()
+
+
+def check_phase_order(base):
+    """A final never overtakes its lexical frame, even when the semantic worker
+    finishes while the search thread is still encoding that frame, and a newer
+    query's cancellation of it waits for the frame too."""
+    if not STALL:
+        return
+    service = Service(base, deadline=1000)  # longer than the encoding stall
+    (service.root / 'ordering-stall-invoice.pdf').touch()
+    (service.root / 'receipt.pdf').touch()
+    try:
+        service.start()
+        service.hybrid('invoice')
+        service.lexical_marker.touch()
+        phases = service.query('invoice')
+        assert not service.lexical_marker.exists()  # the encoding stall fired
+        assert [(p['phase'], p['reason']) for p in phases] == [
+            ('lexical', 'semantic_pending'), ('final', 'hybrid')], phases
+        # A newer query on the same connection while the first frame is stalled.
+        service.lexical_marker.touch()
+        with socket.socket(socket.AF_UNIX) as connection:
+            connection.settimeout(5)
+            connection.connect(str(service.path))
+            ids = [str(next(SEQUENCE)) for _ in range(2)]
+            for request_id in ids:
+                connection.sendall(json.dumps(dict(version=1, request_id=request_id, op='query',
+                                                   query='invoice', limit=10)).encode() + b'\n')
+                time.sleep(.1)
+            stream = connection.makefile('rb')
+            frames = []
+            while not frames or (frames[-1]['request_id'], frames[-1]['phase']) != (ids[1], 'final'):
+                frames.append(decode_response(stream.readline()))
+        assert not service.lexical_marker.exists()
+        first = [frame['phase'] for frame in frames if frame['request_id'] == ids[0]]
+        assert first[0] == 'lexical' and first[-1] == 'final', frames
+        assert frames.index(next(f for f in frames if f['request_id'] == ids[1])) > 1, frames
     finally:
         service.stop()
 
@@ -376,7 +417,8 @@ with tempfile.TemporaryDirectory(prefix='torchlight-semantic-') as temp:
         assert phases[0]['results'][0]['path'] == str(invoice)
     finally:
         service.stop()
-for check in (check_large_responses, check_degraded_status, check_cache_contention, check_fifo_model):
+for check in (check_large_responses, check_phase_order, check_degraded_status, check_cache_contention,
+              check_fifo_model):
     with tempfile.TemporaryDirectory(prefix='torchlight-semantic-regression-') as temp:
         check(Path(temp))
 print('Semantic daemon lifecycle checks passed.')

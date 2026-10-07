@@ -42,6 +42,33 @@ tl_status store_desktop_open(tl_store *store, const char *event_id, const char *
  * reached the end; no other scopes are pruned. Same errors as store_put. root
  * is borrowed for this call; transaction remains active. */
 tl_status store_prune(tl_store *store, const char *root);
+/** After a children-only crawl_scope of directory in this transaction, delete
+ * its direct children (with their subtrees) that the transaction did not see.
+ * Entries at or below kept paths and registered roots nested in directory are
+ * spared; directory itself is never deleted. Uses a path-index range, never a
+ * whole-catalog scan. TL_STATE outside a transaction, TL_INVALID for NULL or
+ * relative paths, TL_LIMIT/NOMEM/IO. directory is borrowed for the call. */
+tl_status store_prune_children(tl_store *store, const char *directory);
+/** After a recursive crawl_scope of directory, delete entries strictly below
+ * it that the transaction did not see, sparing the same scopes. Same errors. */
+tl_status store_prune_tree(tl_store *store, const char *directory);
+/** Record the ids of files rows that later catalog transactions insert,
+ * update or delete, keeping at most limit ids (zero disables tracking).
+ * TL_INVALID for NULL, TL_STATE inside a transaction. */
+tl_status store_track_changes(tl_store *store, size_t limit);
+/** After the last catalog transaction ended, borrow its touched row ids sorted
+ * ascending without duplicates (valid until the next store_begin). complete is
+ * false when tracking is off or more than its limit changed, so the caller
+ * must reload everything; roots_changed reports registered-root changes.
+ * TL_INVALID for NULL, TL_STATE during a transaction. No allocation. */
+tl_status store_changes(tl_store *store, const uint64_t **ids, size_t *count, bool *complete,
+                        bool *roots_changed);
+/** Stream, from one read snapshot, the committed rows whose ids are listed
+ * (ascending), skipping ids without a row (deleted), plus that snapshot's
+ * catalog_gen. Same borrowed-path and error contract as store_load_catalog;
+ * TL_INVALID also for ids beyond INT64_MAX. */
+tl_status store_load_ids(tl_store *store, const uint64_t *ids, size_t count,
+                         tl_store_callback callback, void *context, uint64_t *out_catalog_gen);
 /** Keep every saved entry at or below path from pruning/forgetting in this
  * transaction (e.g. a configured root that is currently unavailable). TL_STATE
  * outside a transaction, TL_INVALID for relative paths, TL_IO for SQL. */

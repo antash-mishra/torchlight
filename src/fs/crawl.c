@@ -17,6 +17,9 @@ struct tl_crawl {
 /* What a walk does with a path: report it, pass through it to reach an
  * allowlisted directory below, or leave it (and its subtree) alone. */
 enum scope { SCOPE_INDEX, SCOPE_TRANSIT, SCOPE_SKIP };
+/* A full root walk, a scoped walk of one indexed directory's whole subtree,
+ * or of that directory and its direct children only. */
+enum walk_mode { WALK_ROOT, WALK_TREE, WALK_CHILDREN };
 tl_status crawl_create(const char *exclude, const char *const *allow, size_t allow_count,
                        tl_crawl **out) {
     if (out == NULL || (allow == NULL && allow_count != 0))
@@ -130,13 +133,13 @@ static void file_identity(const FTSENT *entry, tl_crawl_entry *record) {
     record->identity_sec = stamp.tv_sec;
     record->identity_nsec = stamp.tv_nsec;
 }
-static tl_status report(const FTSENT *entry, bool has_stat, tl_crawl_callback callback,
-                        void *context) {
+static tl_status report(const FTSENT *entry, bool has_stat, enum walk_mode mode,
+                        tl_crawl_callback callback, void *context) {
     if (has_stat && entry->fts_statp == NULL)
         return TL_IO;
     tl_crawl_entry record = {.path = entry->fts_path,
                              .is_dir = directory(entry),
-                             .is_root = entry->fts_level == 0,
+                             .is_root = mode == WALK_ROOT && entry->fts_level == 0,
                              .unreadable = failed(entry),
                              .has_stat = has_stat,
                              .mtime = has_stat ? (int64_t)entry->fts_statp->st_mtime : 0,
@@ -145,10 +148,14 @@ static tl_status report(const FTSENT *entry, bool has_stat, tl_crawl_callback ca
         file_identity(entry, &record);
     return callback(context, &record);
 }
-static tl_status visit(tl_crawl *crawler, FTS *walk, FTSENT *entry, tl_crawl_callback callback,
-                       void *context) {
+static tl_status visit(tl_crawl *crawler, FTS *walk, FTSENT *entry, enum walk_mode mode,
+                       tl_crawl_callback callback, void *context) {
     if (entry->fts_info == FTS_DP)
         return TL_OK;
+    /* A children-only walk reports level-1 directories but never enters them. */
+    if (mode == WALK_CHILDREN && entry->fts_level == 1 && entry->fts_info == FTS_D &&
+        fts_set(walk, entry, FTS_SKIP) != 0)
+        return TL_IO;
     /* The root is always walked (explicit roots override name defaults), but
      * the excluded scope wins even there. */
     enum scope scope =
@@ -167,16 +174,16 @@ static tl_status visit(tl_crawl *crawler, FTS *walk, FTSENT *entry, tl_crawl_cal
     if (scope == SCOPE_TRANSIT) {
         entry->fts_number = SCOPE_TRANSIT;
         /* Not indexed itself; an unreadable one still protects saved entries. */
-        return failed(entry) ? report(entry, false, callback, context) : TL_OK;
+        return failed(entry) ? report(entry, false, mode, callback, context) : TL_OK;
     }
     /* An unreadable directory still has stat data; FTS_NS/FTS_ERR have none. A
      * directory cycle (only possible through bind mounts) is reported but fts
      * does not descend into it again. */
-    return report(entry, entry->fts_info != FTS_NS && entry->fts_info != FTS_ERR, callback,
+    return report(entry, entry->fts_info != FTS_NS && entry->fts_info != FTS_ERR, mode, callback,
                   context);
 }
-tl_status crawl_run(tl_crawl *crawler, const char *root, tl_crawl_callback callback,
-                    void *context) {
+static tl_status walk_from(tl_crawl *crawler, const char *root, enum walk_mode mode,
+                           tl_crawl_callback callback, void *context) {
     if (crawler == NULL || root == NULL || callback == NULL)
         return TL_INVALID;
     char *canonical = realpath(root, NULL);
@@ -198,7 +205,7 @@ tl_status crawl_run(tl_crawl *crawler, const char *root, tl_crawl_callback callb
                 status = TL_IO;
             break;
         }
-        status = visit(crawler, walk, entry, callback, context);
+        status = visit(crawler, walk, entry, mode, callback, context);
         if (status != TL_OK)
             break;
     }
@@ -206,6 +213,16 @@ tl_status crawl_run(tl_crawl *crawler, const char *root, tl_crawl_callback callb
         status = TL_IO;
     free(canonical);
     return status;
+}
+tl_status crawl_run(tl_crawl *crawler, const char *root, tl_crawl_callback callback,
+                    void *context) {
+    return walk_from(crawler, root, WALK_ROOT, callback, context);
+}
+tl_status crawl_scope(tl_crawl *crawler, const char *directory, bool recursive,
+                      tl_crawl_callback callback, void *context) {
+    if (directory == NULL || directory[0] != '/')
+        return TL_INVALID;
+    return walk_from(crawler, directory, recursive ? WALK_TREE : WALK_CHILDREN, callback, context);
 }
 bool crawl_covers(const tl_crawl *crawler, const char *outer, const char *inner) {
     if (crawler == NULL || outer == NULL || inner == NULL || !path_within(inner, outer) ||

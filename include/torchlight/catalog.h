@@ -28,6 +28,40 @@ tl_status catalog_destroy(tl_catalog *catalog);
  * TL_INVALID/STATE/NOMEM/LIMIT/IO. Build on background thread before publication. */
 tl_status catalog_snapshot_create(tl_lexical **engine, uint64_t catalog_gen, size_t reader_capacity,
                                   tl_catalog_snapshot **out);
+/** Prepare a snapshot that shares source's base engine (and its warm reader
+ * workspaces) and takes ownership of *delta, an engine of every entry changed
+ * since that base, built with lexical_set_reference to the base. retired
+ * lists ids (any order) whose base entries were changed or removed since the
+ * source; they join the source's tombstones, so queries, resolution and
+ * metadata skip them. *delta may be NULL when only removals happened. Queries
+ * merge both segments in the engines' total order (score, raw path, id).
+ * source must stay pinned or leased during the call. Transfers *delta and
+ * sets it NULL only on success; out NULL on failure. TL_INVALID/NOMEM/LIMIT/
+ * IO. Background thread, before publication. */
+tl_status catalog_snapshot_derive(tl_catalog_snapshot *source, tl_lexical **delta,
+                                  const uint64_t *retired, size_t retired_count,
+                                  uint64_t catalog_gen, size_t reader_capacity,
+                                  tl_catalog_snapshot **out);
+/** Borrow a pinned or unpublished snapshot's base engine (for building a
+ * delta that references it); NULL for NULL. No allocation/I/O/errors. */
+const tl_lexical *catalog_snapshot_base(const tl_catalog_snapshot *snapshot);
+/** Count of base entries a snapshot hides as changed or removed; zero for NULL. */
+size_t catalog_snapshot_tombstones(const tl_catalog_snapshot *snapshot);
+/** catalog_gen at which a snapshot's base engine was built; snapshots sharing
+ * a base share it, and published bases have distinct values. Zero for NULL. */
+uint64_t catalog_snapshot_base_gen(const tl_catalog_snapshot *snapshot);
+/** Report, for a pinned snapshot, every id that may differ from its base:
+ * delta entries and tombstoned base entries (an id can be reported twice).
+ * Ids outside this set are identical base entries in every snapshot sharing
+ * the base. Callback statuses other than TL_OK stop and propagate; TL_INVALID
+ * for NULL arguments. No allocation. */
+tl_status catalog_snapshot_changes(const tl_catalog_snapshot *snapshot,
+                                   tl_status (*report)(void *context, uint64_t id), void *context);
+/** Find a live entry of a pinned snapshot by id (delta first, tombstoned base
+ * entries hidden), borrowing its path and display context until unpin.
+ * TL_STATE when absent, TL_INVALID for NULL arguments. No allocation/I/O. */
+tl_status catalog_snapshot_find(const tl_catalog_snapshot *snapshot, uint64_t id, const char **path,
+                                bool *is_dir, const char **context);
 /** Destroy an unpublished snapshot; NULL allowed, no errors. Published snapshots
  * belong to their registry and must never be destroyed by their former owner. */
 void catalog_snapshot_destroy(tl_catalog_snapshot *snapshot);
@@ -37,8 +71,10 @@ void catalog_snapshot_destroy(tl_catalog_snapshot *snapshot);
  * Failures leave active view and caller ownership unchanged. Thread-safe. */
 tl_status catalog_publish(tl_catalog *catalog, tl_catalog_snapshot **snapshot);
 /** Lease an exclusive preallocated workspace and pin the active snapshot.
- * Thread-safe, no heap allocation or I/O. TL_STATE before first publication,
- * TL_LIMIT when all active workspaces are leased, TL_INVALID for NULL.
+ * Snapshots sharing a base share its workspaces, so a lease also needs one of
+ * the base's free workspaces (its reader capacity bounds concurrent leases
+ * across those snapshots). Thread-safe, no heap allocation or I/O. TL_STATE
+ * before first publication, TL_LIMIT when no workspace is free, TL_INVALID for NULL.
  * out NULL on error. Registry must outlive lease; release exactly once. */
 tl_status catalog_acquire(tl_catalog *catalog, tl_catalog_reader **out);
 /** Release lease without freeing its snapshot; NULL is OK. Thread-safe between
@@ -50,8 +86,11 @@ void catalog_release(tl_catalog_reader *reader);
  * NULL before the flag's lifetime ends. No allocation/I/O/errors. */
 void catalog_reader_cancel(tl_catalog_reader *reader, const atomic_bool *flag);
 /** Query a leased snapshot. Same inputs/errors as lexical_query; out_count zero
- * on error. Paths borrow the lease, including across publication. One thread
- * per lease; separate leases can query concurrently without the lifecycle lock. */
+ * on error. A derived snapshot queries its base (skipping tombstones) and its
+ * delta, then merges both ordered lists, so results equal one engine holding
+ * the live entries. Paths borrow the lease, including across publication. One
+ * thread per lease; separate leases can query concurrently without the
+ * lifecycle lock. */
 tl_status catalog_query(tl_catalog_reader *reader, const char *query, tl_result *results,
                         size_t capacity, size_t *out_count);
 /** Resolve nonzero id in this leased view (acquire current view before launch).
@@ -80,8 +119,9 @@ void catalog_unpin(tl_catalog_snapshot *snapshot);
 /** Borrow generation/count of a metadata pin, zero for NULL. No errors. */
 uint64_t catalog_snapshot_gen(const tl_catalog_snapshot *snapshot);
 size_t catalog_snapshot_count(const tl_catalog_snapshot *snapshot);
-/** Borrow sorted-id entry at position while pinned; TL_INVALID out-of-range or
- * NULL. Outputs borrow pin. No allocation/I/O. */
+/** Borrow the live entry at position (ascending id order across both
+ * segments) while pinned; TL_INVALID out-of-range or NULL. Outputs borrow
+ * pin. No allocation/I/O. */
 tl_status catalog_snapshot_entry(const tl_catalog_snapshot *snapshot, size_t position, uint64_t *id,
                                  const char **path, bool *is_dir);
 /** Borrow scoped raw path context under a metadata pin; see lexical_context_path.

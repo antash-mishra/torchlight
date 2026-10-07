@@ -11,9 +11,14 @@ results, with newer queries superseding or cancelling older ones (M6 step 1,
 [ADR 0028](adr/0028-m6-search-thread-and-persistence-owner.md)). With an
 explicitly configured model, a matching owned semantic metadata snapshot
 supports the asynchronous final phase. The writer's indexing thread owns inotify,
-crawling into private batches, full-engine construction from committed rows and
-publication; its persistence thread owns the SQLite write connection, applying
-batches, history and retention.
+crawling into private batches (only the directories watch events touched, or
+every root for startup and repair), publication of a delta snapshot over the
+shared base engine (or a full rebuild for startup, recovery and compaction);
+its persistence thread owns the SQLite write connection, applying batches,
+reporting each commit's changed rows, history and retention (M6 step 3,
+[ADR 0030](adr/0030-m6-incremental-indexing.md)). Fuzzy scoring uses the
+vendored Frizbee SIMD matcher on the portable scorer's scale (M6 step 2,
+[ADR 0029](adr/0029-m6-frizbee-scoring-and-candidate-volume.md)).
 Saved entries serve before background reconciliation. Status and restart/failure
 recovery are implemented. Optional semantics are implemented; personalization
 ranking remains planned. See ADR 0011 for the full-rebuild baseline and
@@ -33,8 +38,8 @@ and copied metadata snapshots; the coordinator sends lexical results immediately
 and enforces cancellation/deadline fallback. See [M4 implementation](m4-implementation.md),
 [measured model evaluation](m4-model-evaluation.md) and
 [ADR 0023](adr/0023-m4-native-potion-and-two-phase-search.md). Large-catalog latency
-and broader relevance acceptance remain open. M6 performance work executes next;
-M5 personalization follows M6 and remaining M4 acceptance work.
+and broader relevance acceptance remain open. M6 performance work is implemented;
+M5 personalization follows the remaining M4 acceptance work.
 
 ADR 0012 adds filesystem incarnation checks during scans and schema v2 identity
 storage. Replacements retire old ids and descendants before publication, with
@@ -46,7 +51,7 @@ caches and bounded scoring workers. Large batches resolve directory evidence
 before dispatch; workers write disjoint outputs and the coordinator orders
 results. Query evaluation retains the same complete matching and ranking rules.
 
-## Next implementation priority: M6
+## M6: responsive search and incremental indexing (implemented)
 
 M6 is one planned milestone with three ordered steps: worker separation,
 Frizbee SIMD search, then incremental indexing. The GTK main thread continues
@@ -61,10 +66,11 @@ Frizbee is the selected production fuzzy matcher through its C ABI; there is no
 library-selection phase. Retrieval channels, normalization/raw-byte paths,
 field weights and exact-match priority remain contracts. Incremental changes
 will share unchanged blocks and reconcile affected scopes, keeping full rebuilds
-for recovery/compaction. A mapped binary index is not required. Step 1 (search thread, request
-queues, persistence thread) is implemented; the full rebuilds described below
-remain until step 3 lands. See [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md)
-and the [M6 working plan](m6-plan.md) for the target thread and data flow.
+for recovery/compaction. A mapped binary index is not required. All three steps
+are implemented: the search thread and persistence owner, Frizbee scoring with
+cross-query word caches, and scoped rescans with base-plus-delta snapshots and
+incremental semantic stages. See [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md),
+the step ADRs 0028 to 0030 and the [M6 working plan](m6-plan.md).
 
 ## Components
 
@@ -91,18 +97,26 @@ depends on the lower modules; filesystem and index modules never call storage.
 
 ## Indexing flow
 
-1. `crawl` walks roots and emits path/stat data with device/inode and birth time
-   (ctime fallback). `store` retires changed incarnations before upserting.
-2. The writer validates catalog changes and prepares private index deltas.
-3. `tokenize` normalizes raw path bytes and retains boundary metadata. `prefix`,
-   `trigram`, `subseq` (character masks) and `typo` build their structures privately.
-4. `store` commits the catalog batch, then the writer publishes `catalog_gen`.
-   Queries pin that `catalog_gen`; old blocks remain live until readers release them.
-   Failed post-commit publication triggers reload/rebuild before later updates.
-5. A background thread embeds changed paths. The writer validates path/model
-   versions, persists vectors, and publishes corresponding vector updates.
-6. `watch` coalesces incremental events. Overflow, startup, and unavailable
-   watches trigger reconciliation; unsuccessful scans cannot establish deletion.
+1. `watch` coalesces events into directory scopes (a changed entry's parent,
+   or a created directory's subtree). Startup, overflow, requests, periodic
+   repair, failures and root changes scan every root instead.
+2. `crawl` walks those scopes (or roots) and emits path/stat data with
+   device/inode and birth time (ctime fallback). `store` retires changed
+   incarnations before upserting and prunes only listed scopes.
+3. `store` commits the catalog batch in one short transaction and reports the
+   ids of the rows it touched.
+4. The writer loads those committed rows, merges them into the delta entries
+   kept since the base, builds a small delta engine that references the base
+   (`tokenize`, `prefix`, `trigram`, `subseq` masks and `typo` built privately)
+   and publishes `catalog_gen` as base + delta + tombstones. Past
+   max(4096, base/32) delta entries, or for incomplete change sets, it rebuilds
+   a new base instead (compaction). Queries pin that `catalog_gen`; the shared
+   base lives until its last snapshot is released. Failed post-commit
+   publication triggers reload/rebuild before later updates.
+5. The semantic worker stages the new metadata, copying the previous vector
+   for every row whose prepared text is unchanged and embedding only the rest,
+   then publishes the vector view for that `catalog_gen`.
+6. Unsuccessful scans cannot establish deletion.
 
 Install watches during crawling and reconcile affected directories afterward.
 Paired renames preserve ids; directory moves update descendants and invalidate

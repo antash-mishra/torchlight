@@ -4,9 +4,9 @@ M1, M2 and M3 have their planned features implemented. M3's review bugs are fixe
 and covered by regression tests. Detailed evidence and remaining desktop checks
 are in [M3 verification](m3-completion.md).
 M3 Part 2 and M4's functional opt-in semantic path are implemented. M4 acceptance
-remains open. One new milestone, M6, executes next: worker separation, then
-Frizbee SIMD search, then incremental indexing. M5 follows M6 and remaining M4
-acceptance work, as recorded in [the plan](../PLAN.md).
+remains open. M6 (worker separation, then Frizbee SIMD search, then
+incremental indexing) is implemented. M5 follows the remaining M4 acceptance
+work, as recorded in [the plan](../PLAN.md).
 
 | Milestone | In simple words | Status |
 |---|---|---|
@@ -16,7 +16,7 @@ acceptance work, as recorded in [the plan](../PLAN.md).
 | M3 Part 2 | Improve name search, unfinished typos, abbreviations and ranking; test useful results among competing apps and files. | Implemented; held-out relevance and performance measured |
 | M4 | Combine improved name search with optional local embeddings and vector retrieval for meaning-based matches. | Functional opt-in implementation; native Potion/cache/two-phase RRF tested; performance and broader relevance acceptance open |
 | M5 | Use optional opening history to recommend personally useful files and apps higher, with privacy and history controls. | Planned after M6 and remaining M4 acceptance work |
-| M6 | Separate workers, use Frizbee SIMD matching, then update indexes incrementally. | In progress: step 1 (search thread, request queues, persistence thread) implemented; steps 2 and 3 planned |
+| M6 | Separate workers, use Frizbee SIMD matching, then update indexes incrementally. | Implemented: search thread and persistence owner; Frizbee scoring with typing p95 under 5 ms at 500k; scoped rescans and delta segments (lexical and semantic) with about 110 ms update lag at 500k |
 
 M3 Part 2 now keeps names, generic names, keywords and folders distinct, finds
 unfinished one-edit typos (including `proej`), and optimizes fuzzy alignment within
@@ -40,12 +40,18 @@ history are already implemented; using it to personalize ranking is future work.
 Separate remaining work is real fractional/multiple-monitor validation, a human
 screen-reader session, and Wayland behavior. The automated tests cover small
 X11 screens, integer GTK scales, theme/font overrides and AT-SPI accessibility.
-M6 now owns the original 5 ms lexical search target, full-rebuild delay and peak
-memory optimization. Frizbee is selected; implementation validation still checks
-correctness, relevance and performance, without a library-selection phase. Worker
-separation keeps the UI/IPC loop, search, indexing and history/persistence
-independent, while catalog/history database writes remain serialized. See
-[ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md) and the
-[M6 working plan](m6-plan.md) for the step-by-step flow and exit criteria.
+M6 met its targets on the reference machine under background load: typing p95
+under 5 ms at 500k synthetic paths with unchanged held-out recall, and a
+100-file update published in about 110 ms instead of 4 s, without a second
+engine in memory. With a model, hybrid search serves that update in 277 ms at
+500k through a derived semantic snapshot, and RSS grows 0.4% instead of 39%.
+Whole-query p95 at 500k sits near 5 to 6 ms. The M4 final-phase gate (p95
+below 10 ms) stays open: the exhaustive int8 vector scan alone takes about
+68 ms at 500k (see the [M6 plan](m6-plan.md) measurements). A phase-ordering
+race from step 1, where a fast semantic final could overtake a large lexical
+frame, was found and fixed with a deterministic regression test. See ADRs
+[0028](adr/0028-m6-search-thread-and-persistence-owner.md),
+[0029](adr/0029-m6-frizbee-scoring-and-candidate-volume.md) and
+[0030](adr/0030-m6-incremental-indexing.md).
 Enabling the installed service and choosing a global shortcut
 are user setup steps described in [desktop setup](desktop-setup.md).

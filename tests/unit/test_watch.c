@@ -9,7 +9,7 @@
 #include <unistd.h>
 struct observations {
     size_t events, overflows;
-    bool paired, relocated;
+    bool paired, relocated, paired_created, fresh_created, arrived_created;
 };
 static tl_status observed(void *context, const tl_watch_event *event) {
     struct observations *seen = context;
@@ -17,10 +17,16 @@ static tl_status observed(void *context, const tl_watch_event *event) {
     if (event->overflow)
         seen->overflows++;
     if (event->old_path != NULL && strstr(event->old_path, "/old") != NULL &&
-        strstr(event->path, "/new") != NULL)
+        strstr(event->path, "/new") != NULL) {
         seen->paired = true;
-    if (event->path != NULL && strstr(event->path, "/new/fresh") != NULL)
+        seen->paired_created = seen->paired_created || event->created;
+    }
+    if (event->path != NULL && strstr(event->path, "/new/fresh") != NULL) {
         seen->relocated = true;
+        seen->fresh_created = seen->fresh_created || event->created;
+    }
+    if (event->path != NULL && strstr(event->path, "/arrived") != NULL)
+        seen->arrived_created = seen->arrived_created || event->created;
     return TL_OK;
 }
 static void wait_events(tl_watch *watch, struct observations *seen) {
@@ -47,7 +53,15 @@ void test_watch(void) {
     int fd = open(fresh, O_CREAT | O_WRONLY, 0600);
     CHECK(fd >= 0 && close(fd) == 0);
     wait_events(watch, &seen);
-    CHECK(seen.relocated);
+    CHECK(seen.relocated && seen.fresh_created && !seen.paired_created);
+    /* A directory moved in from an unwatched place has no paired source: its
+     * subtree is new to the watcher. */
+    char outside[] = "/tmp/torchlight-watch-out-XXXXXX", arrived[256];
+    CHECK(mkdtemp(outside) != NULL);
+    CHECK(snprintf(arrived, sizeof(arrived), "%s/arrived", root) > 0);
+    CHECK(rename(outside, arrived) == 0);
+    wait_events(watch, &seen);
+    CHECK(seen.arrived_created);
     struct inotify_event overflow = {.wd = -1, .mask = IN_Q_OVERFLOW};
     CHECK(watch_feed(watch, &overflow, sizeof(overflow), observed, &seen) == TL_OK &&
           seen.overflows == 1);
@@ -57,5 +71,5 @@ void test_watch(void) {
     CHECK(watch_create(1, &watch) == TL_OK && watch_add(watch, root) == TL_OK);
     CHECK(watch_add(watch, renamed) == TL_LIMIT && watch_stats(watch).unavailable == 1);
     watch_destroy(watch);
-    CHECK(unlink(fresh) == 0 && rmdir(renamed) == 0 && rmdir(root) == 0);
+    CHECK(unlink(fresh) == 0 && rmdir(renamed) == 0 && rmdir(arrived) == 0 && rmdir(root) == 0);
 }

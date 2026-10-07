@@ -132,7 +132,7 @@ def seed_catalog(service, paths):
         return connection.execute("SELECT count(*) FROM files").fetchone()[0]
 
 
-def benchmark(binary, fixture, size, model=None):
+def benchmark(binary, fixture, size, model=None, semantic_timeout_s=600):
     with tempfile.TemporaryDirectory(prefix="torchlight-ipc-bench-") as temporary:
         base = Path(temporary)
         live = base / "live"
@@ -157,7 +157,7 @@ def benchmark(binary, fixture, size, model=None):
             semantic_ready_ms = None
             if model:
                 ready_start = time.perf_counter()
-                deadline = time.monotonic() + 600
+                deadline = time.monotonic() + semantic_timeout_s
                 while time.monotonic() < deadline:
                     response, _ = service.call(query="projectNotes.md", limit=10)
                     if response['emb_gen'] is not None:
@@ -173,8 +173,11 @@ def benchmark(binary, fixture, size, model=None):
                 lexical_phase.append(response['lexical_elapsed_ms'])
                 round_trip.append(elapsed)
                 engine.append(response["timing"]["engine_us"] / 1000)
-            # Measure a real filesystem batch while rebuilding a large resident
+            # Measure a real filesystem batch while updating a large resident
             # catalog. Only the 100 live files are scanned; virtual paths remain.
+            # Resetting the high-water mark makes VmHWM the update's own peak.
+            Path(f"/proc/{service.process.pid}/clear_refs").write_text("5")
+            before_update = service.memory()
             start = time.perf_counter()
             for i in range(100):
                 (live / f"update-{i}.txt").touch()
@@ -196,6 +199,23 @@ def benchmark(binary, fixture, size, model=None):
                 index += 1
             else:
                 raise TimeoutError("update publication")
+            # With a model, measure how long hybrid search takes to serve the
+            # updated catalog_gen: an incremental stage reuses unchanged rows.
+            semantic_update_ms = semantic_reused = semantic_derived = None
+            if model:
+                deadline = time.monotonic() + 900
+                while time.monotonic() < deadline:
+                    response, _ = service.call(query="projectNotes.md", limit=10)
+                    if response["emb_gen"] is not None:
+                        semantic_update_ms = (time.perf_counter() - changed) * 1000
+                        break
+                    time.sleep(0.05)
+                else:
+                    raise TimeoutError("semantic update")
+                status, _ = service.call("status")
+                semantic = status.get("semantic", {})
+                semantic_reused = semantic.get("reused")
+                semantic_derived = semantic.get("derived_stages")
             latest = service.idle()
             output = dict(requested_paths=size, catalog_entries=entries, held_out_queries=len(queries),
                           semantic_ready_ms=semantic_ready_ms, lexical_phase_ms=percentiles(lexical_phase),
@@ -206,7 +226,13 @@ def benchmark(binary, fixture, size, model=None):
                           update_lag_ms=round(update_lag, 3),
                           initial_100_files_reconcile_ms=initial["last_scan_ms"],
                           update_reconcile_ms=latest["last_scan_ms"],
-                          initial_memory_kib=steady_memory, after_update_memory_kib=service.memory(),
+                          initial_memory_kib=steady_memory, before_update_memory_kib=before_update,
+                          after_update_memory_kib=service.memory(),
+                          scoped_reconciliations=latest.get("scoped_reconciliations"),
+                          delta_publications=latest.get("delta_publications"),
+                          full_builds=latest.get("full_builds"),
+                          semantic_update_ms=semantic_update_ms, semantic_reused=semantic_reused,
+                          semantic_derived_stages=semantic_derived,
                           file_batch_creation_ms=round((changed - start) * 1000, 3))
             print(json.dumps(output, sort_keys=True), flush=True)
         finally:
@@ -219,6 +245,8 @@ if __name__ == "__main__":
     parser.add_argument("fixture")
     parser.add_argument("--sizes", nargs="+", type=int, default=[50000, 500000])
     parser.add_argument("--model")
+    # The first (cold-cache) semantic stage at 500k takes minutes; slow disks need longer.
+    parser.add_argument("--semantic-timeout-s", type=int, default=600)
     args = parser.parse_args()
     cpu = next((line.split(":", 1)[1].strip() for line in Path("/proc/cpuinfo").read_text().splitlines()
                 if line.startswith("model name")), "unknown")
@@ -227,4 +255,4 @@ if __name__ == "__main__":
                           build="C17 -O3 -DNDEBUG", corpus="M1 synthetic seed 42, deduplicated; held-out query seed 2")), flush=True)
     for size in args.sizes:
         benchmark(str(Path(args.daemon).resolve()), str(Path(args.fixture).resolve()), size,
-                  str(Path(args.model).resolve()) if args.model else None)
+                  str(Path(args.model).resolve()) if args.model else None, args.semantic_timeout_s)

@@ -19,15 +19,47 @@ struct tl_store {
     sqlite3_stmt *put, *mark_seen, *keep, *identity;
     sqlite3_stmt *embedding_get, *embedding_put, *embedding_touch;
     bool transaction, reading, changed, embedding_batch;
+    /* Ids of files rows inserted, updated or deleted by the current catalog
+     * transaction (see store_changes), up to change_limit before overflow. */
+    uint64_t *change_ids;
+    size_t change_count, change_capacity, change_limit;
+    bool changes_overflow, roots_changed;
 };
+/* SQLite reports every row write on this connection, including deletions by
+ * scoped DELETE statements and the explicit destination delete of a move, so
+ * the recorded ids are exactly the rows a committed batch touched. */
+static void record_change(tl_store *store, sqlite3_int64 row) {
+    if (store->changes_overflow || row <= 0)
+        return;
+    if (store->change_count == store->change_limit) {
+        store->changes_overflow = true;
+        return;
+    }
+    if (store->change_count == store->change_capacity) {
+        size_t capacity = store->change_capacity == 0 ? 64 : store->change_capacity * 2;
+        uint64_t *grown = realloc(store->change_ids, capacity * sizeof(uint64_t));
+        if (grown == NULL) {
+            store->changes_overflow = true;
+            return;
+        }
+        store->change_ids = grown;
+        store->change_capacity = capacity;
+    }
+    store->change_ids[store->change_count++] = (uint64_t)row;
+}
 static void catalog_change(void *context, int operation, const char *database, const char *table,
                            sqlite3_int64 row) {
     tl_store *store = context;
     (void)operation;
-    (void)row;
-    if (strcmp(database, "main") == 0 &&
-        (strcmp(table, "files") == 0 || strcmp(table, "roots") == 0))
+    if (strcmp(database, "main") != 0)
+        return;
+    if (strcmp(table, "files") == 0) {
         store->changed = true;
+        record_change(store, row);
+    } else if (strcmp(table, "roots") == 0) {
+        store->changed = true;
+        store->roots_changed = true;
+    }
 }
 static const char PUT_SQL[] =
     "INSERT INTO files(path,name,ext,is_dir,mtime,size,identity) VALUES(?1,?2,?3,?4,?5,?6,?7) "
@@ -234,6 +266,7 @@ void store_destroy(tl_store *store) {
     sqlite3_finalize(store->embedding_get);
     sqlite3_finalize(store->embedding_put);
     sqlite3_finalize(store->embedding_touch);
+    free(store->change_ids);
     if (store->db != NULL) {
         /* Closing the connection rolls back any unfinished transaction. */
         int code = sqlite3_close_v2(store->db);
@@ -251,6 +284,9 @@ tl_status store_begin(tl_store *store) {
         return status;
     store->transaction = true;
     store->changed = false;
+    store->change_count = 0;
+    store->changes_overflow = false;
+    store->roots_changed = false;
     status = execute(store, "DELETE FROM seen");
     if (status == TL_OK)
         status = execute(store, "DELETE FROM kept");
@@ -447,6 +483,99 @@ tl_status store_keep(tl_store *store, const char *path) {
         return TL_STATE;
     return run_cached(store->keep, path);
 }
+/* Scoped prunes bind ?1 to the directory, ?2 to its slash-terminated prefix
+ * and ?3 to the first byte string after every path with that prefix, so the
+ * path index answers the range instead of a scan of the whole catalog. Kept
+ * scopes and registered roots nested in the directory spare their subtrees. */
+#define SPARE_KEPT_AND_NESTED_ROOTS                                                                \
+    " AND NOT EXISTS(SELECT 1 FROM kept WHERE files.path=kept.path OR "                            \
+    "(substr(files.path,1,length(kept.path))=kept.path AND "                                       \
+    "substr(files.path,length(kept.path)+1,1)=X'2F'))"                                             \
+    " AND NOT EXISTS(SELECT 1 FROM roots WHERE roots.path>=?2 AND roots.path<?3 AND "              \
+    "(files.path=roots.path OR (substr(files.path,1,length(roots.path))=roots.path AND "           \
+    "substr(files.path,length(roots.path)+1,1)=X'2F')))"
+static const char PRUNE_TREE_SQL[] =
+    "DELETE FROM files WHERE path>=?2 AND path<?3 AND "
+    "path NOT IN(SELECT path FROM seen)" SPARE_KEPT_AND_NESTED_ROOTS;
+/* A row survives a children rescan when its direct-child component was seen. */
+static const char PRUNE_CHILDREN_SQL[] =
+    "DELETE FROM files WHERE path>=?2 AND path<?3 AND "
+    "(CASE WHEN instr(substr(path,length(?2)+1),X'2F')=0 THEN path "
+    "ELSE substr(path,1,length(?2)+instr(substr(path,length(?2)+1),X'2F')-1) END) "
+    "NOT IN(SELECT path FROM seen)" SPARE_KEPT_AND_NESTED_ROOTS;
+static tl_status prune_range(tl_store *store, const char *sql, const char *directory) {
+    if (store == NULL || directory == NULL || directory[0] != '/')
+        return TL_INVALID;
+    if (!store->transaction)
+        return TL_STATE;
+    size_t length = strlen(directory);
+    if (length > INT_MAX - 2)
+        return TL_LIMIT;
+    char *prefix = malloc(length + 2), *limit = malloc(length + 2);
+    tl_status status = prefix == NULL || limit == NULL ? TL_NOMEM : TL_OK;
+    if (status == TL_OK) {
+        memcpy(prefix, directory, length);
+        if (length != 1)
+            prefix[length++] = '/';
+        memcpy(limit, prefix, length);
+        limit[length - 1] = (char)('/' + 1); /* "dir/" < every "dir/..." < "dir0" */
+    }
+    sqlite3_stmt *statement = NULL;
+    if (status == TL_OK && sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
+        status = TL_IO;
+    if (status == TL_OK)
+        status = bind_blob(statement, 1, directory, strlen(directory));
+    if (status == TL_OK)
+        status = bind_blob(statement, 2, prefix, length);
+    if (status == TL_OK)
+        status = bind_blob(statement, 3, limit, length);
+    if (status == TL_OK && sqlite3_step(statement) != SQLITE_DONE)
+        status = TL_IO;
+    if (statement != NULL && sqlite3_finalize(statement) != SQLITE_OK)
+        status = TL_IO;
+    free(prefix);
+    free(limit);
+    return status;
+}
+tl_status store_prune_children(tl_store *store, const char *directory) {
+    return prune_range(store, PRUNE_CHILDREN_SQL, directory);
+}
+tl_status store_prune_tree(tl_store *store, const char *directory) {
+    return prune_range(store, PRUNE_TREE_SQL, directory);
+}
+tl_status store_track_changes(tl_store *store, size_t limit) {
+    if (store == NULL)
+        return TL_INVALID;
+    if (store->transaction)
+        return TL_STATE;
+    store->change_limit = limit;
+    store->change_count = 0;
+    store->changes_overflow = false;
+    return TL_OK;
+}
+static int compare_ids(const void *left, const void *right) {
+    uint64_t a = *(const uint64_t *)left, b = *(const uint64_t *)right;
+    return a < b ? -1 : a > b;
+}
+tl_status store_changes(tl_store *store, const uint64_t **ids, size_t *count, bool *complete,
+                        bool *roots_changed) {
+    if (store == NULL || ids == NULL || count == NULL || complete == NULL || roots_changed == NULL)
+        return TL_INVALID;
+    if (store->transaction)
+        return TL_STATE;
+    if (store->change_count > 1)
+        qsort(store->change_ids, store->change_count, sizeof(uint64_t), compare_ids);
+    size_t unique = 0;
+    for (size_t i = 0; i < store->change_count; i++)
+        if (unique == 0 || store->change_ids[unique - 1] != store->change_ids[i])
+            store->change_ids[unique++] = store->change_ids[i];
+    store->change_count = unique;
+    *ids = store->change_ids;
+    *count = unique;
+    *complete = !store->changes_overflow && store->change_limit != 0;
+    *roots_changed = store->roots_changed;
+    return TL_OK;
+}
 /* Validate the whole decimal value: SQLite's CAST silently accepts malformed
  * text and saturates at INT64_MAX, which could reuse a catalog_gen. */
 static tl_status read_catalog_gen(tl_store *store, uint64_t *out) {
@@ -509,6 +638,10 @@ tl_status store_rollback(tl_store *store) {
     tl_status status = execute(store, "ROLLBACK");
     if (status == TL_OK)
         store->transaction = false;
+    /* Rolled-back writes never reached a committed view. */
+    store->change_count = 0;
+    store->changes_overflow = false;
+    store->roots_changed = false;
     return status;
 }
 static tl_status load_row(sqlite3_stmt *statement, tl_store_callback callback, void *context) {
@@ -568,6 +701,61 @@ tl_status store_load_catalog(tl_store *store, tl_store_callback callback, void *
     status = read_catalog_gen(store, &catalog_gen);
     if (status == TL_OK)
         status = store_load(store, callback, context);
+    if (status == TL_OK)
+        status = execute(store, "COMMIT");
+    if (status != TL_OK) {
+        tl_status rollback = execute(store, "ROLLBACK");
+        if (rollback != TL_OK)
+            status = rollback;
+    }
+    store->reading = false;
+    if (status == TL_OK)
+        *out_catalog_gen = catalog_gen;
+    return status;
+}
+/* Report the committed row of every id that still exists, in the given order. */
+static tl_status load_ids(tl_store *store, const uint64_t *ids, size_t count,
+                          tl_store_callback callback, void *context) {
+    sqlite3_stmt *statement = NULL;
+    const char *sql =
+        "SELECT id,files.path,EXISTS(SELECT 1 FROM roots WHERE roots.path=files.path),files.is_dir "
+        "FROM files WHERE id=?1";
+    if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
+        return TL_IO;
+    tl_status status = TL_OK;
+    for (size_t i = 0; i < count && status == TL_OK; i++) {
+        if (ids[i] > INT64_MAX ||
+            sqlite3_bind_int64(statement, 1, (sqlite3_int64)ids[i]) != SQLITE_OK) {
+            status = TL_INVALID;
+            break;
+        }
+        int code = sqlite3_step(statement);
+        if (code == SQLITE_ROW)
+            status = load_row(statement, callback, context);
+        else if (code != SQLITE_DONE)
+            status = TL_IO;
+        if (sqlite3_reset(statement) != SQLITE_OK && status == TL_OK)
+            status = TL_IO;
+    }
+    return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
+}
+tl_status store_load_ids(tl_store *store, const uint64_t *ids, size_t count,
+                         tl_store_callback callback, void *context, uint64_t *out_catalog_gen) {
+    if (out_catalog_gen == NULL)
+        return TL_INVALID;
+    *out_catalog_gen = 0;
+    if (store == NULL || callback == NULL || (ids == NULL && count != 0))
+        return TL_INVALID;
+    if (store->transaction || store->reading)
+        return TL_STATE;
+    tl_status status = execute(store, "BEGIN");
+    if (status != TL_OK)
+        return status;
+    store->reading = true;
+    uint64_t catalog_gen = 0;
+    status = read_catalog_gen(store, &catalog_gen);
+    if (status == TL_OK)
+        status = load_ids(store, ids, count, callback, context);
     if (status == TL_OK)
         status = execute(store, "COMMIT");
     if (status != TL_OK) {

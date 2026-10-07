@@ -51,6 +51,16 @@ void crawl_destroy(tl_crawl *crawler);
  * otherwise ctime; symlink identity belongs to the link itself. No deletion is
  * performed. Identity/stat lookup failures keep the scope unreadable. */
 tl_status crawl_run(tl_crawl *crawler, const char *root, tl_crawl_callback callback, void *context);
+/** Rescan one directory that a root's walk indexes (see crawl_covers): report
+ * the directory itself (is_root false), then its direct children, and with
+ * recursive its whole subtree, applying exactly crawl_run's exclusion,
+ * allowlist and unreadable-scope rules below it. Without recursive, child
+ * directories are reported but not entered. A missing or unreadable
+ * directory, or a walk failure, returns TL_IO so the caller prunes nothing;
+ * callback failures propagate; TL_INVALID for NULL or relative arguments.
+ * Same borrowed-entry contract as crawl_run. */
+tl_status crawl_scope(tl_crawl *crawler, const char *directory, bool recursive,
+                      tl_crawl_callback callback, void *context);
 /** Return whether crawl_run(outer) would index directory inner itself (both
  * absolute and canonical): inner is outer or below it, and no excluded,
  * skipped or traversed-only directory lies on the way. Then a separate scan of

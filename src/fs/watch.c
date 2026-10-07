@@ -203,6 +203,8 @@ static tl_status dispatch(tl_watch *watch, const struct inotify_event *event,
             }
         }
     }
+    update.created = (event->mask & IN_CREATE) != 0 ||
+                     ((event->mask & IN_MOVED_TO) != 0 && paired == WATCH_MOVE_SLOTS);
     if (status == TL_OK && paired != WATCH_MOVE_SLOTS && update.is_dir)
         status = relocate(watch, update.old_path, update.path);
     if (status == TL_OK)

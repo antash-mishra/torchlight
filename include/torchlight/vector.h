@@ -47,6 +47,17 @@ void vector_destroy(tl_vector *index);
  * TL_LIMIT when reserved rows are full. Errors leave the builder unchanged. */
 tl_status vector_add(tl_vector *index, uint64_t id, uint64_t emb_gen, const float *values,
                      size_t dimensions);
+/** Find the position of id among an index's rows (built or sealed, rows are
+ * ascending by id). TL_INVALID for NULL arguments, TL_STATE when absent;
+ * *position untouched then. No allocation/I/O. */
+tl_status vector_position(const tl_vector *index, uint64_t id, size_t *position);
+/** Append source's stored row at position, under its id, to an unsealed
+ * builder of the same emb_gen, dimensions and storage format, copying the
+ * normalized or quantized data exactly so the row scores bit-identically
+ * without re-embedding. Ids must still strictly increase. TL_INVALID for
+ * arguments, ids or a format mismatch, TL_STATE if sealed or emb_gen
+ * differs, TL_LIMIT when reserved rows are full. No allocation. */
+tl_status vector_add_row(tl_vector *index, const tl_vector *source, size_t position);
 /** Seal builder for immutable searches. TL_INVALID for NULL, TL_STATE if sealed;
  * TL_OK otherwise, including empty indexes. No allocation/ownership transfer. */
 tl_status vector_finish(tl_vector *index);
@@ -56,6 +67,12 @@ tl_status vector_finish(tl_vector *index);
 tl_status vector_workspace_create(const tl_vector *index, tl_vector_workspace **out);
 /** Free scratch without touching the borrowed index; NULL allowed, no errors. */
 void vector_workspace_destroy(tl_vector_workspace *workspace);
+/** Attach an optional bitmap of excluded row positions (bit p of word p/64)
+ * for later queries on this workspace, or NULL to clear. Excluded rows are
+ * never scored or returned; with the sign-bit shortlist they may still take
+ * shortlist slots. Borrowed until replaced; it must cover vector_count rows.
+ * NULL workspace ignored. No allocation/I/O/errors. */
+void vector_workspace_exclude(tl_vector_workspace *workspace, const uint64_t *excluded);
 /** Search every row by cosine of normalized floats, best first, ties by id.
  * capacity is 1..VECTOR_MAX_RESULTS; queries/dimensions/emb_gen must match this
  * workspace's index. Copy at most capacity results to caller-owned results;

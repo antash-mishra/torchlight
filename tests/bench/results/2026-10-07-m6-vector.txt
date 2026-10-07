@@ -1,0 +1,26 @@
+ 21:37:46 up 32 days,  9:45,  1 user,  load average: 4.01, 4.22, 4.06
+synthetic_float_reference model=none inference=excluded ipc=excluded
+rows=50000 dimensions=256 index_bytes=51600104 build_s=0.073 resident_kib=52324
+first_scan_ms=12.625
+float_scan_ms n=64 p50=13.344 p95=18.963 p99=23.514 max=23.514
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=52352
+rrf_2x1000_ms n=64 p50=0.334 p95=0.533 p99=0.581 max=0.581
+synthetic_float_reference model=none inference=excluded ipc=excluded
+rows=500000 dimensions=256 index_bytes=516000104 build_s=0.702 resident_kib=505856
+first_scan_ms=155.927
+float_scan_ms n=64 p50=144.863 p95=163.359 p99=178.240 max=178.240
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=505856
+rrf_2x1000_ms n=64 p50=0.321 p95=0.377 p99=0.436 max=0.436
+ 21:49:43 up 32 days,  9:57,  1 user,  load average: 4.88, 4.99, 4.83
+synthetic_int8_exhaustive model=none inference=excluded ipc=excluded
+rows=50000 dimensions=256 index_bytes=13400104 build_s=0.116 resident_kib=15016
+first_scan_ms=5.523
+float_scan_ms n=64 p50=6.163 p95=10.981 p99=12.834 max=12.834
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=15104
+rrf_2x1000_ms n=64 p50=0.331 p95=0.427 p99=0.468 max=0.468
+synthetic_int8_exhaustive model=none inference=excluded ipc=excluded
+rows=500000 dimensions=256 index_bytes=134000104 build_s=1.154 resident_kib=132784
+first_scan_ms=72.727
+float_scan_ms n=64 p50=67.733 p95=88.392 p99=90.650 max=90.650
+self_match_checks=64/64 minor_faults=0 major_faults=0 peak_rss_kib=132736
+rrf_2x1000_ms n=64 p50=0.324 p95=0.465 p99=0.672 max=0.672

@@ -132,7 +132,97 @@ static void consistent_catalog_load(tl_store *reader, const char *database) {
     CHECK(store_load_catalog(NULL, observe, &after, &after_gen) == TL_INVALID && after_gen == 0);
     store_destroy(writer);
 }
+struct ids {
+    uint64_t values[16];
+    size_t count;
+};
+static tl_status collect_ids(void *context, const tl_store_entry *entry) {
+    struct ids *ids = context;
+    CHECK(ids->count < 16);
+    ids->values[ids->count++] = entry->id;
+    return TL_OK;
+}
+static uint64_t id_of(tl_store *store, const char *path);
+struct lookup {
+    const char *path;
+    uint64_t id;
+};
+static tl_status find_path(void *context, const tl_store_entry *entry) {
+    struct lookup *lookup = context;
+    if (strcmp(entry->path, lookup->path) == 0)
+        lookup->id = entry->id;
+    return TL_OK;
+}
+static uint64_t id_of(tl_store *store, const char *path) {
+    struct lookup lookup = {path, 0};
+    CHECK(store_load(store, find_path, &lookup) == TL_OK);
+    return lookup.id;
+}
+/* Scoped prunes remove only unseen direct children (with subtrees) or unseen
+ * descendants, never a byte-prefix sibling, a kept scope or a nested root;
+ * the committed change set lists exactly the touched rows. */
+static void scoped_prunes_and_changes(void) {
+    char database[] = "/tmp/torchlight-scoped-XXXXXX";
+    int fd = mkstemp(database);
+    CHECK(fd >= 0 && close(fd) == 0);
+    tl_store *store = NULL;
+    CHECK(store_create(database, &store) == TL_OK);
+    CHECK(store_track_changes(store, 16) == TL_OK);
+    CHECK(store_begin(store) == TL_OK);
+    const char *paths[] = {"/s",   "/s/a",   "/s/a/x",    "/s/b",        "/s/c", "/s/c/y",
+                           "/s/k", "/s/k/z", "/s/nested", "/s/nested/n", "/s2"};
+    for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); i++)
+        put_path(store, paths[i], false, true);
+    CHECK(store_prune(store, "/s") == TL_OK && store_prune(store, "/s/nested") == TL_OK);
+    CHECK(store_commit(store) == TL_OK);
+    const uint64_t *changed = NULL;
+    size_t count = 0;
+    bool complete = false, roots = false;
+    CHECK(store_changes(store, &changed, &count, &complete, &roots) == TL_OK);
+    CHECK(count == 11 && complete && roots);
+    uint64_t b = id_of(store, "/s/b"), c = id_of(store, "/s/c"), y = id_of(store, "/s/c/y");
+    uint64_t a = id_of(store, "/s/a"), x = id_of(store, "/s/a/x");
+    CHECK(store_prune_children(store, "/s") == TL_STATE); /* outside a transaction */
+    /* Children rescan of /s: a seen (its subtree stays), b and c (with y) gone,
+     * k unreadable and nested a registered root. */
+    CHECK(store_begin(store) == TL_OK);
+    put_path(store, "/s", false, true);
+    put_path(store, "/s/a", false, true);
+    put_path(store, "/s/k", true, true);
+    CHECK(store_prune_children(store, "/s") == TL_OK);
+    CHECK(store_commit(store) == TL_OK);
+    CHECK(store_changes(store, &changed, &count, &complete, &roots) == TL_OK);
+    CHECK(count == 3 && complete && !roots);
+    CHECK(changed[0] == b && changed[1] == c && changed[2] == y);
+    CHECK(id_of(store, "/s/a/x") == x && id_of(store, "/s/k/z") != 0 &&
+          id_of(store, "/s/nested/n") != 0 && id_of(store, "/s2") != 0);
+    /* Tree rescan of /s/a drops the unseen descendant only. */
+    CHECK(store_begin(store) == TL_OK);
+    put_path(store, "/s/a", false, true);
+    CHECK(store_prune_tree(store, "/s/a") == TL_OK);
+    CHECK(store_commit(store) == TL_OK);
+    CHECK(store_changes(store, &changed, &count, &complete, &roots) == TL_OK);
+    CHECK(count == 1 && changed[0] == x && id_of(store, "/s/a") == a);
+    /* Load by id skips deleted rows and reports the committed generation. */
+    uint64_t wanted[] = {a, b, x, id_of(store, "/s2")}, gen = 0;
+    struct ids loaded = {0};
+    CHECK(store_load_ids(store, wanted, 4, collect_ids, &loaded, &gen) == TL_OK);
+    CHECK(loaded.count == 2 && loaded.values[0] == a && gen == 3);
+    /* Beyond the limit the change set is incomplete; rollback clears it. */
+    CHECK(store_track_changes(store, 1) == TL_OK && store_begin(store) == TL_OK);
+    CHECK(store_prune_children(store, "/s") == TL_OK);
+    CHECK(store_commit(store) == TL_OK);
+    CHECK(store_changes(store, &changed, &count, &complete, &roots) == TL_OK && !complete);
+    CHECK(store_begin(store) == TL_OK);
+    put_path(store, "/s/new", false, true);
+    CHECK(store_rollback(store) == TL_OK);
+    CHECK(store_changes(store, &changed, &count, &complete, &roots) == TL_OK && count == 0);
+    CHECK(store_prune_tree(store, "relative") == TL_INVALID);
+    store_destroy(store);
+    CHECK(unlink(database) == 0);
+}
 void test_store(void) {
+    scoped_prunes_and_changes();
     char database[] = "/tmp/torchlight-store-XXXXXX";
     int fd = mkstemp(database);
     CHECK(fd >= 0);

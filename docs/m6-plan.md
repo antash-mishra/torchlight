@@ -2,7 +2,8 @@
 
 M1 to M4 are implemented. M4's acceptance gates (500k final-phase latency and
 broader relevance) stay open and are measured again at the end of M6. This
-document is the working plan for M6. It refines the three steps in
+document is the working plan for M6. **All three steps are implemented
+(2026-10-07)**; see the end-of-M6 measurements below. It refines the three steps in
 [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md) using a
 code survey and a profile of the current engine taken on 2026-10-07.
 
@@ -166,6 +167,13 @@ higher than today. Latency p95 is not expected to improve in this step.
 
 ### Step 2: Frizbee scoring and fewer candidates
 
+**Status: implemented** (2026-10-07), see
+[ADR 0029](adr/0029-m6-frizbee-scoring-and-candidate-volume.md). Typing p95 at
+500k is 3.9 to 5.0 ms across runs (loaded machine), held-out recall unchanged. The plan
+below is kept as written; the ADR records where the implementation differs
+(plain `cargo build` instead of `cargo cbuild`, cross-query word caches and
+shortest-list trigram counting as the candidate-volume work, no list-mode spike).
+
 Goal: warm lexical p95 below 5 ms at 500k.
 
 Frizbee integration (the library choice is made; this is the wrapper work):
@@ -208,6 +216,11 @@ raw-byte path tests, exact-match and typo tests pass; `make lint` clean with
 the vendored header.
 
 ### Step 3: incremental indexing
+
+**Status: implemented** (2026-10-07), 3a, 3b and 3c, see
+[ADR 0030](adr/0030-m6-incremental-indexing.md). 100 touched files publish in
+about 110 ms at 500k with RSS growing about 1% and no new peak; with a model,
+a derived semantic snapshot serves the update in 277 ms and RSS grows 0.4%.
 
 Goal: a small change publishes in well under a second at 500k without a full
 scan or rebuild, and does not double RSS.
@@ -268,10 +281,52 @@ served popup-style one-connection-per-keystroke typing at 0.1 to 0.4 ms per key.
 
 ## Measurements recorded at the end of M6
 
-Engine and IPC p50/p95/p99 at 50k and 500k, latency during indexing, update
-lag, history queue counters, steady and peak RSS, and the M4 final-phase p95,
-all written to `tests/bench/results/` with the machine description. The M4
-acceptance gate is re-evaluated from these numbers.
+Same i7-8700K (AVX2, 12 threads, 32 GB) and synthetic corpus as the baseline,
+under background load (load average 3.6 to 5.1, another resident torchlightd
+re-indexing the home directory). Percentiles at 500k move by up to about 2 ms
+between runs, so single-run numbers below carry that uncertainty. Raw runs:
+`tests/bench/results/2026-10-07-m6-lexical.txt`, `-m6-daemon.jsonl`
+(lexical-only daemon, two 500k runs), `-m6-hybrid-daemon.jsonl` (Potion 256)
+and `-m6-vector.txt`.
+
+**Lexical (p50 / p95 / p99, ms)**
+
+| Measurement | Baseline | End of M6 |
+|---|---|---|
+| Engine typing, 500k | 8.55 p95 | 0.91 / 4.96 / 8.80 (other runs 3.9 to 4.5 p95) |
+| Engine whole query, 500k | 9.62 p95 | 1.17 / 5.64 / 9.38 |
+| Engine typing, 50k | | 0.05 / 0.60 / 1.46 |
+| Daemon round trip, lexical only, 500k | 7.27 p95 | 1.24 / 5.68 / 9.36 to 1.55 / 8.00 / 14.3 |
+| Daemon round trip, lexical only, 50k | | 0.28 / 1.19 / 2.17 |
+| Round trip during an update, 500k | 10.8 p95 | 1.1 to 1.4 p95 (few samples: the update finishes in about 0.1 s) |
+| Held-out recall@10 / MRR, 500k | 0.539 / 0.424 | 0.539 / 0.423 |
+
+**Indexing and memory (lexical-only daemon, 100 touched files)**
+
+| Measurement at 500k | Baseline | End of M6 |
+|---|---|---|
+| Update lag | 4.97 s | 111 ms (reconcile 11 to 13 ms; the rest is the 100 ms coalescing window) |
+| RSS before → after update | 275 → 549 MB, peak 661 MB | 280 → 282 MB, no new peak |
+| Update lag at 50k | 433 ms (M4) | 113 ms |
+
+**Hybrid (Potion 256, int8 vectors)**
+
+| Measurement | M4 | End of M6 |
+|---|---|---|
+| Final-phase round trip p95, 500k | 100.4 ms | 95.0 ms (an earlier M6 run: 83.5 ms) |
+| Lexical-phase p95, 500k | 12.7 ms | 7.96 ms |
+| Final-phase round trip p95, 50k | 12.3 ms | 13.5 ms |
+| Hybrid serving an updated catalog, 500k | full restage | 277 ms, derived stage, no row re-embedded |
+| RSS before → after update, 500k | 590 → 802 MB, peak 972 MB | 603 → 605 MB |
+| Cold semantic stage, 500k (empty cache) | 465 s | 562 s |
+| int8 exhaustive scan p50 / p95, 500k | 69.7 / 84.1 ms | 67.7 / 88.4 ms |
+
+**M4 gates re-evaluated.** The lexical-phase target (p95 below 5 ms at 500k)
+is met by the engine typing workload in most runs and missed narrowly by
+whole-query and daemon round trips on this loaded machine. The final-phase
+target (p95 below 10 ms at 500k) stays open: the exhaustive int8 vector scan
+alone takes about 68 ms p50 at 500k, so it needs an approximate or shortlisted
+vector search, not more lexical work.
 
 ## Decisions (recorded 2026-10-07)
 
@@ -285,8 +340,10 @@ acceptance gate is re-evaluated from these numbers.
 3. **Step 3 delivery:** three shippable sub-steps (3a, 3b, 3c), each with its
    own tests and benchmark run.
 
-Still open: the delta size bound and compaction trigger for 3b, to be chosen
-from measurements during 3a.
+4. **Delta bound (chosen during 3b):** compact when the delta would exceed
+   max(4096, base/32) entries (about 15.6k at 500k), when the change set is
+   incomplete (over 131072 touched rows) or roots changed. Compaction is a full
+   rebuild on the indexing thread; queries keep serving the old view.
 
 ## Out of scope
 

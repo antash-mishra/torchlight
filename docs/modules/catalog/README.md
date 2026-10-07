@@ -1,7 +1,7 @@
 # catalog
 
-> **Status:** Implemented (M2/M3): resident snapshot lifecycle and directory metadata;
-> integrated with the M2 daemon/writer
+> **Status:** Implemented (M2/M3; M6 step 3 segmented snapshots): resident snapshot lifecycle,
+> directory metadata, shared bases with delta segments; integrated with the daemon/writer
 > **Source:** `src/index/catalog.c` · **Header:** `include/torchlight/catalog.h`
 > **Tests:** `tests/unit/test_catalog.c`
 
@@ -53,10 +53,11 @@ unleased retired views makes room for retry. Updating a nonempty registry needs
 capacity of at least two.
 
 These are count bounds, not a total RSS budget: a candidate being built is also
-caller-owned, and every view currently rebuilds the full engine. The M2 writer
-limits staging to one candidate and bounds entries/path bytes; the daemon
-enforces client/output deadlines. Shared index blocks and a hard process RSS
-budget remain future work.
+caller-owned. Since M6 a derived view shares its base engine instead of
+rebuilding it (see below), so a small update adds only a delta engine, a
+tombstone bitmap and a live-entry map. The writer limits staging to one
+candidate and bounds entries/path bytes; the daemon enforces client/output
+deadlines. A hard process RSS budget remains future work.
 Scratch/cache contents are tied to one immutable engine, so publication cannot
 reuse old subsequence membership for a changed catalog.
 
@@ -95,3 +96,27 @@ copy metadata, release pins and reclaim through the existing lifecycle.
 `catalog_reader_cancel` attaches a cancellation flag to a lease's workspace
 (see the lexical module). The daemon sets it per query lease so a superseded
 search stops early and the lease is released promptly.
+
+## Segmented snapshots (M6 step 3)
+
+A snapshot is a **base** engine, shared and reference-counted by every snapshot
+derived from it, plus an optional **delta** engine of all entries changed since
+that base and a **tombstone** bitmap of base positions they replace or remove.
+`catalog_snapshot_derive(source, &delta, retired_ids, ...)` prepares the next
+view: it shares `source`'s base, adds the base positions of `retired_ids` to
+the tombstones and takes the delta (NULL when only removals happened). The
+base owns the reader workspaces, so their word caches stay warm across
+updates; a lease takes one free base workspace plus the snapshot's reader slot,
+and the base's reader capacity bounds concurrent leases across all snapshots
+sharing it. Each lease attaches its snapshot's tombstones to the base workspace
+and clears them (and the cancel flag) on release.
+
+`catalog_query` queries the base (tombstones excluded) and the delta, then
+merges both ordered lists by score, raw path bytes and id, so results equal one
+engine holding the live entries. `catalog_resolve` and `catalog_is_dir` look in
+the delta first and hide tombstoned base entries. Statistics count live
+entries; `catalog_snapshot_entry`/`context` enumerate live entries in id order
+through a 4-byte-per-entry map. The base is freed with its last snapshot.
+Tests cover shared bases, retirement of the base snapshot, merged order across
+segments at equal scores, capacity-limited leases, hidden and renamed entries
+and live enumeration. See [ADR 0030](../../adr/0030-m6-incremental-indexing.md).

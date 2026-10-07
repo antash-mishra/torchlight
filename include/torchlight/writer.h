@@ -27,11 +27,17 @@ typedef struct {
      * Same ownership/errors as watch_create; TL_IO permits scan-only fallback. */
     tl_status (*create_watch)(void *context, size_t capacity, tl_watch **out);
     void *watch_context;
+    /* Smallest delta bound before a full rebuild compacts it; 0 selects the
+     * default. Small values let tests exercise compaction. */
+    size_t delta_entries;
 } tl_writer_options;
 typedef struct {
     bool indexing, degraded, history_enabled, watch_degraded, recovering;
-    uint64_t reconciliations, watch_overflows, watch_unavailable, history_dropped, history_failures,
-        history_written;
+    /* scoped_reconciliations counts passes that rescanned only event scopes;
+     * delta_publications counts snapshots published as a delta over the base,
+     * full_builds whole-engine rebuilds (startup, recovery, compaction). */
+    uint64_t reconciliations, scoped_reconciliations, delta_publications, full_builds,
+        watch_overflows, watch_unavailable, history_dropped, history_failures, history_written;
     size_t watches, history_pending, offline_roots, unreadable_scopes;
     uint64_t last_scan_ms;
 } tl_writer_stats;

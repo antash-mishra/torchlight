@@ -107,3 +107,21 @@ Embedding cache operations use a separate background connection, never query SQL
 Finite little-endian floats are keyed by full emb_gen and exact prepared text.
 Batches amortize WAL commits; complete staging activates and prunes cache rows
 atomically. Cache changes do not advance catalog_gen or alter history.
+
+## Scoped prunes and change sets (M6 step 3)
+
+`store_prune_children(directory)` deletes, after a children-only rescan, the
+direct children (with subtrees) the transaction did not see;
+`store_prune_tree(directory)` deletes unseen descendants after a recursive
+rescan. Both spare kept scopes and registered roots nested in the directory and
+use a path-index range (`dir/` up to `dir0`), never a whole-catalog scan.
+
+`store_track_changes(limit)` makes the connection record the ids of files rows
+that catalog transactions insert, update or delete, through the existing SQLite
+update hook (which also sees scoped deletions and a move's destination delete).
+After commit `store_changes` borrows them sorted and deduplicated, with
+`complete` false beyond the limit and `roots_changed` for root registration
+changes; rollback clears them. `store_load_ids` streams the committed rows of
+given ids from one read snapshot with its `catalog_gen`. Tests cover byte-prefix
+siblings, kept and nested-root spares, the exact touched-id sets, load by id,
+overflow and rollback.

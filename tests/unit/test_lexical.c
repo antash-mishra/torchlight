@@ -278,7 +278,11 @@ static void parallel_ranking(void) {
         const char *query;
         int score;
     } cases[] = {{"md", 1863}, {"r md", 4363}, {"mad notes", 11300}, {"r noets", 6044}};
-    for (size_t q = 0; q < sizeof(cases) / sizeof(cases[0]); q++) {
+    /* Forward, then reverse: the second pass reuses cached words and their
+     * per-worker matchers. */
+    size_t total = sizeof(cases) / sizeof(cases[0]);
+    for (size_t step = 0; step < 2 * total; step++) {
+        size_t q = step < total ? step : 2 * total - step - 1;
         tl_result results[10];
         size_t count = 0;
         CHECK(lexical_query(engine, workspace, cases[q].query, results, 10, &count) == TL_OK);
@@ -345,6 +349,106 @@ static void warm_equals_fresh(void) {
     capacity_consistency(engine, warm, "p");
     lexical_workspace_destroy(warm);
     lexical_destroy(engine);
+}
+/* Word evidence (channel hits, directory scores, matchers) is reused across
+ * queries by word symbols. Shared and reordered words, more distinct words
+ * than caches, path words and a cancelled query must not change any answer. */
+static void cached_evidence_matches_fresh(void) {
+    static char paths[512][64];
+    tl_lexical *engine = random_engine(paths, 512);
+    tl_lexical_workspace *warm = NULL;
+    CHECK(lexical_workspace_create(engine, &warm) == TL_OK);
+    atomic_bool cancel;
+    atomic_init(&cancel, false);
+    lexical_workspace_cancel(warm, &cancel);
+    const char *sequence[] = {"notes rep",   "notes repo",       "notes report",  "report notes",
+                              "photo notes", "plan image notes", "data main rd",  "notes rep",
+                              "r/notes rep", "readme photo",     "notes report1", "report notes"};
+    for (size_t q = 0; q < sizeof(sequence) / sizeof(sequence[0]); q++) {
+        if (q == 6) {
+            /* Cancel mid-sequence: its partial evidence must not be reused. */
+            tl_result ignored[10];
+            size_t none = 0;
+            atomic_store(&cancel, true);
+            CHECK(lexical_query(engine, warm, "notes data", ignored, 10, &none) == TL_CANCELLED);
+            atomic_store(&cancel, false);
+        }
+        tl_lexical_workspace *fresh = NULL;
+        CHECK(lexical_workspace_create(engine, &fresh) == TL_OK);
+        tl_result a[10], b[10];
+        size_t na = 0, nb = 0;
+        CHECK(lexical_query(engine, warm, sequence[q], a, 10, &na) == TL_OK);
+        CHECK(lexical_query(engine, fresh, sequence[q], b, 10, &nb) == TL_OK);
+        CHECK(na == nb);
+        for (size_t i = 0; i < na; i++)
+            CHECK(a[i].id == b[i].id && a[i].score == b[i].score);
+        lexical_workspace_destroy(fresh);
+    }
+    lexical_workspace_cancel(warm, NULL);
+    lexical_workspace_destroy(warm);
+    lexical_destroy(engine);
+}
+static int score_of(tl_lexical *engine, tl_lexical_workspace *workspace, const char *query,
+                    uint64_t id) {
+    tl_result results[16];
+    size_t count = 0;
+    CHECK(lexical_query(engine, workspace, query, results, 16, &count) == TL_OK);
+    for (size_t i = 0; i < count; i++)
+        if (results[i].id == id)
+            return results[i].score;
+    return 0;
+}
+/* A delta segment built with its base as reference scores an entry exactly as
+ * a full rebuild does (root-bounded parent context included), and excluded
+ * base positions never surface: not as matches, exact names, exact paths,
+ * roots or cached one-symbol answers. */
+static void delta_segments(void) {
+    const char *base_paths[] = {"/r", "/r/docs", "/r/docs/report.pdf", "/r/docs/old.txt",
+                                "/r/notes.md"};
+    const char *full_paths[] = {"/r",
+                                "/r/docs",
+                                "/r/docs/report.pdf",
+                                "/r/docs/old.txt",
+                                "/r/notes.md",
+                                "/r/docs/reportage.md"};
+    tl_lexical *base = build(base_paths, 5), *full = build(full_paths, 6), *delta = NULL;
+    CHECK(lexical_create(&delta) == TL_OK);
+    CHECK(lexical_set_reference(delta, full) == TL_OK &&
+          lexical_set_reference(delta, NULL) == TL_OK);
+    CHECK(lexical_set_reference(delta, base) == TL_OK);
+    CHECK(lexical_add(delta, 6, "/r/docs/reportage.md", false) == TL_OK);
+    CHECK(lexical_finish(delta) == TL_OK && lexical_set_reference(delta, base) == TL_STATE);
+    tl_lexical_workspace *bw = NULL, *fw = NULL, *dw = NULL;
+    CHECK(lexical_workspace_create(base, &bw) == TL_OK &&
+          lexical_workspace_create(full, &fw) == TL_OK &&
+          lexical_workspace_create(delta, &dw) == TL_OK);
+    const char *queries[] = {"reportage", "docs reportage", "rprtg", "reportgae", "docs rep", "r"};
+    for (size_t q = 0; q < sizeof(queries) / sizeof(queries[0]); q++)
+        CHECK(score_of(delta, dw, queries[q], 6) == score_of(full, fw, queries[q], 6));
+    /* "r docs" must not match through "/r" above the root in the delta either. */
+    CHECK(score_of(delta, dw, "r reportage", 6) == score_of(full, fw, "r reportage", 6));
+    size_t slot = 99;
+    CHECK(lexical_slot(base, 3, &slot) == TL_OK && slot == 2);
+    CHECK(lexical_slot(base, 42, &slot) == TL_STATE && lexical_slot(base, 0, &slot) == TL_INVALID);
+    uint64_t excluded[1] = {(UINT64_C(1) << 0) | (UINT64_C(1) << 2)}; /* "/r" and report.pdf */
+    lexical_workspace_exclude(bw, excluded);
+    tl_result results[8];
+    size_t count = 0;
+    const char *hidden[] = {"report", "report.pdf", "/r/docs/report.pdf", "", "r", "docs report"};
+    for (size_t q = 0; q < sizeof(hidden) / sizeof(hidden[0]); q++) {
+        CHECK(lexical_query(base, bw, hidden[q], results, 8, &count) == TL_OK);
+        for (size_t i = 0; i < count; i++)
+            CHECK(results[i].id != 1 && results[i].id != 3);
+    }
+    lexical_workspace_exclude(bw, NULL);
+    CHECK(lexical_query(base, bw, "report.pdf", results, 8, &count) == TL_OK && count != 0 &&
+          results[0].id == 3);
+    lexical_workspace_destroy(bw);
+    lexical_workspace_destroy(fw);
+    lexical_workspace_destroy(dw);
+    lexical_destroy(delta);
+    lexical_destroy(full);
+    lexical_destroy(base);
 }
 static void quality_fields(void) {
     tl_lexical *engine = NULL;
@@ -422,6 +526,8 @@ void test_lexical(void) {
     typo_and_trigram_channels();
     root_ancestors_are_not_context();
     warm_equals_fresh();
+    cached_evidence_matches_fresh();
+    delta_segments();
     parent_matches_stay_in_one_component();
     const char *paths[] = {"/work",
                            "/work/projectNotes.md",

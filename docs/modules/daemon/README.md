@@ -85,3 +85,22 @@ current indexing/history/semantic status, including degraded indexing warnings.
 The worker reserves 1 KiB of its frame budget for this coordinator-owned status.
 Large fast/slow-reader exchanges and degraded-root regressions exercise this
 contract. See [ADR 0024](../../adr/0024-m4-response-backpressure-and-model-inputs.md).
+
+A final never precedes the lexical frame it follows. The search thread submits
+the semantic job under the daemon lock but encodes the lexical frame outside
+it, so until that frame is queued the client marks it in flight: the IPC thread
+leaves a ready final pending, and a newer query's cancellation is recorded and
+taken once the frame is queued (or by the search thread before it submits the
+newer query's job, so the slot is free). Before M6 step 3 a fast worker could
+overtake a large lexical frame. A preload stall during lexical encoding makes
+both orders deterministic in `check_phase_order`.
+
+## M6 status fields
+
+`indexing` also reports `scoped_reconciliations` (passes that rescanned only
+event directories), `delta_publications` (snapshots published as a delta over a
+shared base) and `full_builds` (whole-engine rebuilds: startup, recovery and
+compaction); `semantic` reports `reused` (rows of the current or last stage
+that were not embedded), `derived_stages` (snapshots holding only rows changed
+since a shared full base) and `full_stages`. See
+[ADR 0030](../../adr/0030-m6-incremental-indexing.md).

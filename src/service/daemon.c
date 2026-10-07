@@ -32,6 +32,13 @@ struct client {
     size_t slot;
     uint64_t semantic_token;
     bool semantic_pending;
+    /* The search thread submitted the pending job but has not yet queued the
+     * lexical frame it follows, so its final must wait (a fast worker would
+     * otherwise overtake a large frame being encoded outside the lock). */
+    bool lexical_inflight;
+    /* A newer query cancelled the pending job while lexical_inflight; the
+     * cancellation is taken once that frame is queued. */
+    bool cancel_semantic;
     char pending_id[IPC_REQUEST_ID_BYTES + 1];
     int fd;
     char input[IPC_REQUEST_BYTES];
@@ -124,6 +131,8 @@ static void discard_semantic(struct client *client) {
         (void)status;
         client->semantic_pending = false;
     }
+    client->lexical_inflight = false;
+    client->cancel_semantic = false;
 }
 /* IPC thread only, under the daemon lock. A running search for this client
  * is cancelled and its completion dropped through the generation check. */
@@ -315,6 +324,12 @@ static void indexing_status(tl_json_buffer *b, const tl_writer_stats *stats,
     boolean(b, stats->watch_degraded);
     json_raw(b, ",\"reconciliations\":");
     json_number(b, stats->reconciliations);
+    json_raw(b, ",\"scoped_reconciliations\":");
+    json_number(b, stats->scoped_reconciliations);
+    json_raw(b, ",\"delta_publications\":");
+    json_number(b, stats->delta_publications);
+    json_raw(b, ",\"full_builds\":");
+    json_number(b, stats->full_builds);
     json_raw(b, ",\"watches\":");
     json_number(b, stats->watches);
     json_raw(b, ",\"watch_overflows\":");
@@ -347,6 +362,12 @@ static void indexing_status(tl_json_buffer *b, const tl_writer_stats *stats,
         json_number(b, semantic->processed);
         json_raw(b, ",\"total\":");
         json_number(b, semantic->total);
+        json_raw(b, ",\"reused\":");
+        json_number(b, semantic->reused);
+        json_raw(b, ",\"derived_stages\":");
+        json_number(b, semantic->derived_stages);
+        json_raw(b, ",\"full_stages\":");
+        json_number(b, semantic->full_stages);
         json_raw(b, ",\"vector_bytes\":");
         json_number(b, semantic->vector_bytes);
         json_raw(b, ",\"last_error\":");
@@ -590,6 +611,7 @@ static tl_status encode_completion(tl_daemon *daemon, const struct completion *c
     *length = b.status == TL_OK ? b.length : 0;
     return b.status;
 }
+static bool take_final(tl_daemon *daemon, struct client *client, bool cancel);
 /* Under the daemon lock, before encoding: the lexical frame's reason depends on
  * whether the semantic worker accepted the job. */
 static void queue_semantic(tl_daemon *daemon, struct client *client,
@@ -599,6 +621,12 @@ static void queue_semantic(tl_daemon *daemon, struct client *client,
         completion->status != TL_OK || completion->superseded ||
         client->semantic_token == UINT64_MAX)
         return;
+    /* A job still pending here belongs to an older query whose cancellation
+     * waited for its lexical frame; take it now so the slot is free. */
+    if (!take_final(daemon, client, true)) {
+        client->abort = true;
+        return;
+    }
     tl_status queued = semantic_submit(daemon->semantic, client->slot, ++client->semantic_token,
                                        request, completion->search_id, completion->catalog_gen,
                                        desktop_gen(daemon->desktop), daemon->results,
@@ -607,6 +635,7 @@ static void queue_semantic(tl_daemon *daemon, struct client *client,
         completion->lexical_phase = true;
         completion->reason = "semantic_pending";
         client->semantic_pending = true;
+        client->lexical_inflight = true;
         memcpy(client->pending_id, request->request_id, strlen(request->request_id) + 1);
     } else {
         completion->reason = queued == TL_LIMIT ? "semantic_queue_full" : "semantic_unavailable";
@@ -623,6 +652,7 @@ static void deliver(tl_daemon *daemon, struct client *client, const struct pendi
                     uint64_t generation, size_t length, bool overflow) {
     if (client->generation != generation || client->fd < 0)
         return;
+    client->lexical_inflight = false;
     if (overflow)
         discard_semantic(client);
     if (length == 0 || IPC_RESPONSE_BYTES - client->output_length < length) {
@@ -745,33 +775,43 @@ static tl_status append_semantic_status(tl_daemon *daemon, char *output, size_t 
     *length = buffer.status == TL_OK ? prefix + buffer.length : 0;
     return buffer.status;
 }
-/* IPC thread, under the daemon lock. */
-static void semantic_completion(tl_daemon *daemon, struct client *client, bool cancel) {
+/* Under the daemon lock (either thread): append the pending final, or with
+ * cancel its cancellation, to the output queue once it may follow the frames
+ * already queued. Returns false when the client must be closed. */
+static bool take_final(tl_daemon *daemon, struct client *client, bool cancel) {
+    cancel = cancel || client->cancel_semantic;
     if (!client->semantic_pending)
-        return;
+        return true;
+    if (client->lexical_inflight) {
+        client->cancel_semantic = cancel;
+        return true;
+    }
     /* Each phase can fill the output buffer. Drain earlier frames before taking
      * a final, rather than treating a fast worker as a slow-client overflow. */
     if (!cancel && client->output_length != client->sent)
-        return;
+        return true;
     size_t length = 0;
     size_t capacity = IPC_RESPONSE_BYTES - client->output_length;
-    if (capacity <= SEMANTIC_STATUS_BYTES) {
-        close_client(daemon, client);
-        return;
-    }
+    if (capacity <= SEMANTIC_STATUS_BYTES)
+        return false;
     char *output = client->output + client->output_length;
     tl_status status = semantic_take(client->semantic, client->slot, client->semantic_token, cancel,
                                      output, capacity - SEMANTIC_STATUS_BYTES, &length);
     if (status == TL_OK && length != 0)
         status = append_semantic_status(daemon, output, capacity, &length);
-    if (status != TL_OK) {
-        close_client(daemon, client);
-        return;
-    }
+    if (status != TL_OK)
+        return false;
     if (length != 0) {
         client->output_length += length;
         client->semantic_pending = false;
+        client->cancel_semantic = false;
     }
+    return true;
+}
+/* IPC thread, under the daemon lock. */
+static void semantic_completion(tl_daemon *daemon, struct client *client, bool cancel) {
+    if (!take_final(daemon, client, cancel))
+        close_client(daemon, client);
 }
 /* Under the daemon lock: a new query makes every queued query obsolete and
  * cancels a running one. Obsolete queries still answer, as cancelled. */

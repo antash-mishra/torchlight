@@ -1,0 +1,47 @@
+# Real corpus: 213,577 paths from one home directory, filtered with the crawler's default exclusions
+# (hidden directories, node_modules/target/build/__pycache__). Paths are private and not committed.
+# Same machine and load as the other 2026-10-07 runs (another resident torchlightd and desktop apps active).
+## step 1 engine (625e07b)
+paths=213577 mean_path_bytes=96.4 build_s=1.240 engine_rss_kib=164680
+typing_ms n=15293 p50=0.262 p95=4.583 p99=11.583 max=20.964
+whole_query_ms n=1200 p50=0.732 p95=3.804 p99=13.264 max=17.406
+cold_workspace_query_ms n=60 p50=0.832 p95=6.993 p99=11.231 max=11.231
+quality tuning/exact n=200 recall@1=0.990 recall@10=1.000 mrr@10=0.994 candidate_recall@1000=1.000
+quality tuning/prefix n=200 recall@1=0.370 recall@10=0.565 mrr@10=0.434 candidate_recall@1000=0.960
+quality tuning/abbreviation n=200 recall@1=0.360 recall@10=0.565 mrr@10=0.420 candidate_recall@1000=0.905
+quality tuning/typo n=200 recall@1=0.750 recall@10=0.840 mrr@10=0.779 candidate_recall@1000=0.995
+quality tuning/partial_typo n=200 recall@1=0.125 recall@10=0.225 mrr@10=0.151 candidate_recall@1000=0.860
+quality tuning/parent n=200 recall@1=0.305 recall@10=0.540 mrr@10=0.370 candidate_recall@1000=0.885
+quality tuning/all n=1200 recall@1=0.483 recall@10=0.623 mrr@10=0.525 candidate_recall@1000=0.934
+quality held_out/exact n=200 recall@1=0.995 recall@10=1.000 mrr@10=0.998 candidate_recall@1000=1.000
+quality held_out/prefix n=200 recall@1=0.375 recall@10=0.585 mrr@10=0.442 candidate_recall@1000=0.955
+quality held_out/abbreviation n=200 recall@1=0.430 recall@10=0.575 mrr@10=0.477 candidate_recall@1000=0.940
+quality held_out/typo n=200 recall@1=0.805 recall@10=0.850 mrr@10=0.822 candidate_recall@1000=1.000
+quality held_out/partial_typo n=200 recall@1=0.080 recall@10=0.200 mrr@10=0.108 candidate_recall@1000=0.810
+quality held_out/parent n=200 recall@1=0.370 recall@10=0.580 mrr@10=0.432 candidate_recall@1000=0.925
+quality held_out/all n=1200 recall@1=0.509 recall@10=0.632 mrr@10=0.546 candidate_recall@1000=0.938
+steady_rss_kib=191504
+catalog_query_ms n=1200 p50=0.765 p95=4.015 p99=13.394 max=19.917
+peak_rss_kib=249480
+## M6 engine (steps 2 and 3)
+paths=213577 mean_path_bytes=96.4 build_s=1.297 engine_rss_kib=165284
+typing_ms n=15293 p50=0.232 p95=2.654 p99=4.708 max=9.084
+whole_query_ms n=1200 p50=0.606 p95=2.746 p99=5.269 max=8.114
+cold_workspace_query_ms n=60 p50=0.712 p95=4.120 p99=5.658 max=5.658
+quality tuning/exact n=200 recall@1=0.990 recall@10=1.000 mrr@10=0.994 candidate_recall@1000=1.000
+quality tuning/prefix n=200 recall@1=0.370 recall@10=0.565 mrr@10=0.434 candidate_recall@1000=0.960
+quality tuning/abbreviation n=200 recall@1=0.365 recall@10=0.560 mrr@10=0.424 candidate_recall@1000=0.935
+quality tuning/typo n=200 recall@1=0.750 recall@10=0.840 mrr@10=0.779 candidate_recall@1000=0.995
+quality tuning/partial_typo n=200 recall@1=0.125 recall@10=0.225 mrr@10=0.150 candidate_recall@1000=0.860
+quality tuning/parent n=200 recall@1=0.305 recall@10=0.540 mrr@10=0.370 candidate_recall@1000=0.885
+quality tuning/all n=1200 recall@1=0.484 recall@10=0.622 mrr@10=0.525 candidate_recall@1000=0.939
+quality held_out/exact n=200 recall@1=0.995 recall@10=1.000 mrr@10=0.998 candidate_recall@1000=1.000
+quality held_out/prefix n=200 recall@1=0.375 recall@10=0.585 mrr@10=0.442 candidate_recall@1000=0.955
+quality held_out/abbreviation n=200 recall@1=0.430 recall@10=0.580 mrr@10=0.477 candidate_recall@1000=0.950
+quality held_out/typo n=200 recall@1=0.805 recall@10=0.850 mrr@10=0.822 candidate_recall@1000=1.000
+quality held_out/partial_typo n=200 recall@1=0.080 recall@10=0.200 mrr@10=0.108 candidate_recall@1000=0.810
+quality held_out/parent n=200 recall@1=0.370 recall@10=0.580 mrr@10=0.432 candidate_recall@1000=0.925
+quality held_out/all n=1200 recall@1=0.509 recall@10=0.632 mrr@10=0.546 candidate_recall@1000=0.940
+steady_rss_kib=192368
+catalog_query_ms n=1200 p50=0.576 p95=2.729 p99=5.075 max=9.351
+peak_rss_kib=249836

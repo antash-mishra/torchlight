@@ -1,0 +1,140 @@
+[top_comments]
+
+Environment = """
+You may test these cases yourself via the included benchmarks. Benchmarks were run on a Ryzen 9950x3D and the following environment:
+
+```bash
+$ cargo version -v
+cargo 1.98.0-nightly (a595d0da2 2026-06-20)
+release: 1.98.0-nightly
+commit-hash: a595d0da21f228b7fdae64d3d5c0e527ea66bb59
+commit-date: 2026-06-20
+host: x86_64-unknown-linux-gnu
+libgit2: 1.9.4 (sys:0.21.0 vendored)
+libcurl: 8.20.0-DEV (sys:0.4.89+curl-8.20.0 vendored ssl:OpenSSL/3.6.2)
+ssl: OpenSSL 3.6.2 7 Apr 2026
+os: NixOS 26.11.0 (zokor) [64-bit]
+```
+"""
+
+Overview = """
+In each of the benchmarks, the median length of the haystacks is varied from 8 to 128.
+
+- **Frizbee**: Uses the `Config::default()`, where we perform the fastest prefilter since no typos are allowed
+- **Iter**: Same as **Frizbee**, but uses the `match_iter` API to lazily match haystacks one at a time
+- **All Scores**: Set via `max_typos: None`, gets the scores for all of the items without any filtering
+- **1/2 Typos**: Set via `max_typos: Some(1 || 2)`, performs a slower, but still effective prefilter since a small number of typos are allowed
+- **3 Typos**: Set via `max_typos: Some(3)`, skips prefiltering since in non-syntheic data (Chromium), the prefilter has to pass over the data up to 4 times and most items will not be filtered out
+- **Nucleo**: Runs with normalization disabled, case insensitivity enabled and fuzzy matching enabled
+- **FZF**: Times only the matching part via `fzf --filter linux --tiebreak index --bench 10s --threads 1 < benches/match_list/data.txt`
+- **BENCH/Parallel (x8)**: Same as BENCH, but uses 8 threads to perform the matching in parallel
+"""
+
+[table_comments]
+
+chromium = """
+List of all file paths in the chromium repository, with a median length of 67 characters.
+```rust
+needle: "linux"
+match_percentage: 0.08
+partial_match_percentage: unknown
+median_length: 67
+std_dev_length: unknown
+haystack_size: 1406941
+```
+"""
+
+arabic = """
+Arabic sentence dataset to test UTF-8 throughput for 2-bytes per character
+
+```rust
+needle: "إن"
+match_percentage: 0.07934
+partial_match_percentage: 0.59514
+median_length: 37 bytes / 21 chars
+mean_length: 43.18 bytes / 23.80 chars
+std_dev_length: 33.27 bytes / 18.40 chars
+haystack_size: 285587
+total_bytes: 12331053
+```
+"""
+
+korean = """
+Korean sentence dataset to test UTF-8 throughput for 3-bytes per character
+
+```rust
+needle: "니다"
+match_percentage: 0.08419
+partial_match_percentage: 0.40674
+median_length: 36 bytes / 15 chars
+mean_length: 39.95 bytes / 16.38 chars
+std_dev_length: 24.76 bytes / 10.20 chars
+haystack_size: 281471
+total_bytes: 11244535
+```
+"""
+
+partial_match = """
+What I would consider the typical case, where 5% of the haystack matches the needle and 20% of the haystack includes characters from the needle, but doesn't fully match.
+
+```rust
+needle: "deadbeef"
+partial_match_percentage: 0.20
+match_percentage: 0.05
+median_length: varies
+std_dev_length: median_length / 4
+haystack_size: 100000
+```
+"""
+
+no_match = """
+None of the haystacks partially or fully match the needle, meaning none of the characters in the needle are present in the haystack.
+
+```rust
+needle: "deadbeef"
+match_percentage: 0.0
+partial_match_percentage: 0.0
+median_length: varies
+std_dev_length: median_length / 4
+haystack_size: 100000
+```
+"""
+
+no_match_with_partial = """
+None of the haystacks fully match the needle while 15% of the haystack includes characters from the needle, but doesn't fully match.
+
+```rust
+needle: "deadbeef"
+match_percentage: 0.0
+partial_match_percentage: 0.15
+median_length: varies
+std_dev_length: median_length / 4
+haystack_size: 100000
+```
+"""
+
+all_match = """
+All of the haystacks match the needle. The "All Scores" case will always be the fastest since it skips the prefiltering step, which no longer filters any of the items out.
+
+```rust
+needle: "deadbeef"
+match_percentage: 1.0
+partial_match_percentage: 0.0
+median_length: varies
+std_dev_length: median_length / 4
+haystack_size: 100000
+```
+"""
+
+copy = """
+Zero-sized needle, all haystacks match the needle.
+
+```rust
+needle: ""
+match_percentage: 1.0
+partial_match_percentage: 0.0
+median_length: varies
+std_dev_length: median_length / 4
+haystack_size: 100000
+```
+"""

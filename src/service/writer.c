@@ -1,9 +1,11 @@
-/* Two workers: an indexing thread crawls roots into a private batch, builds
- * engines from committed rows and publishes snapshots; a persistence thread owns
- * the SQLite write connection and serializes catalog batches, history and
- * retention. Filesystem scans and index construction never run inside a write
+/* Two workers: an indexing thread crawls roots, or only the directories that
+ * watch events touched, into a private batch, builds engines from committed
+ * rows and publishes snapshots; a persistence thread owns the SQLite write
+ * connection and serializes catalog batches, history and retention.
+ * Filesystem scans and index construction never run inside a write
  * transaction, so history writes wait at most for one short batch commit. */
 #include "torchlight/writer.h"
+#include "torchlight/delta.h"
 #include "torchlight/path.h"
 #include "torchlight/store.h"
 #include "torchlight/vec.h"
@@ -21,6 +23,17 @@
 #define WRITER_RETRY_MS 1000
 #define WRITER_RETENTION_MS 60000
 #define SECONDS_PER_DAY 86400
+/* Directories one scoped reconciliation may rescan; beyond this (e.g. a large
+ * recursive delete) a full scan is cheaper than many small ones. */
+#define WRITER_SCOPE_CAPACITY 1024
+/* A delta segment may hold max(WRITER_DELTA_MIN, base / WRITER_DELTA_DIVISOR)
+ * changed entries before a full rebuild compacts it: at 500k entries about
+ * 15k, which builds in roughly a tenth of a second while queries over the
+ * small engine stay cheap. Change tracking stops beyond the largest delta any
+ * supported catalog could keep, so oversized batches go straight to a rebuild. */
+#define WRITER_DELTA_MIN 4096
+#define WRITER_DELTA_DIVISOR 32
+#define WRITER_TRACKED_CHANGES 131072
 struct history {
     tl_ipc_request request;
     char search_id[IPC_HISTORY_ID_BYTES + 1];
@@ -29,6 +42,12 @@ struct history {
 struct rename_pair {
     char *old_path, *new_path;
     bool is_dir;
+};
+/* A directory to rescan: its direct children, or its whole subtree when it
+ * appeared with contents no scan has seen. */
+struct scope {
+    char *path;
+    bool recursive;
 };
 struct paths {
     char **items;
@@ -49,6 +68,11 @@ struct batch {
     tl_vec *entries; /* struct batch_entry */
     tl_vec *keep;    /* char *: offline roots whose saved rows stay */
     size_t rename_pre;
+    /* Full batches prune every successfully scanned root; scoped batches prune
+     * only the scopes whose rescans succeeded. */
+    bool full;
+    struct scope scopes[WRITER_SCOPE_CAPACITY];
+    size_t scope_count;
 };
 enum job_state { JOB_NONE, JOB_PENDING, JOB_DONE };
 struct tl_writer {
@@ -58,6 +82,9 @@ struct tl_writer {
      * workers start). reader: indexing thread's read-only connection. */
     tl_store *store, *reader;
     tl_watch *watch, *building_watch;
+    /* The watcher scans install new directory watches into: the one being
+     * built during a full scan, or the live one during a scoped rescan. */
+    tl_watch *scan_watch;
     tl_crawl *crawler;
     struct paths roots;
     pthread_t thread, persistence_thread;
@@ -73,16 +100,26 @@ struct tl_writer {
     size_t history_head, history_count;
     struct rename_pair renames[WRITER_RENAME_CAPACITY];
     size_t rename_count;
+    /* Directories touched by events since the last reconciliation; full asks
+     * for a scan of every root instead (startup, overflow, requests, periodic
+     * repair, failures and changes no scope can describe). */
+    struct scope scopes[WRITER_SCOPE_CAPACITY];
+    size_t scope_count;
+    bool full, last_scoped;
+    uint64_t counted_unavailable;
     bool dirty, reload;
     uint64_t due;
     uint64_t shutdown_due;
     tl_status callback_status;
     size_t scan_entries, offline_roots, unreadable_scopes;
-    /* Batch handoff, guarded by mutex. */
+    /* Batch handoff, guarded by mutex. job_ids holds the committed batch's
+     * touched row ids; job_complete is false when they cannot describe it. */
     struct batch *job;
     enum job_state job_state;
     tl_status job_status;
-    bool job_changed;
+    bool job_changed, job_complete;
+    tl_vec *job_ids; /* uint64_t */
+    tl_delta *delta;
 };
 static uint64_t milliseconds(void) {
     struct timespec now;
@@ -194,19 +231,21 @@ static tl_status build_entry(void *context, const tl_store_entry *entry) {
     }
     return status;
 }
-/* Indexing thread: build a snapshot from one committed read view. */
-static tl_status make_snapshot(tl_writer *writer, tl_catalog_snapshot **out) {
-    struct builder builder = {.options = &writer->options};
-    uint64_t catalog_gen = 0;
-    tl_status status = lexical_create(&builder.engine);
+/* Indexing thread: build a snapshot from one committed read view, reporting
+ * its generation and size for the delta bookkeeping. */
+static tl_status make_snapshot(tl_writer *writer, tl_catalog_snapshot **out,
+                               struct builder *builder, uint64_t *catalog_gen) {
+    *builder = (struct builder){.options = &writer->options};
+    tl_status status = lexical_create(&builder->engine);
     if (status == TL_OK)
-        status = store_load_catalog(writer->reader, build_entry, &builder, &catalog_gen);
+        status = store_load_catalog(writer->reader, build_entry, builder, catalog_gen);
     if (status == TL_OK)
-        status = lexical_finish(builder.engine);
+        status = lexical_finish(builder->engine);
     if (status == TL_OK)
         status =
-            catalog_snapshot_create(&builder.engine, catalog_gen, writer->options.readers, out);
-    lexical_destroy(builder.engine);
+            catalog_snapshot_create(&builder->engine, *catalog_gen, writer->options.readers, out);
+    lexical_destroy(builder->engine);
+    builder->engine = NULL;
     return status;
 }
 static tl_status publish(tl_writer *writer, tl_catalog_snapshot **snapshot) {
@@ -216,11 +255,66 @@ static tl_status publish(tl_writer *writer, tl_catalog_snapshot **snapshot) {
                                        snapshot);
     return catalog_publish(writer->options.catalog, snapshot);
 }
-static tl_status load_saved(tl_writer *writer) {
+/* Indexing thread: rebuild the whole engine from the committed catalog and
+ * publish it as a new base (startup, recovery and delta compaction). */
+static tl_status publish_full(tl_writer *writer) {
     tl_catalog_snapshot *snapshot = NULL;
-    tl_status status = make_snapshot(writer, &snapshot);
+    struct builder builder;
+    uint64_t catalog_gen = 0;
+    tl_status status = make_snapshot(writer, &snapshot, &builder, &catalog_gen);
     if (status == TL_OK)
         status = publish(writer, &snapshot);
+    if (status == TL_OK) {
+        delta_reset(writer->delta, catalog_gen, builder.entries, builder.bytes);
+        lock_writer(writer);
+        writer->stats.full_builds++;
+        unlock_writer(writer);
+    }
+    catalog_snapshot_destroy(snapshot);
+    return status;
+}
+static tl_status load_saved(tl_writer *writer) {
+    return publish_full(writer);
+}
+/* Indexing thread: build the delta snapshot for the committed batch over the
+ * active view. TL_LIMIT or TL_STATE mean only a full rebuild can follow. */
+static tl_status prepare_changes(tl_writer *writer, tl_catalog_snapshot **out) {
+    if (!writer->job_complete)
+        return TL_LIMIT;
+    tl_catalog_snapshot *source = NULL;
+    tl_status status = catalog_pin(writer->options.catalog, &source);
+    tl_delta_limits limits = {.max_entries = writer->options.max_entries,
+                              .max_path_bytes = writer->options.max_path_bytes,
+                              .readers = writer->options.readers,
+                              .min_entries = writer->options.delta_entries == 0
+                                                 ? WRITER_DELTA_MIN
+                                                 : writer->options.delta_entries,
+                              .divisor = WRITER_DELTA_DIVISOR};
+    if (status == TL_OK)
+        status =
+            delta_prepare(writer->delta, writer->reader, source, vec_const_data(writer->job_ids),
+                          vec_count(writer->job_ids), &limits, out);
+    catalog_unpin(source);
+    return status;
+}
+/* Indexing thread: publish a committed batch as a delta over the current base
+ * when its change set is complete, else (or when the delta outgrew its bound,
+ * i.e. compaction) rebuild the whole engine. */
+static tl_status publish_changes(tl_writer *writer) {
+    tl_catalog_snapshot *snapshot = NULL;
+    tl_status status = prepare_changes(writer, &snapshot);
+    if (status == TL_LIMIT || status == TL_STATE)
+        return publish_full(writer);
+    if (status == TL_OK)
+        status = publish(writer, &snapshot);
+    if (status == TL_OK) {
+        delta_commit(writer->delta);
+        lock_writer(writer);
+        writer->stats.delta_publications++;
+        unlock_writer(writer);
+    } else {
+        delta_abandon(writer->delta);
+    }
     catalog_snapshot_destroy(snapshot);
     return status;
 }
@@ -230,6 +324,40 @@ static void clear_renames(tl_writer *writer) {
         free(writer->renames[i].new_path);
     }
     writer->rename_count = 0;
+}
+static void free_scopes(struct scope *scopes, size_t *count) {
+    for (size_t i = 0; i < *count; i++)
+        free(scopes[i].path);
+    *count = 0;
+}
+/* Record directory (taking ownership of the copy) as a scope to rescan,
+ * merging repeats. A full set or a failed copy asks for a full scan. */
+static void add_scope(tl_writer *writer, char *directory, bool recursive) {
+    if (directory == NULL) {
+        writer->full = true;
+        return;
+    }
+    for (size_t i = 0; i < writer->scope_count; i++) {
+        if (strcmp(writer->scopes[i].path, directory) == 0) {
+            writer->scopes[i].recursive |= recursive;
+            free(directory);
+            return;
+        }
+    }
+    if (writer->scope_count == WRITER_SCOPE_CAPACITY) {
+        writer->full = true;
+        free(directory);
+        return;
+    }
+    writer->scopes[writer->scope_count++] = (struct scope){directory, recursive};
+}
+/* An entry changed inside its parent directory: rescan the parent's children. */
+static void add_parent_scope(tl_writer *writer, const char *path) {
+    const char *slash = strrchr(path, '/');
+    if (slash == NULL)
+        return;
+    size_t length = slash == path ? 1 : (size_t)(slash - path);
+    add_scope(writer, strndup(path, length), false);
 }
 static tl_status changed(void *context, const tl_watch_event *event) {
     tl_writer *writer = context;
@@ -241,11 +369,19 @@ static tl_status changed(void *context, const tl_watch_event *event) {
     writer->dirty = true;
     if (event->overflow) {
         clear_renames(writer);
+        writer->full = true;
         lock_writer(writer);
         writer->stats.watch_overflows++;
         unlock_writer(writer);
         return TL_OK;
     }
+    if (event->path == NULL)
+        return TL_OK;
+    add_parent_scope(writer, event->path);
+    if (event->old_path != NULL)
+        add_parent_scope(writer, event->old_path);
+    if (event->is_dir && event->created)
+        add_scope(writer, strdup(event->path), true);
     if (event->old_path == NULL || event->path == NULL ||
         writer->rename_count == WRITER_RENAME_CAPACITY)
         return TL_OK;
@@ -302,6 +438,7 @@ static void filter_renames(tl_writer *writer) {
     writer->rename_count = kept;
 }
 static void batch_free(struct batch *batch) {
+    free_scopes(batch->scopes, &batch->scope_count);
     struct batch_entry *entries = vec_data(batch->entries);
     for (size_t i = 0; i < vec_count(batch->entries); i++)
         free(entries[i].path);
@@ -343,8 +480,8 @@ static tl_status scan_entry(void *context, const tl_crawl_entry *entry) {
         return writer->callback_status = TL_LIMIT;
     if (entry->unreadable)
         writer->unreadable_scopes++;
-    if (entry->is_dir && !entry->unreadable && writer->building_watch != NULL) {
-        tl_status watched = watch_add(writer->building_watch, entry->path);
+    if (entry->is_dir && !entry->unreadable && writer->scan_watch != NULL) {
+        tl_status watched = watch_add(writer->scan_watch, entry->path);
         if (watched != TL_OK && watched != TL_IO && watched != TL_LIMIT)
             return writer->callback_status = watched;
     }
@@ -365,6 +502,8 @@ static tl_status scan_roots(tl_writer *writer, struct batch *batch) {
     writer->offline_roots = 0;
     writer->unreadable_scopes = 0;
     writer->callback_status = TL_OK;
+    writer->scan_watch = writer->building_watch;
+    batch->full = true;
     struct scan scan = {writer, batch};
     tl_status status = TL_OK;
     for (size_t i = 0; i < writer->roots.count && status == TL_OK; i++) {
@@ -387,6 +526,75 @@ static tl_status scan_roots(tl_writer *writer, struct batch *batch) {
         status = drain_watch(writer);
     if (status == TL_OK)
         filter_renames(writer);
+    return status;
+}
+static void update_watch_stats(tl_writer *writer, const tl_watch *watch);
+/* Whether any configured root's walk indexes directory itself. */
+static bool covered(const tl_writer *writer, const char *directory) {
+    for (size_t i = 0; i < writer->roots.count; i++)
+        if (crawl_covers(writer->crawler, writer->roots.items[i], directory))
+            return true;
+    return false;
+}
+/* Keep scopes some root indexes and drop ones nested in a recursive scope.
+ * An uncovered scope above a root means the root itself changed (removed,
+ * moved, remounted): only a full scan can tell. Returns false then. */
+static bool resolve_scopes(tl_writer *writer, struct batch *batch) {
+    bool usable[WRITER_SCOPE_CAPACITY];
+    /* Decide every scope against the unmodified set, then compact. */
+    for (size_t i = 0; i < batch->scope_count; i++) {
+        const char *path = batch->scopes[i].path;
+        usable[i] = covered(writer, path);
+        for (size_t r = 0; r < writer->roots.count && !usable[i]; r++)
+            if (path_within(writer->roots.items[r], path))
+                return false;
+        for (size_t j = 0; j < batch->scope_count && usable[i]; j++)
+            usable[i] = j == i || !batch->scopes[j].recursive ||
+                        strcmp(batch->scopes[j].path, path) == 0 ||
+                        !path_within(path, batch->scopes[j].path);
+    }
+    size_t kept = 0;
+    for (size_t i = 0; i < batch->scope_count; i++) {
+        if (usable[i])
+            batch->scopes[kept++] = batch->scopes[i];
+        else
+            free(batch->scopes[i].path);
+    }
+    batch->scope_count = kept;
+    return true;
+}
+/* Indexing thread: rescan only the event scopes into the batch, installing
+ * watches for new directories into the live watcher. A scope that cannot be
+ * listed (deleted meanwhile, unreadable) is not pruned; its parent's own
+ * event, or the next full scan, accounts for it. */
+static tl_status scan_scopes(tl_writer *writer, struct batch *batch) {
+    writer->scan_entries = 0;
+    writer->callback_status = TL_OK;
+    writer->scan_watch = writer->watch;
+    batch->full = false;
+    struct scan scan = {writer, batch};
+    /* Root availability and unreadable-scope counts describe the last full scan. */
+    size_t unreadable = writer->unreadable_scopes, listed = 0;
+    for (size_t i = 0; i < batch->scope_count; i++) {
+        struct scope scope = batch->scopes[i];
+        tl_status scanned =
+            crawl_scope(writer->crawler, scope.path, scope.recursive, scan_entry, &scan);
+        if (writer->callback_status != TL_OK)
+            return writer->callback_status;
+        if (scanned != TL_OK && scanned != TL_IO)
+            return scanned;
+        if (scanned == TL_OK)
+            batch->scopes[listed++] = scope;
+        else
+            free(scope.path);
+    }
+    batch->scope_count = listed;
+    writer->unreadable_scopes = unreadable;
+    tl_status status = drain_watch(writer);
+    if (status == TL_OK)
+        filter_renames(writer);
+    if (writer->watch != NULL)
+        update_watch_stats(writer, writer->watch);
     return status;
 }
 static tl_status forget_root(void *context, const char *root) {
@@ -420,6 +628,12 @@ static tl_status apply_entries(tl_writer *writer, const struct batch *batch) {
         status = store_keep(writer->store, keep[i]);
     if (status == TL_OK)
         status = apply_renames(writer, batch->rename_pre, writer->rename_count);
+    for (size_t i = 0; i < batch->scope_count && status == TL_OK; i++)
+        status = batch->scopes[i].recursive
+                     ? store_prune_tree(writer->store, batch->scopes[i].path)
+                     : store_prune_children(writer->store, batch->scopes[i].path);
+    if (!batch->full)
+        return status;
     if (status == TL_OK)
         status = store_roots(writer->store, forget_root, writer);
     for (size_t i = 0; i < writer->roots.count && status == TL_OK; i++)
@@ -465,12 +679,15 @@ static tl_status persist(tl_writer *writer, struct batch *batch, bool *changed) 
     unlock_writer(writer);
     return status;
 }
+/* Publish the live watcher's counters. Its unavailable count is cumulative,
+ * so only the growth since the last update is added to the total. */
 static void update_watch_stats(tl_writer *writer, const tl_watch *watch) {
     tl_watch_stats stats = watch_stats(watch);
     lock_writer(writer);
     writer->stats.watches = stats.directories;
     writer->stats.watch_degraded = stats.unavailable != 0;
-    writer->stats.watch_unavailable += stats.unavailable;
+    writer->stats.watch_unavailable += stats.unavailable - writer->counted_unavailable;
+    writer->counted_unavailable = stats.unavailable;
     unlock_writer(writer);
 }
 static tl_status prepare_watch(tl_writer *writer) {
@@ -495,11 +712,46 @@ static void swap_watch(tl_writer *writer) {
     watch_destroy(writer->watch);
     writer->watch = writer->building_watch;
     writer->building_watch = NULL;
+    writer->counted_unavailable = 0;
     update_watch_stats(writer, writer->watch);
 }
 /* Indexing thread: scan privately, persist through the owner, then build the
  * committed view and publish it. A failed build or publication after a commit
  * sets reload so the saved catalog is republished before later batches. */
+/* Move the pending event scopes into the batch, so events arriving during
+ * this pass start a fresh set. Returns whether every root must be scanned. */
+static bool take_scopes(tl_writer *writer, struct batch *batch) {
+    memcpy(batch->scopes, writer->scopes, writer->scope_count * sizeof(struct scope));
+    batch->scope_count = writer->scope_count;
+    writer->scope_count = 0;
+    bool full = writer->full || writer->watch == NULL;
+    writer->full = false;
+    return full;
+}
+/* Indexing thread: fill the batch from a scan of every root, or of only the
+ * directories events touched when they describe every change. */
+static tl_status collect(tl_writer *writer, struct batch *batch) {
+    tl_status status = prepare_paths(writer);
+    bool full = take_scopes(writer, batch);
+    if (status != TL_OK)
+        return status;
+    if (!full)
+        full = !resolve_scopes(writer, batch);
+    writer->last_scoped = !full;
+    if (full) {
+        free_scopes(batch->scopes, &batch->scope_count);
+        status = prepare_watch(writer);
+    }
+    if (status != TL_OK)
+        return status;
+    filter_renames(writer);
+    batch->rename_pre = writer->rename_count;
+    status = full ? scan_roots(writer, batch) : scan_scopes(writer, batch);
+    /* An overflow during the scan discards every pair, including earlier ones. */
+    if (batch->rename_pre > writer->rename_count)
+        batch->rename_pre = writer->rename_count;
+    return status;
+}
 static tl_status reconcile(tl_writer *writer) {
     tl_catalog_stats catalog;
     catalog_reclaim(writer->options.catalog);
@@ -510,17 +762,7 @@ static tl_status reconcile(tl_writer *writer) {
     struct batch batch;
     status = batch_init(&batch);
     if (status == TL_OK)
-        status = prepare_paths(writer);
-    if (status == TL_OK)
-        status = prepare_watch(writer);
-    if (status == TL_OK) {
-        filter_renames(writer);
-        batch.rename_pre = writer->rename_count;
-        status = scan_roots(writer, &batch);
-        /* An overflow during the scan discards every pair, including earlier ones. */
-        if (batch.rename_pre > writer->rename_count)
-            batch.rename_pre = writer->rename_count;
-    }
+        status = collect(writer, &batch);
     bool catalog_changed = false;
     if (status == TL_OK)
         status = persist(writer, &batch, &catalog_changed);
@@ -528,15 +770,14 @@ static tl_status reconcile(tl_writer *writer) {
     if (status == TL_OK) {
         clear_renames(writer);
         swap_watch(writer);
+    } else {
+        /* The taken scopes are gone; a full pass repairs whatever they held. */
+        writer->full = true;
     }
-    tl_catalog_snapshot *snapshot = NULL;
     if (status == TL_OK && catalog_changed)
-        status = make_snapshot(writer, &snapshot);
-    if (status == TL_OK && catalog_changed)
-        status = publish(writer, &snapshot);
+        status = publish_changes(writer);
     if (status != TL_OK && catalog_changed)
         writer->reload = true;
-    catalog_snapshot_destroy(snapshot);
     watch_destroy(writer->building_watch);
     writer->building_watch = NULL;
     return status;
@@ -600,6 +841,7 @@ static void scan_cycle(tl_writer *writer) {
     lock_writer(writer);
     writer->stats.indexing = true;
     unlock_writer(writer);
+    writer->last_scoped = false;
     tl_status status = writer->reload ? load_saved(writer) : reconcile(writer);
     if (status == TL_OK)
         writer->reload = false;
@@ -617,11 +859,14 @@ static void scan_cycle(tl_writer *writer) {
     writer->stats.last_scan_ms = milliseconds() - start;
     if (status == TL_OK)
         writer->stats.reconciliations++;
+    if (status == TL_OK && writer->last_scoped)
+        writer->stats.scoped_reconciliations++;
     unlock_writer(writer);
 }
 static void *worker(void *context) {
     tl_writer *writer = context;
     writer->dirty = true;
+    writer->full = true;
     writer->due = 0;
     uint64_t periodic = 0;
     while (!atomic_load(&writer->stop)) {
@@ -631,16 +876,20 @@ static void *worker(void *context) {
         unlock_writer(writer);
         if (requested) {
             writer->dirty = true;
+            writer->full = true;
             writer->due = 0;
         }
         if (writer->watch != NULL) {
             tl_status status = drain_watch(writer);
             if (status != TL_OK) {
                 writer->dirty = true;
+                writer->full = true;
                 writer->due = 0;
             }
         }
         uint64_t now = milliseconds();
+        if (now >= periodic)
+            writer->full = true;
         if ((writer->dirty && now >= writer->due) || now >= periodic ||
             (writer->reload && now >= writer->due)) {
             scan_cycle(writer);
@@ -657,6 +906,19 @@ static void *worker(void *context) {
     (void)code;
     unlock_writer(writer);
     return NULL;
+}
+/* Persistence thread, after a commit: copy the touched row ids for the
+ * indexing thread (which waits meanwhile). False when they cannot describe
+ * the commit: tracking overflowed, roots changed or the copy failed. */
+static bool collect_changes(tl_writer *writer) {
+    const uint64_t *ids = NULL;
+    size_t count = 0;
+    bool complete = false, roots = false;
+    vec_clear(writer->job_ids);
+    if (store_changes(writer->store, &ids, &count, &complete, &roots) != TL_OK || !complete ||
+        roots)
+        return false;
+    return vec_append_array(writer->job_ids, ids, count) == TL_OK;
 }
 /* Under the mutex: sleep until there is a batch, history, shutdown or the
  * next retention tick (wait milliseconds away). */
@@ -695,11 +957,14 @@ static void *persistence_worker(void *context) {
         bool job = writer->job_state == JOB_PENDING;
         unlock_writer(writer);
         if (job) {
-            bool changed = false;
+            bool changed = false, complete = false;
             tl_status status = apply_batch(writer, writer->job, &changed);
+            if (status == TL_OK && changed)
+                complete = collect_changes(writer);
             lock_writer(writer);
             writer->job_status = status;
             writer->job_changed = changed;
+            writer->job_complete = complete;
             writer->job_state = JOB_DONE;
             int code = pthread_cond_broadcast(&writer->job_done);
             (void)code;
@@ -762,7 +1027,13 @@ tl_status writer_create(const tl_writer_options *options, tl_writer **out) {
     if (status == TL_OK)
         status = store_create(writer->database, &writer->store);
     if (status == TL_OK)
+        status = store_track_changes(writer->store, WRITER_TRACKED_CHANGES);
+    if (status == TL_OK)
         status = store_create(writer->database, &writer->reader);
+    if (status == TL_OK)
+        status = vec_create(sizeof(uint64_t), &writer->job_ids);
+    if (status == TL_OK)
+        status = delta_create(&writer->delta);
     if (status == TL_OK)
         status = load_saved(writer);
     if (status == TL_OK &&
@@ -799,11 +1070,14 @@ void writer_destroy(tl_writer *writer) {
     (void)code;
     store_destroy(writer->store);
     store_destroy(writer->reader);
+    vec_destroy(writer->job_ids);
+    delta_destroy(writer->delta);
     watch_destroy(writer->watch);
     watch_destroy(writer->building_watch);
     crawl_destroy(writer->crawler);
     free_paths(&writer->roots);
     clear_renames(writer);
+    free_scopes(writer->scopes, &writer->scope_count);
     free(writer->socket_path);
     free(writer->database);
     code = pthread_cond_destroy(&writer->persist_wake);

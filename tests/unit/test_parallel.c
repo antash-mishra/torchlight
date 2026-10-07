@@ -3,12 +3,16 @@
 #include "torchlight/parallel.h"
 struct counters {
     unsigned visits[131];
+    size_t owner[131];
     bool fail;
 };
-static tl_status visit(void *context, size_t begin, size_t end) {
+static tl_status visit(void *context, size_t participant, size_t begin, size_t end) {
     struct counters *counters = context;
-    for (size_t i = begin; i < end; i++)
+    CHECK(participant < PARALLEL_MAX_PARTICIPANTS);
+    for (size_t i = begin; i < end; i++) {
         counters->visits[i]++;
+        counters->owner[i] = participant;
+    }
     return counters->fail && begin <= 65 && end > 65 ? TL_STATE : TL_OK;
 }
 void test_parallel(void) {
@@ -22,6 +26,11 @@ void test_parallel(void) {
             CHECK(parallel_run(pool, count, visit, &counters) == TL_OK);
             for (size_t i = 0; i < 131; i++)
                 CHECK(counters.visits[i] == (i < count ? 1U : 0U));
+            /* Participants own contiguous ranges in index order, the caller first. */
+            for (size_t i = 1; i < count; i++)
+                CHECK(counters.owner[i] >= counters.owner[i - 1] &&
+                      counters.owner[i] < participants);
+            CHECK(count == 0 || counters.owner[0] == 0);
         }
         struct counters counters = {.fail = true};
         CHECK(parallel_run(pool, 131, visit, &counters) == TL_STATE);

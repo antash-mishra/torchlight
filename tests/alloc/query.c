@@ -1,5 +1,9 @@
 /* Interpose the platform allocator to detect library/indirect query allocation.
- * Separate from ASan: its allocator interposition would mask the libc path. */
+ * Separate from ASan: its allocator interposition would mask the libc path.
+ * Queries may allocate only to compile Frizbee matchers for words a workspace
+ * has not cached (bounded per word and scoring thread); a repeated query, a
+ * cached one-symbol answer and vector/fusion queries allocate nothing. */
+#include "torchlight/fuzzy.h"
 #include "torchlight/lexical.h"
 #include "torchlight/rank.h"
 #include "torchlight/vector.h"
@@ -14,6 +18,7 @@ extern void *__libc_malloc(size_t size);
 extern void *__libc_calloc(size_t count, size_t size);
 extern void *__libc_realloc(void *pointer, size_t size);
 extern void __libc_free(void *pointer);
+extern void *__libc_memalign(size_t alignment, size_t size);
 static atomic_bool probing;
 static atomic_size_t allocations;
 
@@ -35,22 +40,90 @@ void *realloc(void *pointer, size_t size) {
         atomic_fetch_add(&allocations, 1);
     return __libc_realloc(pointer, size);
 }
+/** Interpose posix_memalign (Rust's allocator uses it for aligned SIMD state). */
+int posix_memalign(void **out, size_t alignment, size_t size) {
+    if (atomic_load(&probing))
+        atomic_fetch_add(&allocations, 1);
+    void *pointer = __libc_memalign(alignment, size);
+    if (pointer == NULL)
+        return 12; /* ENOMEM without pulling errno.h into the interposer */
+    *out = pointer;
+    return 0;
+}
+/** Interpose aligned_alloc with the same tracking as malloc. */
+void *aligned_alloc(size_t alignment, size_t size) {
+    if (atomic_load(&probing))
+        atomic_fetch_add(&allocations, 1);
+    return __libc_memalign(alignment, size);
+}
+/** Interpose memalign with the same tracking as malloc. */
+void *memalign(size_t alignment, size_t size) {
+    if (atomic_load(&probing))
+        atomic_fetch_add(&allocations, 1);
+    return __libc_memalign(alignment, size);
+}
 /** Forward free to the allocator paired with the interposed allocation calls. */
 void free(void *pointer) {
     __libc_free(pointer);
 }
 
-static tl_status check_query(const tl_lexical *engine, tl_lexical_workspace *workspace,
-                             const char *query) {
+/* Scoring participants of a large-engine workspace (see lexical_query.c). */
+enum { ALLOCATION_PARTICIPANTS = 4 };
+static size_t matcher_allocations;
+/* Measure the most allocations compiling one matcher takes (short, long and
+ * non-ASCII words), the unit of the per-query bound. */
+static void calibrate(void) {
+    static const size_t lengths[] = {1, 5, FUZZY_MATCHER_MAX_SYMBOLS};
+    static const uint32_t letters[] = {'n', 0xe9};
+    uint32_t symbols[FUZZY_MATCHER_MAX_SYMBOLS];
+    uint8_t boundaries[FUZZY_MATCHER_MAX_SYMBOLS] = {1};
+    matcher_allocations = 0;
+    for (size_t l = 0; l < sizeof(lengths) / sizeof(lengths[0]); l++) {
+        for (size_t c = 0; c < sizeof(letters) / sizeof(letters[0]); c++) {
+            for (size_t i = 0; i < lengths[l]; i++)
+                symbols[i] = letters[c];
+            tl_text word = {.symbols = symbols, .boundaries = boundaries, .length = lengths[l]};
+            tl_fuzzy_matcher *matcher = NULL;
+            atomic_store(&allocations, 0);
+            atomic_store(&probing, true);
+            tl_status status = fuzzy_matcher_create(word, &matcher);
+            atomic_store(&probing, false);
+            fuzzy_matcher_destroy(matcher);
+            size_t used = atomic_load(&allocations);
+            if (status == TL_OK && used > matcher_allocations)
+                matcher_allocations = used;
+        }
+    }
+}
+static size_t count_words(const char *query) {
+    size_t words = 0;
+    for (size_t i = 0; query[i] != 0; i++)
+        words += query[i] != ' ' && (i == 0 || query[i - 1] == ' ');
+    return words;
+}
+static size_t measured_query(const tl_lexical *engine, tl_lexical_workspace *workspace,
+                             const char *query, tl_status *status) {
     tl_result results[10];
     size_t count = 0;
     atomic_store(&allocations, 0);
     atomic_store(&probing, true);
-    tl_status status = lexical_query(engine, workspace, query, results, 10, &count);
+    *status = lexical_query(engine, workspace, query, results, 10, &count);
     atomic_store(&probing, false);
-    if (atomic_load(&allocations) != 0) {
-        fprintf(stderr, "query of %zu bytes allocated %zu times\n", strlen(query),
-                atomic_load(&allocations));
+    return atomic_load(&allocations);
+}
+/* First run: at most one matcher per word and participant. Second run of the
+ * same query reuses the cached words and must not allocate at all. */
+static tl_status check_query(const tl_lexical *engine, tl_lexical_workspace *workspace,
+                             const char *query) {
+    tl_status status = TL_OK;
+    size_t bound = count_words(query) * ALLOCATION_PARTICIPANTS * matcher_allocations;
+    size_t first = measured_query(engine, workspace, query, &status);
+    if (status != TL_OK)
+        return status;
+    size_t again = measured_query(engine, workspace, query, &status);
+    if (first > bound || again != 0) {
+        fprintf(stderr, "query of %zu bytes allocated %zu then %zu times (bound %zu)\n",
+                strlen(query), first, again, bound);
         return TL_STATE;
     }
     return status;
@@ -148,6 +221,11 @@ static tl_status check_hybrid(void) {
 }
 
 int main(void) {
+    calibrate();
+    if (matcher_allocations == 0) {
+        fputs("matcher calibration failed\n", stderr);
+        return 1;
+    }
     tl_lexical *engine = NULL;
     tl_lexical_workspace *workspace = NULL;
     tl_status status = lexical_create(&engine);

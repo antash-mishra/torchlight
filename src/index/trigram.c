@@ -26,11 +26,16 @@ struct tl_trigram {
     size_t slot_count, frequent_limit;
     bool finished;
 };
+/* Posting range of one informative query trigram. */
+struct posting_range {
+    uint32_t start, end;
+};
 struct tl_trigram_scratch {
     const tl_trigram *index;
     uint16_t *counts;
     uint32_t *touched;
     uint64_t keys[TRIGRAM_MAX_QUERY_SYMBOLS];
+    struct posting_range ranges[TRIGRAM_MAX_QUERY_SYMBOLS];
 };
 struct key_lookup {
     const uint64_t *keys;
@@ -209,46 +214,108 @@ void trigram_scratch_destroy(tl_trigram_scratch *scratch) {
     free(scratch->touched);
     free(scratch);
 }
-/* Count, per slot, how many informative query trigrams it contains. Returns the
- * informative trigram total; absent trigrams count, frequent ones do not. */
-static size_t count_overlap(const tl_trigram *index, tl_trigram_scratch *scratch, size_t keys,
-                            size_t *touched_count) {
+static bool find_key(const tl_trigram *index, uint64_t key, uint32_t *id) {
+    struct key_lookup lookup = {vec_const_data(index->keys), key};
+    return hashmap_find(index->ids, key_hash(key), same_key, &lookup, id);
+}
+/* Frequent in decider: more postings than its limit; absent keys never are. */
+static bool frequent(const tl_trigram *decider, uint64_t key) {
+    uint32_t id = 0;
+    return find_key(decider, key, &id) &&
+           decider->starts[id + 1] - decider->starts[id] > decider->frequent_limit;
+}
+/* Collect the posting ranges of the query's informative trigrams, shortest
+ * first. Returns the informative total: absent trigrams count (as empty
+ * lists), frequent ones (per decider) do not. */
+static size_t informative_ranges(const tl_trigram *index, const tl_trigram *decider,
+                                 tl_trigram_scratch *scratch, size_t keys, size_t *range_count) {
     size_t informative = 0;
-    struct key_lookup lookup = {vec_const_data(index->keys), 0};
+    *range_count = 0;
     for (size_t k = 0; k < keys; k++) {
-        lookup.key = scratch->keys[k];
         uint32_t id = 0;
-        if (!hashmap_find(index->ids, key_hash(lookup.key), same_key, &lookup, &id)) {
-            informative++;
-            continue;
-        }
-        uint32_t start = index->starts[id], end = index->starts[id + 1];
-        if (end - start > index->frequent_limit)
+        if (frequent(decider, scratch->keys[k]))
             continue;
         informative++;
-        for (uint32_t p = start; p < end; p++) {
+        if (!find_key(index, scratch->keys[k], &id))
+            continue;
+        struct posting_range range = {index->starts[id], index->starts[id + 1]};
+        /* Insertion sort by length: a query has few trigrams. */
+        size_t at = (*range_count)++;
+        while (at > 0 && scratch->ranges[at - 1].end - scratch->ranges[at - 1].start >
+                             range.end - range.start) {
+            scratch->ranges[at] = scratch->ranges[at - 1];
+            at--;
+        }
+        scratch->ranges[at] = range;
+    }
+    return informative;
+}
+static bool posted(const tl_trigram *index, struct posting_range range, uint32_t slot) {
+    uint32_t low = range.start, high = range.end;
+    while (low < high) {
+        uint32_t middle = low + (high - low) / 2;
+        if (index->postings[middle] < slot)
+            low = middle + 1;
+        else
+            high = middle;
+    }
+    return low < range.end && index->postings[low] == slot;
+}
+/* Count, per candidate slot, how many informative trigrams it contains. A
+ * slot sharing at least `needed` of the present lists appears in one of the
+ * (present - needed + 1) shortest lists, so only those are scanned to find
+ * candidates; the longer lists are probed per candidate by binary search on
+ * their sorted postings. Counts of reported slots are exact. */
+static void count_overlap(const tl_trigram *index, tl_trigram_scratch *scratch, size_t ranges,
+                          size_t needed, size_t *touched_count) {
+    if (needed == 0 || ranges < needed)
+        return;
+    size_t scanned = ranges - needed + 1;
+    for (size_t r = 0; r < scanned; r++) {
+        for (uint32_t p = scratch->ranges[r].start; p < scratch->ranges[r].end; p++) {
             uint32_t slot = index->postings[p];
             if (scratch->counts[slot]++ == 0)
                 scratch->touched[(*touched_count)++] = slot;
         }
     }
-    return informative;
+    for (size_t r = scanned; r < ranges; r++) {
+        struct posting_range range = scratch->ranges[r];
+        size_t length = range.end - range.start, probes = 1;
+        for (size_t span = length; span > 1; span /= 2)
+            probes++;
+        /* Probe when candidates are few; otherwise one pass that only counts
+         * slots already found is cheaper than repeated binary searches. */
+        if (*touched_count > length / probes) {
+            for (uint32_t p = range.start; p < range.end; p++)
+                if (scratch->counts[index->postings[p]] != 0)
+                    scratch->counts[index->postings[p]]++;
+            continue;
+        }
+        for (size_t i = 0; i < *touched_count; i++) {
+            uint32_t slot = scratch->touched[i];
+            if (posted(index, range, slot))
+                scratch->counts[slot]++;
+        }
+    }
 }
-tl_status trigram_query(const tl_trigram *index, tl_trigram_scratch *scratch, tl_text query,
-                        tl_trigram_hit hit, void *context) {
+tl_status trigram_query(const tl_trigram *index, const tl_trigram *reference,
+                        tl_trigram_scratch *scratch, tl_text query, tl_trigram_hit hit,
+                        void *context) {
     if (index == NULL || scratch == NULL || scratch->index != index || hit == NULL ||
         (query.symbols == NULL && query.length != 0))
         return TL_INVALID;
-    if (!index->finished)
+    if (!index->finished || (reference != NULL && !reference->finished))
         return TL_STATE;
     if (query.length > TRIGRAM_MAX_QUERY_SYMBOLS)
         return TL_LIMIT;
-    size_t keys = 0, touched = 0;
+    size_t keys = 0, touched = 0, ranges = 0;
     tl_status status = distinct_trigrams(query, scratch->keys, &keys);
     if (status != TL_OK || keys < TRIGRAM_MIN_QUERY_TRIGRAMS)
         return status;
-    size_t total = count_overlap(index, scratch, keys, &touched);
+    size_t total =
+        informative_ranges(index, reference == NULL ? index : reference, scratch, keys, &ranges);
     size_t needed = (total + 1) / 2;
+    count_overlap(index, scratch, ranges, needed, &touched);
     for (size_t i = 0; i < touched && status == TL_OK; i++) {
         uint32_t slot = scratch->touched[i];
         if (scratch->counts[slot] >= needed)

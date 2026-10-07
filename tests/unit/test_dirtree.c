@@ -35,6 +35,15 @@ void test_dirtree(void) {
     uint64_t mask = dirtree_path_mask(tree, notes);
     CHECK((mask & tokenize_symbol_mask('/')) && (mask & tokenize_symbol_mask('u')));
     CHECK(dirtree_parent(tree, DIRTREE_ROOT) == DIRTREE_NONE);
+    /* Raw ASCII names keep their case for the matcher; others are NULL. */
+    const char *ascii = dirtree_ascii_name(tree, notes);
+    CHECK(ascii != NULL && memcmp(ascii, "projectNotes", 12) == 0);
+    CHECK(dirtree_ascii_name(tree, DIRTREE_ROOT) == NULL && dirtree_ascii_name(tree, 99) == NULL);
+    dirtree_destroy(tree);
+    CHECK(dirtree_create(&tree) == TL_OK);
+    uint32_t cafe = intern(tree, "/Caf\xc3\xa9"), bad = intern(tree, "/bad\xff");
+    CHECK(dirtree_finish(tree) == TL_OK);
+    CHECK(dirtree_ascii_name(tree, cafe) == NULL && dirtree_ascii_name(tree, bad) == NULL);
     dirtree_destroy(tree);
     dirtree_destroy(NULL);
 }

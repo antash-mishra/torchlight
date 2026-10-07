@@ -19,6 +19,9 @@ tl_status vec_append_array(tl_vec *vec, const void *items, size_t count);
 tl_status vec_reserve(tl_vec *vec, size_t capacity);
 /** Remove all elements, keeping capacity; NULL is allowed, no errors. */
 void vec_clear(tl_vec *vec);
+/** Keep only the first count elements (no-op when count is not smaller),
+ * keeping capacity; NULL is allowed, no errors. */
+void vec_truncate(tl_vec *vec, size_t count);
 /** Release unused capacity after construction. A failed shrink keeps the
  * larger block, so this cannot fail; borrowed element pointers are invalidated. */
 void vec_shrink(tl_vec *vec);

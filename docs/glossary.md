@@ -39,9 +39,17 @@
 | **Generation** | Never used alone in code or docs: always `catalog_gen` or `emb_gen`. |
 | **Newest-pending slot** | Of a client's bounded request queue, only the newest query is searched in full; a newer query marks the older queued ones superseded and cancels a running one, and they answer as cancelled (M6 step 1). |
 | **Persistence thread** | The writer thread that owns the SQLite write connection and applies catalog batches, history and retention; the indexing thread crawls and builds engines without holding a write transaction (M6 step 1). |
-| **Base segment / delta segment** | M6 step 3 engine layout: the large immutable published engine plus a small engine holding entries changed since, queried together with a tombstone set for retired ids. |
-| **Compaction** | Background rebuild of a new base segment from base plus delta once the delta exceeds its size bound; published like any other `catalog_gen`. |
+| **Base segment / delta segment** | M6 step 3 engine layout: the large immutable engine shared by every snapshot derived from it (with its reader workspaces), plus a small engine holding all entries changed since, queried together and merged in one order. |
+| **Tombstone** | A base position hidden by a derived snapshot because its entry was changed (its new version lives in the delta) or removed. |
+| **Reference engine** | The base a delta segment is built against (`lexical_set_reference`): its roots bound parent context and its trigram index decides frequent trigrams, so an entry scores the same in either segment. |
+| **Change set** | The ids of files rows one committed catalog transaction inserted, updated or deleted, recorded by the store's SQLite update hook; the input of a delta publication. |
+| **Compaction** | Full rebuild of a new base segment from the committed catalog once the delta exceeds max(4096, base/32) entries (or the change set is incomplete); runs on the indexing thread while queries continue on the old view, and publishes like any other `catalog_gen`. |
 | **Scoped reconcile** | Crawling and upserting only the directories named by coalesced watch events, instead of every root (M6 step 3a). |
+| **Event scope** | A directory to rescan after watch events: its direct children (the parent of a changed entry), or its whole subtree when it appeared with unseen contents. |
+| **Fuzzy matcher** | A word compiled for Frizbee's SIMD Smith-Waterman (`fuzzy_matcher_create`), weighted to score on the portable scorer's scale; one per word and scoring thread (M6 step 2). |
+| **Word evidence cache** | Per-workspace cache of one word's channel hits, directory scores and matchers, keyed by the word's symbols and reused across queries (M6 step 2). |
+| **Incremental semantic stage** | A semantic snapshot built by copying the previous snapshot's vector for every row whose prepared text is unchanged, embedding only the rest (M6 step 3c). |
+| **Derived semantic snapshot** | A semantic snapshot that shares a full snapshot's rows and vectors by reference, owns only rows changed since it, and hides the base rows they replace or remove; the semantic counterpart of a delta segment (M6 step 3c). |
 | **Two-phase response** | A `lexical` result set sent immediately, followed by a fused `final` set for the same request. |
 | **Terminal response** | `final` results or a completion error ending an active request, including lexical fallback on semantic failure/deadline. |
 | **Response backpressure** | Keeping a semantic final pending while earlier socket output drains, so individually valid phases share a bounded client queue. |

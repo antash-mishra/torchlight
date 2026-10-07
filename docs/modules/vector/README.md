@@ -21,11 +21,18 @@ separate accounting. Arithmetic overflow and an exceeded budget return
 `vector_add` copies and normalizes finite, nonzero embeddings. Ids must be
 nonzero and strictly increasing. Dimensions and `emb_gen` must match; a wrong
 `emb_gen` returns `TL_STATE`. Failed additions leave the builder usable.
-`vector_finish` seals the index, including an empty index.
+`vector_finish` seals the index, including an empty index. `vector_position`
+finds a row by id, and `vector_add_row` appends another index's stored row
+(same `emb_gen`, dimensions and format) without re-normalizing or
+re-quantizing, so the copy scores bit-identically; the semantic worker uses it
+to reuse unchanged rows across stages (M6 step 3c).
 
 `vector_workspace_create` allocates normalized-query scratch before searching.
 The workspace borrows the index; separate workspaces permit concurrent searches.
-Destroy them before `vector_destroy`.
+Destroy them before `vector_destroy`. `vector_workspace_exclude` attaches a
+borrowed bitmap of row positions that queries on that workspace skip; a derived
+semantic snapshot uses it to hide the base rows it replaced or removed (M6
+step 3c). Unit tests exclude and restore a row in every format.
 
 `vector_query` normalizes the query, visits every stored row, retains the best
 1–1000 requested hits in the caller's result buffer and orders them by cosine,

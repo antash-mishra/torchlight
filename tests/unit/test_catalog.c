@@ -214,7 +214,83 @@ static void acquisition_races_reclamation(void) {
     CHECK(stats.snapshots == 1 && stats.readers == 0 && stats.catalog_gen == PUBLICATION_ROUNDS);
     CHECK(catalog_destroy(context.shared.catalog) == TL_OK);
 }
+/* A derived snapshot shares the base, hides retired base entries, merges the
+ * delta in one total order and lists live entries in id order; base
+ * workspaces bound leases across every snapshot sharing them. */
+static void derived_snapshots(void) {
+    tl_lexical *engine = NULL;
+    CHECK(lexical_create(&engine) == TL_OK);
+    const char *paths[] = {"/r", "/r/alpha.md", "/r/beta.md", "/r/gamma.md", "/r/alpha.mdz"};
+    for (size_t i = 0; i < 5; i++)
+        CHECK(lexical_add(engine, i + 1, paths[i], i == 0) == TL_OK);
+    CHECK(lexical_finish(engine) == TL_OK);
+    tl_catalog *catalog = NULL;
+    tl_catalog_snapshot *base = NULL, *derived = NULL, *pin = NULL;
+    CHECK(catalog_create(3, &catalog) == TL_OK);
+    CHECK(catalog_snapshot_create(&engine, 1, 1, &base) == TL_OK);
+    CHECK(catalog_publish(catalog, &base) == TL_OK && catalog_pin(catalog, &pin) == TL_OK);
+    /* beta (id 3) is renamed to "alpha2.md"; gamma (id 4) is deleted; id 6 is new. */
+    tl_lexical *delta = NULL;
+    CHECK(lexical_create(&delta) == TL_OK);
+    CHECK(lexical_set_reference(delta, catalog_snapshot_base(pin)) == TL_OK);
+    CHECK(lexical_add(delta, 3, "/r/alpha2.md", false) == TL_OK);
+    CHECK(lexical_add(delta, 6, "/r/alpha.mdx", false) == TL_OK);
+    CHECK(lexical_finish(delta) == TL_OK);
+    const uint64_t retired[] = {4, 3, 42};
+    CHECK(catalog_snapshot_derive(pin, &delta, retired, 3, 1, 1, &derived) == TL_OK);
+    CHECK(delta == NULL && catalog_snapshot_tombstones(derived) == 2);
+    CHECK(catalog_publish(catalog, &derived) == TL_STATE); /* catalog_gen must advance */
+    catalog_snapshot_destroy(derived);
+    CHECK(lexical_create(&delta) == TL_OK &&
+          lexical_set_reference(delta, catalog_snapshot_base(pin)) == TL_OK);
+    CHECK(lexical_add(delta, 3, "/r/alpha2.md", false) == TL_OK);
+    CHECK(lexical_add(delta, 6, "/r/alpha.mdx", false) == TL_OK);
+    CHECK(lexical_finish(delta) == TL_OK);
+    CHECK(catalog_snapshot_derive(pin, &delta, retired, 3, 2, 1, &derived) == TL_OK);
+    CHECK(catalog_publish(catalog, &derived) == TL_OK);
+    tl_catalog_reader *reader = NULL, *other = NULL;
+    CHECK(catalog_acquire(catalog, &reader) == TL_OK);
+    CHECK(catalog_acquire(catalog, &other) == TL_LIMIT); /* one shared base workspace */
+    tl_result results[8];
+    size_t count = 0;
+    /* Equal scores across segments order by raw path: .mdx < .mdz < 2.md. */
+    CHECK(catalog_query(reader, "alpha", results, 8, &count) == TL_OK && count == 4);
+    CHECK(results[0].id == 2 && results[1].id == 6 && results[2].id == 5 && results[3].id == 3);
+    CHECK(catalog_query(reader, "alpha", results, 2, &count) == TL_OK && count == 2 &&
+          results[1].id == 6);
+    CHECK(catalog_query(reader, "beta", results, 8, &count) == TL_OK && count == 0);
+    CHECK(catalog_query(reader, "gamma", results, 8, &count) == TL_OK && count == 0);
+    const char *path = NULL;
+    CHECK(catalog_resolve(reader, 3, &path) == TL_OK && strcmp(path, "/r/alpha2.md") == 0);
+    CHECK(catalog_resolve(reader, 4, &path) == TL_STATE &&
+          catalog_resolve(reader, 2, &path) == TL_OK);
+    CHECK(!catalog_is_dir(reader, 4));
+    catalog_release(reader);
+    tl_catalog_stats stats;
+    CHECK(catalog_stats(catalog, &stats) == TL_OK && stats.entries == 5 && stats.catalog_gen == 2);
+    catalog_unpin(pin);
+    CHECK(catalog_pin(catalog, &pin) == TL_OK && catalog_snapshot_count(pin) == 5);
+    uint64_t expected[] = {1, 2, 3, 5, 6}, id = 0;
+    bool directory = false;
+    for (size_t i = 0; i < 5; i++) {
+        CHECK(catalog_snapshot_entry(pin, i, &id, &path, &directory) == TL_OK && id == expected[i]);
+        CHECK(catalog_snapshot_context(pin, i) != NULL);
+    }
+    CHECK(strcmp(catalog_snapshot_context(pin, 2), "r/alpha2.md") == 0);
+    CHECK(catalog_snapshot_entry(pin, 5, &id, &path, &directory) == TL_INVALID);
+    catalog_unpin(pin);
+    /* Retiring the base snapshot keeps the shared engine alive for the delta. */
+    catalog_reclaim(catalog);
+    CHECK(catalog_stats(catalog, &stats) == TL_OK && stats.snapshots == 1);
+    CHECK(catalog_acquire(catalog, &reader) == TL_OK);
+    CHECK(catalog_query(reader, "alpha", results, 8, &count) == TL_OK && count == 4);
+    catalog_release(reader);
+    tl_lexical *unused = NULL;
+    CHECK(catalog_snapshot_derive(NULL, &unused, NULL, 0, 3, 1, &derived) == TL_INVALID);
+    CHECK(catalog_destroy(catalog) == TL_OK);
+}
 void test_catalog(void) {
+    derived_snapshots();
     tl_catalog *registry = NULL;
     CHECK(catalog_create(2, &registry) == TL_OK);
     tl_catalog_snapshot *view = snapshot(1, "/r/old.md", 1), *pin = NULL;

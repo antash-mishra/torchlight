@@ -122,7 +122,47 @@ static void allowlist_traversal(void) {
     }
     CHECK(rmdir(root) == 0);
 }
+static tl_status no_roots(void *context, const tl_crawl_entry *entry) {
+    CHECK(!entry->is_root);
+    return list_path(context, entry);
+}
+/* Scoped rescans report the directory and children (not grandchildren), or
+ * the whole subtree, with the root walk's exclusions and no root flag. */
+static void scoped_walks(void) {
+    char root[] = "/tmp/torchlight-scope-XXXXXX", scope[96];
+    CHECK(mkdtemp(root) != NULL);
+    make(root, "/a", true);
+    make(root, "/a/b", true);
+    make(root, "/a/.hidden", true);
+    make(root, "/a/b/deep.txt", false);
+    make(root, "/a/.hidden/secret", false);
+    make(root, "/a/top.txt", false);
+    snprintf(scope, sizeof(scope), "%s/a", root);
+    tl_crawl *crawler = NULL;
+    CHECK(crawl_create(NULL, NULL, 0, &crawler) == TL_OK);
+    struct listing children = {0}, tree = {0};
+    CHECK(crawl_scope(crawler, scope, false, no_roots, &children) == TL_OK);
+    CHECK(children.count == 3 && listed(&children, root, "/a") && listed(&children, root, "/a/b") &&
+          listed(&children, root, "/a/top.txt"));
+    CHECK(crawl_scope(crawler, scope, true, no_roots, &tree) == TL_OK);
+    CHECK(tree.count == 4 && listed(&tree, root, "/a/b/deep.txt") &&
+          !listed(&tree, root, "/a/.hidden/secret"));
+    char missing[128];
+    snprintf(missing, sizeof(missing), "%s/missing", root);
+    CHECK(crawl_scope(crawler, missing, false, no_roots, &tree) == TL_IO);
+    CHECK(crawl_scope(crawler, "relative", false, no_roots, &tree) == TL_INVALID);
+    crawl_destroy(crawler);
+    const char *cleanup[] = {"/a/b/deep.txt", "/a/.hidden/secret", "/a/top.txt",
+                             "/a/b",          "/a/.hidden",        "/a"};
+    for (size_t i = 0; i < 6; i++) {
+        char path[160];
+        snprintf(path, sizeof(path), "%s%s", root, cleanup[i]);
+        CHECK(remove(path) == 0);
+    }
+    CHECK(rmdir(root) == 0);
+}
 void test_crawl(void) {
+    scoped_walks();
     tl_crawl *crawler = NULL;
     CHECK(crawl_create(NULL, NULL, 0, &crawler) == TL_OK);
     size_t count = 0;

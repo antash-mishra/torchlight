@@ -1,0 +1,122 @@
+name: Test
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  # allows release.yaml to gate publishes on this suite
+  workflow_call:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+          - os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Run tests
+        run: cargo test --verbose
+
+  wasm:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install wasm targets
+        run: rustup target add wasm32-wasip1 wasm32-unknown-unknown
+
+      - name: Install wasmtime
+        run: |
+          curl https://wasmtime.dev/install.sh -sSf | bash
+          echo "$HOME/.wasmtime/bin" >> "$GITHUB_PATH"
+
+      # .cargo/config.toml enables +simd128 and sets wasmtime as the runner
+      # --lib because criterion's bench harness doesn't build on wasm
+      - name: Run tests (SIMD)
+        run: cargo test --verbose --target wasm32-wasip1 --lib
+
+      - name: Run tests (scalar)
+        run: RUSTFLAGS='' cargo test --verbose --target wasm32-wasip1 --lib
+
+      - name: Check browser target
+        run: cargo check --verbose --target wasm32-unknown-unknown
+
+  no-std:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # wasm32v1-none has no std at all, so this proves the crate is no_std
+      - name: Install wasm32v1-none target
+        run: rustup target add wasm32v1-none
+
+      # .cargo/config.toml enables +simd128
+      - name: Check no_std (SIMD)
+        run: cargo check --verbose --no-default-features --target wasm32v1-none
+
+      - name: Check no_std (scalar)
+        run: RUSTFLAGS='' cargo check --verbose --no-default-features --target wasm32v1-none
+
+      - name: Check no_std with serde
+        run: cargo check --verbose --no-default-features --features serde --target wasm32v1-none
+
+      - name: Check no_std on host
+        run: cargo check --verbose --no-default-features
+
+  msrv:
+    runs-on: ubuntu-latest
+    name: MSRV (${{ matrix.msrv }})
+
+    strategy:
+      matrix:
+        msrv: ["1.89.0"]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install ${{ matrix.msrv }}
+        run: rustup toolchain install ${{ matrix.msrv }}
+
+      - name: cargo +${{ matrix.msrv }} check
+        run: cargo +${{ matrix.msrv }} check --all-targets --all-features
+
+  clippy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  miri:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install nightly Miri
+        run: rustup toolchain install nightly --component miri,rust-src
+
+      - name: Set up Miri
+        run: cargo +nightly miri setup
+
+      - name: Run Miri tests
+        run: cargo +nightly miri test
+
+      - name: Run Miri tests with match_end_col
+        run: cargo +nightly miri test --features match_end_col

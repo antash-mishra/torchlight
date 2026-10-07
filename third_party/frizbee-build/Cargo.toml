@@ -1,0 +1,23 @@
+# Torchlight-owned manifest building the vendored Frizbee C binding as a static
+# library, offline and without any crate registry.
+[workspace]
+members = ["core"]
+
+[package]
+name = "torchlight-frizbee"
+version = "0.13.0"
+edition = "2024"
+rust-version = "1.89.0"
+license = "MIT"
+publish = false
+
+[lib]
+name = "frizbee"
+path = "../frizbee/bindings/frizbee-c/src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+frizbee = { path = "core", default-features = false, features = ["std"] }
+
+[profile.release]
+panic = "abort"

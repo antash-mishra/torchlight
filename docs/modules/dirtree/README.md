@@ -58,3 +58,10 @@ Relative paths are rejected; the engine only indexes absolute paths.
 ## Related
 - [lexical](../lexical/README.md), [tokenize](../tokenize/README.md), [core](../core/README.md)
 - ADR: [0008](../../adr/0008-m1-completion-channels-directories-config.md)
+
+## Raw ASCII names (M6)
+
+Each node records whether its raw name is all ASCII; `dirtree_ascii_name`
+borrows those bytes (exactly `dirtree_name(node).length` of them, case kept) so
+the Frizbee matcher scores directory names without re-encoding symbols. Other
+names return NULL and are encoded from symbols.

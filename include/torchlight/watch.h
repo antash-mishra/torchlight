@@ -4,9 +4,13 @@
 #include "torchlight/common.h"
 #include <stdbool.h>
 typedef struct tl_watch tl_watch;
+/* path is the affected entry (or the watched directory itself for its own
+ * removal), old_path the paired source of a rename. created marks an entry
+ * that appeared (created, or moved in without a paired source), whose subtree
+ * nobody has seen yet. */
 typedef struct {
     const char *path, *old_path;
-    bool is_dir, overflow;
+    bool is_dir, overflow, created;
 } tl_watch_event;
 typedef tl_status (*tl_watch_callback)(void *context, const tl_watch_event *event);
 typedef struct {

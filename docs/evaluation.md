@@ -418,3 +418,41 @@ and [lexical benchmark](../tests/bench/results/2026-10-07-m6-step1-lexical.txt);
 the comparison table is in the [M6 plan](m6-plan.md). Regression coverage adds
 rapid typing with interleaved status frames, abandoned connections, engine
 cancellation and history draining while publication is blocked.
+
+## M6 steps 2 and 3: Frizbee scoring and incremental indexing (2026-10-07)
+
+All runs share one i7-8700K with background load (load average 3.5 to 5, a
+second resident torchlightd re-indexing the home directory, desktop apps), so
+latency percentiles vary by up to about 2 ms between runs at 500k; ranges are
+reported. Relevance is checked four ways, each against the step-1 engine:
+
+- **Synthetic labeled queries** (`make bench`, 500k): held-out recall@10 0.539
+  in both, MRR 0.424 → 0.423, recall@1 0.373 → 0.372 (stated tolerance ±0.01).
+- **Real home-directory corpus** (213,577 paths, crawler exclusions):
+  held-out recall@1 0.509, recall@10 0.632 and MRR 0.546 in both; abbreviation
+  recall@10 0.575 → 0.580. Typing p95 4.58 → 2.65 ms, p99 11.6 → 4.7 ms.
+  [Recorded run](../tests/bench/results/2026-10-07-m6-real-corpus.txt).
+- **Mixed launcher fixture** (`tests/quality`): all 44 queries return identical
+  metrics and identical top-ten lists.
+  [Summary](../tests/quality/results/2026-10-07-m6-mixed-summary.json).
+- **Hybrid daemon fixture** (Potion 256): all 52 queries return the same top
+  ten as M4's recorded run.
+  [Run](../tests/quality/results/2026-10-07-m6-potion-daemon.json).
+- **Live hybrid check** (real home directory, 213k paths, Potion 256, not
+  recorded because it lists personal paths): exact names, a transposition typo
+  and two-word partial names rank the intended file first in both phases.
+  Descriptive queries such as "tax return" or "budget spreadsheet" mostly
+  return SDK and module-cache files, because only path text is embedded and
+  those trees dominate the corpus. Lexical phases took 0.4 to 7.6 ms, finals
+  28 to 47 ms, and a new file reached hybrid results 176 ms after creation
+  through a derived semantic stage.
+
+Indexing: at 500k, 100 touched files publish in about 110 ms (3a alone:
+3.8 s, since the rebuild remained) and RSS grows about 1% with no new peak.
+With a model, a derived semantic snapshot shares the previous vectors, so the
+hybrid path serves the updated catalog after 277 ms with RSS going from 603 to
+605 MB (copying every row took 797 ms and reached 835 MB). The final hybrid
+phase at 500k stays near M4 (p95 95 ms against 100 ms), because the exhaustive
+int8 scan dominates it. Latency, update and memory
+tables are in the [M6 plan](m6-plan.md#measurements-recorded-at-the-end-of-m6);
+raw runs are under `tests/bench/results/2026-10-07-m6-*`.

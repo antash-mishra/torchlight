@@ -81,6 +81,10 @@ struct entry_match {
     int score;
     bool subsequence, parent_only;
 };
+/* Evidence for one word: channel hits, directory scores and its fuzzy
+ * matchers. Everything depends only on the word's symbols and the immutable
+ * engine, so a cache is keyed by those symbols and reused across queries:
+ * typing "notes rep" after "notes re" recomputes nothing for "notes". */
 struct word_cache {
     int *hit;
     uint32_t *touched;
@@ -88,9 +92,14 @@ struct word_cache {
     int channel_max;
     int *nearest;
     uint32_t *nearest_stamp, *prefix_stamp;
-    const struct word *word;
-    uint32_t query_epoch, dir_epoch;
-    bool complete;
+    uint32_t dir_epoch;
+    bool complete, valid, path;
+    uint64_t used; /* workspace use clock at last selection, for LRU */
+    size_t key_length;
+    uint32_t key[LEXICAL_QUERY_SYMBOLS];
+    uint8_t key_boundaries[LEXICAL_QUERY_SYMBOLS];
+    /* One matcher per scoring participant, created on first use. */
+    tl_fuzzy_matcher *matchers[LEXICAL_PARALLEL_PARTICIPANTS];
 };
 struct tl_lexical_workspace {
     const tl_lexical *engine;
@@ -118,6 +127,7 @@ struct tl_lexical_workspace {
     uint32_t *nearest_stamp, *prefix_stamp, dir_epoch;
     struct word_cache evidence[LEXICAL_WORD_CACHES];
     size_t active_word;
+    uint64_t use_clock;
     /* Full-path reconstruction for words containing '/'. */
     uint32_t *chain_nodes, *chain_symbols;
     uint8_t *chain_boundaries;
@@ -130,6 +140,8 @@ struct tl_lexical_workspace {
      * LEXICAL_CANCEL_STRIDE scored entries, so an obsolete query stops
      * within a fraction of a millisecond without per-entry overhead. */
     const atomic_bool *cancel;
+    /* Optional caller-owned bitmap of absent positions (lexical_workspace_exclude). */
+    const uint64_t *excluded;
     struct entry_match *batch;
     struct heap_item heap[LEXICAL_MAX_RESULTS];
     size_t heap_count;
@@ -138,6 +150,10 @@ struct tl_lexical_workspace {
     uint8_t boundaries[LEXICAL_QUERY_SYMBOLS];
     size_t offsets[LEXICAL_QUERY_SYMBOLS];
 };
+/* Whether slot is excluded from ranking (a tombstone of a newer segment). */
+static bool is_excluded(const tl_lexical_workspace *workspace, size_t slot) {
+    return workspace->excluded != NULL && ((workspace->excluded[slot / 64] >> (slot % 64)) & 1U);
+}
 static void *allocate_array(size_t count, size_t size) {
     size_t bytes = 0;
     if (tl_size_multiply(count == 0 ? 1 : count, size, &bytes) != TL_OK)
@@ -216,6 +232,8 @@ void lexical_workspace_destroy(tl_lexical_workspace *workspace) {
     for (size_t i = 0; i < sizeof(arrays) / sizeof(arrays[0]); i++)
         free(arrays[i]);
     for (size_t i = 0; i < LEXICAL_WORD_CACHES; i++) {
+        for (size_t p = 0; p < LEXICAL_PARALLEL_PARTICIPANTS; p++)
+            fuzzy_matcher_destroy(workspace->evidence[i].matchers[p]);
         free(workspace->evidence[i].hit);
         free(workspace->evidence[i].touched);
         free(workspace->evidence[i].nearest);
@@ -228,6 +246,85 @@ void lexical_workspace_destroy(tl_lexical_workspace *workspace) {
     mask_scratch_destroy(workspace->name_masks);
     free(workspace->batch);
     free(workspace);
+}
+/* ---- word evidence caches ---------------------------------------------- */
+static void reset_hits(struct word_cache *cache) {
+    for (size_t i = 0; i < cache->touched_count; i++)
+        cache->hit[cache->touched[i]] = 0;
+    cache->touched_count = 0;
+    cache->channel_max = 0;
+}
+static bool same_key(const struct word_cache *cache, const struct word *word) {
+    return cache->valid && cache->path == word->path && cache->key_length == word->text.length &&
+           memcmp(cache->key, word->text.symbols, word->text.length * sizeof(uint32_t)) == 0;
+}
+/* Assign the least recently used cache to a new word, clearing its hits,
+ * directory stamps and matchers. Eviction changes work only, never results. */
+static struct word_cache *claim_evidence(tl_lexical_workspace *workspace, const struct word *word,
+                                         size_t *selected) {
+    *selected = 0;
+    for (size_t i = 1; i < LEXICAL_WORD_CACHES; i++)
+        if (workspace->evidence[i].used < workspace->evidence[*selected].used)
+            *selected = i;
+    struct word_cache *cache = &workspace->evidence[*selected];
+    reset_hits(cache);
+    for (size_t p = 0; p < LEXICAL_PARALLEL_PARTICIPANTS; p++) {
+        fuzzy_matcher_destroy(cache->matchers[p]);
+        cache->matchers[p] = NULL;
+    }
+    memcpy(cache->key, word->text.symbols, word->text.length * sizeof(uint32_t));
+    memcpy(cache->key_boundaries, word->text.boundaries, word->text.length);
+    cache->key_length = word->text.length;
+    cache->path = word->path;
+    cache->valid = true;
+    cache->complete = false;
+    if (++cache->dir_epoch == 0) {
+        size_t nodes = dirtree_count(workspace->engine->tree);
+        memset(cache->nearest_stamp, 0, nodes * sizeof(uint32_t));
+        memset(cache->prefix_stamp, 0, nodes * sizeof(uint32_t));
+        cache->dir_epoch = 1;
+    }
+    return cache;
+}
+/* Select the evidence cache for word, reusing one with the same symbols from
+ * this or an earlier query. Returns whether its channels are already known. */
+static bool select_evidence(tl_lexical_workspace *workspace, const struct word *word) {
+    size_t selected = LEXICAL_WORD_CACHES;
+    for (size_t i = 0; i < LEXICAL_WORD_CACHES && selected == LEXICAL_WORD_CACHES; i++)
+        if (same_key(&workspace->evidence[i], word))
+            selected = i;
+    bool reused = selected != LEXICAL_WORD_CACHES;
+    struct word_cache *cache =
+        reused ? &workspace->evidence[selected] : claim_evidence(workspace, word, &selected);
+    cache->used = ++workspace->use_clock;
+    workspace->active_word = selected;
+    workspace->hit = cache->hit;
+    workspace->touched = cache->touched;
+    workspace->touched_count = cache->touched_count;
+    workspace->channel_max = cache->channel_max;
+    workspace->nearest = cache->nearest;
+    workspace->nearest_stamp = cache->nearest_stamp;
+    workspace->prefix_stamp = cache->prefix_stamp;
+    workspace->dir_epoch = cache->dir_epoch;
+    return reused;
+}
+/* The active word's matcher for a scoring participant, created on first use:
+ * at most once per cached word and participant, never per scored entry. */
+static tl_status active_matcher(tl_lexical_workspace *workspace, size_t participant,
+                                tl_fuzzy_matcher **out) {
+    struct word_cache *cache = &workspace->evidence[workspace->active_word];
+    if (cache->matchers[participant] == NULL) {
+        tl_text word = {.symbols = cache->key,
+                        .boundaries = cache->key_boundaries,
+                        .length = cache->key_length};
+        for (size_t i = 0; i < word.length; i++)
+            word.mask |= tokenize_symbol_mask(word.symbols[i]);
+        tl_status status = fuzzy_matcher_create(word, &cache->matchers[participant]);
+        if (status != TL_OK)
+            return status;
+    }
+    *out = cache->matchers[participant];
+    return TL_OK;
 }
 /* ---- channel hits ------------------------------------------------------- */
 static void record_hit(tl_lexical_workspace *workspace, size_t slot, int score) {
@@ -258,9 +355,12 @@ static tl_status prepare_fields(tl_lexical_workspace *workspace, tl_text word) {
     const tl_lexical *engine = workspace->engine;
     tl_status status = prefix_query(engine->field_prefix, word, on_field_hit, workspace);
     const struct lexical_field *fields = vec_const_data(engine->fields);
+    tl_fuzzy_matcher *matcher = NULL;
+    if (status == TL_OK && vec_count(engine->fields) != 0)
+        status = active_matcher(workspace, 0, &matcher);
     for (size_t i = 0; i < vec_count(engine->fields) && status == TL_OK; i++) {
         int score = 0;
-        status = fuzzy_score(tokenize_view(fields[i].text), word, &score);
+        status = fuzzy_matcher_score(matcher, tokenize_view(fields[i].text), NULL, &score);
         if (status == TL_OK && score > 0)
             record_hit(workspace, fields[i].slot, score);
     }
@@ -282,12 +382,6 @@ static tl_status on_directory_hit(void *context, size_t node, int score) {
     workspace->prefix_stamp[node] = workspace->dir_epoch;
     return TL_OK;
 }
-static void reset_hits(struct word_cache *cache) {
-    for (size_t i = 0; i < cache->touched_count; i++)
-        cache->hit[cache->touched[i]] = 0;
-    cache->touched_count = 0;
-    cache->channel_max = 0;
-}
 /* A directory's own evidence for the word: a subsequence within its name, or
  * at least the parent prefix score when one of its keys starts with the word.
  * Directories above the indexed roots carry no evidence. */
@@ -299,7 +393,12 @@ static tl_status own_score(tl_lexical_workspace *workspace, tl_text word, uint32
     tl_text name = dirtree_name(engine->tree, node);
     if (name.length == 0 || !engine->usable[node])
         return TL_OK;
-    tl_status status = fuzzy_score(name, word, out);
+    /* Directory evidence is resolved on the coordinator only (see
+     * score_batch), so participant 0's matcher is never shared. */
+    tl_fuzzy_matcher *matcher = NULL;
+    tl_status status = active_matcher(workspace, 0, &matcher);
+    if (status == TL_OK)
+        status = fuzzy_matcher_score(matcher, name, dirtree_ascii_name(engine->tree, node), out);
     if (status == TL_OK && workspace->prefix_stamp[node] == workspace->dir_epoch &&
         *out < LEXICAL_PARENT_PREFIX_SCORE)
         *out = LEXICAL_PARENT_PREFIX_SCORE;
@@ -310,12 +409,12 @@ static tl_status own_score(tl_lexical_workspace *workspace, tl_text word, uint32
  * the walked chain top-down, so each directory is scored at most once per word. */
 static tl_status nearest_score(tl_lexical_workspace *workspace, tl_text word, uint32_t node,
                                int *out) {
-    const tl_dirtree *tree = workspace->engine->tree;
+    const uint32_t *parents = workspace->engine->dir_parents;
     size_t depth = 0;
     uint32_t cursor = node;
     while (cursor != DIRTREE_NONE && workspace->nearest_stamp[cursor] != workspace->dir_epoch) {
         workspace->chain_nodes[depth++] = cursor;
-        cursor = dirtree_parent(tree, cursor);
+        cursor = parents[cursor];
     }
     int inherited = cursor == DIRTREE_NONE ? 0 : workspace->nearest[cursor];
     while (depth > 0) {
@@ -331,44 +430,6 @@ static tl_status nearest_score(tl_lexical_workspace *workspace, tl_text word, ui
     *out = inherited;
     return TL_OK;
 }
-/* Query epochs guard stable word views. Reusing complete channel and directory
- * evidence avoids duplicate lookup/expansion when an early bound needs fallback.
- * Eviction changes work only; tables are reset before use for another word. */
-static bool select_evidence(tl_lexical_workspace *workspace, const struct word *word) {
-    size_t selected = (workspace->active_word + 1) % LEXICAL_WORD_CACHES;
-    bool reused = false;
-    for (size_t i = 0; i < LEXICAL_WORD_CACHES; i++) {
-        if (workspace->evidence[i].query_epoch == workspace->epoch &&
-            workspace->evidence[i].word == word) {
-            selected = i;
-            reused = true;
-            break;
-        }
-    }
-    struct word_cache *cache = &workspace->evidence[selected];
-    if (!reused) {
-        reset_hits(cache);
-        cache->query_epoch = workspace->epoch;
-        cache->word = word;
-        cache->complete = false;
-        if (++cache->dir_epoch == 0) {
-            size_t nodes = dirtree_count(workspace->engine->tree);
-            memset(cache->nearest_stamp, 0, nodes * sizeof(uint32_t));
-            memset(cache->prefix_stamp, 0, nodes * sizeof(uint32_t));
-            cache->dir_epoch = 1;
-        }
-    }
-    workspace->active_word = selected;
-    workspace->hit = cache->hit;
-    workspace->touched = cache->touched;
-    workspace->touched_count = cache->touched_count;
-    workspace->channel_max = cache->channel_max;
-    workspace->nearest = cache->nearest;
-    workspace->nearest_stamp = cache->nearest_stamp;
-    workspace->prefix_stamp = cache->prefix_stamp;
-    workspace->dir_epoch = cache->dir_epoch;
-    return reused;
-}
 /* Resolve a large batch's parent context sequentially. Reuse any nodes already
  * visited lazily in this word; every parent precedes its children. */
 static tl_status score_directories(tl_lexical_workspace *workspace, tl_text word) {
@@ -376,18 +437,26 @@ static tl_status score_directories(tl_lexical_workspace *workspace, tl_text word
     if (cache->complete)
         return TL_OK;
     const tl_lexical *engine = workspace->engine;
+    const uint64_t *masks = engine->dir_masks;
+    const uint32_t *parents = engine->dir_parents;
+    int *nearest = workspace->nearest;
+    uint32_t *stamps = workspace->nearest_stamp, epoch = workspace->dir_epoch;
     size_t nodes = dirtree_count(engine->tree);
     for (uint32_t node = 0; node < nodes; node++) {
-        if (workspace->nearest_stamp[node] == workspace->dir_epoch)
+        if (stamps[node] == epoch)
             continue;
         int own = 0;
-        tl_status status = own_score(workspace, word, node, &own);
-        if (status != TL_OK)
-            return status;
-        uint32_t parent = dirtree_parent(engine->tree, node);
-        workspace->nearest[node] =
-            own > 0 || parent == DIRTREE_NONE ? own : workspace->nearest[parent];
-        workspace->nearest_stamp[node] = workspace->dir_epoch;
+        /* Only a name holding every symbol of the word has its own evidence
+         * (a directory prefix hit implies the same symbols), and unusable
+         * directories have an empty mask: most nodes skip own_score. */
+        if ((masks[node] & word.mask) == word.mask) {
+            tl_status status = own_score(workspace, word, node, &own);
+            if (status != TL_OK)
+                return status;
+        }
+        uint32_t parent = parents[node];
+        nearest[node] = own > 0 || parent == DIRTREE_NONE ? own : nearest[parent];
+        stamps[node] = epoch;
     }
     cache->complete = true;
     return TL_OK;
@@ -430,8 +499,9 @@ static tl_status prepare_word(tl_lexical_workspace *workspace, struct word *word
     if (status == TL_OK)
         status = typo_query(engine->typo, workspace->typo, word->text, on_typo_hit, workspace);
     if (status == TL_OK && word->text.length <= TRIGRAM_MAX_QUERY_SYMBOLS)
-        status = trigram_query(engine->trigram, workspace->trigram, word->text, on_trigram_hit,
-                               workspace);
+        status = trigram_query(engine->trigram,
+                               engine->reference == NULL ? NULL : engine->reference->trigram,
+                               workspace->trigram, word->text, on_trigram_hit, workspace);
     if (status == TL_OK)
         status = prepare_fields(workspace, word->text);
     if (status == TL_OK)
@@ -465,7 +535,7 @@ static tl_status path_score(tl_lexical_workspace *workspace, tl_text word, size_
         return TL_OK;
     size_t depth = 0, length = 0;
     for (uint32_t node = dir; node != DIRTREE_ROOT && node != DIRTREE_NONE;
-         node = dirtree_parent(engine->tree, node))
+         node = engine->dir_parents[node])
         workspace->chain_nodes[depth++] = node;
     append_slash(workspace, &length);
     while (depth > 0) {
@@ -488,7 +558,7 @@ static tl_status path_score(tl_lexical_workspace *workspace, tl_text word, size_
  * dominating channel hit skip the fuzzy scan. *parent_only (optional) is set
  * when the only evidence is a parent directory. */
 static tl_status entry_score(tl_lexical_workspace *workspace, const struct word *word, size_t slot,
-                             int *subsequence, bool *parent_only, int *out) {
+                             size_t participant, int *subsequence, bool *parent_only, int *out) {
     const tl_lexical *engine = workspace->engine;
     int sub = 0, hit = workspace->hit[slot];
     if (parent_only != NULL)
@@ -517,7 +587,11 @@ static tl_status entry_score(tl_lexical_workspace *workspace, const struct word 
         status = path_score(workspace, word->text, slot, &sub);
     } else if ((engine->columns.masks[slot] & word->text.mask) == word->text.mask &&
                (engine->columns.repeats[slot] & word->repeats) == word->repeats) {
-        status = fuzzy_score(lexical_name(engine, slot), word->text, &sub);
+        /* score_batch created this participant's matcher before scoring. */
+        tl_fuzzy_matcher *matcher =
+            workspace->evidence[workspace->active_word].matchers[participant];
+        status = fuzzy_matcher_score(matcher, lexical_name(engine, slot),
+                                     lexical_ascii_name(engine, slot), &sub);
         sub = sub > 0 ? sub + LEXICAL_BASENAME_BONUS : 0;
     }
     if (status == TL_OK && sub == 0 && !word->path) {
@@ -546,7 +620,7 @@ static bool cancelled(const tl_lexical_workspace *workspace) {
     return workspace->cancel != NULL &&
            atomic_load_explicit(workspace->cancel, memory_order_relaxed);
 }
-static tl_status score_range(void *context, size_t begin, size_t end) {
+static tl_status score_range(void *context, size_t participant, size_t begin, size_t end) {
     const struct batch_query *query = context;
     for (size_t i = begin; i < end; i++) {
         if ((i - begin) % LEXICAL_CANCEL_STRIDE == 0 && cancelled(query->workspace))
@@ -555,13 +629,24 @@ static tl_status score_range(void *context, size_t begin, size_t end) {
         struct entry_match *match = &query->workspace->batch[i];
         int sub = 0;
         tl_status status =
-            entry_score(query->workspace, query->word, slot, query->membership ? &sub : NULL,
-                        &match->parent_only, &match->score);
+            entry_score(query->workspace, query->word, slot, participant,
+                        query->membership ? &sub : NULL, &match->parent_only, &match->score);
         if (status != TL_OK)
             return status;
         match->subsequence = sub > 0;
     }
     return TL_OK;
+}
+/* Matchers for participants [0, participants) of the active word, created
+ * before dispatch so workers never allocate. Path words use the portable
+ * scorer across the rebuilt path and need none. */
+static tl_status prepare_matchers(tl_lexical_workspace *workspace, const struct word *word,
+                                  size_t participants) {
+    tl_fuzzy_matcher *matcher = NULL;
+    tl_status status = TL_OK;
+    for (size_t p = 0; p < participants && status == TL_OK && !word->path; p++)
+        status = active_matcher(workspace, p, &matcher);
+    return status;
 }
 /* Workers score independently once directory context is read-only and write
  * disjoint outputs. Selection and compaction stay on the coordinator in the
@@ -571,9 +656,13 @@ static tl_status score_batch(tl_lexical_workspace *workspace, const struct word 
     struct batch_query query = {workspace, word, slots, membership};
     if (cancelled(workspace))
         return TL_CANCELLED;
-    if (workspace->parallel == NULL || word->path || count < LEXICAL_PARALLEL_BATCH_MIN)
-        return score_range(&query, 0, count);
+    if (workspace->parallel == NULL || word->path || count < LEXICAL_PARALLEL_BATCH_MIN) {
+        tl_status status = prepare_matchers(workspace, word, 1);
+        return status == TL_OK ? score_range(&query, 0, 0, count) : status;
+    }
     tl_status status = score_directories(workspace, word->text);
+    if (status == TL_OK)
+        status = prepare_matchers(workspace, word, LEXICAL_PARALLEL_PARTICIPANTS);
     if (status == TL_OK)
         status = parallel_run(workspace->parallel, count, score_range, &query);
     return status;
@@ -602,7 +691,7 @@ static void heap_push(tl_lexical_workspace *workspace, struct heap_item item, si
  * when its only evidence is a parent directory (see run_query). */
 static void push_match(tl_lexical_workspace *workspace, size_t slot, int score, bool parent_only,
                        size_t capacity) {
-    if (workspace->seen[slot] == workspace->epoch)
+    if (workspace->seen[slot] == workspace->epoch || is_excluded(workspace, slot))
         return;
     workspace->seen[slot] = workspace->epoch;
     if (workspace->direct) {
@@ -637,7 +726,7 @@ static tl_status try_skip_scan(tl_lexical_workspace *workspace, const struct wor
     for (size_t i = 0; i < workspace->touched_count; i++) {
         size_t slot = workspace->touched[i];
         int score = workspace->batch[i].score;
-        if (score + length_bonus(engine, slot) > bound)
+        if (score + length_bonus(engine, slot) > bound && !is_excluded(workspace, slot))
             strong++;
         push_match(workspace, slot, score, false, capacity);
     }
@@ -706,16 +795,20 @@ static tl_status scan_first(tl_lexical_workspace *workspace, const struct word *
         if (match.score > 0)
             push_match(workspace, slot, match.score, match.parent_only, capacity);
     }
-    for (size_t i = 0; narrowed && i < workspace->touched_count; i++) {
+    if (narrowed)
+        status = prepare_matchers(workspace, word, 1);
+    for (size_t i = 0; narrowed && i < workspace->touched_count && status == TL_OK; i++) {
         size_t slot = workspace->touched[i];
         int score = 0;
         if (workspace->seen[slot] == workspace->epoch)
             continue;
-        status = entry_score(workspace, word, slot, NULL, NULL, &score);
+        status = entry_score(workspace, word, slot, 0, NULL, NULL, &score);
         if (status != TL_OK)
             return status;
         push_match(workspace, slot, score, false, capacity);
     }
+    if (status != TL_OK)
+        return status;
     return recording ? subseq_cache_commit(workspace->cache, recorded) : TL_OK;
 }
 /* Keep only entries of list that also match word, adding its score. */
@@ -909,15 +1002,14 @@ static void collect(tl_lexical_workspace *workspace, const uint32_t *list, size_
 static void collect_roots(tl_lexical_workspace *workspace, size_t capacity) {
     const tl_lexical *engine = workspace->engine;
     for (size_t i = 0; i < engine->root_count; i++)
-        heap_push(workspace, (struct heap_item){LEXICAL_ROOT_SCORE, engine->columns.roots[i]},
-                  capacity);
+        if (!is_excluded(workspace, engine->columns.roots[i]))
+            heap_push(workspace, (struct heap_item){LEXICAL_ROOT_SCORE, engine->columns.roots[i]},
+                      capacity);
 }
 static void begin_query(tl_lexical_workspace *workspace, const char *raw, size_t words) {
     if (++workspace->epoch == 0) {
         /* Wrapped: clear stamps so no stale stamp equals a new epoch. */
         memset(workspace->seen, 0, workspace->engine->count * sizeof(uint32_t));
-        for (size_t i = 0; i < LEXICAL_WORD_CACHES; i++)
-            workspace->evidence[i].query_epoch = 0;
         workspace->epoch = 1;
     }
     workspace->direct = words == 1;
@@ -936,7 +1028,8 @@ static void push_exact_paths(tl_lexical_workspace *workspace, size_t capacity) {
     for (size_t rank = workspace->exact_lo; rank < workspace->exact_hi; rank++) {
         uint32_t slot = workspace->engine->columns.path_order[rank];
         workspace->seen[slot] = workspace->epoch;
-        heap_push(workspace, (struct heap_item){LEXICAL_EXACT_PATH, slot}, capacity);
+        if (!is_excluded(workspace, slot))
+            heap_push(workspace, (struct heap_item){LEXICAL_EXACT_PATH, slot}, capacity);
     }
 }
 struct exact_names {
@@ -947,7 +1040,7 @@ static tl_status on_exact_name(void *context, size_t slot, int score) {
     struct exact_names *names = context;
     tl_lexical_workspace *workspace = names->workspace;
     (void)score;
-    if (workspace->seen[slot] == workspace->epoch ||
+    if (workspace->seen[slot] == workspace->epoch || is_excluded(workspace, slot) ||
         !exact_name(workspace->engine, slot, workspace->trimmed))
         return TL_OK;
     workspace->seen[slot] = workspace->epoch;
@@ -1045,10 +1138,15 @@ static tl_status run_query(tl_lexical_workspace *workspace, const char *raw, siz
         status = run_multiword(workspace, first, words, capacity);
     return status;
 }
-/* Leave hit/total arrays all zero so the next query starts clean. */
-static void reset_workspace(tl_lexical_workspace *workspace) {
-    for (size_t i = 0; i < LEXICAL_WORD_CACHES; i++)
+/* Leave total arrays all zero so the next query starts clean. Word evidence
+ * stays: it is keyed by the word and valid for this immutable engine. A
+ * failed or cancelled query may leave a cache half-filled, so drop those. */
+static void reset_workspace(tl_lexical_workspace *workspace, tl_status status) {
+    for (size_t i = 0; i < LEXICAL_WORD_CACHES && status != TL_OK; i++) {
         reset_hits(&workspace->evidence[i]);
+        workspace->evidence[i].valid = false;
+        workspace->evidence[i].complete = false;
+    }
     workspace->touched_count = 0;
     for (size_t i = 0; i < workspace->candidate_count; i++)
         workspace->total[workspace->candidates[i]] = 0;
@@ -1060,6 +1158,30 @@ static void reset_workspace(tl_lexical_workspace *workspace) {
 void lexical_workspace_cancel(tl_lexical_workspace *workspace, const atomic_bool *flag) {
     if (workspace != NULL)
         workspace->cancel = flag;
+}
+void lexical_workspace_exclude(tl_lexical_workspace *workspace, const uint64_t *bitmap) {
+    if (workspace != NULL)
+        workspace->excluded = bitmap;
+}
+/* Answer a one-symbol query from the seal-time cache. Results are totally
+ * ordered, so the first capacity non-excluded cached results are exact unless
+ * exclusions emptied a truncated cache below capacity; then false asks for a
+ * normal evaluation. */
+static bool cached_answer(const tl_lexical *engine, tl_lexical_workspace *workspace, size_t index,
+                          tl_result *results, size_t capacity, size_t *out_count) {
+    const tl_result *cached = engine->symbol_results + index * LEXICAL_MAX_RESULTS;
+    size_t available = engine->symbol_counts[index], count = 0;
+    for (size_t i = 0; i < available && count < capacity; i++) {
+        size_t slot = 0;
+        if (workspace->excluded != NULL &&
+            (lexical_slot(engine, cached[i].id, &slot) != TL_OK || is_excluded(workspace, slot)))
+            continue;
+        results[count++] = cached[i];
+    }
+    if (count < capacity && available == LEXICAL_MAX_RESULTS && workspace->excluded != NULL)
+        return false;
+    *out_count = count;
+    return true;
 }
 tl_status lexical_query(const tl_lexical *engine, tl_lexical_workspace *workspace,
                         const char *query, tl_result *results, size_t capacity, size_t *out_count) {
@@ -1082,16 +1204,9 @@ tl_status lexical_query(const tl_lexical *engine, tl_lexical_workspace *workspac
     size_t words = status == TL_OK ? split_words(workspace, text) : 0, cached = 0;
     if (status == TL_OK && engine->symbols_ready && words == 1 &&
         workspace->words[0].text.length == 1 &&
-        lexical_symbol_index(workspace->words[0].text.symbols[0], &cached)) {
-        /* Results are totally ordered, so the first capacity of the cached
-         * top LEXICAL_MAX_RESULTS are exactly this query's answer. */
-        size_t count =
-            engine->symbol_counts[cached] < capacity ? engine->symbol_counts[cached] : capacity;
-        memcpy(results, engine->symbol_results + cached * LEXICAL_MAX_RESULTS,
-               count * sizeof(tl_result));
-        *out_count = count;
+        lexical_symbol_index(workspace->words[0].text.symbols[0], &cached) &&
+        cached_answer(engine, workspace, cached, results, capacity, out_count))
         return TL_OK;
-    }
     if (status == TL_OK)
         status = run_query(workspace, query, words, capacity);
     if (status == TL_OK) {
@@ -1105,7 +1220,7 @@ tl_status lexical_query(const tl_lexical *engine, tl_lexical_workspace *workspac
         }
         *out_count = workspace->heap_count;
     }
-    reset_workspace(workspace);
+    reset_workspace(workspace, status);
     return status;
 }
 

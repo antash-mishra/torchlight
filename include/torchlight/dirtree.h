@@ -30,6 +30,11 @@ uint32_t dirtree_parent(const tl_dirtree *tree, uint32_t node);
 /** Borrow a node's normalized name (no slashes) with boundaries and a mask.
  * Valid until destroy once sealed; an empty view for the root or bad nodes. */
 tl_text dirtree_name(const tl_dirtree *tree, uint32_t node);
+/** Borrow a node's raw name bytes when they are all ASCII, else NULL (also for
+ * the root and bad nodes). ASCII names are exactly dirtree_name(node).length
+ * bytes whose ASCII lower case equals its symbols. Valid until destroy once
+ * sealed; not NUL-terminated. No allocation or errors. */
+const char *dirtree_ascii_name(const tl_dirtree *tree, uint32_t node);
 /** Conservative mask of every symbol in the node's full path, including '/'. */
 uint64_t dirtree_path_mask(const tl_dirtree *tree, uint32_t node);
 /** Normalized symbol length of the node's full path with its slashes ("/" is 1). */

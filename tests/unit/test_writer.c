@@ -65,7 +65,74 @@ static tl_status loaded_count(void *context, const tl_store_entry *entry) {
     (*count)++;
     return TL_OK;
 }
+/* Whether path itself is indexed: an exact raw path ranks first. */
+static bool has_path(tl_catalog *catalog, const char *path) {
+    tl_catalog_reader *reader = NULL;
+    CHECK(catalog_acquire(catalog, &reader) == TL_OK);
+    tl_result results[1];
+    size_t count = 0;
+    CHECK(catalog_query(reader, path, results, 1, &count) == TL_OK);
+    bool found = count == 1 && strcmp(results[0].path, path) == 0;
+    catalog_release(reader);
+    return found;
+}
+/* Watch events publish deltas until the delta outgrows its bound, then a full
+ * rebuild compacts it; every file stays queryable and removals hide entries. */
+static void delta_compaction(void) {
+    char directory[] = "/tmp/torchlight-delta-XXXXXX";
+    CHECK(mkdtemp(directory) != NULL);
+    char root[256], database[256], config_path[256];
+    CHECK(snprintf(root, sizeof(root), "%s/root", directory) > 0 && mkdir(root, 0700) == 0);
+    CHECK(snprintf(database, sizeof(database), "%s/catalog.db", directory) > 0);
+    CHECK(snprintf(config_path, sizeof(config_path), "%s/config", directory) > 0);
+    FILE *config_file = fopen(config_path, "w");
+    CHECK(config_file != NULL && fprintf(config_file, "root = %s\n", root) > 0 &&
+          fclose(config_file) == 0);
+    tl_config *config = NULL;
+    CHECK(config_create("torchlight", database, config_path, NULL, &config) == TL_OK);
+    tl_catalog *catalog = NULL;
+    CHECK(catalog_create(2, &catalog) == TL_OK);
+    tl_writer_options options = {.config = config,
+                                 .catalog = catalog,
+                                 .socket_path = "/tmp/unused-delta.sock",
+                                 .watch_capacity = 16,
+                                 .max_entries = 100,
+                                 .max_path_bytes = 8192,
+                                 .readers = 1,
+                                 .rescan_ms = 3600000,
+                                 .history_days = 30,
+                                 .delta_entries = 2};
+    tl_writer *writer = NULL;
+    CHECK(writer_create(&options, &writer) == TL_OK);
+    for (size_t i = 0; i < 10000 && current_stats(writer).reconciliations == 0; i++)
+        pause_briefly();
+    uint64_t builds = current_stats(writer).full_builds;
+    char files[6][256];
+    for (int i = 0; i < 6; i++) {
+        CHECK(snprintf(files[i], sizeof(files[i]), "%s/root/delta-file-%d.txt", directory, i) > 0);
+        create_file(files[i]);
+        for (size_t wait = 0; wait < 10000 && !has_path(catalog, files[i]); wait++)
+            pause_briefly();
+        CHECK(has_path(catalog, files[i]));
+    }
+    tl_writer_stats stats = current_stats(writer);
+    CHECK(stats.delta_publications >= 2 && stats.full_builds > builds);
+    for (int i = 0; i < 6; i++)
+        CHECK(has_path(catalog, files[i])); /* compaction kept earlier deltas */
+    CHECK(unlink(files[5]) == 0);
+    for (size_t wait = 0; wait < 10000 && has_path(catalog, files[5]); wait++)
+        pause_briefly();
+    CHECK(!has_path(catalog, files[5]) && has_path(catalog, files[4]));
+    writer_destroy(writer);
+    CHECK(catalog_destroy(catalog) == TL_OK);
+    config_destroy(config);
+    for (int i = 0; i < 5; i++)
+        CHECK(unlink(files[i]) == 0);
+    CHECK(unlink(config_path) == 0 && unlink(database) == 0 && rmdir(root) == 0 &&
+          rmdir(directory) == 0);
+}
 void test_writer(void) {
+    delta_compaction();
     char directory[] = "/tmp/torchlight-writer-XXXXXX";
     CHECK(mkdtemp(directory) != NULL);
     char root[256], sub[256], first[256], second[256], overflow_path[256], database[256],

@@ -1,6 +1,6 @@
 # crawl
 
-> **Status:** Implemented (M1/M2): physical crawl, allowlist, roots and filesystem identity
+> **Status:** Implemented (M1/M2; M6 scoped walks): physical crawl, allowlist, roots and filesystem identity
 > **Source:** `src/fs/crawl.c` · **Header:** `include/torchlight/crawl.h`
 > **Tests:** `tests/unit/test_crawl.c`, `tests/test_cli.py`
 
@@ -60,3 +60,13 @@ entries; storage policy stays outside crawl.
 - [Filesystem identity ADR](../../adr/0012-filesystem-incarnations-and-watch-fallback.md)
 - [Evaluation](../../evaluation.md)
 - Public headers document parameters, lifetimes and error contracts.
+
+## Scoped walks (M6 step 3)
+
+`crawl_scope(crawler, directory, recursive, ...)` rescans one directory that a
+root's walk indexes: it reports the directory itself (with `is_root` false),
+its direct children (child directories are reported but not entered), or with
+`recursive` its whole subtree, using exactly the root walk's exclusion,
+allowlist and unreadable-scope rules below it. A missing or unreadable
+directory returns `TL_IO` so the caller prunes nothing. The writer uses it for
+watch-event scopes; see [writer](../writer/README.md).

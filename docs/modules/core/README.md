@@ -57,8 +57,11 @@ bit, empty input, partial bitmap words, inclusion/deduplication and overflow.
 start during creation, sleep between runs, and join during destruction. Each
 dispatch partitions a borrowed context's indexes into complete disjoint ranges;
 it performs no allocation and waits for every participant even on an error.
-Tests cover all supported pool sizes, empty/tiny/uneven ranges, repeated runs
-and recovery after callback failure. It uses the existing pthread dependency.
+Callbacks receive their participant index (0 for the caller, stable per
+worker), so callers can keep per-thread scratch such as compiled fuzzy
+matchers. Tests cover all supported pool sizes, empty/tiny/uneven ranges,
+contiguous participant ownership, repeated runs and recovery after callback
+failure. It uses the existing pthread dependency.
 
 ## Related
 
