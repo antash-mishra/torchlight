@@ -7,6 +7,11 @@
 #define LEXICAL_QUERY_BYTES 256
 #define LEXICAL_MAX_RESULTS 1000
 #define LEXICAL_PREFIX_BONUS_MAX 4096
+/* Personal ranking (M5): a workspace boosts at most LEXICAL_MAX_BOOSTED
+ * entries per query, each by at most LEXICAL_BOOST_MAX. The cap keeps every
+ * boosted score inside its exact-match tier. */
+#define LEXICAL_MAX_BOOSTED 4096
+#define LEXICAL_BOOST_MAX 2048
 typedef struct tl_lexical tl_lexical;
 typedef struct tl_lexical_workspace tl_lexical_workspace;
 typedef enum { LEXICAL_ORDINARY, LEXICAL_EXACT_NAME, LEXICAL_EXACT_RAW_PATH } tl_lexical_exactness;
@@ -15,6 +20,10 @@ typedef struct {
     const char *path;
     int score;
 } tl_result;
+typedef struct {
+    size_t position; /* sorted-id position in the sealed engine */
+    int boost;       /* 0..LEXICAL_BOOST_MAX; zero leaves the entry unboosted */
+} tl_lexical_boost;
 /** Return explicit exact-match tier of a lexical result; ordinary for NULL.
  * Borrowed result; no allocation/I/O/errors. Score encoding stays internal. */
 tl_lexical_exactness lexical_exactness(const tl_result *result);
@@ -91,6 +100,23 @@ void lexical_workspace_cancel(tl_lexical_workspace *workspace, const atomic_bool
  * cover lexical_count positions. Not thread-safe against a running query on
  * the same workspace. NULL workspace ignored. No allocation/I/O/errors. */
 void lexical_workspace_exclude(tl_lexical_workspace *workspace, const uint64_t *excluded);
+/** Attach personal ranking boosts for later non-empty queries, replacing any
+ * earlier ones; count zero clears them. Copies at most LEXICAL_MAX_BOOSTED
+ * entries into workspace-owned scratch (the caller keeps boosts). Positions
+ * are sorted-id positions below lexical_count; boosts lie in
+ * 0..LEXICAL_BOOST_MAX, and zero boosts are ignored. A boosted entry then
+ * ranks by its ordinary score plus its boost, inside its exact-match tier,
+ * and only when it matches the query: results equal a full evaluation that
+ * adds each boost, while unboosted entries keep every exact shortcut (the
+ * main pass excludes boosted entries, and a side pass scores only them).
+ * Excluded positions (lexical_workspace_exclude) stay absent. Empty queries
+ * ignore boosts. TL_INVALID for NULL workspace, NULL boosts with nonzero
+ * count, an out-of-range position or boost, or a repeated positive-boost
+ * position; TL_LIMIT above LEXICAL_MAX_BOOSTED. Any error clears the boosts.
+ * Not thread-safe against a running query on the same workspace. No
+ * allocation or I/O. */
+tl_status lexical_workspace_boost(tl_lexical_workspace *workspace, const tl_lexical_boost *boosts,
+                                  size_t count);
 /** Query sealed engine with its workspace. Copy at most capacity results to
  * caller buffer (1..LEXICAL_MAX_RESULTS); out_count is zero on error. Paths are
  * borrowed until engine destruction. Query <= LEXICAL_QUERY_BYTES raw non-NUL
@@ -100,7 +126,8 @@ void lexical_workspace_exclude(tl_lexical_workspace *workspace, const uint64_t *
  * enough shared basename trigrams; an explicit generic-name/keyword prefix or subsequence; or a
  * prefix/subsequence within one parent directory name below the indexed roots. A word containing
  * '/' may instead match across the full path. Exact raw paths, then exact basenames, have priority.
- * Ties order by raw path bytes, then id. No I/O. The only heap allocation is compiling a Frizbee
+ * Ties order by raw path bytes, then id. Boosted entries (lexical_workspace_boost) add their boost
+ * to that score. No I/O. The only heap allocation is compiling a Frizbee
  * matcher for a word the workspace has not cached: at most one per word and scoring thread, never
  * per entry; repeating a query allocates nothing. TL_INVALID/STATE/LIMIT on contract violations,
  * TL_NOMEM, TL_CANCELLED when the attached flag is set; scratch is reusable on failure, and a

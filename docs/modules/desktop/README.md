@@ -1,6 +1,6 @@
 # desktop
 
-> **Status:** Implemented (M3 Part 2), including independent name/generic/keyword fields
+> **Status:** Implemented (M3 Part 2), including independent name/generic/keyword fields; M5 personal boosts
 > **Source:** `src/index/desktop.c` · **Header:** `include/torchlight/desktop.h`
 > **Tests:** `tests/unit/test_desktop.c`, `tests/test_desktop.py`
 
@@ -62,3 +62,12 @@ second. See [ADR 0015](../../adr/0015-m3-desktop-catalog-and-launcher.md) and
 The service can copy sorted entry names, generic names, keywords, icons and
 revisions under the existing exclusive lease. desktop_gen identifies its view;
 owned semantic metadata is used after releasing this lease, before inference.
+
+## Personal boosts (M5)
+
+`desktop_query_boosted` boosts entries by sorted-id position in the leased
+snapshot (`desktop_entry`), through `lexical_workspace_boost`. Callers remap
+positions when `desktop_gen` changes; the daemon's
+[personal](../personal/README.md) state matches application usage by desktop
+id. Each query replaces the previous boosts, so `desktop_query` stays
+unboosted.

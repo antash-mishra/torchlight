@@ -63,18 +63,53 @@ void prefix_destroy(tl_prefix *index) {
     free(index->sorted);
     free(index);
 }
-static tl_status add_key(tl_prefix *index, tl_text text, size_t start, size_t end, size_t slot,
-                         int score) {
-    if (start == end)
-        return TL_OK;
-    struct prefix_key key = {.symbols = text.symbols + start,
-                             .length = (uint32_t)(end - start),
-                             .slot = (uint32_t)slot,
-                             .score = score};
-    return vec_append(index->keys, &key);
-}
 static bool initial_at(tl_text text, size_t i) {
     return !tokenize_separator(text.symbols[i]) && (i == text.basename || text.boundaries[i] != 0);
+}
+static int token_complete_score(tl_text text, size_t start) {
+    if (start < text.basename)
+        return PREFIX_PARENT_SCORE;
+    /* The first token already has basename-prefix strength. Keep completion
+     * at that tier so a whole-basename hit cannot hide its bonus. */
+    int score = start == text.basename ? PREFIX_BASENAME_SCORE : PREFIX_TOKEN_SCORE;
+    return score + PREFIX_COMPLETE_BONUS;
+}
+/* Receives one nonempty key of a text: its symbols and stored score. */
+typedef tl_status (*key_visitor)(void *context, const uint32_t *symbols, size_t length, int score);
+/* Visit the basename key and every token key of text, in that order; the
+ * initials key is derived separately. Shared by prefix_add and prefix_score
+ * so that both see exactly the same keys. */
+static tl_status visit_keys(tl_text text, key_visitor visit, void *context) {
+    tl_status status = TL_OK;
+    if (text.length > text.basename)
+        status = visit(context, text.symbols + text.basename, text.length - text.basename,
+                       PREFIX_BASENAME_SCORE);
+    for (size_t start = 0; start < text.length && status == TL_OK;) {
+        if (tokenize_separator(text.symbols[start])) {
+            start++;
+            continue;
+        }
+        size_t end = start + 1;
+        while (end < text.length && !tokenize_separator(text.symbols[end]) &&
+               text.boundaries[end] == 0)
+            end++;
+        status =
+            visit(context, text.symbols + start, end - start, token_complete_score(text, start));
+        start = end;
+    }
+    return status;
+}
+struct key_target {
+    tl_prefix *index;
+    size_t slot;
+};
+static tl_status add_key(void *context, const uint32_t *symbols, size_t length, int score) {
+    const struct key_target *target = context;
+    struct prefix_key key = {.symbols = symbols,
+                             .length = (uint32_t)length,
+                             .slot = (uint32_t)target->slot,
+                             .score = score};
+    return vec_append(target->index->keys, &key);
 }
 static tl_status add_initials(tl_prefix *index, tl_text text, size_t slot) {
     size_t offset = vec_count(index->initials);
@@ -93,14 +128,6 @@ static tl_status add_initials(tl_prefix *index, tl_text text, size_t slot) {
     struct pending_initials pending = {(uint32_t)offset, (uint32_t)length, (uint32_t)slot};
     return vec_append(index->pending, &pending);
 }
-static int token_complete_score(tl_text text, size_t start) {
-    if (start < text.basename)
-        return PREFIX_PARENT_SCORE;
-    /* The first token already has basename-prefix strength. Keep completion
-     * at that tier so a whole-basename hit cannot hide its bonus. */
-    int score = start == text.basename ? PREFIX_BASENAME_SCORE : PREFIX_TOKEN_SCORE;
-    return score + PREFIX_COMPLETE_BONUS;
-}
 tl_status prefix_add(tl_prefix *index, tl_text text, size_t slot) {
     if (index == NULL || text.symbols == NULL || text.boundaries == NULL ||
         text.basename > text.length)
@@ -109,25 +136,9 @@ tl_status prefix_add(tl_prefix *index, tl_text text, size_t slot) {
         return TL_STATE;
     if (slot > UINT32_MAX || text.length > UINT32_MAX)
         return TL_LIMIT;
-    tl_status status =
-        add_key(index, text, text.basename, text.length, slot, PREFIX_BASENAME_SCORE);
-    if (status != TL_OK)
-        return status;
-    for (size_t start = 0; start < text.length;) {
-        if (tokenize_separator(text.symbols[start])) {
-            start++;
-            continue;
-        }
-        size_t end = start + 1;
-        while (end < text.length && !tokenize_separator(text.symbols[end]) &&
-               text.boundaries[end] == 0)
-            end++;
-        status = add_key(index, text, start, end, slot, token_complete_score(text, start));
-        if (status != TL_OK)
-            return status;
-        start = end;
-    }
-    return add_initials(index, text, slot);
+    struct key_target target = {index, slot};
+    tl_status status = visit_keys(text, add_key, &target);
+    return status == TL_OK ? add_initials(index, text, slot) : status;
 }
 /* Combine borrowed keys and arena-resolved initials into one sorted table. */
 tl_status prefix_finish(tl_prefix *index) {
@@ -185,10 +196,15 @@ static size_t bound(const tl_prefix *index, tl_text query, bool want_greater) {
     }
     return lo;
 }
+/* A key's reported score for a query of length symbols: token keys keep
+ * their completion bonus only when the query covers the whole token. */
+static int score_for(int key_score, size_t key_length, size_t length) {
+    bool token = key_score == PREFIX_BASENAME_SCORE + PREFIX_COMPLETE_BONUS ||
+                 key_score == PREFIX_TOKEN_SCORE + PREFIX_COMPLETE_BONUS;
+    return token && length < key_length ? key_score - PREFIX_COMPLETE_BONUS : key_score;
+}
 static int query_score(const struct prefix_key *key, size_t length) {
-    bool token = key->score == PREFIX_BASENAME_SCORE + PREFIX_COMPLETE_BONUS ||
-                 key->score == PREFIX_TOKEN_SCORE + PREFIX_COMPLETE_BONUS;
-    return token && length < key->length ? key->score - PREFIX_COMPLETE_BONUS : key->score;
+    return score_for(key->score, key->length, length);
 }
 tl_status prefix_query(const tl_prefix *index, tl_text query, tl_prefix_hit hit, void *context) {
     if (index == NULL || hit == NULL || query.symbols == NULL || query.length == 0)
@@ -205,4 +221,52 @@ tl_status prefix_query(const tl_prefix *index, tl_text query, tl_prefix_hit hit,
             return status;
     }
     return TL_OK;
+}
+/* prefix_score: track the best key of one text that starts with the query. */
+struct key_score {
+    tl_text query;
+    int best;
+    bool complete;
+};
+static tl_status score_key(void *context, const uint32_t *symbols, size_t length, int score) {
+    struct key_score *state = context;
+    if (length < state->query.length ||
+        compare_symbols(symbols, state->query.length, state->query.symbols, state->query.length) !=
+            0)
+        return TL_OK;
+    int reported = score_for(score, length, state->query.length);
+    if (reported > state->best)
+        state->best = reported;
+    if (reported == PREFIX_BASENAME_SCORE + PREFIX_COMPLETE_BONUS ||
+        reported == PREFIX_TOKEN_SCORE + PREFIX_COMPLETE_BONUS)
+        state->complete = true;
+    return TL_OK;
+}
+/* Whether the initials of text start with query, without building them. */
+static bool initials_start_with(tl_text text, tl_text query) {
+    size_t matched = 0;
+    for (size_t i = text.basename; i < text.length && matched < query.length; i++) {
+        if (!initial_at(text, i))
+            continue;
+        if (text.symbols[i] != query.symbols[matched])
+            return false;
+        matched++;
+    }
+    return matched == query.length;
+}
+tl_status prefix_score(tl_text text, tl_text query, int *best, bool *complete) {
+    if (best != NULL)
+        *best = 0;
+    if (complete != NULL)
+        *complete = false;
+    if (best == NULL || complete == NULL || text.symbols == NULL || text.boundaries == NULL ||
+        text.basename > text.length || query.symbols == NULL || query.length == 0)
+        return TL_INVALID;
+    struct key_score state = {.query = query};
+    tl_status status = visit_keys(text, score_key, &state);
+    if (status == TL_OK && state.best < PREFIX_INITIALS_SCORE && initials_start_with(text, query))
+        state.best = PREFIX_INITIALS_SCORE;
+    *best = state.best;
+    *complete = state.complete;
+    return status;
 }

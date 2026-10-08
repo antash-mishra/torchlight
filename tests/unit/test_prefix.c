@@ -26,7 +26,64 @@ static struct best_scores query(const tl_prefix *index, const char *text) {
     tokenize_destroy(q);
     return best;
 }
+/* Best score and completeness per slot, as prefix_query reports them. */
+struct indexed_scores {
+    int best[8];
+    bool complete[8];
+};
+static tl_status keep_indexed(void *context, size_t slot, int score) {
+    struct indexed_scores *scores = context;
+    CHECK(slot < 8);
+    if (score > scores->best[slot])
+        scores->best[slot] = score;
+    if (score == PREFIX_BASENAME_SCORE + PREFIX_COMPLETE_BONUS ||
+        score == PREFIX_TOKEN_SCORE + PREFIX_COMPLETE_BONUS)
+        scores->complete[slot] = true;
+    return TL_OK;
+}
+/* prefix_score must report exactly what prefix_query reports per slot. */
+static void score_matches_query(void) {
+    const char *texts[] = {"/projectNotes/other.txt",
+                           "/work/projectNotes.md",
+                           "/a/p",
+                           "/x/HTMLParser v2.txt",
+                           "/r/s s.md",
+                           "/q/Caf\xc3\xa9 au lait"};
+    const char *queries[] = {"p", "pr", "pn", "o",   "h",           "hp", "parser", "v2",
+                             "s", "s.", "c",  "cal", "caf\xc3\xa9", "z",  "md",     "projectnotes"};
+    size_t count = sizeof(texts) / sizeof(texts[0]);
+    tl_tokenized *tokens[8];
+    tl_prefix *index = NULL;
+    CHECK(prefix_create(&index) == TL_OK);
+    for (size_t i = 0; i < count; i++) {
+        tokens[i] = test_text(texts[i]);
+        CHECK(prefix_add(index, tokenize_view(tokens[i]), i) == TL_OK);
+    }
+    CHECK(prefix_finish(index) == TL_OK);
+    for (size_t q = 0; q < sizeof(queries) / sizeof(queries[0]); q++) {
+        tl_tokenized *query = test_text(queries[q]);
+        struct indexed_scores expected = {{0}, {false}};
+        CHECK(prefix_query(index, tokenize_view(query), keep_indexed, &expected) == TL_OK);
+        for (size_t i = 0; i < count; i++) {
+            int best = -1;
+            bool complete = true;
+            CHECK(prefix_score(tokenize_view(tokens[i]), tokenize_view(query), &best, &complete) ==
+                  TL_OK);
+            CHECK(best == expected.best[i] && complete == expected.complete[i]);
+        }
+        tokenize_destroy(query);
+    }
+    int best = 1;
+    bool complete = true;
+    tl_text empty = {0};
+    CHECK(prefix_score(tokenize_view(tokens[0]), empty, &best, &complete) == TL_INVALID &&
+          best == 0 && !complete);
+    for (size_t i = 0; i < count; i++)
+        tokenize_destroy(tokens[i]);
+    prefix_destroy(index);
+}
 void test_prefix(void) {
+    score_matches_query();
     tl_prefix *index = NULL;
     CHECK(prefix_create(&index) == TL_OK);
     tl_tokenized *a = test_text("/projectNotes/other.txt"), *b = test_text("/work/projectNotes.md");

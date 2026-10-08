@@ -221,8 +221,97 @@ static void scoped_prunes_and_changes(void) {
     store_destroy(store);
     CHECK(unlink(database) == 0);
 }
+struct retained {
+    size_t count;
+    uint64_t file_ids[8];
+    char desktop_ids[8][32], queries[8][32];
+    int64_t timestamps[8];
+};
+static tl_status collect_open(void *context, uint64_t file_id, const char *desktop_id,
+                              const char *query, int64_t timestamp) {
+    struct retained *retained = context;
+    CHECK(retained->count < 8);
+    size_t i = retained->count++;
+    retained->file_ids[i] = file_id;
+    snprintf(retained->desktop_ids[i], 32, "%s", desktop_id == NULL ? "" : desktop_id);
+    snprintf(retained->queries[i], 32, "%s", query == NULL ? "" : query);
+    retained->timestamps[i] = timestamp;
+    return TL_OK;
+}
+static tl_store_history_event open_event(const char *event_id, uint64_t file_id,
+                                         const char *search_id, const char *query,
+                                         int64_t timestamp) {
+    return (tl_store_history_event){.kind = STORE_HISTORY_OPEN,
+                                    .event_id = event_id,
+                                    .file_id = file_id,
+                                    .search_id = search_id,
+                                    .query = query,
+                                    .timestamp = timestamp};
+}
+/* Batched history: an open and its search row land together, a rejected
+ * event leaves nothing behind, rollback discards the batch, and retained
+ * opens stream oldest first with their queries. */
+static void history_batches(void) {
+    char database[] = "/tmp/torchlight-history-XXXXXX";
+    int fd = mkstemp(database);
+    CHECK(fd >= 0 && close(fd) == 0);
+    tl_store *store = NULL;
+    CHECK(store_create(database, &store) == TL_OK);
+    CHECK(store_begin(store) == TL_OK);
+    put_path(store, "/h", false, true);
+    put_path(store, "/h/a", false, true);
+    CHECK(store_commit(store) == TL_OK);
+    struct loaded rows = {0};
+    CHECK(store_load(store, observe, &rows) == TL_OK && rows.count == 2);
+    uint64_t a = rows.last_id, h = rows.first_id;
+    tl_store_history_event event = open_event("e1", a, "s1", "alp", 10);
+    CHECK(store_history_write(store, &event) == TL_OK);
+    CHECK(store_history_write(store, &event) == TL_OK); /* idempotent retry */
+    CHECK(store_search(store, "s0", NULL, 1) == TL_INVALID);
+    event.query = NULL;
+    event.search_id = NULL;
+    event.event_id = "";
+    CHECK(store_history_write(store, &event) == TL_INVALID);
+    CHECK(store_history_begin(store) == TL_OK && store_history_begin(store) == TL_STATE);
+    CHECK(store_begin(store) == TL_STATE && store_history_prune(store, 0, true) == TL_STATE);
+    tl_store_history_event desktop = {.kind = STORE_HISTORY_DESKTOP_OPEN,
+                                      .event_id = "e2",
+                                      .desktop_id = "firefox.desktop",
+                                      .search_id = "s2",
+                                      .query = "fire",
+                                      .timestamp = 5};
+    CHECK(store_history_write(store, &desktop) == TL_OK);
+    event = open_event("e3", 999, "s-missing", "gone", 15); /* no such file */
+    CHECK(store_history_write(store, &event) == TL_STATE);
+    event = open_event("e4", h, NULL, NULL, 20);
+    CHECK(store_history_write(store, &event) == TL_OK);
+    CHECK(store_history_commit(store) == TL_OK && store_history_commit(store) == TL_STATE);
+    CHECK(store_history_begin(store) == TL_OK);
+    event = open_event("e5", h, "s5", "discarded", 30);
+    CHECK(store_history_write(store, &event) == TL_OK);
+    CHECK(store_history_rollback(store) == TL_OK);
+    /* The rejected open's search row was rolled back with it. */
+    event = open_event("e6", h, "s-missing", NULL, 25);
+    CHECK(store_history_write(store, &event) == TL_OK);
+    struct retained retained = {0};
+    CHECK(store_history_opens(store, 0, collect_open, &retained) == TL_OK && retained.count == 4);
+    CHECK(retained.file_ids[0] == 0 && strcmp(retained.desktop_ids[0], "firefox.desktop") == 0 &&
+          strcmp(retained.queries[0], "fire") == 0 && retained.timestamps[0] == 5);
+    CHECK(retained.file_ids[1] == a && strcmp(retained.queries[1], "alp") == 0);
+    CHECK(retained.file_ids[2] == h && retained.queries[2][0] == 0);
+    CHECK(retained.file_ids[3] == h && retained.queries[3][0] == 0 && retained.timestamps[3] == 25);
+    retained = (struct retained){0};
+    CHECK(store_history_opens(store, 6, collect_open, &retained) == TL_OK && retained.count == 3);
+    CHECK(store_history_opens(store, 0, NULL, NULL) == TL_INVALID);
+    CHECK(store_history_prune(store, 0, true) == TL_OK);
+    retained = (struct retained){0};
+    CHECK(store_history_opens(store, 0, collect_open, &retained) == TL_OK && retained.count == 0);
+    store_destroy(store);
+    CHECK(unlink(database) == 0);
+}
 void test_store(void) {
     scoped_prunes_and_changes();
+    history_batches();
     char database[] = "/tmp/torchlight-store-XXXXXX";
     int fd = mkstemp(database);
     CHECK(fd >= 0);

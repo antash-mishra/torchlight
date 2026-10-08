@@ -1,12 +1,15 @@
 /* Warm lexical-engine benchmark and ranking evaluation, independent of the
  * CLI and SQLite. Reports build cost, memory, per-keystroke typing latency,
  * whole-query latency and labeled ranking quality (tuning and held-out query
- * seeds) for a synthetic or real path corpus.
+ * seeds) for a synthetic or real path corpus, then the M5 personal ranking
+ * measurements (personal.c).
  *
  *   bench_lexical --synthetic COUNT
  *   bench_lexical --paths FILE [--limit COUNT]   (NUL-separated paths) */
 #include "corpus.h"
+#include "personal.h"
 #include "queries.h"
+#include "stats.h"
 #include "torchlight/catalog.h"
 #include "torchlight/lexical.h"
 #include <errno.h>
@@ -37,21 +40,10 @@ static const struct fixture FIXTURES[] = {{"README.md", "README.md"},
                                           {"CAFE\xcc\x81", "Caf\xc3\xa9.pdf"},
                                           {"invoce2024", "invoice2024.pdf"},
                                           {"zznomatchqq", NULL}};
-struct latency {
-    double *samples;
-    size_t count, capacity;
-};
 struct quality {
     size_t queries, at1, at10, at_candidates;
     double reciprocal;
 };
-static tl_status now(double *out) {
-    struct timespec value;
-    if (clock_gettime(CLOCK_MONOTONIC, &value) != 0)
-        return TL_IO;
-    *out = (double)value.tv_sec + (double)value.tv_nsec / 1e9;
-    return TL_OK;
-}
 static long resident_kib(void) {
     FILE *stream = fopen("/proc/self/statm", "r");
     long size = 0, resident = 0;
@@ -65,43 +57,15 @@ static const char *base_name(const char *path) {
     const char *slash = strrchr(path, '/');
     return slash == NULL ? path : slash + 1;
 }
-static tl_status record(struct latency *latency, double milliseconds) {
-    if (latency->count == latency->capacity) {
-        size_t capacity = latency->capacity == 0 ? 1024 : latency->capacity * 2;
-        double *samples = realloc(latency->samples, capacity * sizeof(double));
-        if (samples == NULL)
-            return TL_NOMEM;
-        latency->samples = samples;
-        latency->capacity = capacity;
-    }
-    latency->samples[latency->count++] = milliseconds;
-    return TL_OK;
-}
-static int compare_double(const void *left, const void *right) {
-    double a = *(const double *)left, b = *(const double *)right;
-    return a == b ? 0 : a < b ? -1 : 1;
-}
-static double percentile(const struct latency *latency, size_t percent) {
-    size_t index = (latency->count * percent + 99) / 100;
-    return latency->samples[index == 0 ? 0 : index - 1];
-}
-static void report_latency(const char *label, struct latency *latency) {
-    if (latency->count == 0)
-        return;
-    qsort(latency->samples, latency->count, sizeof(double), compare_double);
-    printf("%s_ms n=%zu p50=%.3f p95=%.3f p99=%.3f max=%.3f\n", label, latency->count,
-           percentile(latency, 50), percentile(latency, 95), percentile(latency, 99),
-           latency->samples[latency->count - 1]);
-}
 static tl_status timed_query(const tl_lexical *engine, tl_lexical_workspace *workspace,
                              const char *query, tl_result *results, size_t capacity, size_t *count,
                              double *milliseconds) {
     double start = 0, end = 0;
-    tl_status status = now(&start);
+    tl_status status = bench_now(&start);
     if (status == TL_OK)
         status = lexical_query(engine, workspace, query, results, capacity, count);
     if (status == TL_OK)
-        status = now(&end);
+        status = bench_now(&end);
     *milliseconds = (end - start) * 1e3;
     return status;
 }
@@ -109,7 +73,7 @@ static tl_status build_engine(const bench_corpus *corpus, tl_lexical **engine,
                               tl_lexical_workspace **workspace) {
     double start = 0, end = 0;
     long before = resident_kib();
-    tl_status status = now(&start);
+    tl_status status = bench_now(&start);
     if (status == TL_OK)
         status = lexical_create(engine);
     for (size_t i = 0; i < corpus->count && status == TL_OK; i++)
@@ -119,7 +83,7 @@ static tl_status build_engine(const bench_corpus *corpus, tl_lexical **engine,
     if (status == TL_OK)
         status = lexical_workspace_create(*engine, workspace);
     if (status == TL_OK)
-        status = now(&end);
+        status = bench_now(&end);
     if (status == TL_OK)
         printf("paths=%zu mean_path_bytes=%.1f build_s=%.3f engine_rss_kib=%ld\n", corpus->count,
                (double)corpus->bytes / (double)corpus->count, end - start, resident_kib() - before);
@@ -199,7 +163,7 @@ static tl_status evaluate(const bench_corpus *corpus, const tl_lexical *engine,
  * keystroke; then time each whole query issued after a different one. */
 static tl_status measure_latency(const tl_lexical *engine, tl_lexical_workspace *workspace,
                                  const bench_query *queries, size_t count) {
-    struct latency typing = {0}, whole = {0};
+    bench_latency typing = {0}, whole = {0};
     tl_result results[BENCH_LIMIT];
     tl_status status = TL_OK;
     for (size_t q = 0; q < count && status == TL_OK; q++) {
@@ -213,7 +177,7 @@ static tl_status measure_latency(const tl_lexical *engine, tl_lexical_workspace 
             status =
                 timed_query(engine, workspace, prefix, results, BENCH_LIMIT, &found, &milliseconds);
             if (status == TL_OK)
-                status = record(&typing, milliseconds);
+                status = bench_record(&typing, milliseconds);
         }
     }
     for (size_t q = 0; q < count && status == TL_OK; q++) {
@@ -222,11 +186,11 @@ static tl_status measure_latency(const tl_lexical *engine, tl_lexical_workspace 
         status = timed_query(engine, workspace, queries[q].text, results, BENCH_LIMIT, &found,
                              &milliseconds);
         if (status == TL_OK)
-            status = record(&whole, milliseconds);
+            status = bench_record(&whole, milliseconds);
     }
     if (status == TL_OK) {
-        report_latency("typing", &typing);
-        report_latency("whole_query", &whole);
+        bench_report("typing", &typing);
+        bench_report("whole_query", &whole);
     }
     free(typing.samples);
     free(whole.samples);
@@ -236,7 +200,7 @@ static tl_status measure_latency(const tl_lexical *engine, tl_lexical_workspace 
  * Workspace allocation and worker startup happen outside the measured query. */
 static tl_status measure_cold(const tl_lexical *engine, const bench_query *queries, size_t count) {
     enum { COLD_QUERY_STRIDE = 20 };
-    struct latency latency = {0};
+    bench_latency latency = {0};
     tl_status status = TL_OK;
     for (size_t q = 0; q < count && status == TL_OK; q += COLD_QUERY_STRIDE) {
         tl_lexical_workspace *workspace = NULL;
@@ -249,10 +213,10 @@ static tl_status measure_cold(const tl_lexical *engine, const bench_query *queri
                                  &milliseconds);
         lexical_workspace_destroy(workspace);
         if (status == TL_OK)
-            status = record(&latency, milliseconds);
+            status = bench_record(&latency, milliseconds);
     }
     if (status == TL_OK)
-        report_latency("cold_workspace_query", &latency);
+        bench_report("cold_workspace_query", &latency);
     free(latency.samples);
     return status;
 }
@@ -261,7 +225,7 @@ static tl_status measure_cold(const tl_lexical *engine, const bench_query *queri
 static tl_status measure_catalog(tl_lexical **engine, const bench_query *queries, size_t count) {
     tl_catalog *catalog = NULL;
     tl_catalog_snapshot *snapshot = NULL;
-    struct latency latency = {0};
+    bench_latency latency = {0};
     tl_status status = catalog_create(2, &catalog);
     if (status == TL_OK)
         status = catalog_snapshot_create(engine, 1, 1, &snapshot);
@@ -272,19 +236,19 @@ static tl_status measure_catalog(tl_lexical **engine, const bench_query *queries
         size_t found = 0;
         tl_result results[BENCH_LIMIT];
         tl_catalog_reader *reader = NULL;
-        status = now(&start);
+        status = bench_now(&start);
         if (status == TL_OK)
             status = catalog_acquire(catalog, &reader);
         if (status == TL_OK)
             status = catalog_query(reader, queries[q].text, results, BENCH_LIMIT, &found);
         catalog_release(reader);
         if (status == TL_OK)
-            status = now(&end);
+            status = bench_now(&end);
         if (status == TL_OK)
-            status = record(&latency, (end - start) * 1e3);
+            status = bench_record(&latency, (end - start) * 1e3);
     }
     if (status == TL_OK)
-        report_latency("catalog_query", &latency);
+        bench_report("catalog_query", &latency);
     free(latency.samples);
     catalog_snapshot_destroy(snapshot);
     tl_status destroyed = catalog_destroy(catalog);
@@ -313,6 +277,8 @@ static tl_status run(const bench_corpus *corpus, bool synthetic) {
         status = evaluate(corpus, engine, workspace, "held_out", held_out, held_out_count, results);
     if (status == TL_OK && synthetic)
         status = check_fixtures(engine, workspace);
+    if (status == TL_OK)
+        status = personal_benchmark(corpus, engine, workspace, held_out, held_out_count);
     if (status == TL_OK)
         printf("steady_rss_kib=%ld\n", resident_kib());
     lexical_workspace_destroy(workspace);

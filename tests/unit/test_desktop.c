@@ -76,6 +76,24 @@ void test_desktop(void) {
     CHECK(query(desktop, "ShortBrand", results) == 1);
     CHECK(query(desktop, "DifferentLabel", results) == 1);
     CHECK(query(desktop, "", results) == 0);
+    /* Boosts address sorted-id positions and last for one query only:
+     * Display (2657) overtakes DifferentLabel (2850), never Sound (8059). */
+    CHECK(query(desktop, "s", results) >= 3);
+    CHECK(strcmp(desktop_resolve(desktop, results[1].id)->name, "DifferentLabel") == 0);
+    size_t display = SIZE_MAX;
+    for (size_t i = 0; i < desktop_count(desktop); i++)
+        if (strcmp(desktop_entry(desktop, i)->desktop_id, "display.desktop") == 0)
+            display = i;
+    CHECK(display != SIZE_MAX);
+    tl_lexical_boost boost = {display, 200};
+    size_t count = 0;
+    CHECK(desktop_query_boosted(desktop, "s", &boost, 1, results, 10, &count) == TL_OK);
+    CHECK(count >= 3 && strcmp(desktop_resolve(desktop, results[0].id)->name, "Sound") == 0);
+    CHECK(strcmp(desktop_resolve(desktop, results[1].id)->name, "Display") == 0);
+    CHECK(query(desktop, "s", results) >= 3);
+    CHECK(strcmp(desktop_resolve(desktop, results[1].id)->name, "DifferentLabel") == 0);
+    tl_lexical_boost invalid = {desktop_count(desktop), 1};
+    CHECK(desktop_query_boosted(desktop, "s", &invalid, 1, results, 10, &count) == TL_INVALID);
     desktop_release(desktop);
     char removed[512];
     CHECK(snprintf(removed, sizeof(removed), "%s/display.desktop", system_apps) > 0);

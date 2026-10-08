@@ -20,8 +20,8 @@ reporting each commit's changed rows, history and retention (M6 step 3,
 vendored Frizbee SIMD matcher on the portable scorer's scale (M6 step 2,
 [ADR 0029](adr/0029-m6-frizbee-scoring-and-candidate-volume.md)).
 Saved entries serve before background reconciliation. Status and restart/failure
-recovery are implemented. Optional semantics are implemented; personalization
-ranking remains planned. See ADR 0011 for the full-rebuild baseline and
+recovery are implemented. Optional semantics are implemented; M5 personal ranking is implemented
+(ADR 0033). See ADR 0011 for the full-rebuild baseline and
 structural bounds. Roughly 6 ms p95 at 500k paths is accepted for starting M3;
 the original 5 ms lexical target is now tracked in M6. See
 [readiness](m3-readiness.md) and the [GUI specification](m3-gui-design.md).
@@ -39,7 +39,7 @@ and enforces cancellation/deadline fallback. See [M4 implementation](m4-implemen
 [measured model evaluation](m4-model-evaluation.md) and
 [ADR 0023](adr/0023-m4-native-potion-and-two-phase-search.md). Large-catalog latency
 and broader relevance acceptance remain open. M6 performance work is implemented;
-M5 personalization follows the remaining M4 acceptance work.
+M5 personalization follows M6 ([ADR 0032](adr/0032-park-semantic-search.md)).
 
 ADR 0012 adds filesystem incarnation checks during scans and schema v2 identity
 storage. Replacements retire old ids and descendants before publication, with
@@ -71,6 +71,21 @@ are implemented: the search thread and persistence owner, Frizbee scoring with
 cross-query word caches, and scoped rescans with base-plus-delta snapshots and
 incremental semantic stages. See [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md),
 the step ADRs 0028 to 0030 and the [M6 working plan](m6-plan.md).
+
+## M5: personal ranking (implemented)
+
+[ADR 0033](adr/0033-m5-personal-ranking.md) keeps everything slow off the
+search path. The search thread owns a capped usage summary in plain
+memory (frecency per file id and desktop id, plus query-to-open pairs). It
+updates the summary when an open is accepted and only queues the event for
+saving. The persistence thread does all SQLite work, including batched history
+writes, retention and the startup load, which it hands over with one pointer
+exchange. The summary is not part of a `catalog_gen`. Each query excludes used
+entries from the normal lexical query, whose pruning stays unchanged, scores
+those entries in a small side query with bounded boosts, and merges the two
+lists, which gives the exact personalized top k. One-symbol queries build
+sparse evidence for the boosted entries only. See the [usage](modules/usage/README.md)
+and [personal](modules/personal/README.md) modules.
 
 ## Components
 
@@ -136,7 +151,8 @@ validated embedding generation (`emb_gen`) together, without mixing model versio
    For large non-path batches, union basename bitmap candidates, channel hits
    and matching parent entries, then score using preallocated worker scratch.
    `fuzzy` scores subsequence matches and edit-distance matches separately.
-3. `rank` orders lexical results with personalization; the daemon sends the
+3. With history enabled, the search thread adds bounded usage boosts through
+   the used-set side query (M5, ADR 0033); the daemon sends the
    `lexical` phase response immediately, or a terminal `final` in lexical-only mode.
 4. **Optional semantic:** embed the query and search the active `emb_gen`.
    Float cosine search is the reference; binary/int8 search must pass recall and

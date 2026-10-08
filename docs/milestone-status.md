@@ -6,8 +6,8 @@ are in [M3 verification](m3-completion.md).
 M3 Part 2 and M4's functional opt-in semantic path are implemented. M4 acceptance
 is deferred: semantic search is parked as an opt-in feature
 ([ADR 0032](adr/0032-park-semantic-search.md)). M6 (worker separation, then
-Frizbee SIMD search, then incremental indexing) is implemented. M5 is next, as
-recorded in [the plan](../PLAN.md).
+Frizbee SIMD search, then incremental indexing) is implemented. M5 (personal
+recommendations) is implemented, as recorded in [the plan](../PLAN.md).
 
 | Milestone | In simple words | Status |
 |---|---|---|
@@ -16,7 +16,7 @@ recorded in [the plan](../PLAN.md).
 | M3 | Show a keyboard popup; search apps, settings, files and folders; open or reveal the selected item. | Implemented; review fixes verified |
 | M3 Part 2 | Improve name search, unfinished typos, abbreviations and ranking; test useful results among competing apps and files. | Implemented; held-out relevance and performance measured |
 | M4 | Combine improved name search with optional local embeddings and vector retrieval for meaning-based matches. | Functional opt-in implementation; native Potion/cache/two-phase RRF tested; prefix-shortlist vector search cut 500k final p95 from 95 to 24 ms; parked as opt-in, 10 ms gate and broader relevance acceptance deferred |
-| M5 | Use optional opening history to recommend personally useful files and apps higher, with privacy and history controls. | Next (follows M6; M4 acceptance deferred) |
+| M5 | Use optional opening history to recommend personally useful files and apps higher, with privacy and history controls. | Implemented ([ADR 0033](adr/0033-m5-personal-ranking.md)): habitual files reach first place after 3.5 keystrokes instead of 9.9 at 500k; typing p95 stays near 5 ms with the summary full |
 | M6 | Separate workers, use Frizbee SIMD matching, then update indexes incrementally. | Implemented: search thread and persistence owner; Frizbee scoring with typing p95 under 5 ms at 500k; scoped rescans and delta segments (lexical and semantic) with about 110 ms update lag at 500k |
 
 M3 Part 2 now keeps names, generic names, keywords and folders distinct, finds
@@ -34,9 +34,13 @@ The 500k final latency target and broader model comparison remain open; the
 [implementation report](m4-implementation.md) separates completed features from
 those acceptance gates. File contents are not read.
 
-M5 still needs file/application ranking changes that learn from usage and tests
-proving they help without hiding exact matches. Recording and clearing optional
-history are already implemented; using it to personalize ranking is future work.
+M5 ranks the files and apps you open higher. Usage counts live in the search
+thread's memory, all saving to disk happens on the separate persistence thread,
+and only items you have opened are re-scored, so typing stays fast. Exact names
+always stay first, clearing history removes the boosts at once, and with
+history disabled ranking is unchanged. See
+[ADR 0033](adr/0033-m5-personal-ranking.md) and the
+[measurements](evaluation.md#m5-personal-ranking-2026-10-08).
 
 Separate remaining work is real fractional/multiple-monitor validation, a human
 screen-reader session, and Wayland behavior. The automated tests cover small

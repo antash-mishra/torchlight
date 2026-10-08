@@ -26,6 +26,14 @@ void desktop_release(tl_desktop *desktop);
  * no apps. Same capacity/errors as lexical_query, no I/O/allocation. */
 tl_status desktop_query(tl_desktop *desktop, const char *query, tl_result *results, size_t capacity,
                         size_t *count);
+/** desktop_query with personal boosts for entries at sorted-id positions of
+ * the leased snapshot (desktop_entry; remap after desktop_gen changes), as in
+ * lexical_workspace_boost, including its errors. Boosts apply to this query
+ * only; NULL boosts with zero count gives desktop_query. Requires the lease.
+ * No I/O or allocation. */
+tl_status desktop_query_boosted(tl_desktop *desktop, const char *query,
+                                const tl_lexical_boost *boosts, size_t boost_count,
+                                tl_result *results, size_t capacity, size_t *count);
 /** Resolve session-scoped id in current snapshot; NULL when stale. Requires
  * lease; borrowed entry/strings valid until release. No I/O/allocation. */
 const tl_desktop_entry *desktop_resolve(const tl_desktop *desktop, uint64_t id);

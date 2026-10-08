@@ -162,6 +162,13 @@ with tempfile.TemporaryDirectory(prefix="torchlight-m3-") as directory:
             with sqlite3.connect(database) as db:
                 return db.execute("SELECT count(*) FROM desktop_opens WHERE event_id='same-launch'").fetchone()[0] == 1
         wait_for(history)
+        # M5: a launched application rises among equal matches for its query.
+        response = call("query", query="duplicate app", limit=10)
+        lifted = response["results"][5]
+        assert call("open", file_id=lifted["id"], event_id="tied-launch",
+                    search_id=response["search_id"])["status"] == "ok"
+        assert query("duplicate app")["results"][0]["id"] == lifted["id"]
+        assert call("status")["history"]["personal_items"] == 2
         old = application["id"]
         display.write_text(display.read_text().replace("Exec=/bin/true", "Exec=/bin/false"))
         wait_for(lambda: any(r.get("desktop_id") == "display.desktop" and r["id"] != old for r in query("display")["results"]))

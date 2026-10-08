@@ -1,6 +1,6 @@
 # catalog
 
-> **Status:** Implemented (M2/M3; M6 step 3 segmented snapshots): resident snapshot lifecycle,
+> **Status:** Implemented (M2/M3; M6 step 3 segmented snapshots; M5 personal boosts): resident snapshot lifecycle,
 > directory metadata, shared bases with delta segments; integrated with the daemon/writer
 > **Source:** `src/index/catalog.c` · **Header:** `include/torchlight/catalog.h`
 > **Tests:** `tests/unit/test_catalog.c`
@@ -120,3 +120,17 @@ through a 4-byte-per-entry map. The base is freed with its last snapshot.
 Tests cover shared bases, retirement of the base snapshot, merged order across
 segments at equal scores, capacity-limited leases, hidden and renamed entries
 and live enumeration. See [ADR 0030](../../adr/0030-m6-incremental-indexing.md).
+
+## Personal boosts (M5)
+
+`catalog_query_boosted` takes boosts by catalog id (`tl_catalog_boosts`). A
+lease maps the ids to base or delta positions once per `boosts->key`: absent
+and tombstoned ids are skipped, and a changed id lives in the delta. Each
+query then splits the boosts into per-segment lists and attaches them to the
+base and delta workspaces before querying both. The segments return boosted
+scores on one scale, so the existing merge stays exact. `catalog_query` is
+the same call without boosts, and every query replaces the previous boosts,
+so none outlive their query. `catalog_release` clears them before the shared
+base workspace returns to the pool. Each reader preallocates 16 KB of
+positions and 64 KB of boost lists. `test_catalog.c` covers delta and base
+ids, retired ids, key reuse and remapping, and clearing across leases.

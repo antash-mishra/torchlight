@@ -31,7 +31,8 @@ caching and coherent two-phase RRF. Large-catalog latency and broader model
 acceptance remain open. See [M4 implementation](m4-implementation.md)
 and [ADR 0022](adr/0022-m4-semantic-foundation.md). M6 executes next: worker
 separation, then the selected Frizbee SIMD matcher, then incremental indexing,
-as three steps in one milestone. M5 recommendations follow M6; semantic
+as three steps in one milestone. M5 recommendations are implemented, as
+[ADR 0033](adr/0033-m5-personal-ranking.md) describes; semantic
 search is parked as opt-in and its M4 acceptance is deferred
 ([ADR 0032](adr/0032-park-semantic-search.md)). See [ADR 0026](adr/0026-search-workers-simd-and-incremental-indexing.md)
 and the [M6 working plan](m6-plan.md), which has the target thread/flow diagram,
@@ -99,6 +100,7 @@ the root [README](../README.md) for commands, and
 | index | Swappable embedder | [embed](modules/embed/README.md) |
 | index | Vector search | [vector](modules/vector/README.md) |
 | index | Ranking & fusion | [rank](modules/rank/README.md) |
+| index | Usage summary (M5) | [usage](modules/usage/README.md) |
 | storage | SQLite store | [store](modules/store/README.md) |
 | fs | Crawler | [crawl](modules/crawl/README.md) |
 | fs | inotify watcher | [watch](modules/watch/README.md) |
@@ -106,6 +108,7 @@ the root [README](../README.md) for commands, and
 | service | Resident daemon | [daemon](modules/daemon/README.md) |
 | service | Background writer/history | [writer](modules/writer/README.md) |
 | service | Incremental delta publication | [delta](modules/delta/README.md) |
+| service | Personal ranking state (M5) | [personal](modules/personal/README.md) |
 | bin | CLI client | [cli](modules/cli/README.md) |
 | ui | GTK4 popup & optional TUI | [ui](modules/ui/README.md) |
 
@@ -180,6 +183,9 @@ the root [README](../README.md) for commands, and
 - [0032: Park semantic search](adr/0032-park-semantic-search.md)
   keeps semantic search opt-in and tested, defers its M4 acceptance gates and
   moves M5 next.
+- [0033: M5 personal ranking without slowing search](adr/0033-m5-personal-ranking.md)
+  keeps usage in search-thread memory, all saving on the persistence thread,
+  and adds bounded boosts through an exact used-set side query (implemented).
 
 ## Keeping docs current
 

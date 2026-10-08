@@ -1,6 +1,6 @@
 # store
 
-> **Status:** Implemented (M4): schema v4, versioned embedding cache plus catalog/history
+> **Status:** Implemented (M4; M5 history batches): schema v4, versioned embedding cache plus catalog/history
 > **Source:** `src/storage/store.c` · **Header:** `include/torchlight/store.h`
 > **Tests:** `tests/unit/test_store.c`, `tests/unit/test_identity.c`, CLI/daemon integration
 
@@ -125,3 +125,20 @@ changes; rollback clears them. `store_load_ids` streams the committed rows of
 given ids from one read snapshot with its `catalog_gen`. Tests cover byte-prefix
 siblings, kept and nested-root spares, the exact touched-id sets, load by id,
 overflow and rollback.
+
+## History batches and retained opens (M5)
+
+`store_history_write` persists one search, file open or desktop open in a
+savepoint, using statements prepared once per connection. An open that
+carries a query also saves its search row, in the same savepoint, so the
+pair lands together or not at all. A rejected event (a deleted file, a
+conflicting retry) rolls back alone. `store_history_begin` and
+`store_history_commit`/`store_history_rollback` wrap many events in one
+transaction: a drained queue costs one commit, and a failed commit loses the
+whole batch, reported as `TL_IO`. `store_search`, `store_open_event` and
+`store_desktop_open` keep their contracts as single-event wrappers.
+
+`store_history_opens` streams the retained file and desktop opens since a
+cutoff, oldest first, each with its search's query, in one statement. The
+writer rebuilds the usage summary from it at startup. No schema change was
+needed.

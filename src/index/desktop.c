@@ -421,15 +421,21 @@ void desktop_refresh(tl_desktop *desktop) {
 }
 tl_status desktop_query(tl_desktop *desktop, const char *query, tl_result *results, size_t capacity,
                         size_t *count) {
+    return desktop_query_boosted(desktop, query, NULL, 0, results, capacity, count);
+}
+tl_status desktop_query_boosted(tl_desktop *desktop, const char *query,
+                                const tl_lexical_boost *boosts, size_t boost_count,
+                                tl_result *results, size_t capacity, size_t *count) {
     if (count == NULL)
         return TL_INVALID;
     *count = 0;
     if (desktop == NULL || query == NULL || results == NULL || capacity == 0 ||
         capacity > LEXICAL_MAX_RESULTS)
         return TL_INVALID;
-    if (query[0] == 0) {
-        return TL_OK;
-    }
+    /* Always replace the workspace's boosts, so none outlive this query. */
+    tl_status status = lexical_workspace_boost(desktop->active->workspace, boosts, boost_count);
+    if (status != TL_OK || query[0] == 0)
+        return status;
     return lexical_query(desktop->active->engine, desktop->active->workspace, query, results,
                          capacity, count);
 }

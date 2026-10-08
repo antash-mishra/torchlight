@@ -1,6 +1,6 @@
 # prefix
 
-> **Status:** Implemented (M3 Part 2): token-completeness scoring, including the first basename token
+> **Status:** Implemented (M3 Part 2): token-completeness scoring, including the first basename token; M5 per-text scoring
 > **Source:** `src/index/prefix.c` · **Header:** `include/torchlight/prefix.h`
 > **Tests:** `tests/unit/test_prefix.c`
 
@@ -35,3 +35,14 @@ O(log K + matching keys).
 - [M1 completion ADR](../../adr/0008-m1-completion-channels-directories-config.md)
 - [First-token completion fix ADR](../../adr/0021-first-token-completeness.md)
 - Public headers document parameters, lifetimes and error contracts.
+
+## Per-text scoring (M5)
+
+`prefix_score(text, query, &best, &complete)` scores one text's keys without
+an index. It reports what `prefix_query` would report for that text's slot:
+the best key score, and whether any reported key is a complete token. It
+enumerates keys with the same visitor `prefix_add` uses (basename, every
+token, then initials), so both always see the same keys. The lexical side
+pass uses it to build one-symbol evidence for a few boosted entries without
+expanding every key that starts with the symbol. `test_prefix.c` checks it
+against `prefix_query` for every slot and query.

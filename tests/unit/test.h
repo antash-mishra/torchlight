@@ -43,6 +43,8 @@ void test_ipc(void);
 void test_watch(void);
 /** Run writer publication recovery, history saturation and overflow acceptance. */
 void test_writer(void);
+/** Check remembered searches, once-per-event opens, boosts, adoption and clearing. */
+void test_personal(void);
 /** Run periodic scan and watcher recovery checks under instance exhaustion. */
 void test_writer_fallback(void);
 /** Run byte/Unicode normalization checks, aborting on failure. */
@@ -71,8 +73,12 @@ void test_semantic(void);
 void test_vector(void);
 /** Check RRF scores, exact-match protection and lexical fallback. */
 void test_rank(void);
+/** Check usage boosts, decay, retention, query prefixes, eviction and merging. */
+void test_usage(void);
 /** Run orchestrator/ordering/workspace checks, aborting on failure. */
 void test_lexical(void);
+/** Check personal boosts against full boosted evaluation on small and large engines. */
+void test_lexical_boost(void);
 /** Run resident snapshot lifetime, capacity and concurrent-publication checks. */
 void test_catalog(void);
 /** Run transactional catalog checks, aborting on failure. */

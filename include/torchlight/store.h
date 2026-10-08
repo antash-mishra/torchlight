@@ -9,6 +9,27 @@ typedef struct {
     bool is_root, is_dir;
 } tl_store_entry;
 typedef tl_status (*tl_store_callback)(void *context, const tl_store_entry *entry);
+typedef enum {
+    STORE_HISTORY_SEARCH,
+    STORE_HISTORY_OPEN,
+    STORE_HISTORY_DESKTOP_OPEN
+} tl_store_history_kind;
+/* One history record for store_history_write; strings are borrowed for the
+ * call. A search needs search_id and query. An open needs event_id plus
+ * file_id (STORE_HISTORY_OPEN) or desktop_id (STORE_HISTORY_DESKTOP_OPEN);
+ * search_id optionally links its retained search, and a non-NULL query saves
+ * that search row together with the open. */
+typedef struct {
+    tl_store_history_kind kind;
+    const char *search_id, *query, *event_id, *desktop_id;
+    uint64_t file_id;
+    int64_t timestamp;
+} tl_store_history_event;
+/** Receive one retained open: a file id with NULL desktop_id, or file_id zero
+ * with a desktop id; the query of its retained search or NULL; its Unix
+ * timestamp. Strings are borrowed until return. */
+typedef tl_status (*tl_store_open_callback)(void *context, uint64_t file_id, const char *desktop_id,
+                                            const char *query, int64_t timestamp);
 /** Receive one registered root path, borrowed until the callback returns. */
 typedef tl_status (*tl_store_root_callback)(void *context, const char *root);
 /** Open/create owned catalog at path, enabling WAL/foreign keys and schema v3.
@@ -123,6 +144,30 @@ tl_status store_search(tl_store *store, const char *id, const char *query, int64
  * return TL_STATE; TL_INVALID/STATE/IO/LIMIT. All strings borrowed. */
 tl_status store_open_event(tl_store *store, const char *event_id, uint64_t file_id,
                            const char *search_id, int64_t timestamp);
+/** Persist one history event (see tl_store_history_event) in a savepoint, so
+ * an open and its search row land together or not at all. Inside a
+ * store_history_begin batch it commits with the batch; otherwise on its own.
+ * Idempotent per search id or event id; conflicting retries and opens of
+ * missing files return TL_STATE without writing. Absent retained searches
+ * link as NULL. TL_INVALID/LIMIT for malformed fields, TL_STATE during a
+ * catalog scan or read, TL_IO for SQL. Statements are prepared once. */
+tl_status store_history_write(tl_store *store, const tl_store_history_event *event);
+/** Begin one write transaction for many history events (store_history_write),
+ * so a drained queue costs one commit. TL_STATE while any transaction or read
+ * is active, TL_INVALID for NULL, TL_IO for SQL. */
+tl_status store_history_begin(tl_store *store);
+/** Commit (or roll back) the history batch. A failed commit is rolled back and
+ * reported as TL_IO: none of the batch's events persist. TL_STATE without a
+ * batch, TL_INVALID for NULL. */
+tl_status store_history_commit(tl_store *store);
+tl_status store_history_rollback(tl_store *store);
+/** Stream retained file and desktop opens at or after cutoff, oldest first,
+ * each with its retained search's query, for rebuilding the usage summary.
+ * One statement, so one consistent read. Callback errors propagate, plus
+ * TL_INVALID for NULL, TL_STATE during a transaction or batch and TL_IO for
+ * SQL or malformed rows. The callback must not use this connection. */
+tl_status store_history_opens(tl_store *store, int64_t cutoff, tl_store_open_callback callback,
+                              void *context);
 /** Delete history older than cutoff, or all history when clear is true. Applies
  * to opens and searches, never catalog rows/gen. TL_INVALID/STATE/IO. */
 tl_status store_history_prune(tl_store *store, int64_t cutoff, bool clear);

@@ -4,6 +4,7 @@
  * cancels a running one. Sockets never retain a lexical workspace lease. */
 #include "torchlight/daemon.h"
 #include "torchlight/desktop.h"
+#include "torchlight/personal.h"
 #include "torchlight/semantic.h"
 #include <errno.h>
 #include <poll.h>
@@ -79,6 +80,13 @@ struct tl_daemon {
     char *scratch;
     /* The job the search thread is serving; copied out of its client's queue. */
     struct pending job;
+    /* M5 personal ranking, search thread only (ADR 0033): NULL with history
+     * disabled; usage_loading until the writer offers the startup summary;
+     * the current query's desktop boosts. */
+    tl_personal *personal;
+    bool usage_loading;
+    const tl_lexical_boost *app_boosts;
+    size_t app_boost_count;
     struct client clients[DAEMON_MAX_CLIENTS];
     tl_result results[LEXICAL_MAX_RESULTS];
     tl_result applications[LEXICAL_MAX_RESULTS];
@@ -195,6 +203,10 @@ static tl_status create_services(tl_daemon *daemon, const tl_daemon_options *opt
             daemon->clients[i].slot = i;
         }
     }
+    if (status == TL_OK && options->history) {
+        status = personal_create((int64_t)options->history_days * 24 * 3600, &daemon->personal);
+        daemon->usage_loading = status == TL_OK;
+    }
     if (status == TL_OK)
         status = ipc_listener_create(options->socket_path, &daemon->listener);
     return status;
@@ -280,6 +292,8 @@ tl_status daemon_destroy(tl_daemon *daemon) {
     }
     ipc_listener_destroy(daemon->listener);
     daemon->listener = NULL;
+    personal_destroy(daemon->personal);
+    daemon->personal = NULL;
     semantic_destroy(daemon->semantic);
     daemon->semantic = NULL;
     desktop_destroy(daemon->desktop);
@@ -313,7 +327,7 @@ static void boolean(tl_json_buffer *buffer, bool value) {
     json_raw(buffer, value ? "true" : "false");
 }
 static void indexing_status(tl_json_buffer *b, const tl_writer_stats *stats,
-                            const tl_semantic_stats *semantic) {
+                            const tl_semantic_stats *semantic, size_t personal_items) {
     json_raw(b, ",\"indexing\":{\"active\":");
     boolean(b, stats->indexing);
     json_raw(b, ",\"degraded\":");
@@ -352,6 +366,8 @@ static void indexing_status(tl_json_buffer *b, const tl_writer_stats *stats,
     json_number(b, stats->history_failures);
     json_raw(b, ",\"written\":");
     json_number(b, stats->history_written);
+    json_raw(b, ",\"personal_items\":");
+    json_number(b, personal_items);
     json_raw(b, "}");
     if (semantic != NULL) {
         json_raw(b, ",\"semantic\":{\"available\":");
@@ -378,7 +394,7 @@ static void indexing_status(tl_json_buffer *b, const tl_writer_stats *stats,
 static void response_prefix(tl_json_buffer *b, const tl_ipc_request *request, uint64_t catalog_gen,
                             const char *search_id, const char *status, const char *reason,
                             const tl_writer_stats *stats, bool lexical_phase, uint64_t emb_gen,
-                            const tl_semantic_stats *semantic) {
+                            const tl_semantic_stats *semantic, size_t personal_items) {
     json_raw(b, "{\"version\":1,\"request_id\":");
     json_quote(b, request->request_id);
     json_raw(b, ",\"phase\":");
@@ -399,14 +415,15 @@ static void response_prefix(tl_json_buffer *b, const tl_ipc_request *request, ui
     json_quote(b, status);
     json_raw(b, ",\"reason\":");
     json_quote(b, reason);
-    indexing_status(b, stats, semantic);
+    indexing_status(b, stats, semantic, personal_items);
     json_raw(b, ",\"results\":[");
 }
 static tl_status merge_applications(tl_daemon *daemon, const tl_ipc_request *request,
                                     size_t *count) {
     size_t app_count = 0;
-    tl_status status = desktop_query(daemon->desktop, request->query, daemon->applications,
-                                     request->limit, &app_count);
+    tl_status status = desktop_query_boosted(daemon->desktop, request->query, daemon->app_boosts,
+                                             daemon->app_boost_count, daemon->applications,
+                                             request->limit, &app_count);
     if (status != TL_OK)
         return status;
     for (size_t i = 0; i < app_count; i++) {
@@ -427,6 +444,49 @@ static tl_status merge_applications(tl_daemon *daemon, const tl_ipc_request *req
     }
     return TL_OK;
 }
+/* Search thread: queue an accepted open for saving, with the query of its
+ * search when still remembered (saved with it), and count it in the live
+ * usage summary, even if the bounded queue had to drop saving it. */
+static tl_status record_open(tl_daemon *daemon, tl_ipc_request *event, tl_usage_target target) {
+    const char *query = personal_query_of(daemon->personal, event->search_id);
+    if (query == NULL)
+        event->query[0] = 0;
+    else
+        memcpy(event->query, query, strlen(query) + 1);
+    tl_status status = writer_history(daemon->writer, event, NULL);
+    if (status == TL_STATE)
+        return TL_OK; /* history disabled */
+    if (status == TL_OK || status == TL_LIMIT) {
+        /* TL_LIMIT here only means a desktop id too long to keep. */
+        tl_status counted =
+            personal_record(daemon->personal, event->event_id, target, query, (int64_t)time(NULL));
+        (void)counted;
+    }
+    return status;
+}
+/* Search thread: this query's boosts, or none without history. Personal
+ * ranking never fails a search: on error the query runs unboosted. */
+static void prepare_boosts(tl_daemon *daemon, const char *query, tl_catalog_boosts *files) {
+    *files = (tl_catalog_boosts){0};
+    daemon->app_boosts = NULL;
+    daemon->app_boost_count = 0;
+    if (daemon->personal == NULL)
+        return;
+    if (personal_boosts(daemon->personal, daemon->desktop, query, (int64_t)time(NULL), files,
+                        &daemon->app_boosts, &daemon->app_boost_count) != TL_OK) {
+        *files = (tl_catalog_boosts){0};
+        daemon->app_boosts = NULL;
+        daemon->app_boost_count = 0;
+    }
+}
+/* Search thread: adopt the startup usage summary once the writer offers it. */
+static void adopt_usage(tl_daemon *daemon) {
+    tl_usage *loaded = NULL;
+    if (!daemon->usage_loading || !writer_take_usage(daemon->writer, &loaded))
+        return;
+    daemon->usage_loading = false;
+    personal_adopt(daemon->personal, loaded);
+}
 static tl_status resolve_application(tl_daemon *daemon, const tl_ipc_request *request,
                                      size_t *count) {
     const tl_desktop_entry *entry = desktop_resolve(daemon->desktop, request->file_id);
@@ -441,8 +501,7 @@ static tl_status resolve_application(tl_daemon *daemon, const tl_ipc_request *re
     if (length >= sizeof(event.desktop_id))
         return TL_LIMIT;
     memcpy(event.desktop_id, entry->desktop_id, length + 1);
-    tl_status status = writer_history(daemon->writer, &event, NULL);
-    return status == TL_STATE ? TL_OK : status;
+    return record_open(daemon, &event, (tl_usage_target){0, entry->desktop_id});
 }
 /* Search thread only: run the query/resolve/open against the leased view. */
 static tl_status execute_leased(tl_daemon *daemon, const tl_ipc_request *request, size_t *count,
@@ -454,7 +513,10 @@ static tl_status execute_leased(tl_daemon *daemon, const tl_ipc_request *request
     if (request->operation == IPC_QUERY) {
         catalog_reader_cancel(*reader, &daemon->cancel);
         uint64_t start = nanoseconds();
-        status = catalog_query(*reader, request->query, daemon->results, request->limit, count);
+        tl_catalog_boosts files;
+        prepare_boosts(daemon, request->query, &files);
+        status = catalog_query_boosted(*reader, request->query, &files, daemon->results,
+                                       request->limit, count);
         if (status == TL_OK)
             status = merge_applications(daemon, request, count);
         uint64_t end = nanoseconds();
@@ -468,9 +530,8 @@ static tl_status execute_leased(tl_daemon *daemon, const tl_ipc_request *request
     daemon->results[0] = (tl_result){request->file_id, path, 0};
     *count = 1;
     if (request->operation == IPC_OPEN) {
-        status = writer_history(daemon->writer, request, NULL);
-        if (status == TL_STATE)
-            status = TL_OK;
+        tl_ipc_request event = *request;
+        status = record_open(daemon, &event, (tl_usage_target){request->file_id, NULL});
     }
     return status;
 }
@@ -485,11 +546,11 @@ static tl_status execute(tl_daemon *daemon, const tl_ipc_request *request,
                               (unsigned long long)++daemon->search_sequence);
         if (length < 0 || (size_t)length > IPC_HISTORY_ID_BYTES)
             return TL_LIMIT;
-        tl_status history = writer_history(daemon->writer, request, search_id);
-        if (history != TL_OK && history != TL_LIMIT && history != TL_STATE)
-            return history;
+        /* A search is saved only with an open that references it (ADR 0033):
+         * remember its query instead of queueing a write per keystroke. */
         if (superseded)
             return TL_STATE;
+        personal_remember(daemon->personal, search_id, request->query);
     }
     if ((request->operation == IPC_RESOLVE || request->operation == IPC_OPEN) &&
         request->file_id >= DESKTOP_ID_BASE)
@@ -501,8 +562,10 @@ static tl_status execute(tl_daemon *daemon, const tl_ipc_request *request,
         desktop_refresh(daemon->desktop);
         return writer_reconcile(daemon->writer);
     }
-    if (request->operation == IPC_HISTORY_CLEAR)
+    if (request->operation == IPC_HISTORY_CLEAR) {
+        personal_clear(daemon->personal);
         return writer_history(daemon->writer, request, NULL);
+    }
     return TL_OK;
 }
 /* Under the daemon lock: ids answered but unsent, pending semantic, or queued. */
@@ -587,9 +650,10 @@ static tl_status encode_completion(tl_daemon *daemon, const struct completion *c
     tl_json_buffer b;
     *overflow = false;
     json_buffer_init(&b, daemon->scratch, IPC_RESPONSE_BYTES);
+    size_t items = personal_items(daemon->personal);
     response_prefix(&b, completion->request, completion->catalog_gen, completion->search_id, status,
                     completion->reason, &completion->stats, completion->lexical_phase,
-                    completion->emb_gen, semantic);
+                    completion->emb_gen, semantic, items);
     for (size_t i = 0;
          i < completion->count && i < completion->request->limit && completion->status == TL_OK;
          i++) {
@@ -605,7 +669,7 @@ static tl_status encode_completion(tl_daemon *daemon, const struct completion *c
         json_buffer_init(&b, daemon->scratch, IPC_RESPONSE_BYTES);
         response_prefix(&b, completion->request, completion->catalog_gen, completion->search_id,
                         "error", "response_limit", &completion->stats, false, completion->emb_gen,
-                        semantic);
+                        semantic, items);
         json_raw(&b, "]}\n");
     }
     *length = b.status == TL_OK ? b.length : 0;
@@ -688,6 +752,7 @@ static void serve(tl_daemon *daemon, struct client *client, const struct pending
     completion.catalog_gen = catalog.catalog_gen;
     tl_catalog_reader *reader = NULL;
     daemon->engine_ns = 0;
+    adopt_usage(daemon);
     desktop_acquire(daemon->desktop);
     tl_ipc_request pooled = job->request;
     if (daemon->semantic != NULL && job->request.operation == IPC_QUERY)
@@ -770,7 +835,7 @@ static tl_status append_semantic_status(tl_daemon *daemon, char *output, size_t 
     size_t prefix = *length - 2;
     tl_json_buffer buffer;
     json_buffer_init(&buffer, output + prefix, capacity - prefix);
-    indexing_status(&buffer, &writer, &semantic);
+    indexing_status(&buffer, &writer, &semantic, personal_items(daemon->personal));
     json_raw(&buffer, "}\n");
     *length = buffer.status == TL_OK ? prefix + buffer.length : 0;
     return buffer.status;

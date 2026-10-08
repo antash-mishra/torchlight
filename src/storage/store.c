@@ -13,12 +13,28 @@
 #define IDENTITY_OBJECT_BYTES 16
 #define IDENTITY_RENAMED 2
 #define NANOSECONDS_PER_SECOND 1000000000U
+/* History statements, prepared on first use and reused for every event. */
+enum { HISTORY_SEARCH, HISTORY_OPEN, HISTORY_DESKTOP_OPEN, HISTORY_STATEMENTS };
+static const char *const HISTORY_SQL[HISTORY_STATEMENTS] = {
+    /* Idempotent per id; a different query for an existing id changes nothing. */
+    "INSERT INTO searches VALUES(?1,?2,?3) ON CONFLICT(id) DO UPDATE SET "
+    "id=excluded.id WHERE searches.query=excluded.query",
+    "INSERT INTO opens(event_id,file_id,search_id,ts) SELECT ?1,?2,(SELECT id "
+    "FROM searches WHERE id=?3),?4 WHERE EXISTS(SELECT 1 FROM files WHERE id=?2) "
+    "ON CONFLICT(event_id) DO UPDATE SET event_id=excluded.event_id WHERE "
+    "opens.file_id=excluded.file_id AND opens.search_id IS excluded.search_id",
+    "INSERT INTO desktop_opens VALUES(?1,?2,(SELECT id FROM searches WHERE "
+    "id=?3),?4) ON CONFLICT(event_id) DO UPDATE SET event_id=excluded.event_id "
+    "WHERE desktop_opens.desktop_id=excluded.desktop_id AND "
+    "desktop_opens.search_id IS excluded.search_id"};
 struct tl_store {
     sqlite3 *db;
     /* Per-entry statements are prepared once; a scan runs them for every entry. */
     sqlite3_stmt *put, *mark_seen, *keep, *identity;
     sqlite3_stmt *embedding_get, *embedding_put, *embedding_touch;
-    bool transaction, reading, changed, embedding_batch;
+    sqlite3_stmt *history[HISTORY_STATEMENTS];
+    /* history_batch: a store_history_begin transaction is open. */
+    bool transaction, reading, changed, embedding_batch, history_batch;
     /* Ids of files rows inserted, updated or deleted by the current catalog
      * transaction (see store_changes), up to change_limit before overflow. */
     uint64_t *change_ids;
@@ -266,6 +282,8 @@ void store_destroy(tl_store *store) {
     sqlite3_finalize(store->embedding_get);
     sqlite3_finalize(store->embedding_put);
     sqlite3_finalize(store->embedding_touch);
+    for (size_t i = 0; i < HISTORY_STATEMENTS; i++)
+        sqlite3_finalize(store->history[i]);
     free(store->change_ids);
     if (store->db != NULL) {
         /* Closing the connection rolls back any unfinished transaction. */
@@ -277,7 +295,7 @@ void store_destroy(tl_store *store) {
 tl_status store_begin(tl_store *store) {
     if (store == NULL)
         return TL_INVALID;
-    if (store->transaction || store->reading || store->embedding_batch)
+    if (store->transaction || store->reading || store->embedding_batch || store->history_batch)
         return TL_STATE;
     tl_status status = execute(store, "BEGIN IMMEDIATE");
     if (status != TL_OK)
@@ -885,85 +903,190 @@ static tl_status history_ready(const tl_store *store, const char *id) {
         return TL_LIMIT;
     return store->transaction || store->reading ? TL_STATE : TL_OK;
 }
-tl_status store_search(tl_store *store, const char *id, const char *query, int64_t timestamp) {
-    tl_status status = history_ready(store, id);
+static bool optional_id(const char *id) {
+    return id == NULL || (json_utf8(id) && strlen(id) <= 128);
+}
+/* Validate one event's fields for its kind before any SQL runs. */
+static tl_status history_valid(const tl_store *store, const tl_store_history_event *event) {
+    if (event == NULL)
+        return TL_INVALID;
+    bool search = event->kind == STORE_HISTORY_SEARCH;
+    tl_status status = history_ready(store, search ? event->search_id : event->event_id);
     if (status != TL_OK)
         return status;
-    if (query == NULL || !json_utf8(query) || timestamp < 0)
+    if (event->timestamp < 0 || !optional_id(event->search_id) ||
+        (event->query != NULL && (event->search_id == NULL || !json_utf8(event->query))))
         return TL_INVALID;
-    if (strlen(query) > 256)
+    if (event->query != NULL && strlen(event->query) > 256)
         return TL_LIMIT;
-    sqlite3_stmt *statement = NULL;
-    const char *sql = "INSERT INTO searches VALUES(?1,?2,?3) ON CONFLICT(id) DO UPDATE SET "
-                      "id=excluded.id WHERE searches.query=excluded.query";
-    if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
+    if (search)
+        return event->query == NULL ? TL_INVALID : TL_OK;
+    if (event->kind == STORE_HISTORY_OPEN)
+        return event->file_id == 0 || event->file_id > INT64_MAX ? TL_INVALID : TL_OK;
+    if (event->kind != STORE_HISTORY_DESKTOP_OPEN || event->desktop_id == NULL ||
+        event->desktop_id[0] == 0 || !json_utf8(event->desktop_id))
+        return TL_INVALID;
+    return strlen(event->desktop_id) >= 4096 ? TL_INVALID : TL_OK;
+}
+/* Prepare a history statement once, for the connection's lifetime. */
+static tl_status history_statement(tl_store *store, size_t which, sqlite3_stmt **out) {
+    if (store->history[which] == NULL &&
+        sqlite3_prepare_v3(store->db, HISTORY_SQL[which], -1, SQLITE_PREPARE_PERSISTENT,
+                           &store->history[which], NULL) != SQLITE_OK)
         return TL_IO;
-    if (sqlite3_bind_text(statement, 1, id, -1, SQLITE_TRANSIENT) != SQLITE_OK ||
-        sqlite3_bind_text(statement, 2, query, -1, SQLITE_TRANSIENT) != SQLITE_OK ||
-        sqlite3_bind_int64(statement, 3, timestamp) != SQLITE_OK ||
-        sqlite3_step(statement) != SQLITE_DONE)
+    *out = store->history[which];
+    return TL_OK;
+}
+/* Step a bound history statement that must change exactly one row (TL_STATE
+ * for a conflicting retry or missing file), then reset it for reuse. */
+static tl_status run_history(tl_store *store, sqlite3_stmt *statement, bool bound) {
+    tl_status status = TL_OK;
+    if (!bound || sqlite3_step(statement) != SQLITE_DONE)
         status = TL_IO;
     else if (sqlite3_changes(store->db) != 1)
         status = TL_STATE;
-    return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
+    if (sqlite3_reset(statement) != SQLITE_OK && status == TL_OK)
+        status = TL_IO;
+    sqlite3_clear_bindings(statement);
+    return status;
+}
+static bool bind_text(sqlite3_stmt *statement, int parameter, const char *text) {
+    return text == NULL
+               ? sqlite3_bind_null(statement, parameter) == SQLITE_OK
+               : sqlite3_bind_text(statement, parameter, text, -1, SQLITE_TRANSIENT) == SQLITE_OK;
+}
+static tl_status insert_search(tl_store *store, const tl_store_history_event *event) {
+    sqlite3_stmt *statement = NULL;
+    tl_status status = history_statement(store, HISTORY_SEARCH, &statement);
+    if (status != TL_OK)
+        return status;
+    bool bound = bind_text(statement, 1, event->search_id) &&
+                 bind_text(statement, 2, event->query) &&
+                 sqlite3_bind_int64(statement, 3, event->timestamp) == SQLITE_OK;
+    return run_history(store, statement, bound);
+}
+static tl_status insert_open(tl_store *store, const tl_store_history_event *event) {
+    bool desktop = event->kind == STORE_HISTORY_DESKTOP_OPEN;
+    sqlite3_stmt *statement = NULL;
+    tl_status status =
+        history_statement(store, desktop ? HISTORY_DESKTOP_OPEN : HISTORY_OPEN, &statement);
+    if (status != TL_OK)
+        return status;
+    bool bound =
+        bind_text(statement, 1, event->event_id) &&
+        (desktop ? bind_text(statement, 2, event->desktop_id)
+                 : sqlite3_bind_int64(statement, 2, (sqlite3_int64)event->file_id) == SQLITE_OK) &&
+        bind_text(statement, 3, event->search_id) &&
+        sqlite3_bind_int64(statement, 4, event->timestamp) == SQLITE_OK;
+    return run_history(store, statement, bound);
+}
+tl_status store_history_write(tl_store *store, const tl_store_history_event *event) {
+    tl_status status = history_valid(store, event);
+    if (status != TL_OK)
+        return status;
+    /* A savepoint makes an open and its search row one unit, inside a batch
+     * or as its own transaction. */
+    status = execute(store, "SAVEPOINT history_event");
+    if (status != TL_OK)
+        return status;
+    if (event->kind == STORE_HISTORY_SEARCH || event->query != NULL)
+        status = insert_search(store, event);
+    if (status == TL_OK && event->kind != STORE_HISTORY_SEARCH)
+        status = insert_open(store, event);
+    if (status != TL_OK && execute(store, "ROLLBACK TO history_event") != TL_OK)
+        status = TL_IO;
+    tl_status released = execute(store, "RELEASE history_event");
+    return status == TL_OK ? released : status;
+}
+tl_status store_history_begin(tl_store *store) {
+    if (store == NULL)
+        return TL_INVALID;
+    if (store->transaction || store->reading || store->embedding_batch || store->history_batch)
+        return TL_STATE;
+    tl_status status = execute(store, "BEGIN IMMEDIATE");
+    store->history_batch = status == TL_OK;
+    return status;
+}
+static tl_status end_history(tl_store *store, const char *sql) {
+    if (store == NULL)
+        return TL_INVALID;
+    if (!store->history_batch)
+        return TL_STATE;
+    tl_status status = execute(store, sql);
+    /* A failed COMMIT leaves the transaction open; roll it back so the
+     * connection is usable again and the batch is reported as lost. */
+    if (status != TL_OK && sqlite3_get_autocommit(store->db) == 0 &&
+        execute(store, "ROLLBACK") != TL_OK)
+        status = TL_IO;
+    store->history_batch = false;
+    return status;
+}
+tl_status store_history_commit(tl_store *store) {
+    return end_history(store, "COMMIT");
+}
+tl_status store_history_rollback(tl_store *store) {
+    return end_history(store, "ROLLBACK");
+}
+tl_status store_search(tl_store *store, const char *id, const char *query, int64_t timestamp) {
+    tl_store_history_event event = {
+        .kind = STORE_HISTORY_SEARCH, .search_id = id, .query = query, .timestamp = timestamp};
+    return store_history_write(store, &event);
 }
 tl_status store_open_event(tl_store *store, const char *event_id, uint64_t file_id,
                            const char *search_id, int64_t timestamp) {
-    tl_status status = history_ready(store, event_id);
-    if (status != TL_OK)
-        return status;
-    if (file_id == 0 || file_id > INT64_MAX || timestamp < 0 ||
-        (search_id != NULL && (!json_utf8(search_id) || strlen(search_id) > 128)))
-        return TL_INVALID;
-    sqlite3_stmt *statement = NULL;
-    const char *sql = "INSERT INTO opens(event_id,file_id,search_id,ts) SELECT ?1,?2,(SELECT id "
-                      "FROM searches WHERE id=?3),?4 WHERE EXISTS(SELECT 1 FROM files WHERE id=?2) "
-                      "ON CONFLICT(event_id) DO UPDATE SET event_id=excluded.event_id WHERE "
-                      "opens.file_id=excluded.file_id AND opens.search_id IS excluded.search_id";
-    if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
-        return TL_IO;
-    if (sqlite3_bind_text(statement, 1, event_id, -1, SQLITE_TRANSIENT) != SQLITE_OK ||
-        sqlite3_bind_int64(statement, 2, (sqlite3_int64)file_id) != SQLITE_OK ||
-        (search_id != NULL &&
-         sqlite3_bind_text(statement, 3, search_id, -1, SQLITE_TRANSIENT) != SQLITE_OK) ||
-        sqlite3_bind_int64(statement, 4, timestamp) != SQLITE_OK ||
-        sqlite3_step(statement) != SQLITE_DONE)
-        status = TL_IO;
-    else if (sqlite3_changes(store->db) != 1)
-        status = TL_STATE;
-    return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
+    tl_store_history_event event = {.kind = STORE_HISTORY_OPEN,
+                                    .search_id = search_id,
+                                    .event_id = event_id,
+                                    .file_id = file_id,
+                                    .timestamp = timestamp};
+    return store_history_write(store, &event);
 }
 tl_status store_desktop_open(tl_store *store, const char *event_id, const char *desktop_id,
                              const char *search_id, int64_t timestamp) {
-    tl_status status = history_ready(store, event_id);
-    if (status != TL_OK)
-        return status;
-    if (desktop_id == NULL || desktop_id[0] == 0 || !json_utf8(desktop_id) ||
-        strlen(desktop_id) >= 4096 || timestamp < 0 ||
-        (search_id != NULL && (!json_utf8(search_id) || strlen(search_id) > 128)))
-        return TL_INVALID;
-    const char *sql = "INSERT INTO desktop_opens VALUES(?1,?2,(SELECT id FROM searches WHERE "
-                      "id=?3),?4) ON CONFLICT(event_id) DO UPDATE SET event_id=excluded.event_id "
-                      "WHERE desktop_opens.desktop_id=excluded.desktop_id AND "
-                      "desktop_opens.search_id IS excluded.search_id";
-    sqlite3_stmt *statement = NULL;
-    if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
+    tl_store_history_event event = {.kind = STORE_HISTORY_DESKTOP_OPEN,
+                                    .search_id = search_id,
+                                    .event_id = event_id,
+                                    .desktop_id = desktop_id,
+                                    .timestamp = timestamp};
+    return store_history_write(store, &event);
+}
+/* Opens of both kinds with their retained queries, oldest first. */
+static const char *const HISTORY_OPENS_SQL =
+    "SELECT o.file_id, NULL, s.query, o.ts FROM opens o LEFT JOIN searches s "
+    "ON s.id = o.search_id WHERE o.ts >= ?1 UNION ALL "
+    "SELECT 0, d.desktop_id, s.query, d.ts FROM desktop_opens d LEFT JOIN searches s "
+    "ON s.id = d.search_id WHERE d.ts >= ?1 ORDER BY 4";
+static tl_status report_open(sqlite3_stmt *statement, tl_store_open_callback callback,
+                             void *context) {
+    sqlite3_int64 file_id = sqlite3_column_int64(statement, 0);
+    const char *desktop_id = (const char *)sqlite3_column_text(statement, 1);
+    const char *query = (const char *)sqlite3_column_text(statement, 2);
+    sqlite3_int64 timestamp = sqlite3_column_int64(statement, 3);
+    if (file_id < 0 || timestamp < 0 || (file_id == 0) == (desktop_id == NULL))
         return TL_IO;
-    if (sqlite3_bind_text(statement, 1, event_id, -1, SQLITE_TRANSIENT) != SQLITE_OK ||
-        sqlite3_bind_text(statement, 2, desktop_id, -1, SQLITE_TRANSIENT) != SQLITE_OK ||
-        (search_id != NULL &&
-         sqlite3_bind_text(statement, 3, search_id, -1, SQLITE_TRANSIENT) != SQLITE_OK) ||
-        sqlite3_bind_int64(statement, 4, timestamp) != SQLITE_OK ||
-        sqlite3_step(statement) != SQLITE_DONE)
+    return callback(context, (uint64_t)file_id, desktop_id, query, (int64_t)timestamp);
+}
+tl_status store_history_opens(tl_store *store, int64_t cutoff, tl_store_open_callback callback,
+                              void *context) {
+    if (store == NULL || callback == NULL)
+        return TL_INVALID;
+    if (store->transaction || store->reading || store->history_batch)
+        return TL_STATE;
+    sqlite3_stmt *statement = NULL;
+    if (sqlite3_prepare_v2(store->db, HISTORY_OPENS_SQL, -1, &statement, NULL) != SQLITE_OK)
+        return TL_IO;
+    tl_status status = sqlite3_bind_int64(statement, 1, cutoff) == SQLITE_OK ? TL_OK : TL_IO;
+    int code = SQLITE_ROW;
+    while (status == TL_OK && (code = sqlite3_step(statement)) == SQLITE_ROW)
+        status = report_open(statement, callback, context);
+    if (status == TL_OK && code != SQLITE_DONE)
         status = TL_IO;
-    else if (sqlite3_changes(store->db) != 1)
-        status = TL_STATE;
-    return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
+    return sqlite3_finalize(statement) == SQLITE_OK || status != TL_OK ? status : TL_IO;
 }
 tl_status store_history_prune(tl_store *store, int64_t cutoff, bool clear) {
     if (store == NULL || cutoff < 0)
         return TL_INVALID;
-    if (store->transaction || store->reading)
+    if (store->transaction || store->reading || store->history_batch)
         return TL_STATE;
     const char *steps[] = {"DELETE FROM opens WHERE ?1 OR ts<?2",
                            "DELETE FROM desktop_opens WHERE ?1 OR ts<?2",

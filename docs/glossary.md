@@ -34,7 +34,11 @@
 | **RRF** | Reciprocal Rank Fusion: merges ranked lists via `Σ 1/(k + rank)`. |
 | **Frecency** | A score combining how frequently and how recently a path was opened. |
 | **Open** | An accepted launch request, optionally logged to `opens`; does not confirm external application success. |
-| **Catalog generation (`catalog_gen`)** | An immutable, consistent resident view of paths, indexes, vectors, and usage summaries pinned by queries. |
+| **Catalog generation (`catalog_gen`)** | An immutable, consistent resident view of paths, indexes and vectors pinned by queries. Usage summaries are separate (ADR 0033). |
+| **Usage summary** | Capped resident frecency and query-to-open data, owned in plain memory by the search thread and rebuilt from retained history at startup by the persistence thread (M5, ADR 0033). |
+| **Query-to-open history** | Pairs of a normalized typed query and the target opened from its results; a later query boosts the targets of stored queries that start with it (M5). |
+| **Used-set side query** | M5 ranking: the normal lexical query excludes entries with usage, a second query scores only those entries and adds their boosts, and the lists merge into the exact personalized top k without changing pruning bounds (ADR 0033). Implemented as the *side pass* pushing into the same result heap. |
+| **Sparse evidence** | Word evidence gathered for a few entries only (their name and field keys, their parent folders' keys on demand), used by the side pass for one-symbol queries answered from the seal-time cache; dropped when the query ends. |
 | **Reader lease** | Exclusive preallocated query workspace that pins one immutable catalog view until release. |
 | **Retired snapshot** | A catalog view replaced by publication, retained until all reader leases release it and background reclamation frees it. |
 | **Embedding generation (`emb_gen`)** | Vectors sharing a model revision, tokenizer/preprocessing, dimension, and quantization format. |

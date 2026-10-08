@@ -8,6 +8,7 @@
 #include "torchlight/delta.h"
 #include "torchlight/path.h"
 #include "torchlight/store.h"
+#include "torchlight/usage.h"
 #include "torchlight/vec.h"
 #include "torchlight/watch.h"
 #include <errno.h>
@@ -117,9 +118,13 @@ struct tl_writer {
     struct batch *job;
     enum job_state job_state;
     tl_status job_status;
-    bool job_changed, job_complete;
+    /* usage_loaded: the persistence thread's startup usage load has ended. */
+    bool job_changed, job_complete, usage_loaded;
     tl_vec *job_ids; /* uint64_t */
     tl_delta *delta;
+    /* Startup usage summary built by the persistence thread, until the search
+     * thread takes it (writer_take_usage). */
+    tl_usage *usage;
 };
 static uint64_t milliseconds(void) {
     struct timespec now;
@@ -794,38 +799,107 @@ static bool pop_history(tl_writer *writer, struct history *event) {
     unlock_writer(writer);
     return found;
 }
+/* Persist one queued search or open. An open carries its search's query when
+ * the daemon still had it, so the search row is saved together with it. */
 static tl_status write_history(tl_writer *writer, const struct history *event) {
     const tl_ipc_request *request = &event->request;
     const char *search = request->search_id[0] == 0 ? NULL : request->search_id;
-    if (request->operation == IPC_QUERY)
-        return store_search(writer->store, event->search_id, request->query, event->timestamp);
-    if (request->operation == IPC_OPEN && request->desktop_id[0] != 0)
-        return store_desktop_open(writer->store, request->event_id, request->desktop_id, search,
-                                  event->timestamp);
-    if (request->operation == IPC_OPEN)
-        return store_open_event(writer->store, request->event_id, request->file_id, search,
-                                event->timestamp);
-    return store_history_prune(writer->store, 0, true);
+    tl_store_history_event record = {
+        .search_id = search, .event_id = request->event_id, .timestamp = event->timestamp};
+    if (request->operation == IPC_QUERY) {
+        record.kind = STORE_HISTORY_SEARCH;
+        record.search_id = event->search_id;
+        record.query = request->query;
+    } else if (request->desktop_id[0] != 0) {
+        record.kind = STORE_HISTORY_DESKTOP_OPEN;
+        record.desktop_id = request->desktop_id;
+    } else {
+        record.kind = STORE_HISTORY_OPEN;
+        record.file_id = request->file_id;
+    }
+    if (request->operation == IPC_OPEN && search != NULL && request->query[0] != 0)
+        record.query = request->query;
+    return store_history_write(writer->store, &record);
 }
-/* Persistence thread: write queued events; past the shutdown deadline the
- * rest is counted as dropped rather than delaying exit. */
+static void count_history(tl_writer *writer, size_t written, size_t failed, size_t dropped) {
+    lock_writer(writer);
+    writer->stats.history_written += written;
+    writer->stats.history_failures += failed;
+    writer->stats.history_dropped += dropped;
+    unlock_writer(writer);
+}
+/* Commit the open history batch, if any; a failed commit loses its events. */
+static void end_batch(tl_writer *writer, bool *batch, size_t *pending) {
+    if (!*batch)
+        return;
+    tl_status status = store_history_commit(writer->store);
+    count_history(writer, status == TL_OK ? *pending : 0, status == TL_OK ? 0 : *pending, 0);
+    *batch = false;
+    *pending = 0;
+}
+/* Persistence thread: write queued events in one transaction (a clear runs
+ * on its own), so a burst of opens costs one commit. Past the shutdown
+ * deadline the rest is counted as dropped rather than delaying exit. */
 static void drain_history(tl_writer *writer) {
     struct history event;
+    bool batch = false;
+    size_t pending = 0;
     for (size_t i = 0; i < WRITER_HISTORY_CAPACITY && pop_history(writer, &event); i++) {
         if (atomic_load(&writer->stop) && milliseconds() >= writer->shutdown_due) {
-            lock_writer(writer);
-            writer->stats.history_dropped++;
-            unlock_writer(writer);
+            count_history(writer, 0, 0, 1);
             continue;
         }
+        if (event.request.operation == IPC_HISTORY_CLEAR) {
+            end_batch(writer, &batch, &pending);
+            tl_status cleared = store_history_prune(writer->store, 0, true);
+            count_history(writer, cleared == TL_OK, cleared != TL_OK, 0);
+            continue;
+        }
+        /* Without a batch (it failed to begin), each event commits alone. */
+        if (!batch)
+            batch = store_history_begin(writer->store) == TL_OK;
         tl_status status = write_history(writer, &event);
-        lock_writer(writer);
         if (status != TL_OK)
-            writer->stats.history_failures++;
+            count_history(writer, 0, 1, 0);
+        else if (batch)
+            pending++;
         else
-            writer->stats.history_written++;
-        unlock_writer(writer);
+            count_history(writer, 1, 0, 0);
     }
+    end_batch(writer, &batch, &pending);
+}
+/* Rebuild the usage summary row by row; a desktop id too long to keep is
+ * skipped rather than failing the load. */
+static tl_status record_open(void *context, uint64_t file_id, const char *desktop_id,
+                             const char *query, int64_t timestamp) {
+    tl_usage_target target = {file_id, file_id == 0 ? desktop_id : NULL};
+    tl_status status = usage_record(context, target, query, timestamp);
+    return status == TL_LIMIT ? TL_OK : status;
+}
+/* Persistence thread, before draining any history: build the usage summary
+ * from retained opens and offer it to the search thread. Opens queued
+ * meanwhile are not in it; the search thread folds in the ones it recorded. */
+static void load_usage(tl_writer *writer) {
+    tl_usage *usage = NULL;
+    int64_t retention = (int64_t)writer->options.history_days * SECONDS_PER_DAY;
+    int64_t cutoff = (int64_t)time(NULL) - retention;
+    tl_status status = TL_OK;
+    if (writer->options.history) {
+        status = usage_create(retention, &usage);
+        if (status == TL_OK)
+            status =
+                store_history_opens(writer->store, cutoff < 0 ? 0 : cutoff, record_open, usage);
+        if (status != TL_OK) {
+            usage_destroy(usage);
+            usage = NULL;
+        }
+    }
+    lock_writer(writer);
+    writer->usage = usage;
+    writer->usage_loaded = true;
+    if (status != TL_OK)
+        writer->stats.history_failures++;
+    unlock_writer(writer);
 }
 static void prune_retention(tl_writer *writer) {
     int64_t cutoff = (int64_t)time(NULL) - (int64_t)writer->options.history_days * SECONDS_PER_DAY;
@@ -946,6 +1020,7 @@ static void await_work(tl_writer *writer, uint64_t wait) {
 static void *persistence_worker(void *context) {
     tl_writer *writer = context;
     uint64_t retention = 0;
+    load_usage(writer);
     for (;;) {
         uint64_t now = milliseconds();
         uint64_t wait = !writer->options.history ? WRITER_RETENTION_MS
@@ -1070,6 +1145,7 @@ void writer_destroy(tl_writer *writer) {
     (void)code;
     store_destroy(writer->store);
     store_destroy(writer->reader);
+    usage_destroy(writer->usage);
     vec_destroy(writer->job_ids);
     delta_destroy(writer->delta);
     watch_destroy(writer->watch);
@@ -1140,6 +1216,19 @@ tl_status writer_history(tl_writer *writer, const tl_ipc_request *request, const
     }
     unlock_writer(writer);
     return status;
+}
+bool writer_take_usage(tl_writer *writer, tl_usage **out) {
+    if (out == NULL)
+        return true;
+    *out = NULL;
+    if (writer == NULL)
+        return true;
+    lock_writer(writer);
+    bool loaded = writer->usage_loaded;
+    *out = writer->usage;
+    writer->usage = NULL;
+    unlock_writer(writer);
+    return loaded;
 }
 tl_status writer_stats(tl_writer *writer, tl_writer_stats *out) {
     if (writer == NULL || out == NULL)

@@ -1,6 +1,6 @@
 # lexical
 
-> **Status:** Implemented (M3 Part 2; M6 cancellation, Frizbee scoring, cross-query word caches and delta segments): explicit fields, prefix edits, optimal alignment and first-token completion
+> **Status:** Implemented (M3 Part 2; M6 cancellation, Frizbee scoring, cross-query word caches and delta segments; M5 personal boosts): explicit fields, prefix edits, optimal alignment and first-token completion
 > **Source:** `src/index/lexical.c` (build), `src/index/lexical_query.c` (search),
 > `src/index/lexical_internal.h` · **Header:** `include/torchlight/lexical.h`
 > **Tests:** `tests/unit/test_lexical.c`, `tests/alloc/query.c`
@@ -191,3 +191,48 @@ evaluation). Exclusion applies only when ranking, so word evidence and
 subsequence caches stay valid. `lexical_slot` and `lexical_id` map ids and
 positions. The [catalog](../catalog/README.md) composes segments; see
 [ADR 0030](../../adr/0030-m6-incremental-indexing.md).
+
+## Personal boosts (M5)
+
+`lexical_workspace_boost` attaches up to `LEXICAL_MAX_BOOSTED` (4096)
+positions, each with a boost of at most `LEXICAL_BOOST_MAX` (2048). The
+workspace copies them; the caller keeps its array. A non-empty query then
+ranks each boosted entry that matches by its ordinary score plus its boost,
+inside its exact tier. Results equal a full evaluation that adds every boost
+([ADR 0033](../../adr/0033-m5-personal-ranking.md)).
+
+- **Main pass.** Runs unchanged, with boosted entries treated as excluded,
+  so every exact shortcut keeps working. The single-word scan skip still
+  counts strong boosted hits: the side pass ranks them at least as high.
+- **Side pass.** Scores only the boosted entries: exact paths and names
+  first, then each word, and pushes them with their boosts into the same
+  heap. This is exact because boosts only raise boosted entries, so an
+  unboosted entry outside the main top results cannot enter the
+  personalized ones.
+- **Pruning.** With a full heap, an entry is dropped before a word is scored
+  when even its best case cannot reach the weakest kept result. The best case
+  is its channel hit or the word's subsequence bound, plus the later words'
+  maxima, its length bonus and its boost. The weakest score only rises, so
+  this is exact.
+- **One-symbol queries.** These come from the seal-time cache, which gathers
+  no word evidence, and gathering it over every key costs milliseconds. So
+  the side pass builds *sparse* evidence for the boosted entries alone: their
+  name and field keys through `prefix_score`, and parent folders' keys
+  lazily per node. The typo and trigram channels need three symbols, so
+  nothing is missed. The sparse cache is dropped when the query ends.
+- **Parallel scoring.** A side batch of at least 1024 entries is split across
+  the scoring workers once the main pass has resolved every directory for the
+  word. Otherwise the coordinator scores it.
+
+Static assertions keep boosted ordinary scores below exact names and boosted
+exact names below exact paths. Attaching boosts and boosted queries allocate
+nothing (`tests/alloc/query.c`). `tests/unit/test_lexical_boost.c` compares
+results with brute-force boosted evaluation:
+
+- small engines, with tombstones and fields;
+- a 70k engine checked entry by entry;
+- a 70k engine with 1500 boosted entries, which takes the parallel path.
+
+At 500k synthetic paths, typing p95 was 4.63 ms without boosts, 4.81 ms with
+1000 boosted entries, 4.99 ms with 2048 and 5.13 ms with 4000, on a loaded
+reference machine (2026-10-08, `tests/bench/results/2026-10-08-m5-personal.txt`).

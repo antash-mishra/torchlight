@@ -13,6 +13,16 @@ typedef struct {
     size_t entries, snapshots, readers;
     bool available;
 } tl_catalog_stats;
+/* Personal boosts for one query (M5): values[i] (0..LEXICAL_BOOST_MAX) for
+ * catalog id ids[i]; ids are unique and count is at most LEXICAL_MAX_BOOSTED.
+ * key identifies the ids: a lease reuses its id-to-position mapping while the
+ * key and count stay the same, so equal keys must pass identical ids. */
+typedef struct {
+    const uint64_t *ids;
+    const int *values;
+    size_t count;
+    uint64_t key;
+} tl_catalog_boosts;
 
 /** Create an owned registry with capacity 1..CATALOG_MAX_SNAPSHOTS for active
  * and retired snapshots together. Initially unavailable. TL_INVALID/NOMEM/IO;
@@ -93,6 +103,17 @@ void catalog_reader_cancel(tl_catalog_reader *reader, const atomic_bool *flag);
  * lifecycle lock. */
 tl_status catalog_query(tl_catalog_reader *reader, const char *query, tl_result *results,
                         size_t capacity, size_t *out_count);
+/** catalog_query with personal boosts (NULL for none): each boosted id that
+ * is live in the leased snapshot and matches the query ranks by its score
+ * plus its boost (lexical_workspace_boost); absent ids are ignored. The lease
+ * maps ids to segment positions once per boosts->key, then each query costs
+ * O(count) more. Boosts apply to this query only. Same results contract as
+ * catalog_query otherwise. TL_INVALID for a NULL ids/values array with a
+ * nonzero count, an out-of-range value or a repeated live id; TL_LIMIT above
+ * LEXICAL_MAX_BOOSTED. No heap allocation or I/O beyond catalog_query's. */
+tl_status catalog_query_boosted(tl_catalog_reader *reader, const char *query,
+                                const tl_catalog_boosts *boosts, tl_result *results,
+                                size_t capacity, size_t *out_count);
 /** Resolve nonzero id in this leased view (acquire current view before launch).
  * Borrow exact raw path until release; out NULL on error. TL_STATE when absent,
  * TL_INVALID for NULL/zero/unleased reader. No allocation or I/O. */

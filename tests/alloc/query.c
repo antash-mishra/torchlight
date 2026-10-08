@@ -2,8 +2,9 @@
  * Separate from ASan: its allocator interposition would mask the libc path.
  * Queries may allocate only to compile Frizbee matchers for words a workspace
  * has not cached (bounded per word and scoring thread); a repeated query, a
- * cached one-symbol answer and vector/fusion queries (including the two-pass
- * prefix shortlist) allocate nothing. */
+ * cached one-symbol answer, attaching personal boosts and boosted queries, and
+ * vector/fusion queries (including the two-pass prefix shortlist) allocate
+ * nothing. */
 #include "torchlight/fuzzy.h"
 #include "torchlight/lexical.h"
 #include "torchlight/rank.h"
@@ -150,6 +151,25 @@ static tl_status check_lengths(const tl_lexical *engine, tl_lexical_workspace *w
     }
     return TL_OK;
 }
+/* Attaching the most boosts allowed and querying with them use workspace
+ * scratch only: the side pass reuses the words the main pass compiled. */
+static tl_status check_boosted(const tl_lexical *engine, tl_lexical_workspace *workspace,
+                               const char *const *queries, size_t count) {
+    static tl_lexical_boost boosts[LEXICAL_MAX_BOOSTED];
+    for (size_t i = 0; i < LEXICAL_MAX_BOOSTED; i++)
+        boosts[i] = (tl_lexical_boost){i * 13, (int)(1 + i % LEXICAL_BOOST_MAX)};
+    atomic_store(&allocations, 0);
+    atomic_store(&probing, true);
+    tl_status status = lexical_workspace_boost(workspace, boosts, LEXICAL_MAX_BOOSTED);
+    atomic_store(&probing, false);
+    if (status == TL_OK && atomic_load(&allocations) != 0) {
+        fprintf(stderr, "attaching boosts allocated %zu times\n", atomic_load(&allocations));
+        status = TL_STATE;
+    }
+    for (size_t i = 0; i < count && status == TL_OK; i++)
+        status = check_query(engine, workspace, queries[i]);
+    return status;
+}
 /* Exercise worker dispatch as well as the small-engine serial path. Repeated
  * tokens keep fixture construction cheap; every file matches the abbreviation. */
 static tl_status check_workers(void) {
@@ -172,6 +192,8 @@ static tl_status check_workers(void) {
                              "notes", "root",    "noets", "x z"};
     for (size_t i = 0; i < sizeof(queries) / sizeof(queries[0]) && status == TL_OK; i++)
         status = check_query(engine, workspace, queries[i]);
+    if (status == TL_OK)
+        status = check_boosted(engine, workspace, queries, sizeof(queries) / sizeof(queries[0]));
     lexical_workspace_destroy(workspace);
     lexical_destroy(engine);
     return status;

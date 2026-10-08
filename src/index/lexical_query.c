@@ -6,7 +6,9 @@
  *      a word it extends), unless enough strong hits prove the scan pointless;
  *   3. filter candidates by every other word, deferring parent-only matches
  *      of the first word until the results so far cannot rule them out;
- *   4. keep the best results in a bounded heap with deterministic ties.
+ *   4. keep the best results in a bounded heap with deterministic ties;
+ *   5. with personal boosts, score only the boosted entries (which steps 1-4
+ *      excluded) and push them with their boosts into the same heap.
  * Every shortcut is exact: results equal those of a full evaluation. No
  * allocation, filesystem I/O or SQL happens here. */
 #include "lexical_internal.h"
@@ -44,6 +46,9 @@ enum {
      * Small engines/batches avoid thread lifecycle and dispatch overhead. */
     LEXICAL_PARALLEL_ENGINE_MIN = 65536,
     LEXICAL_PARALLEL_BATCH_MIN = 4096,
+    /* Side batches are already resolved and need no directory pass, so
+     * splitting pays off at a smaller size. */
+    LEXICAL_SIDE_PARALLEL_MIN = 1024,
     LEXICAL_CANCEL_STRIDE = 1024,
     LEXICAL_PARALLEL_PARTICIPANTS = 4,
     /* Retain filename/context words through fallback without a table for every
@@ -64,9 +69,13 @@ _Static_assert(LEXICAL_TRIGRAM_BASE + LEXICAL_TRIGRAM_RANGE < LEXICAL_PARENT_PRE
 _Static_assert((long long)LEXICAL_MAX_WORDS *(PREFIX_BASENAME_SCORE + LEXICAL_PREFIX_BONUS_MAX +
                                               PREFIX_COMPLETE_BONUS + LEXICAL_BASENAME_BONUS +
                                               LEXICAL_LENGTH_BONUS_MAX + 256) +
-                       72LL * LEXICAL_QUERY_SYMBOLS <
+                       72LL * LEXICAL_QUERY_SYMBOLS + LEXICAL_BOOST_MAX <
                    LEXICAL_EXACT_BASENAME,
-               "word scores cannot reach exact-match priority");
+               "boosted word scores cannot reach exact-match priority");
+/* Personal boosts reorder entries inside an exact tier, never across tiers. */
+_Static_assert(LEXICAL_EXACT_BASENAME + LEXICAL_BOOST_MAX < LEXICAL_EXACT_PATH,
+               "boosted exact names stay below exact paths");
+_Static_assert(LEXICAL_EXACT_PATH <= INT_MAX - LEXICAL_BOOST_MAX, "boosted scores fit an int");
 struct word {
     tl_text text;
     uint64_t repeats; /* lexical_repeat_mask of the word */
@@ -93,7 +102,9 @@ struct word_cache {
     int *nearest;
     uint32_t *nearest_stamp, *prefix_stamp;
     uint32_t dir_epoch;
-    bool complete, valid, path;
+    /* sparse: holds evidence for the side entries only (prepare_sparse);
+     * dropped when the query ends, never reused. */
+    bool complete, valid, path, sparse;
     uint64_t used; /* workspace use clock at last selection, for LRU */
     size_t key_length;
     uint32_t key[LEXICAL_QUERY_SYMBOLS];
@@ -142,6 +153,17 @@ struct tl_lexical_workspace {
     const atomic_bool *cancel;
     /* Optional caller-owned bitmap of absent positions (lexical_workspace_exclude). */
     const uint64_t *excluded;
+    /* Personal boosts (lexical_workspace_boost): boosted positions with their
+     * boosts and a bitmap marking them; boosting is set while a non-empty
+     * query excludes them from the main pass. The side arrays hold the
+     * boosted entries still matching during the side pass. */
+    uint64_t *boosted_bits;
+    uint32_t *boosted, *side;
+    int *boosts, *side_boosts, *side_totals;
+    size_t boosted_count, boost_capacity;
+    /* symbol_cached: this boosted one-symbol query took its main results
+     * from the seal-time cache, so no evidence was gathered for its word. */
+    bool boosting, symbol_cached;
     struct entry_match *batch;
     struct heap_item heap[LEXICAL_MAX_RESULTS];
     size_t heap_count;
@@ -150,9 +172,18 @@ struct tl_lexical_workspace {
     uint8_t boundaries[LEXICAL_QUERY_SYMBOLS];
     size_t offsets[LEXICAL_QUERY_SYMBOLS];
 };
-/* Whether slot is excluded from ranking (a tombstone of a newer segment). */
+static bool bit_set(const uint64_t *bits, size_t slot) {
+    return ((bits[slot / 64] >> (slot % 64)) & 1U) != 0;
+}
+/* Whether slot is a tombstone of a newer segment. */
+static bool is_tombstone(const tl_lexical_workspace *workspace, size_t slot) {
+    return workspace->excluded != NULL && bit_set(workspace->excluded, slot);
+}
+/* Whether the main pass skips slot: a tombstone, or a boosted entry that the
+ * side pass ranks instead. */
 static bool is_excluded(const tl_lexical_workspace *workspace, size_t slot) {
-    return workspace->excluded != NULL && ((workspace->excluded[slot / 64] >> (slot % 64)) & 1U);
+    return is_tombstone(workspace, slot) ||
+           (workspace->boosting && bit_set(workspace->boosted_bits, slot));
 }
 static void *allocate_array(size_t count, size_t size) {
     size_t bytes = 0;
@@ -163,6 +194,9 @@ static void *allocate_array(size_t count, size_t size) {
 static tl_status allocate_workspace(const tl_lexical *engine, tl_lexical_workspace *workspace) {
     size_t entries = engine->count, nodes = dirtree_count(engine->tree);
     size_t chain = engine->max_path_symbols + 1;
+    /* Boosted positions are unique, so a small engine never needs more. */
+    size_t boosted = entries < LEXICAL_MAX_BOOSTED ? entries : LEXICAL_MAX_BOOSTED;
+    workspace->boost_capacity = boosted;
     struct {
         void **array;
         size_t count, size;
@@ -173,7 +207,13 @@ static tl_status allocate_workspace(const tl_lexical *engine, tl_lexical_workspa
                   {(void **)&workspace->batch, entries, sizeof(struct entry_match)},
                   {(void **)&workspace->chain_nodes, chain, sizeof(uint32_t)},
                   {(void **)&workspace->chain_symbols, chain, sizeof(uint32_t)},
-                  {(void **)&workspace->chain_boundaries, chain, sizeof(uint8_t)}};
+                  {(void **)&workspace->chain_boundaries, chain, sizeof(uint8_t)},
+                  {(void **)&workspace->boosted_bits, entries / 64 + 1, sizeof(uint64_t)},
+                  {(void **)&workspace->boosted, boosted, sizeof(uint32_t)},
+                  {(void **)&workspace->side, boosted, sizeof(uint32_t)},
+                  {(void **)&workspace->boosts, boosted, sizeof(int)},
+                  {(void **)&workspace->side_boosts, boosted, sizeof(int)},
+                  {(void **)&workspace->side_totals, boosted, sizeof(int)}};
     for (size_t i = 0; i < sizeof(arrays) / sizeof(arrays[0]); i++) {
         *arrays[i].array = allocate_array(arrays[i].count, arrays[i].size);
         if (*arrays[i].array == NULL)
@@ -225,10 +265,19 @@ void lexical_workspace_destroy(tl_lexical_workspace *workspace) {
     if (workspace == NULL)
         return;
     parallel_destroy(workspace->parallel);
-    void *arrays[] = {workspace->total,           workspace->candidates,
-                      workspace->deferred,        workspace->seen,
-                      workspace->chain_nodes,     workspace->chain_symbols,
-                      workspace->chain_boundaries};
+    void *arrays[] = {workspace->total,
+                      workspace->candidates,
+                      workspace->deferred,
+                      workspace->seen,
+                      workspace->chain_nodes,
+                      workspace->chain_symbols,
+                      workspace->chain_boundaries,
+                      workspace->boosted_bits,
+                      workspace->boosted,
+                      workspace->side,
+                      workspace->boosts,
+                      workspace->side_boosts,
+                      workspace->side_totals};
     for (size_t i = 0; i < sizeof(arrays) / sizeof(arrays[0]); i++)
         free(arrays[i]);
     for (size_t i = 0; i < LEXICAL_WORD_CACHES; i++) {
@@ -399,8 +448,16 @@ static tl_status own_score(tl_lexical_workspace *workspace, tl_text word, uint32
     tl_status status = active_matcher(workspace, 0, &matcher);
     if (status == TL_OK)
         status = fuzzy_matcher_score(matcher, name, dirtree_ascii_name(engine->tree, node), out);
-    if (status == TL_OK && workspace->prefix_stamp[node] == workspace->dir_epoch &&
-        *out < LEXICAL_PARENT_PREFIX_SCORE)
+    /* Sparse evidence has no directory prefix pass: score this node's keys
+     * now, once per node and word like the rest of own_score. */
+    bool prefixed = workspace->prefix_stamp[node] == workspace->dir_epoch;
+    if (status == TL_OK && workspace->evidence[workspace->active_word].sparse) {
+        int best = 0;
+        bool complete = false;
+        status = prefix_score(name, word, &best, &complete);
+        prefixed = best > 0;
+    }
+    if (status == TL_OK && prefixed && *out < LEXICAL_PARENT_PREFIX_SCORE)
         *out = LEXICAL_PARENT_PREFIX_SCORE;
     return status;
 }
@@ -708,9 +765,10 @@ static void push_match(tl_lexical_workspace *workspace, size_t slot, int score, 
 }
 /* ---- first word: skip, narrowed scan or full scan ----------------------- */
 /* With a single word, an entry without channel hits scores at most `bound`.
- * Every hit entry is pushed to the heap in one pass; if at least capacity of
- * them beat the bound, no unhit entry can enter the results and the scan is
- * skipped. Otherwise the scan follows, and seen stamps stop double pushes. */
+ * Every hit entry is pushed to the heap in one pass (boosted ones later, by
+ * the side pass); if at least capacity of them beat the bound, no unhit entry
+ * can enter the results and the scan is skipped. Otherwise the scan follows,
+ * and seen stamps stop double pushes. */
 static tl_status try_skip_scan(tl_lexical_workspace *workspace, const struct word *word,
                                size_t capacity, bool *skipped) {
     const tl_lexical *engine = workspace->engine;
@@ -726,7 +784,9 @@ static tl_status try_skip_scan(tl_lexical_workspace *workspace, const struct wor
     for (size_t i = 0; i < workspace->touched_count; i++) {
         size_t slot = workspace->touched[i];
         int score = workspace->batch[i].score;
-        if (score + length_bonus(engine, slot) > bound && !is_excluded(workspace, slot))
+        /* A strong boosted hit counts too: the side pass ranks it at least as
+         * high, so it still keeps every unhit entry out of the results. */
+        if (score + length_bonus(engine, slot) > bound && !is_tombstone(workspace, slot))
             strong++;
         push_match(workspace, slot, score, false, capacity);
     }
@@ -1138,15 +1198,216 @@ static tl_status run_query(tl_lexical_workspace *workspace, const char *raw, siz
         status = run_multiword(workspace, first, words, capacity);
     return status;
 }
+/* ---- personal boosts: the side pass ---------------------------------------- */
+/* Copy the boosted entries this segment still serves into the side arrays. */
+static size_t load_side(tl_lexical_workspace *workspace) {
+    size_t count = 0;
+    for (size_t i = 0; i < workspace->boosted_count; i++) {
+        uint32_t slot = workspace->boosted[i];
+        if (is_tombstone(workspace, slot))
+            continue;
+        workspace->side[count] = slot;
+        workspace->side_boosts[count] = workspace->boosts[i];
+        workspace->side_totals[count] = 0;
+        count++;
+    }
+    return count;
+}
+/* Push exact raw paths and exact basenames in their tiers, boosted within
+ * them, as the main pass would rank them; keep the rest for word filtering. */
+static size_t push_exact_boosted(tl_lexical_workspace *workspace, size_t count, size_t capacity) {
+    const tl_lexical *engine = workspace->engine;
+    size_t kept = 0;
+    for (size_t i = 0; i < count; i++) {
+        uint32_t slot = workspace->side[i];
+        uint32_t rank = engine->columns.path_rank[slot];
+        int tier = rank >= workspace->exact_lo && rank < workspace->exact_hi ? LEXICAL_EXACT_PATH
+                   : exact_name(engine, slot, workspace->trimmed) ? LEXICAL_EXACT_BASENAME
+                                                                  : 0;
+        if (tier != 0) {
+            heap_push(workspace, (struct heap_item){tier + workspace->side_boosts[i], slot},
+                      capacity);
+            continue;
+        }
+        workspace->side[kept] = slot;
+        workspace->side_boosts[kept] = workspace->side_boosts[i];
+        kept++;
+    }
+    return kept;
+}
+/* Whether a word cache already holds complete evidence for word. */
+static bool evidence_cached(const tl_lexical_workspace *workspace, const struct word *word) {
+    for (size_t i = 0; i < LEXICAL_WORD_CACHES; i++)
+        if (same_key(&workspace->evidence[i], word))
+            return true;
+    return false;
+}
+/* Field evidence of boosted entries only, recorded as prepare_fields would. */
+static tl_status sparse_fields(tl_lexical_workspace *workspace, tl_text word) {
+    const tl_lexical *engine = workspace->engine;
+    const struct lexical_field *fields = vec_const_data(engine->fields);
+    tl_fuzzy_matcher *matcher = NULL;
+    tl_status status = TL_OK;
+    if (vec_count(engine->fields) != 0)
+        status = active_matcher(workspace, 0, &matcher);
+    for (size_t i = 0; i < vec_count(engine->fields) && status == TL_OK; i++) {
+        if (!bit_set(workspace->boosted_bits, fields[i].slot))
+            continue;
+        tl_text text = tokenize_view(fields[i].text);
+        text.basename = 0; /* as the field channel indexes it */
+        int best = 0, score = 0;
+        bool complete = false;
+        if (text.length != 0)
+            status = prefix_score(text, word, &best, &complete);
+        if (status == TL_OK && best > 0)
+            record_hit(workspace, fields[i].slot,
+                       fields[i].weight + (complete ? PREFIX_COMPLETE_BONUS : 0));
+        if (status == TL_OK)
+            status = fuzzy_matcher_score(matcher, tokenize_view(fields[i].text), NULL, &score);
+        if (status == TL_OK && score > 0)
+            record_hit(workspace, fields[i].slot, score);
+    }
+    return status;
+}
+/* One-symbol queries come from the seal-time cache, so their word has no
+ * evidence, and gathering it over every key costs milliseconds. Gather it
+ * for the side entries only: their name and field prefix keys here, their
+ * parent directories' keys lazily in own_score (the typo and trigram
+ * channels need three symbols). The cache is marked sparse and dropped when
+ * the query ends, so no later query takes it as complete. */
+static tl_status prepare_sparse(tl_lexical_workspace *workspace, struct word *word, size_t count) {
+    const tl_lexical *engine = workspace->engine;
+    select_evidence(workspace, word);
+    struct word_cache *cache = &workspace->evidence[workspace->active_word];
+    cache->sparse = true;
+    workspace->subsequence_bound = subsequence_max(word);
+    word->maximum = workspace->subsequence_bound;
+    tl_status status = TL_OK;
+    for (size_t i = 0; i < count && status == TL_OK; i++) {
+        uint32_t slot = workspace->side[i];
+        tl_text name = lexical_name(engine, slot);
+        int best = 0;
+        bool complete = false;
+        if (name.length != 0)
+            status = prefix_score(name, word->text, &best, &complete);
+        if (status == TL_OK && best > 0)
+            record_hit(workspace, slot, best + engine->prefix_bonus);
+    }
+    if (status == TL_OK)
+        status = sparse_fields(workspace, word->text);
+    if (workspace->channel_max > word->maximum)
+        word->maximum = workspace->channel_max;
+    cache->touched_count = workspace->touched_count;
+    cache->channel_max = workspace->channel_max;
+    return status;
+}
+/* Score the side entries. Once the main pass has resolved every directory
+ * for this word (a full scan), workers only read shared state and a large
+ * side batch is split across them; otherwise the coordinator scores it,
+ * resolving directories lazily, as sparse evidence requires. */
+static tl_status score_side(tl_lexical_workspace *workspace, const struct word *word,
+                            size_t count) {
+    const struct word_cache *cache = &workspace->evidence[workspace->active_word];
+    struct batch_query query = {workspace, word, workspace->side, false};
+    if (cancelled(workspace))
+        return TL_CANCELLED;
+    bool parallel = workspace->parallel != NULL && !word->path && cache->complete &&
+                    !cache->sparse && count >= LEXICAL_SIDE_PARALLEL_MIN;
+    tl_status status =
+        prepare_matchers(workspace, word, parallel ? LEXICAL_PARALLEL_PARTICIPANTS : 1);
+    if (status != TL_OK)
+        return status;
+    return parallel ? parallel_run(workspace->parallel, count, score_range, &query)
+                    : score_range(&query, 0, 0, count);
+}
+/* With a full heap, drop side entries that could not enter it even if they
+ * matched word and every later word as well as possible: a word scores an
+ * entry at most its channel hit or the word's subsequence bound. Exact,
+ * because the heap's weakest score only rises. Needs word's evidence active. */
+static void prune_side(tl_lexical_workspace *workspace, size_t word, size_t words, size_t *count,
+                       size_t capacity) {
+    if (workspace->heap_count < capacity)
+        return;
+    const tl_lexical *engine = workspace->engine;
+    long long rest = 0;
+    for (size_t later = word + 1; later < words; later++)
+        rest += word_max(engine, &workspace->words[later]);
+    int bound = workspace->subsequence_bound;
+    size_t kept = 0;
+    for (size_t i = 0; i < *count; i++) {
+        uint32_t slot = workspace->side[i];
+        int hit = workspace->hit[slot];
+        long long potential = (long long)workspace->side_totals[i] + (hit > bound ? hit : bound) +
+                              rest + length_bonus(engine, slot) + workspace->side_boosts[i];
+        if (potential < workspace->heap[0].score)
+            continue;
+        workspace->side[kept] = slot;
+        workspace->side_boosts[kept] = workspace->side_boosts[i];
+        workspace->side_totals[kept] = workspace->side_totals[i];
+        kept++;
+    }
+    *count = kept;
+}
+/* Keep the side entries that also match word index, adding its score. A word
+ * scores an entry the same whichever pass or word order evaluates it. */
+static tl_status filter_side(tl_lexical_workspace *workspace, size_t index, size_t words,
+                             size_t *count, size_t capacity) {
+    struct word *word = &workspace->words[index];
+    bool sparse = workspace->symbol_cached && words == 1 && !evidence_cached(workspace, word);
+    tl_status status =
+        sparse ? prepare_sparse(workspace, word, *count) : prepare_word(workspace, word);
+    if (status == TL_OK)
+        prune_side(workspace, index, words, count, capacity);
+    if (status == TL_OK && *count != 0)
+        status = score_side(workspace, word, *count);
+    if (status != TL_OK)
+        return status;
+    size_t kept = 0;
+    for (size_t i = 0; i < *count; i++) {
+        int score = workspace->batch[i].score;
+        if (score == 0)
+            continue;
+        workspace->side[kept] = workspace->side[i];
+        workspace->side_boosts[kept] = workspace->side_boosts[i];
+        workspace->side_totals[kept] = workspace->side_totals[i] + score;
+        kept++;
+    }
+    *count = kept;
+    return TL_OK;
+}
+/* Rank the boosted entries the main pass excluded: score each exactly as a
+ * full evaluation would, add its boost, and push it into the same heap.
+ * Boosts only raise boosted entries, so an unboosted entry outside the main
+ * pass's top results cannot enter the personalized ones: the heap is exact.
+ * Costs O(boosted entries) per query, mostly bound checks once the heap holds
+ * strong results; pruning of the main pass is unchanged. */
+static tl_status push_boosted(tl_lexical_workspace *workspace, size_t words, size_t capacity) {
+    size_t count = push_exact_boosted(workspace, load_side(workspace), capacity);
+    tl_status status = TL_OK;
+    for (size_t i = 0; i < words && count != 0 && status == TL_OK; i++)
+        status = filter_side(workspace, i, words, &count, capacity);
+    for (size_t i = 0; i < count && status == TL_OK; i++) {
+        uint32_t slot = workspace->side[i];
+        int score = final_score(workspace, slot, workspace->side_totals[i]);
+        heap_push(workspace, (struct heap_item){score + workspace->side_boosts[i], slot}, capacity);
+    }
+    return status;
+}
 /* Leave total arrays all zero so the next query starts clean. Word evidence
  * stays: it is keyed by the word and valid for this immutable engine. A
- * failed or cancelled query may leave a cache half-filled, so drop those. */
+ * failed or cancelled query may leave a cache half-filled, and sparse
+ * evidence covers only the side entries, so drop those. */
 static void reset_workspace(tl_lexical_workspace *workspace, tl_status status) {
-    for (size_t i = 0; i < LEXICAL_WORD_CACHES && status != TL_OK; i++) {
-        reset_hits(&workspace->evidence[i]);
-        workspace->evidence[i].valid = false;
-        workspace->evidence[i].complete = false;
+    for (size_t i = 0; i < LEXICAL_WORD_CACHES; i++) {
+        struct word_cache *cache = &workspace->evidence[i];
+        if (status == TL_OK && !cache->sparse)
+            continue;
+        reset_hits(cache);
+        cache->valid = false;
+        cache->complete = false;
+        cache->sparse = false;
     }
+    workspace->symbol_cached = false;
     workspace->touched_count = 0;
     for (size_t i = 0; i < workspace->candidate_count; i++)
         workspace->total[workspace->candidates[i]] = 0;
@@ -1154,6 +1415,7 @@ static void reset_workspace(tl_lexical_workspace *workspace, tl_status status) {
         workspace->total[workspace->deferred[i]] = 0;
     workspace->candidate_count = workspace->deferred_count = 0;
     workspace->heap_count = 0;
+    workspace->boosting = false;
 }
 void lexical_workspace_cancel(tl_lexical_workspace *workspace, const atomic_bool *flag) {
     if (workspace != NULL)
@@ -1162,6 +1424,38 @@ void lexical_workspace_cancel(tl_lexical_workspace *workspace, const atomic_bool
 void lexical_workspace_exclude(tl_lexical_workspace *workspace, const uint64_t *bitmap) {
     if (workspace != NULL)
         workspace->excluded = bitmap;
+}
+static void clear_boosts(tl_lexical_workspace *workspace) {
+    for (size_t i = 0; i < workspace->boosted_count; i++) {
+        uint32_t slot = workspace->boosted[i];
+        workspace->boosted_bits[slot / 64] &= ~(UINT64_C(1) << (slot % 64));
+    }
+    workspace->boosted_count = 0;
+}
+tl_status lexical_workspace_boost(tl_lexical_workspace *workspace, const tl_lexical_boost *boosts,
+                                  size_t count) {
+    if (workspace == NULL || (boosts == NULL && count != 0))
+        return TL_INVALID;
+    clear_boosts(workspace);
+    if (count > LEXICAL_MAX_BOOSTED)
+        return TL_LIMIT;
+    for (size_t i = 0; i < count; i++) {
+        size_t slot = boosts[i].position;
+        int boost = boosts[i].boost;
+        if (slot >= workspace->engine->count || boost < 0 || boost > LEXICAL_BOOST_MAX ||
+            (boost != 0 && bit_set(workspace->boosted_bits, slot))) {
+            clear_boosts(workspace);
+            return TL_INVALID;
+        }
+        if (boost == 0)
+            continue;
+        /* Unique positions below count never exceed boost_capacity. */
+        workspace->boosted_bits[slot / 64] |= UINT64_C(1) << (slot % 64);
+        workspace->boosted[workspace->boosted_count] = (uint32_t)slot;
+        workspace->boosts[workspace->boosted_count] = boost;
+        workspace->boosted_count++;
+    }
+    return TL_OK;
 }
 /* Answer a one-symbol query from the seal-time cache. Results are totally
  * ordered, so the first capacity non-excluded cached results are exact unless
@@ -1183,6 +1477,40 @@ static bool cached_answer(const tl_lexical *engine, tl_lexical_workspace *worksp
     *out_count = count;
     return true;
 }
+/* With boosts, a one-symbol query takes its unboosted top results from the
+ * seal-time cache into the heap, skipping boosted and excluded entries; false
+ * (heap emptied) when exclusions emptied a truncated cache below capacity. */
+static bool cached_heap(tl_lexical_workspace *workspace, size_t index, const char *raw,
+                        size_t capacity) {
+    const tl_lexical *engine = workspace->engine;
+    const tl_result *cached = engine->symbol_results + index * LEXICAL_MAX_RESULTS;
+    size_t available = engine->symbol_counts[index];
+    begin_query(workspace, raw, 1);
+    for (size_t i = 0; i < available && workspace->heap_count < capacity; i++) {
+        size_t slot = 0;
+        if (lexical_slot(engine, cached[i].id, &slot) == TL_OK && !is_excluded(workspace, slot))
+            heap_push(workspace, (struct heap_item){cached[i].score, (uint32_t)slot}, capacity);
+    }
+    if (workspace->heap_count < capacity && available == LEXICAL_MAX_RESULTS) {
+        workspace->heap_count = 0;
+        return false;
+    }
+    return true;
+}
+/* Answer a one-symbol query from the seal-time cache when possible: straight
+ * into results without boosts, or into the heap for the side pass. */
+static bool symbol_answer(tl_lexical_workspace *workspace, const char *query, size_t words,
+                          tl_result *results, size_t capacity, size_t *out_count) {
+    const tl_lexical *engine = workspace->engine;
+    size_t index = 0;
+    if (!engine->symbols_ready || words != 1 || workspace->words[0].text.length != 1 ||
+        !lexical_symbol_index(workspace->words[0].text.symbols[0], &index))
+        return false;
+    if (!workspace->boosting)
+        return cached_answer(engine, workspace, index, results, capacity, out_count);
+    workspace->symbol_cached = cached_heap(workspace, index, query, capacity);
+    return workspace->symbol_cached;
+}
 tl_status lexical_query(const tl_lexical *engine, tl_lexical_workspace *workspace,
                         const char *query, tl_result *results, size_t capacity, size_t *out_count) {
     if (out_count == NULL)
@@ -1201,14 +1529,16 @@ tl_status lexical_query(const tl_lexical *engine, tl_lexical_workspace *workspac
     tl_text text = {0};
     tl_status status = tokenize_into(query, length, workspace->symbols, workspace->boundaries,
                                      workspace->offsets, LEXICAL_QUERY_SYMBOLS, &text);
-    size_t words = status == TL_OK ? split_words(workspace, text) : 0, cached = 0;
-    if (status == TL_OK && engine->symbols_ready && words == 1 &&
-        workspace->words[0].text.length == 1 &&
-        lexical_symbol_index(workspace->words[0].text.symbols[0], &cached) &&
-        cached_answer(engine, workspace, cached, results, capacity, out_count))
+    size_t words = status == TL_OK ? split_words(workspace, text) : 0;
+    workspace->boosting = status == TL_OK && words != 0 && workspace->boosted_count != 0;
+    bool answered =
+        status == TL_OK && symbol_answer(workspace, query, words, results, capacity, out_count);
+    if (answered && !workspace->boosting)
         return TL_OK;
-    if (status == TL_OK)
+    if (status == TL_OK && !answered)
         status = run_query(workspace, query, words, capacity);
+    if (status == TL_OK && workspace->boosting)
+        status = push_boosted(workspace, words, capacity);
     if (status == TL_OK) {
         heap_sort(workspace);
         const struct lexical_columns *columns = &engine->columns;

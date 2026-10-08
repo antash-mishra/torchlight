@@ -34,14 +34,15 @@ LDLIBS += $(FRIZBEE_LIB) -lgcc_s -lutil -lrt -ldl
 SOURCES = src/core/common.c src/core/vec.c src/core/hashmap.c src/core/config.c src/core/json.c src/core/path.c src/core/sort.c src/core/mask.c src/core/parallel.c \
           src/index/tokenize.c src/index/prefix.c src/index/subseq.c src/index/fuzzy.c \
           src/index/trigram.c src/index/typo.c src/index/dirtree.c src/index/lexical.c \
-          src/index/embed.c src/index/potion.c src/index/vector.c src/index/rank.c \
+          src/index/embed.c src/index/potion.c src/index/vector.c src/index/rank.c src/index/usage.c \
           src/index/desktop.c src/index/lexical_query.c src/index/catalog.c src/fs/crawl.c src/fs/watch.c src/storage/store.c \
-          src/ipc/ipc.c src/ipc/async.c src/ipc/client.c src/service/delta.c src/service/writer.c src/service/semantic.c src/service/daemon.c
+          src/ipc/ipc.c src/ipc/async.c src/ipc/client.c src/service/delta.c src/service/personal.c src/service/writer.c src/service/semantic.c src/service/daemon.c
 BIN_SOURCES = src/bin/torchlight.c src/bin/torchlightd.c
 OBJECTS = $(SOURCES:%.c=build/%.o)
 HEADERS = $(wildcard include/torchlight/*.h) $(wildcard src/*/*.h)
 TEST_SOURCES = $(wildcard tests/unit/test_*.c)
-BENCH_SOURCES = tests/bench/bench_lexical.c tests/bench/corpus.c tests/bench/queries.c
+BENCH_SOURCES = tests/bench/bench_lexical.c tests/bench/corpus.c tests/bench/queries.c \
+                tests/bench/stats.c tests/bench/personal.c
 VECTOR_BENCH_SOURCE = tests/bench/bench_vector.c
 VECTOR_EVAL_SOURCE = tests/bench/eval_vector.c
 FIXTURE_SOURCE = tests/bench/fixture/export.c

@@ -5,6 +5,7 @@
 #include "torchlight/catalog.h"
 #include "torchlight/config.h"
 #include "torchlight/ipc.h"
+#include "torchlight/usage.h"
 #include "torchlight/watch.h"
 typedef struct tl_writer tl_writer;
 #define WRITER_HISTORY_CAPACITY 256
@@ -63,11 +64,20 @@ void writer_destroy(tl_writer *writer);
  * no allocation/I/O. TL_INVALID for NULL; TL_OK otherwise. */
 tl_status writer_reconcile(tl_writer *writer);
 /** Enqueue optional history by copied request/search id; FIFO preserves search
- * before open. QUERY/OPEN/HISTORY_CLEAR only. Thread-safe, no allocation or SQL.
- * The persistence thread writes events independently of scans and builds.
+ * before open. QUERY/OPEN/HISTORY_CLEAR only. An OPEN whose search_id and
+ * query are both set also saves that search row, in the same transaction.
+ * Thread-safe, no allocation or SQL. The persistence thread writes queued
+ * events in one transaction per drain, independently of scans and builds.
  * TL_LIMIT on saturation (increments dropped), TL_STATE when history disabled,
  * TL_INVALID for inputs; accepted events may fail asynchronously with counters. */
 tl_status writer_history(tl_writer *writer, const tl_ipc_request *request, const char *search_id);
+/** Take the usage summary the persistence thread built from retained history
+ * at startup (before writing any newly queued event). Returns false while that
+ * load is still running; then true, once with *out owning the summary (the
+ * caller destroys it) and afterwards with *out NULL. *out is also NULL with
+ * history disabled or after a failed load (counted in history_failures).
+ * Thread-safe; no allocation or I/O. */
+bool writer_take_usage(tl_writer *writer, tl_usage **out);
 /** Copy coherent worker status under a short mutex. TL_INVALID for NULL;
  * TL_OK otherwise. No allocation/I/O; mutex never held during SQL/crawl/build. */
 tl_status writer_stats(tl_writer *writer, tl_writer_stats *out);

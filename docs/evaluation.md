@@ -456,3 +456,49 @@ phase at 500k stays near M4 (p95 95 ms against 100 ms), because the exhaustive
 int8 scan dominates it. Latency, update and memory
 tables are in the [M6 plan](m6-plan.md#measurements-recorded-at-the-end-of-m6);
 raw runs are under `tests/bench/results/2026-10-07-m6-*`.
+
+## M5 personal ranking (2026-10-08)
+
+`make bench` adds the personal measurements of `tests/bench/personal.c`
+([ADR 0033](adr/0033-m5-personal-ranking.md)). The recorded run is
+[2026-10-08-m5-personal.txt](../tests/bench/results/2026-10-08-m5-personal.txt).
+It used the i7-8700K reference machine under background load (load average
+about 3), so expect about ±0.2 ms of run-to-run noise at 500k.
+
+**Typing latency with boosts.** Every held-out query is typed byte by byte,
+with random entries boosted:
+
+| Paths | No boosts p95 | 1000 boosted | 2048 boosted (summary cap) | 4000 boosted |
+|---:|---:|---:|---:|---:|
+| 50,000 | 0.540 ms | 0.627 ms | 0.693 ms | 0.849 ms |
+| 500,000 | 4.629 ms | 4.809 ms | 4.987 ms | 5.134 ms |
+
+The daemon never boosts more than 2048 files (`USAGE_MAX_ITEMS`). At 4000
+boosted entries, the engine is 0.13 ms over the 5 ms target in this run.
+Computing boosts from a full summary (2048 items, 4096 pairs) costs p95
+0.005 ms per keystroke.
+
+**Synthetic usage scenario.** A person has 200 habitual files opened 1500
+times over a month, with Zipf-distributed frequency, each open from a
+typed prefix of its name. 300 held-out launches type a habitual file's
+name; 300 more type a file never opened. Two numbers per group: keystrokes
+until the file ranks first (name length + 1 when it never does), and MRR@10
+after three keystrokes.
+
+| Paths | Group | Keystrokes plain → personal | MRR@10 after 3 plain → personal |
+|---:|---|---:|---:|
+| 50,000 | habitual | 15.32 → 4.26 | 0.022 → 0.791 |
+| 50,000 | never opened | 10.52 → 10.54 | 0.064 → 0.077 |
+| 500,000 | habitual | 9.94 → 3.47 | 0.018 → 0.773 |
+| 500,000 | never opened | 11.67 → 11.54 | 0.074 → 0.106 |
+
+Files never opened are essentially unaffected. Their MRR rises slightly
+because a habitual file can share their name, and relevance counts any file
+with the target's name.
+
+The held-out file ranking metrics and all nine fixtures are unchanged.
+Correctness of the boosted results is tested, not sampled:
+`tests/unit/test_lexical_boost.c` compares them with brute-force boosted
+evaluation. The daemon and desktop integration tests check lifting among
+equal matches, exact names staying first, restart persistence, clearing, and
+that only searches leading to an open are saved.

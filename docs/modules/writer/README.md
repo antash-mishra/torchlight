@@ -1,6 +1,6 @@
 # writer
 
-> **Status:** Implemented (M6 steps 1 and 3): indexing and persistence threads, private
+> **Status:** Implemented (M6 steps 1 and 3; M5 batched history and usage load): indexing and persistence threads, private
 > scan batches, scoped rescans of event directories, delta publication with compaction;
 > M2/M3 reconciliation contracts retained
 > **Source:** `src/service/writer.c` · **Header:** `include/torchlight/writer.h`
@@ -122,3 +122,21 @@ reload after failed publication and compaction use full rebuilds.
 touched files publish in about 110 ms (12 ms of work after the 100 ms coalescing
 window) with RSS growing about 1%, against 4 s and a doubled engine before. See
 [ADR 0030](../../adr/0030-m6-incremental-indexing.md).
+
+## Batched history and the startup usage load (M5)
+
+The persistence thread still does all SQLite work for history; the search
+thread only queues events ([ADR 0033](../../adr/0033-m5-personal-ranking.md)).
+
+- **Drains.** Each drain writes all popped events in one transaction. A clear
+  commits what came before it and runs on its own. Written, failed and
+  dropped counters update at commit.
+- **Fewer events.** The daemon no longer queues a search per query. An open
+  carries its search's query instead, and the store saves both rows together.
+- **Startup load.** Before draining any event, the persistence thread
+  rebuilds a [usage](../usage/README.md) summary from the retained opens.
+  `writer_take_usage` offers it once. Because the load reads history before
+  any new event is written, the opens the search thread recorded meanwhile
+  are not in it, and the [personal](../personal/README.md) state merges them
+  without double counting. A failed load counts as a history failure; the
+  live summary simply starts empty.

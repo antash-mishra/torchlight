@@ -21,15 +21,18 @@ int main(void) {
     test_semantic();
     test_vector();
     test_rank();
+    test_usage();
     test_trigram();
     test_typo();
     test_dirtree();
     test_lexical();
+    test_lexical_boost();
     test_catalog();
     test_store();
     test_identity();
     test_crawl();
     test_watch();
+    test_personal();
     test_writer();
     test_writer_fallback();
     puts("All module tests passed.");

@@ -37,7 +37,12 @@ Remaining M4 acceptance work started after M6: a prefix-shortlist vector search
 recall@10 against exhaustive int8 and cuts 500k final p95 from 95 to 24 ms;
 semantic search is then parked as an opt-in feature: its remaining M4
 acceptance gates are deferred and M5 follows M6
-([ADR 0032](docs/adr/0032-park-semantic-search.md)).
+([ADR 0032](docs/adr/0032-park-semantic-search.md)). M5 is implemented: usage
+lives in the search thread's memory, saving stays on the persistence thread,
+and an exact side query adds the boosts. Habitual files reach first place after
+3.5 keystrokes instead of 9.9 at 500k, and typing p95 stays near 5 ms with the
+summary full ([ADR 0033](docs/adr/0033-m5-personal-ranking.md),
+[measurements](docs/evaluation.md#m5-personal-ranking-2026-10-08)).
 [M4 implementation](docs/m4-implementation.md),
 [model evaluation](docs/m4-model-evaluation.md) and
 [ADR 0023](docs/adr/0023-m4-native-potion-and-two-phase-search.md) record the
@@ -159,9 +164,9 @@ torchlightd (C)
 ```
 
 SQLite is the durable catalog. Queries use resident paths, lexical indexes and
-vectors; resident usage summaries remain planned for M5. Load saved entries and
-serve them before background reconciliation finishes; startup does not require
-a synchronous full-home crawl.
+vectors; in M5 the search thread owns resident usage summaries (ADR 0033).
+Load saved entries and serve them before background reconciliation finishes;
+startup does not require a synchronous full-home crawl.
 
 M6 separates the daemon IPC loop from a dedicated search worker, indexing work,
 and history/persistence work. The GTK main thread retains asynchronous IPC and
@@ -217,7 +222,7 @@ completeness. This extension is implemented in ADR 0020. Default query behavior 
 Split multiword queries into tokens: each must match a basename or parent-path
 token, possibly with different lexical channels. Combine token scores with
 basename priority; preserve a separate exact raw-path lookup. Empty queries return
-a bounded recent/shortcut list, or indexed root entries when history is disabled.
+indexed root entries; a recent-items list is not planned (ADRs 0016 and 0033).
 The GTK popup shows `Type to search` without results for empty or whitespace-only
 input; it sends queries only after typing. Specify deterministic tie-breaking so
 results do not reshuffle between phases.
@@ -342,7 +347,8 @@ The float reference need not stay loaded in production.
   If publication cannot complete after commit, reload/rebuild from SQLite before
   accepting later updates; keep serving the previous snapshot with degraded status.
 - Build changes privately. Each query pins an immutable `catalog_gen` of paths,
-  postings, vector mappings, and usage summaries. Publish via a short pointer
+  postings and vector mappings. Usage summaries are not part of it: the search
+  thread owns them, so an open never republishes the catalog (ADR 0033). Publish via a short pointer
   swap; reclaim old blocks after readers release them. Batch updates and share
   unchanged blocks to control peak memory.
   Protect snapshot acquisition against concurrent reclamation with a short
@@ -438,7 +444,8 @@ initial schema covers one active `emb_gen`; M4 adds staging storage for model
 replacement.
 Assign search ids in memory, using a unique session id generated at startup.
 History writes preserve search-before-open ordering; opens without retained
-search history use a null `search_id`. Path updates invalidate embeddings even
+search history use a null `search_id`. From M5, a search row is saved only
+together with an open that references it (ADR 0033). Path updates invalidate embeddings even
 when mtime is unchanged. Catalog writes continue when history is disabled.
 
 ## Filesystem, IPC, and UI
@@ -498,7 +505,7 @@ M3 Part 2 search quality is implemented; see
 queries; large-catalog latency and broader relevance acceptance remain open.
 M6 worker separation, Frizbee SIMD search and incremental indexing are
 implemented; semantic search is parked (ADR 0032) and M5 personal
-recommendations follow M6.
+recommendations are implemented (ADR 0033).
 Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
 tracked explicitly in the verification report.
 
@@ -584,16 +591,90 @@ tracked explicitly in the verification report.
    its end and remain open (see the [M6 plan](docs/m6-plan.md)). ADR 0031 cut
    500k final p95 to 24 ms; the gates are then deferred and semantic search is
    parked as opt-in ([ADR 0032](docs/adr/0032-park-semantic-search.md)).
-6. **M5: Personal recommendations and ranking.** After M6 (M4 acceptance is
-   deferred, ADR 0032), use optional resident frecency and query-to-open summaries
-   for both files and applications.
-   Apply bounded boosts for frequently/recently opened and previously selected
-   results. Respect disabled history, clearing and retention in persisted and
-   resident state. Compare lexical ranking (and hybrid ranking where a model is
-   enabled) with/without personalization on
-   held-out usage scenarios; improve personally useful results without burying
-   exact matches or strong name evidence. Existing history recording is
-   implemented; recommendation scoring is future work.
+6. **M5: Personal recommendations and ranking.** Implemented (2026-10-08).
+   After M6 (M4 acceptance is deferred, ADR 0032), rank the files and
+   applications the user opens higher, without slowing typing. Recording,
+   clearing and retention of history already existed; M5 adds ranking.
+   Designed in [ADR 0033](docs/adr/0033-m5-personal-ranking.md):
+
+   - **Signals.** Frecency per file id and per application desktop id: one
+     exponentially decayed open count per item (half-life a named constant),
+     updated in O(1) per open and never recomputed from `opens` during a query.
+     Query-to-open history: (normalized query, opened target) pairs; a typed
+     query boosts the targets of stored queries that start with it (`ch` after
+     opening Chrome from `chr`), found by prefix range in a sorted array. Both
+     are capped (initially about 2048 items and 4096 pairs) and evict the
+     weakest entry when full.
+   - **Threads: nothing slow on the search path.** The search thread already
+     runs queries, opens and history clears in order, so it alone owns the
+     resident usage summary as plain memory, without locks or snapshot
+     publication. An open updates it in memory and is queued for saving; the
+     search thread never runs SQL or waits for a write. The persistence thread
+     does all saving, retention pruning and the startup load: it reads retained
+     history before draining new events, builds the summary and hands it over
+     with one pointer exchange. Queries run unboosted until then, and the
+     search thread folds opens accepted meanwhile into the loaded summary.
+     Usage summaries are not part of a `catalog_gen`, so an open never
+     republishes the catalog.
+   - **Fewer writes.** Today each keystroke's query is a `searches` row in its
+     own transaction. The persistence thread drains queued history in one
+     transaction with cached prepared statements. The search thread keeps each
+     client's last few (search id, query) pairs in memory, and a search row is
+     saved only with an open that references it, in the same transaction. No
+     schema change: the summary is rebuilt from retained history at startup.
+   - **Ranking: exact top results, unchanged pruning.** `lexical_query` keeps
+     only the requested number of results, so re-ranking its output cannot
+     lift a used entry from 14th place, and fetching hundreds of results or
+     adding boosts inside entry scores would weaken every query's exact skip
+     bounds. Instead, the normal query excludes used entries (a second
+     exclusion bitmap beside the delta tombstones), a side query scores only
+     the used entries with the same channels and adds their boosts, and the
+     two lists merge. This is exact, because boosting other entries can only
+     push an unused entry down. Used ids map to base/delta positions once per
+     `catalog_gen` and to desktop entries once per desktop refresh, not per
+     keystroke.
+   - **Bounded boosts.** Named constants with static assertions, on the one
+     score scale shared by base, delta and desktop engines. Frecency stays below
+     the smallest channel-tier gap, so it reorders matches of similar strength
+     (Chrome and `chapter.pdf` for `ch`); query-to-open may cross about one
+     tier; both stay below the exact-name tier. Exact matches are also ordered
+     by boost, so the opened `README.md` leads duplicate exact names. With a
+     model, RRF inherits the boosts through lexical ranks.
+   - **Controls.** Disabled history creates no summary and leaves ranking
+     identical to today's. Clearing empties the summary on the search thread
+     before the clear is answered and discards a pending startup load. Entries
+     past retention give no boost. The empty popup is unchanged (ADR 0016).
+
+   Acceptance: `make test` and `make lint` pass; the query path stays
+   allocation-free and never waits for SQL or the history queue. 500k typing
+   p95 stays below 5 ms with 0, 1000 and 4000 used entries (`make bench`). A
+   synthetic usage scenario (Zipf-distributed opens, held-out sessions)
+   reports MRR and keystrokes until the target ranks first, personalized
+   against plain lexical ranking (and hybrid where a model is enabled).
+   Regressions: exact matches are never displaced, the next query after
+   clearing has no boost, disabled history gives identical rankings, and the
+   side query returns the same top k as a full boosted evaluation.
+
+   Measured at 500k (2026-10-08, loaded reference machine), typing p95 was:
+
+   | Boosted entries | Typing p95 |
+   |---|---|
+   | none | 4.63 ms |
+   | 1000 | 4.81 ms |
+   | 2048 (the summary's cap) | 4.99 ms |
+   | 4000 (beyond what the daemon produces) | 5.13 ms |
+
+   In the synthetic usage scenario, habitual files reach first place after
+   3.47 keystrokes instead of 9.94; files never opened are unchanged (11.67 to
+   11.54). Measuring changed four details, all exact:
+   - the side pass prunes entries that cannot reach the results;
+   - the scan skip counts strong boosted hits;
+   - one-symbol queries build sparse evidence for boosted entries through a
+     new `prefix_score`, instead of expanding every key;
+   - large resolved side batches use the scoring workers.
+
+   All tests, lint and the allocation test pass. See
+   [the measurements](docs/evaluation.md#m5-personal-ranking-2026-10-08).
 7. **M6: Search responsiveness and indexing performance.** Implemented
    (2026-10-07) in this order, as three steps within one milestone:
 
@@ -638,8 +719,8 @@ The labeled query set, metrics, regression scenarios and benchmark reporting
 rules are in [`docs/evaluation.md`](docs/evaluation.md).
 The [search quality review](docs/search-quality.md) records observed relevance
 gaps and the implemented application-name ranking fix. M3 Part 2 and M4 have
-recorded quality/performance results; M4 acceptance and M5 personalization retain
-their evaluation work. M6 validates the selected Frizbee integration and worker/
+recorded quality/performance results; M4 acceptance retains its evaluation work.
+M5 records boosted typing latency and a synthetic usage scenario. M6 validates the selected Frizbee integration and worker/
 indexing changes against existing quality contracts and measured latency/memory.
 It does not reopen matcher selection. Feature completion does not establish best
 search quality.

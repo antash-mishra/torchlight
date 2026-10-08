@@ -289,8 +289,75 @@ static void derived_snapshots(void) {
     CHECK(catalog_snapshot_derive(NULL, &unused, NULL, 0, 3, 1, &derived) == TL_INVALID);
     CHECK(catalog_destroy(catalog) == TL_OK);
 }
+/* Boosts reach live ids in either segment, skip retired ids, apply to one
+ * query only, and keep their mapping per key. */
+static void boosted_snapshots(void) {
+    tl_lexical *engine = NULL;
+    CHECK(lexical_create(&engine) == TL_OK);
+    const char *paths[] = {"/r", "/r/alpha.md", "/r/beta.md", "/r/gamma.md", "/r/alpha.mdz"};
+    for (size_t i = 0; i < 5; i++)
+        CHECK(lexical_add(engine, i + 1, paths[i], i == 0) == TL_OK);
+    CHECK(lexical_finish(engine) == TL_OK);
+    tl_catalog *catalog = NULL;
+    tl_catalog_snapshot *base = NULL, *derived = NULL, *pin = NULL;
+    CHECK(catalog_create(3, &catalog) == TL_OK);
+    CHECK(catalog_snapshot_create(&engine, 1, 1, &base) == TL_OK);
+    CHECK(catalog_publish(catalog, &base) == TL_OK && catalog_pin(catalog, &pin) == TL_OK);
+    tl_lexical *delta = NULL;
+    CHECK(lexical_create(&delta) == TL_OK &&
+          lexical_set_reference(delta, catalog_snapshot_base(pin)) == TL_OK);
+    CHECK(lexical_add(delta, 3, "/r/alpha2.md", false) == TL_OK);
+    CHECK(lexical_add(delta, 6, "/r/alpha.mdx", false) == TL_OK);
+    CHECK(lexical_finish(delta) == TL_OK);
+    const uint64_t retired[] = {4, 3};
+    CHECK(catalog_snapshot_derive(pin, &delta, retired, 2, 2, 1, &derived) == TL_OK);
+    CHECK(catalog_publish(catalog, &derived) == TL_OK);
+    catalog_unpin(pin);
+    tl_catalog_reader *reader = NULL;
+    CHECK(catalog_acquire(catalog, &reader) == TL_OK);
+    tl_result plain[8], results[8];
+    size_t plain_count = 0, count = 0;
+    CHECK(catalog_query(reader, "alpha", plain, 8, &plain_count) == TL_OK && plain_count == 4);
+    CHECK(plain[0].id == 2 && plain[3].id == 3);
+    /* id 3 (delta) and id 5 (base) lifted; 4 (retired) and 99 (absent) ignored. */
+    const uint64_t ids[] = {3, 4, 5, 99};
+    const int values[] = {40, LEXICAL_BOOST_MAX, 20, LEXICAL_BOOST_MAX};
+    tl_catalog_boosts boosts = {ids, values, 4, 7};
+    CHECK(catalog_query_boosted(reader, "alpha", &boosts, results, 8, &count) == TL_OK);
+    CHECK(count == 4 && results[0].id == 3 && results[1].id == 5 && results[2].id == 2);
+    CHECK(results[0].score == plain[3].score + 40 && results[1].score == plain[2].score + 20);
+    CHECK(catalog_query_boosted(reader, "gamma", &boosts, results, 8, &count) == TL_OK &&
+          count == 0);
+    /* Same key reuses the mapping; boosts never outlive their query. */
+    CHECK(catalog_query_boosted(reader, "alpha", &boosts, results, 1, &count) == TL_OK &&
+          count == 1 && results[0].id == 3);
+    CHECK(catalog_query(reader, "alpha", results, 8, &count) == TL_OK && count == 4);
+    for (size_t i = 0; i < count; i++)
+        CHECK(results[i].id == plain[i].id && results[i].score == plain[i].score);
+    /* A new key remaps the ids. */
+    const uint64_t other_ids[] = {6};
+    const int other_values[] = {2}; /* alpha.md leads alpha.mdx by one length point */
+    tl_catalog_boosts other = {other_ids, other_values, 1, 8};
+    CHECK(catalog_query_boosted(reader, "alpha", &other, results, 8, &count) == TL_OK);
+    CHECK(results[0].id == 6 && results[1].id == 2);
+    const int invalid_values[] = {LEXICAL_BOOST_MAX + 1};
+    tl_catalog_boosts invalid = {other_ids, invalid_values, 1, 9};
+    CHECK(catalog_query_boosted(reader, "alpha", &invalid, results, 8, &count) == TL_INVALID &&
+          count == 0);
+    tl_catalog_boosts missing = {NULL, NULL, 1, 10};
+    CHECK(catalog_query_boosted(reader, "alpha", &missing, results, 8, &count) == TL_INVALID);
+    tl_catalog_boosts large = {ids, values, LEXICAL_MAX_BOOSTED + 1, 11};
+    CHECK(catalog_query_boosted(reader, "alpha", &large, results, 8, &count) == TL_LIMIT);
+    catalog_release(reader);
+    /* A new lease of the shared base workspace starts without boosts. */
+    CHECK(catalog_acquire(catalog, &reader) == TL_OK);
+    CHECK(catalog_query(reader, "alpha", results, 8, &count) == TL_OK && results[0].id == 2);
+    catalog_release(reader);
+    CHECK(catalog_destroy(catalog) == TL_OK);
+}
 void test_catalog(void) {
     derived_snapshots();
+    boosted_snapshots();
     tl_catalog *registry = NULL;
     CHECK(catalog_create(2, &registry) == TL_OK);
     tl_catalog_snapshot *view = snapshot(1, "/r/old.md", 1), *pin = NULL;

@@ -9,7 +9,10 @@
 Fuses already-ranked lexical and semantic lists while explicitly protecting
 exact paths/names. This is the first M4 comparison baseline; model evaluation
 and held-out comparison with score combination have not selected a default.
-M5 personalization remains future work.
+M5 personalization does not run here: usage boosts enter the lexical
+result list through the side pass of [lexical](../lexical/README.md)
+([ADR 0033](../../adr/0033-m5-personal-ranking.md)), and RRF inherits them
+through lexical ranks.
 
 ## Public API and ownership
 

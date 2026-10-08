@@ -1,4 +1,5 @@
-"""M2 acceptance: live byte paths, moves, history, bounded clients and recovery."""
+"""M2 acceptance: live byte paths, moves, history, bounded clients and recovery;
+M5 personal ranking through opens, restarts and clearing."""
 import base64
 from concurrent.futures import ThreadPoolExecutor
 import itertools
@@ -488,6 +489,51 @@ def large_ids_and_retention(service):
         service.stop()
 
 
+def personal_ranking(service):
+    """M5: an open lifts its file among equal matches at once, never above an
+    exact name; only the search that led to it is saved, the summary comes
+    back after a restart, and clearing history removes the boost at once."""
+    for i in range(1, 10):
+        (service.root / f"chapter{i}.txt").write_bytes(b"")
+    target = service.root / "chapter7.txt"
+    first_chapter = os.fsencode(service.root / "chapter1.txt")
+
+    def first(query):
+        response = service.call("query", query=query, limit=10)
+        assert response["status"] == "ok", response
+        return exact_path(response["results"][0])
+
+    service.start()
+    try:
+        target_id = service.indexed(target)
+        service.indexed(service.root / "chapter9.txt")
+        assert first("chap") == first_chapter
+        query = service.call("query", query="chap")
+        opened = dict(file_id=target_id, search_id=query["search_id"], event_id="m5-open")
+        assert service.call("open", **opened)["status"] == "ok"
+        assert service.call("open", **opened)["status"] == "ok"  # a retry counts once
+        assert first("chap") == os.fsencode(target)
+        assert first("chapter1.txt") == first_chapter
+        assert service.call("status")["history"]["personal_items"] == 1
+        def saved():
+            with sqlite3.connect(service.database) as connection:
+                searches = connection.execute("SELECT id,query FROM searches").fetchall()
+                opens = connection.execute("SELECT search_id FROM opens WHERE event_id='m5-open'").fetchall()
+                return searches == [(query["search_id"], "chap")] and opens == [(query["search_id"],)]
+        wait_for(saved)
+    finally:
+        service.stop()
+    service.start()
+    try:
+        wait_for(lambda: first("chap") == os.fsencode(target))
+        assert service.call("status")["history"]["personal_items"] == 1
+        assert service.call("history_clear")["status"] == "ok"
+        assert first("chap") == first_chapter
+        assert service.call("status")["history"]["personal_items"] == 0
+    finally:
+        service.stop()
+
+
 def slow_output_and_response_limit(service):
     directory = service.root
     for i in range(3):
@@ -536,6 +582,9 @@ with tempfile.TemporaryDirectory(prefix="torchlight-daemon-") as temporary:
     precision = Path(temporary) / "precision"
     precision.mkdir(mode=0o700)
     large_ids_and_retention(Service(precision, "--history-days", "1"))
+    personal = Path(temporary) / "personal"
+    personal.mkdir(mode=0o700)
+    personal_ranking(Service(personal))
     slow = Path(temporary) / "slow"
     slow.mkdir(mode=0o700)
     slow_output_and_response_limit(Service(slow))

@@ -34,4 +34,11 @@ tl_status prefix_finish(tl_prefix *index);
  * No allocation or I/O. TL_INVALID for bad arguments, TL_STATE before finish,
  * or the first non-OK status returned by hit. */
 tl_status prefix_query(const tl_prefix *index, tl_text query, tl_prefix_hit hit, void *context);
+/** Score the keys prefix_add would derive from one text against query without
+ * an index: *best is the highest score prefix_query would report for that
+ * text's slot (zero when no key starts with query), and *complete whether any
+ * reported key is a complete token. For callers that need a few entries'
+ * evidence without querying every key. No allocation or I/O. TL_INVALID for
+ * NULL outputs, malformed text or an empty query (outputs zeroed). */
+tl_status prefix_score(tl_text text, tl_text query, int *best, bool *complete);
 #endif

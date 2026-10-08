@@ -1,6 +1,6 @@
 # daemon
 
-> **Status:** Implemented (M6 step 1): dedicated search thread with per-client
+> **Status:** Implemented (M6 step 1; M5 personal ranking): dedicated search thread with per-client
 > request queues, supersession and cancellation, over the M4 two-phase service
 > **Source:** `src/service/daemon.c`, `src/bin/torchlightd.c`
 > **Header:** `include/torchlight/daemon.h`
@@ -104,3 +104,21 @@ compaction); `semantic` reports `reused` (rows of the current or last stage
 that were not embedded), `derived_stages` (snapshots holding only rows changed
 since a shared full base) and `full_stages`. See
 [ADR 0030](../../adr/0030-m6-incremental-indexing.md).
+
+## Personal ranking (M5)
+
+With history enabled, the search thread owns [personal](../personal/README.md)
+state ([ADR 0033](../../adr/0033-m5-personal-ranking.md)):
+
+- **Queries.** Each query gets usage boosts for files (through
+  `catalog_query_boosted`) and applications (through `desktop_query_boosted`).
+  Personal ranking never fails a search: on error the query runs unboosted.
+- **Search ids.** A query's search id and query are remembered rather than
+  queued: a search row is saved only with an open that references it.
+- **Opens.** An accepted open is queued with its search's query and counted
+  in the live summary once per launch-event id. If the bounded queue drops
+  the event, the open still counts.
+- **Clearing.** `history_clear` empties the summary before it is answered.
+- **Startup.** The writer's summary is adopted at the next job once offered.
+- **Status.** `history.personal_items` reports the live item count from
+  either thread.

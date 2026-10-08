@@ -12,6 +12,8 @@
 
 /* Live-entry map entries above this bit index the delta engine. */
 #define CATALOG_DELTA_BIT UINT32_C(0x80000000)
+/* A boosted id that is not live in the leased snapshot. */
+#define CATALOG_ABSENT UINT32_MAX
 
 /* A base engine and its reader workspaces. The workspaces outlive individual
  * snapshots, so their word caches stay warm across small updates. */
@@ -31,7 +33,15 @@ struct tl_catalog_reader {
     tl_lexical_workspace *delta_workspace; /* NULL without a delta */
     size_t base_workspace;                 /* leased base workspace while leased */
     tl_result *merge;                      /* 2 * LEXICAL_MAX_RESULTS, delta snapshots only */
-    bool leased;
+    /* Personal boosts: each boosted id's segment position (base position,
+     * delta position with CATALOG_DELTA_BIT, or CATALOG_ABSENT) for
+     * boost_key, and per-query lists (base from the front, delta from the
+     * back), each LEXICAL_MAX_BOOSTED long. */
+    uint32_t *boost_positions;
+    tl_lexical_boost *boost_lists;
+    uint64_t boost_key;
+    size_t boost_mapped;
+    bool boost_ready, leased;
 };
 struct tl_catalog_snapshot {
     struct catalog_base *base;
@@ -118,6 +128,8 @@ void catalog_snapshot_destroy(tl_catalog_snapshot *snapshot) {
     for (size_t i = 0; i < snapshot->reader_capacity; i++) {
         lexical_workspace_destroy(snapshot->readers[i].delta_workspace);
         free(snapshot->readers[i].merge);
+        free(snapshot->readers[i].boost_positions);
+        free(snapshot->readers[i].boost_lists);
     }
     free(snapshot->readers);
     lexical_destroy(snapshot->delta);
@@ -137,7 +149,11 @@ static tl_status create_readers(tl_catalog_snapshot *snapshot, size_t capacity) 
         tl_catalog_reader *reader = &snapshot->readers[i];
         reader->snapshot = snapshot;
         snapshot->reader_capacity = i + 1;
-        if (snapshot->delta == NULL)
+        reader->boost_positions = malloc(LEXICAL_MAX_BOOSTED * sizeof(uint32_t));
+        reader->boost_lists = malloc(LEXICAL_MAX_BOOSTED * sizeof(tl_lexical_boost));
+        if (reader->boost_positions == NULL || reader->boost_lists == NULL)
+            status = TL_NOMEM;
+        if (snapshot->delta == NULL || status != TL_OK)
             continue;
         status = lexical_workspace_create(snapshot->delta, &reader->delta_workspace);
         reader->merge = malloc(2 * LEXICAL_MAX_RESULTS * sizeof(tl_result));
@@ -368,6 +384,12 @@ void catalog_release(tl_catalog_reader *reader) {
         return;
     tl_catalog_snapshot *snapshot = reader->snapshot;
     tl_catalog *catalog = snapshot->owner;
+    /* The lease is still exclusive: drop its boosts outside the lock.
+     * Clearing a workspace's boosts cannot fail. */
+    tl_status cleared = lexical_workspace_boost(base_workspace(reader), NULL, 0);
+    if (reader->delta_workspace != NULL)
+        cleared = lexical_workspace_boost(reader->delta_workspace, NULL, 0);
+    (void)cleared;
     lock_catalog(catalog);
     reader->leased = false;
     /* The shared workspace must not keep this lease's flag or tombstones. */
@@ -402,13 +424,68 @@ static size_t merge_results(const tl_result *a, size_t na, const tl_result *b, s
         out[count++] = j == nb || (i < na && before(&a[i], &b[j])) ? a[i++] : b[j++];
     return count;
 }
+/* Map boosted ids to this lease's segment positions, once per key. */
+static void map_boosts(tl_catalog_reader *reader, const tl_catalog_boosts *boosts) {
+    if (reader->boost_ready && reader->boost_key == boosts->key &&
+        reader->boost_mapped == boosts->count)
+        return;
+    const tl_catalog_snapshot *snapshot = reader->snapshot;
+    for (size_t i = 0; i < boosts->count; i++) {
+        size_t position = 0;
+        uint32_t entry = CATALOG_ABSENT;
+        if (snapshot->delta != NULL &&
+            lexical_slot(snapshot->delta, boosts->ids[i], &position) == TL_OK)
+            entry = (uint32_t)position | CATALOG_DELTA_BIT;
+        else if (lexical_slot(snapshot->base->engine, boosts->ids[i], &position) == TL_OK &&
+                 !tombstoned(snapshot, position))
+            entry = (uint32_t)position;
+        reader->boost_positions[i] = entry;
+    }
+    reader->boost_key = boosts->key;
+    reader->boost_mapped = boosts->count;
+    reader->boost_ready = true;
+}
+/* Attach this query's boosts (or none) to the lease's segment workspaces. */
+static tl_status attach_boosts(tl_catalog_reader *reader, const tl_catalog_boosts *boosts) {
+    size_t base = 0, delta = LEXICAL_MAX_BOOSTED;
+    if (boosts != NULL && boosts->count != 0) {
+        if (boosts->count > LEXICAL_MAX_BOOSTED)
+            return TL_LIMIT;
+        if (boosts->ids == NULL || boosts->values == NULL)
+            return TL_INVALID;
+        map_boosts(reader, boosts);
+    }
+    for (size_t i = 0; boosts != NULL && i < boosts->count; i++) {
+        uint32_t entry = reader->boost_positions[i];
+        if (boosts->values[i] == 0 || entry == CATALOG_ABSENT)
+            continue;
+        tl_lexical_boost boost = {entry & ~CATALOG_DELTA_BIT, boosts->values[i]};
+        if ((entry & CATALOG_DELTA_BIT) != 0)
+            reader->boost_lists[--delta] = boost;
+        else
+            reader->boost_lists[base++] = boost;
+    }
+    tl_status status = lexical_workspace_boost(base_workspace(reader), reader->boost_lists, base);
+    if (status == TL_OK && reader->delta_workspace != NULL)
+        status = lexical_workspace_boost(reader->delta_workspace, reader->boost_lists + delta,
+                                         LEXICAL_MAX_BOOSTED - delta);
+    return status;
+}
 tl_status catalog_query(tl_catalog_reader *reader, const char *query, tl_result *results,
                         size_t capacity, size_t *out_count) {
+    return catalog_query_boosted(reader, query, NULL, results, capacity, out_count);
+}
+tl_status catalog_query_boosted(tl_catalog_reader *reader, const char *query,
+                                const tl_catalog_boosts *boosts, tl_result *results,
+                                size_t capacity, size_t *out_count) {
     if (out_count == NULL)
         return TL_INVALID;
     *out_count = 0;
     if (reader == NULL || !reader->leased)
         return TL_INVALID;
+    tl_status attached = attach_boosts(reader, boosts);
+    if (attached != TL_OK)
+        return attached;
     const tl_catalog_snapshot *snapshot = reader->snapshot;
     size_t base_count = 0, delta_count = 0;
     tl_status status = lexical_query(snapshot->base->engine, base_workspace(reader), query, results,
