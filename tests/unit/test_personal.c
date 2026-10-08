@@ -1,8 +1,13 @@
 /* Search-thread personal state: remembered searches, once-per-event opens,
- * file boosts and their mapping keys, startup adoption and clearing. */
+ * file boosts and their mapping keys, application boosts across desktop
+ * changes, startup adoption and clearing. */
 #include "test.h"
 #include "torchlight/personal.h"
+#include <glib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
 
 enum { DAY = 24 * 3600, RETENTION = 30 * DAY, NOW = 2000000 };
 
@@ -111,9 +116,136 @@ static void adoption_and_clearing(void) {
     personal_adopt(NULL, NULL);
     personal_destroy(personal);
 }
+enum { APP_PATH_BYTES = 256, APP_CREATED_MAX = 8 };
+/* Create path and its missing parents, recording each directory created
+ * (outermost first) so cleanup removes exactly those. */
+static size_t create_missing(const char *path, char (*created)[APP_PATH_BYTES]) {
+    if (g_file_test(path, G_FILE_TEST_IS_DIR))
+        return 0;
+    char *parent = g_path_get_dirname(path);
+    size_t count = create_missing(parent, created);
+    g_free(parent);
+    CHECK(count < APP_CREATED_MAX && mkdir(path, 0700) == 0);
+    CHECK(snprintf(created[count], APP_PATH_BYTES, "%s", path) > 0);
+    return count + 1;
+}
+static void write_app(const char *applications, const char *id, const char *name,
+                      const char *extra) {
+    char path[APP_PATH_BYTES];
+    CHECK(snprintf(path, sizeof(path), "%s/%s", applications, id) > 0);
+    FILE *file = fopen(path, "w");
+    CHECK(file != NULL);
+    CHECK(fprintf(file, "[Desktop Entry]\nType=Application\nExec=/bin/true\nName=%s\n%s", name,
+                  extra) > 0);
+    CHECK(fclose(file) == 0);
+}
+/* Sorted-id position of desktop_id in the leased snapshot. */
+static size_t position_of(const tl_desktop *desktop, const char *desktop_id) {
+    for (size_t i = 0; i < desktop_count(desktop); i++)
+        if (strcmp(desktop_entry(desktop, i)->desktop_id, desktop_id) == 0)
+            return i;
+    CHECK(false);
+    return SIZE_MAX;
+}
+/* Desktop id of the first application for "s" with these boosts (leased). */
+static const char *first_app(tl_desktop *desktop, const tl_lexical_boost *boosts, size_t count) {
+    tl_result results[10];
+    size_t found = 0;
+    CHECK(desktop_query_boosted(desktop, "s", boosts, count, results, 10, &found) == TL_OK);
+    CHECK(found >= 1);
+    return desktop_resolve(desktop, results[0].id)->desktop_id;
+}
+/* The one installed application opened from "s" gets its boost at position:
+ * 133 for the open plus 600 for its query. The uninstalled one gets none. */
+static void check_app_boost(tl_personal *personal, tl_desktop *desktop, size_t position) {
+    tl_catalog_boosts files;
+    const tl_lexical_boost *apps = NULL;
+    size_t count = 0;
+    CHECK(personal_boosts(personal, desktop, "s", NOW, &files, &apps, &count) == TL_OK);
+    CHECK(files.count == 0 && count == 1);
+    CHECK(apps[0].position == position && apps[0].boost == 733);
+    CHECK(strcmp(first_app(desktop, apps, count), "shell.desktop") == 0);
+}
+/* Request a desktop refresh and wait until the snapshot after gen is live. */
+static uint64_t wait_for_desktop(tl_desktop *desktop, uint64_t gen) {
+    const struct timespec pause = {.tv_nsec = 10000000};
+    uint64_t current = gen;
+    desktop_refresh(desktop);
+    for (size_t i = 0; i < 500 && current == gen; i++) {
+        desktop_acquire(desktop);
+        current = desktop_gen(desktop);
+        desktop_release(desktop);
+        if (current == gen)
+            CHECK(nanosleep(&pause, NULL) == 0);
+    }
+    CHECK(current != gen);
+    return current;
+}
+/* Applications are boosted by desktop id at their current position in the
+ * leased snapshot. Editing an application's file gives it a new session id,
+ * which sorts last, and the boost follows it; a removed application gets no
+ * boost and lends none to the entry that takes its place. */
+static void application_boosts(void) {
+    char temporary[] = "/tmp/torchlight-personal-XXXXXX";
+    CHECK(mkdtemp(temporary) != NULL);
+    char system[APP_PATH_BYTES], created[APP_CREATED_MAX][APP_PATH_BYTES];
+    CHECK(snprintf(system, sizeof(system), "%s/system", temporary) > 0 && mkdir(system, 0700) == 0);
+    /* GLib resolves the XDG data directories once per process: these apply
+     * when this test runs alone, otherwise test_desktop's (since removed)
+     * stay in effect. Applications go wherever GLib looks either way. */
+    CHECK(setenv("XDG_DATA_HOME", temporary, 1) == 0 && setenv("XDG_DATA_DIRS", system, 1) == 0);
+    char *applications = g_build_filename(g_get_user_data_dir(), "applications", NULL);
+    size_t created_count = create_missing(applications, created);
+    static const char *const ids[] = {"screenshot.desktop", "settings.desktop", "shell.desktop",
+                                      "sound.desktop"};
+    static const char *const names[] = {"Screenshot", "Settings", "Shell Terminal", "Sound"};
+    for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); i++)
+        write_app(applications, ids[i], names[i], "");
+    tl_desktop *desktop = NULL;
+    tl_personal *personal = NULL;
+    CHECK(desktop_create(&desktop) == TL_OK && personal_create(RETENTION, &personal) == TL_OK);
+    tl_usage_target shell = {0, "shell.desktop"}, uninstalled = {0, "uninstalled.desktop"};
+    CHECK(personal_record(personal, "launch", shell, "s", NOW) == TL_OK);
+    CHECK(personal_record(personal, "gone", uninstalled, "s", NOW) == TL_OK);
+    desktop_acquire(desktop);
+    CHECK(strcmp(first_app(desktop, NULL, 0), "shell.desktop") != 0);
+    size_t before = position_of(desktop, "shell.desktop");
+    check_app_boost(personal, desktop, before);
+    uint64_t gen = desktop_gen(desktop);
+    desktop_release(desktop);
+    write_app(applications, "shell.desktop", "Shell Terminal", "Comment=edited\n");
+    gen = wait_for_desktop(desktop, gen);
+    desktop_acquire(desktop);
+    size_t after = position_of(desktop, "shell.desktop");
+    CHECK(after != before);
+    check_app_boost(personal, desktop, after);
+    desktop_release(desktop);
+    char path[APP_PATH_BYTES];
+    CHECK(snprintf(path, sizeof(path), "%s/shell.desktop", applications) > 0 && unlink(path) == 0);
+    wait_for_desktop(desktop, gen);
+    desktop_acquire(desktop);
+    tl_catalog_boosts files;
+    const tl_lexical_boost *apps = NULL;
+    size_t count = 99;
+    CHECK(personal_boosts(personal, desktop, "s", NOW, &files, &apps, &count) == TL_OK);
+    CHECK(count == 0);
+    desktop_release(desktop);
+    personal_destroy(personal);
+    desktop_destroy(desktop);
+    for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); i++) {
+        CHECK(snprintf(path, sizeof(path), "%s/%s", applications, ids[i]) > 0);
+        CHECK(strcmp(ids[i], "shell.desktop") == 0 || unlink(path) == 0);
+    }
+    for (size_t i = created_count; i-- > 0;)
+        CHECK(rmdir(created[i]) == 0);
+    g_free(applications);
+    CHECK(rmdir(system) == 0 && (access(temporary, F_OK) != 0 || rmdir(temporary) == 0));
+    CHECK(unsetenv("XDG_DATA_HOME") == 0 && unsetenv("XDG_DATA_DIRS") == 0);
+}
 void test_personal(void) {
     remembered_searches();
     busy_clients();
     opens_and_boosts();
+    application_boosts();
     adoption_and_clearing();
 }

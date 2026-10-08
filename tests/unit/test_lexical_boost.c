@@ -4,6 +4,7 @@
  * and narrowing (checked entry by entry). */
 #include "test.h"
 #include "torchlight/lexical.h"
+#include <stdatomic.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -151,6 +152,58 @@ static void field_equivalence(void) {
     const char *queries[] = {"s", "a", "m", "r", "v", "c", "x", "1", "s", "sc", "screen", "audio"};
     for (size_t q = 0; q < sizeof(queries) / sizeof(queries[0]); q++)
         check_complete(engine, plain, boosted, boosts, count, queries[q]);
+    lexical_workspace_destroy(plain);
+    lexical_workspace_destroy(boosted);
+    lexical_destroy(engine);
+}
+/* A query of a path's words ("r plan photo 12 txt"): the five words outnumber
+ * the workspace's four word caches, so the side pass evicts and recomputes
+ * evidence within one query. Returns false for paths of fewer words. */
+static bool words_of(const char *path, char *query, size_t capacity) {
+    size_t length = 0, words = 0;
+    bool separated = true;
+    for (const char *c = path; *c != 0 && length + 1 < capacity; c++) {
+        bool separator = *c == '/' || *c == '_' || *c == '.';
+        if (!separator && separated && length != 0)
+            query[length++] = ' ';
+        if (!separator) {
+            words += separated;
+            query[length++] = *c;
+        }
+        separated = separator;
+    }
+    query[length] = 0;
+    return words >= 5;
+}
+static void many_words(void) {
+    enum { MANY_QUERIES = 4 };
+    static char paths[SMALL_ENTRIES][PATH_BYTES];
+    corpus(paths, SMALL_ENTRIES);
+    tl_lexical *engine = build_engine(paths, SMALL_ENTRIES);
+    tl_lexical_workspace *plain = NULL, *boosted = NULL;
+    CHECK(lexical_workspace_create(engine, &plain) == TL_OK);
+    CHECK(lexical_workspace_create(engine, &boosted) == TL_OK);
+    static tl_lexical_boost boosts[SMALL_ENTRIES];
+    size_t count = 0;
+    for (size_t slot = 1; slot < SMALL_ENTRIES; slot += 2)
+        boosts[count++] = (tl_lexical_boost){slot, (int)((slot * 613) % (LEXICAL_BOOST_MAX + 1))};
+    CHECK(lexical_workspace_boost(boosted, boosts, count) == TL_OK);
+    char query[PATH_BYTES * 2];
+    size_t checked = 0;
+    for (size_t slot = 1; slot < SMALL_ENTRIES && checked < MANY_QUERIES; slot += 37) {
+        if (!words_of(paths[slot], query, sizeof(query)))
+            continue;
+        tl_result own[1];
+        size_t found = 0;
+        CHECK(lexical_query(engine, plain, query, own, 1, &found) == TL_OK && found == 1);
+        check_complete(engine, plain, boosted, boosts, count, query);
+        /* Six words, the last a typo of the first directory's name. */
+        size_t length = strlen(query);
+        CHECK(snprintf(query + length, sizeof(query) - length, " %.4sx", paths[slot] + 3) > 0);
+        check_complete(engine, plain, boosted, boosts, count, query);
+        checked++;
+    }
+    CHECK(checked == MANY_QUERIES);
     lexical_workspace_destroy(plain);
     lexical_workspace_destroy(boosted);
     lexical_destroy(engine);
@@ -345,18 +398,98 @@ static void large_parallel_side(void) {
      * multiword and path queries take the other side-pass routes. */
     const char *queries[] = {"nts96",        "rprt42",       "pht33",          "readme/plan",
                              "data photo_1", "plan/notes_5", "image report_42"};
-    for (size_t q = 0; q < sizeof(queries) / sizeof(queries[0]); q++)
+    size_t query_count = sizeof(queries) / sizeof(queries[0]);
+    for (size_t q = 0; q < query_count; q++)
+        check_complete(engine, plain, boosted, boosts, PARALLEL_BOOSTED, queries[q]);
+    /* A cancelled query leaves the workspace clean: the next queries, the
+     * same one included, are still exact. */
+    atomic_bool cancel;
+    atomic_init(&cancel, true);
+    lexical_workspace_cancel(boosted, &cancel);
+    tl_result scratch[10];
+    size_t count = 0;
+    CHECK(lexical_query(engine, boosted, queries[0], scratch, 10, &count) == TL_CANCELLED);
+    atomic_store(&cancel, false);
+    for (size_t q = 0; q < query_count; q++)
+        check_complete(engine, plain, boosted, boosts, PARALLEL_BOOSTED, queries[q]);
+    lexical_workspace_cancel(boosted, NULL);
+    /* Tombstones stay absent on the parallel path too, boosted or not (every
+     * 13th slot, which includes some boosted ones). */
+    static uint64_t tombstones[LARGE_ENTRIES / 64 + 1];
+    for (size_t slot = 0; slot < LARGE_ENTRIES; slot += 13)
+        tombstones[slot / 64] |= UINT64_C(1) << (slot % 64);
+    lexical_workspace_exclude(plain, tombstones);
+    lexical_workspace_exclude(boosted, tombstones);
+    for (size_t q = 0; q < query_count; q++)
         check_complete(engine, plain, boosted, boosts, PARALLEL_BOOSTED, queries[q]);
     lexical_workspace_destroy(plain);
     lexical_workspace_destroy(boosted);
     lexical_destroy(engine);
 }
+/* One-symbol queries take their unboosted head from the seal-time cache,
+ * which keeps LEXICAL_MAX_RESULTS results. When boosted entries leave fewer
+ * than capacity of them (a full-capacity query, as the hybrid pool runs), the
+ * query must fall back to a full evaluation and still be exact. */
+static void truncated_symbol_fallback(void) {
+    enum { FALLBACK_BOOSTED = 6 };
+    static char paths[LARGE_ENTRIES][PATH_BYTES];
+    static uint64_t excluded[LARGE_ENTRIES / 64 + 1];
+    static tl_result head[LEXICAL_MAX_RESULTS], results[LEXICAL_MAX_RESULTS];
+    static struct expected reference[LEXICAL_MAX_RESULTS + FALLBACK_BOOSTED];
+    corpus(paths, LARGE_ENTRIES);
+    tl_lexical *engine = build_engine(paths, LARGE_ENTRIES);
+    tl_lexical_workspace *boosted = NULL, *probe = NULL;
+    CHECK(lexical_workspace_create(engine, &boosted) == TL_OK);
+    CHECK(lexical_workspace_create(engine, &probe) == TL_OK);
+    size_t total = 0;
+    CHECK(lexical_query(engine, probe, "r", head, LEXICAL_MAX_RESULTS, &total) == TL_OK);
+    CHECK(total == LEXICAL_MAX_RESULTS); /* every path matches: the cache is truncated */
+    /* Cached entries at the head, middle and tail, and two beyond the cache. */
+    static const size_t ranks[] = {0, 1, 500, LEXICAL_MAX_RESULTS - 1};
+    tl_lexical_boost boosts[FALLBACK_BOOSTED];
+    for (size_t i = 0; i < 4; i++) {
+        CHECK(lexical_slot(engine, head[ranks[i]].id, &boosts[i].position) == TL_OK);
+        boosts[i].boost = (int)(100 + i * 500);
+    }
+    boosts[4] = (tl_lexical_boost){LARGE_ENTRIES - 1, LEXICAL_BOOST_MAX};
+    boosts[5] = (tl_lexical_boost){LARGE_ENTRIES / 2, 700};
+    CHECK(lexical_workspace_boost(boosted, boosts, FALLBACK_BOOSTED) == TL_OK);
+    /* Reference: the head of the other entries, then each boosted entry alone. */
+    memset(excluded, 0, sizeof(excluded));
+    for (size_t i = 0; i < FALLBACK_BOOSTED; i++)
+        excluded[boosts[i].position / 64] |= UINT64_C(1) << (boosts[i].position % 64);
+    lexical_workspace_exclude(probe, excluded);
+    CHECK(lexical_query(engine, probe, "r", head, LEXICAL_MAX_RESULTS, &total) == TL_OK);
+    lexical_workspace_exclude(probe, NULL);
+    for (size_t i = 0; i < total; i++)
+        reference[i] = (struct expected){head[i].id, head[i].path, head[i].score};
+    for (size_t i = 0; i < FALLBACK_BOOSTED; i++) {
+        int score = isolated_score(engine, probe, excluded, boosts[i].position, "r");
+        uint64_t id = 0;
+        const char *path = NULL;
+        bool is_dir = false;
+        CHECK(score != 0 &&
+              lexical_entry(engine, boosts[i].position, &id, &path, &is_dir) == TL_OK);
+        reference[total++] = (struct expected){id, path, score + boosts[i].boost};
+    }
+    qsort(reference, total, sizeof(*reference), compare_expected);
+    size_t count = 0;
+    CHECK(lexical_query(engine, boosted, "r", results, LEXICAL_MAX_RESULTS, &count) == TL_OK);
+    CHECK(count == LEXICAL_MAX_RESULTS);
+    for (size_t i = 0; i < count; i++)
+        CHECK(results[i].id == reference[i].id && results[i].score == reference[i].score);
+    lexical_workspace_destroy(boosted);
+    lexical_workspace_destroy(probe);
+    lexical_destroy(engine);
+}
 void test_lexical_boost(void) {
+    truncated_symbol_fallback();
     large_parallel_side();
     boost_contract();
     lifting();
     exact_tiers();
     complete_equivalence();
     field_equivalence();
+    many_words();
     large_engine();
 }

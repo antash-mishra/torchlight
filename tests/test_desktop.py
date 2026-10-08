@@ -169,6 +169,20 @@ with tempfile.TemporaryDirectory(prefix="torchlight-m3-") as directory:
                     search_id=response["search_id"])["status"] == "ok"
         assert query("duplicate app")["results"][0]["id"] == lifted["id"]
         assert call("status")["history"]["personal_items"] == 2
+        # The boost follows the application by desktop id: editing its file
+        # gives it a new session id, sorted last, and it stays first. Once the
+        # file is gone, no other application inherits its boost.
+        lifted_file = system / lifted["desktop_id"]
+        lifted_file.write_text(lifted_file.read_text().replace("Exec=/bin/true", "Exec=/bin/false"))
+        def follows():
+            first = query("duplicate app")["results"][0]
+            return first["desktop_id"] == lifted["desktop_id"] and first["id"] != lifted["id"]
+        wait_for(follows)
+        lifted_file.unlink()
+        wait_for(lambda: all(r["desktop_id"] != lifted["desktop_id"]
+                             for r in query("duplicate app")["results"]))
+        assert [r["id"] for r in query("duplicate app")["results"][:3]] == \
+            [r["id"] for r in tied if r["id"] != lifted["id"]][:3]
         old = application["id"]
         display.write_text(display.read_text().replace("Exec=/bin/true", "Exec=/bin/false"))
         wait_for(lambda: any(r.get("desktop_id") == "display.desktop" and r["id"] != old for r in query("display")["results"]))

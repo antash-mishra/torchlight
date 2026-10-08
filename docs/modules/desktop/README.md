@@ -70,4 +70,6 @@ snapshot (`desktop_entry`), through `lexical_workspace_boost`. Callers remap
 positions when `desktop_gen` changes; the daemon's
 [personal](../personal/README.md) state matches application usage by desktop
 id. Each query replaces the previous boosts, so `desktop_query` stays
-unboosted.
+unboosted. Editing a `.desktop` file gives its entry a new session id, which
+sorts last, so its position changes; tests in `test_personal.c` and
+`test_desktop.py` check that boosts follow it.

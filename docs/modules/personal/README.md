@@ -75,12 +75,15 @@ without touching the oldest remembered search.
 
 `test_personal.c` covers search memory wraparound, oversized input, a
 search surviving 200 searches by other clients, retried events counting
-once, file boosts and keys, merging on adoption, and discarding after a
-clear. The daemon integration test covers lifting a file among equal
+once, file boosts and keys, application boosts that follow an edited
+`.desktop` file to its new position and vanish with a removed one, merging
+on adoption, and discarding after a clear. The daemon integration test covers lifting a file among equal
 matches, an exact name staying above the full boost, persistence across a
 restart, clearing, a busy client searching between a search and its open,
 and unchanged ranking with history disabled. The desktop integration test
-covers lifting an application among equal matches.
+covers lifting an application among equal matches, the boost following the
+application when its file is edited, and no other application inheriting
+it once the file is removed.
 
 ## Gotchas
 

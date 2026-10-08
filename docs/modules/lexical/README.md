@@ -235,8 +235,13 @@ Any error from `lexical_workspace_boost` clears the boosts attached before. `tes
 results with brute-force boosted evaluation:
 
 - small engines, with tombstones and fields;
+- queries of five and six words, more than the four word caches, so the
+  side pass evicts and recomputes evidence within one query;
 - a 70k engine checked entry by entry;
-- a 70k engine with 1500 boosted entries, which takes the parallel path.
+- a 70k engine with 1500 boosted entries, which takes the parallel path,
+  also after a cancelled query and with tombstones;
+- a full-capacity one-symbol query whose boosted entries leave the truncated
+  seal-time cache short, so it falls back to a full evaluation.
 
 At 500k synthetic paths, typing p95 was 4.63 ms without boosts, 4.81 ms with
 1000 boosted entries, 4.99 ms with 2048 and 5.13 ms with 4000, on a loaded
