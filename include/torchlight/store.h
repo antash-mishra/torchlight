@@ -150,22 +150,29 @@ tl_status store_open_event(tl_store *store, const char *event_id, uint64_t file_
  * Idempotent per search id or event id; conflicting retries and opens of
  * missing files return TL_STATE without writing. Absent retained searches
  * link as NULL. TL_INVALID/LIMIT for malformed fields, TL_STATE during a
- * catalog scan or read, TL_IO for SQL. Statements are prepared once. */
+ * catalog scan or read, TL_IO for SQL. If SQLite rolls back the whole batch
+ * (an I/O error, out of memory or a trigger), the batch ends: its earlier
+ * events are lost, this returns TL_IO, and store_history_commit returns
+ * TL_STATE. Insert statements are prepared once. */
 tl_status store_history_write(tl_store *store, const tl_store_history_event *event);
 /** Begin one write transaction for many history events (store_history_write),
  * so a drained queue costs one commit. TL_STATE while any transaction or read
  * is active, TL_INVALID for NULL, TL_IO for SQL. */
 tl_status store_history_begin(tl_store *store);
-/** Commit (or roll back) the history batch. A failed commit is rolled back and
- * reported as TL_IO: none of the batch's events persist. TL_STATE without a
- * batch, TL_INVALID for NULL. */
+/** Commit the history batch. A failed commit is rolled back and reported as
+ * TL_IO: none of the batch's events persist. TL_STATE without a batch
+ * (including one SQLite already rolled back), TL_INVALID for NULL. */
 tl_status store_history_commit(tl_store *store);
+/** Roll back the history batch: none of its events persist. TL_STATE without
+ * a batch, TL_INVALID for NULL, TL_IO for SQL. */
 tl_status store_history_rollback(tl_store *store);
 /** Stream retained file and desktop opens at or after cutoff, oldest first,
  * each with its retained search's query, for rebuilding the usage summary.
- * One statement, so one consistent read. Callback errors propagate, plus
- * TL_INVALID for NULL, TL_STATE during a transaction or batch and TL_IO for
- * SQL or malformed rows. The callback must not use this connection. */
+ * One statement, so one consistent read. Rows the store never writes (a
+ * negative id or time, an empty desktop id), which only another tool could
+ * add, are skipped. Callback errors propagate, plus TL_INVALID for NULL,
+ * TL_STATE during a transaction or batch and TL_IO for SQL. The callback
+ * must not use this connection. */
 tl_status store_history_opens(tl_store *store, int64_t cutoff, tl_store_open_callback callback,
                               void *context);
 /** Delete history older than cutoff, or all history when clear is true. Applies

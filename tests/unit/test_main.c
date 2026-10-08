@@ -35,6 +35,7 @@ int main(void) {
     test_personal();
     test_writer();
     test_writer_fallback();
+    test_writer_history();
     puts("All module tests passed.");
     return 0;
 }

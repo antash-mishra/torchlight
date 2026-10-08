@@ -618,9 +618,10 @@ tracked explicitly in the verification report.
      republishes the catalog.
    - **Fewer writes.** Today each keystroke's query is a `searches` row in its
      own transaction. The persistence thread drains queued history in one
-     transaction with cached prepared statements. The search thread keeps each
-     client's last few (search id, query) pairs in memory, and a search row is
-     saved only with an open that references it, in the same transaction. No
+     transaction with cached prepared statements. The search thread keeps the
+     last 256 (search id, query) pairs in memory across clients (the popup
+     opens a result on a separate connection), and a search row is saved
+     only with an open that references it, in the same transaction. No
      schema change: the summary is rebuilt from retained history at startup.
    - **Ranking: exact top results, unchanged pruning.** `lexical_query` keeps
      only the requested number of results, so re-ranking its output cannot
@@ -675,6 +676,13 @@ tracked explicitly in the verification report.
 
    All tests, lint and the allocation test pass. See
    [the measurements](docs/evaluation.md#m5-personal-ranking-2026-10-08).
+
+   A review then fixed seven defects (ADR 0033, "Review fixes"), among them
+   allocation on boosted one-symbol queries and a slow startup rebuild. The
+   re-run measured 500k typing p95 at 3.64 ms without boosts and 3.80 ms
+   with 4000 boosted entries, all below 5 ms, but the unchanged baseline
+   moved by about 1 ms between runs, so confirm the 4000-entry margin on an
+   idle machine.
 7. **M6: Search responsiveness and indexing performance.** Implemented
    (2026-10-07) in this order, as three steps within one milestone:
 

@@ -221,15 +221,29 @@ static void boost_contract(void) {
     tl_lexical_boost negative = {0, -1};
     CHECK(lexical_workspace_boost(workspace, &negative, 1) == TL_INVALID);
     CHECK(lexical_workspace_boost(workspace, boosts, LEXICAL_MAX_BOOSTED + 1) == TL_LIMIT);
-    /* Errors cleared the boosts: c.txt is no longer lifted over a.txt. */
+    /* Every error clears the boosts attached before it. The three names score
+     * equally, so lifted c.txt leads, and without its boost a.txt leads again
+     * by path order. Regression: NULL boosts with a nonzero count used to
+     * return before clearing. */
+    const struct {
+        const tl_lexical_boost *boosts;
+        size_t count;
+        tl_status status;
+    } errors[] = {{NULL, 1, TL_INVALID},      {repeated, 2, TL_INVALID},
+                  {&range[0], 1, TL_INVALID}, {&range[1], 1, TL_INVALID},
+                  {&negative, 1, TL_INVALID}, {boosts, LEXICAL_MAX_BOOSTED + 1, TL_LIMIT}};
+    tl_lexical_boost lift = {3, 9};
     tl_result results[3];
     size_t count = 0;
-    CHECK(lexical_query(engine, workspace, "txt", results, 3, &count) == TL_OK && count == 3);
-    CHECK(results[0].id == 2);
-    tl_lexical_boost lift = {3, 9};
-    CHECK(lexical_workspace_boost(workspace, &lift, 1) == TL_OK);
-    CHECK(lexical_query(engine, workspace, "txt", results, 3, &count) == TL_OK);
-    CHECK(results[0].id == 4 && results[0].score == results[1].score + 9);
+    for (size_t i = 0; i < sizeof(errors) / sizeof(errors[0]); i++) {
+        CHECK(lexical_workspace_boost(workspace, &lift, 1) == TL_OK);
+        CHECK(lexical_query(engine, workspace, "txt", results, 3, &count) == TL_OK && count == 3);
+        CHECK(results[0].id == 4 && results[0].score == results[1].score + 9);
+        CHECK(lexical_workspace_boost(workspace, errors[i].boosts, errors[i].count) ==
+              errors[i].status);
+        CHECK(lexical_query(engine, workspace, "txt", results, 3, &count) == TL_OK && count == 3);
+        CHECK(results[0].id == 2 && results[0].score == results[2].score);
+    }
     lexical_workspace_destroy(workspace);
     lexical_destroy(engine);
 }

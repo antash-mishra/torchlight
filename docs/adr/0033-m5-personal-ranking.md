@@ -45,8 +45,11 @@ them for ranking. Three facts about the current code shape the design:
    the search thread then folds the opens it accepted meanwhile into the
    loaded summary, so none is lost or counted twice.
 3. **Saving.** The persistence thread drains queued history in one
-   transaction with cached prepared statements. The search thread keeps each
-   client's last few (search id, query) pairs in memory; a search row is
+   transaction with cached prepared statements. The search thread keeps the
+   last 256 (search id, query) pairs in memory across clients, not per
+   connection, because the popup opens a result on a separate connection
+   from its search (first implemented as 32, too few beside a busy client;
+   see the review fixes below); a search row is
    saved only together with an open that references it, in the same
    transaction. No schema change: the summary is rebuilt from retained
    `opens`, `desktop_opens` and `searches` rows.
@@ -134,3 +137,40 @@ boosted entries, 4.99 ms with 2048 (the summary's cap) and 5.13 ms with 4000.
 In the synthetic usage scenario, habitual files reach first place after 3.47
 keystrokes instead of 9.94; files never opened are unchanged (11.67 → 11.54).
 See [evaluation](../evaluation.md#m5-personal-ranking-2026-10-08).
+
+## Review fixes (2026-10-08)
+
+A review of the implementation found one violation of the acceptance
+criteria and six smaller defects. Each fix has a regression test that failed
+before it:
+
+- **Allocation on boosted one-symbol queries.** The sparse cache was dropped
+  after each query but stayed most recently used, so the next one-symbol
+  query evicted another word's evidence and compiled a new matcher (22
+  allocations per keystroke). A dropped cache now counts as least recently
+  used and keeps its matchers for the same word (`tests/alloc/query.c`).
+- **Boost errors.** `lexical_workspace_boost` with NULL boosts and a nonzero
+  count now clears the earlier boosts, as documented.
+- **Usage eviction.** Each weight keeps a log-domain strength (`log2(value) +
+  time / half-life`), so eviction compares plain numbers and orders weights
+  correctly even when timestamps arrive out of order. Pairs live in fixed
+  slots under a sorted array of slot numbers. The worst-case startup rebuild
+  of 20,000 opens fell from about 1.25 s to 0.1–0.2 s.
+- **Remembered searches.** Decision 3 asked for each client's last few
+  searches, but the popup opens a result on a separate connection from its
+  search, so the daemon keeps the last 256 searches across clients (first 32,
+  too few beside a busy client); oversized input no longer erases the oldest.
+- **Locked database.** A drain tries to begin its batch once; after a failure
+  it writes events alone, so another connection's lock costs one busy timeout
+  per event rather than two.
+- **Lost batches.** When SQLite rolls back a whole batch, the store ends it
+  and the writer starts a new one, so later events are saved in a batch and
+  counted correctly.
+- **Malformed rows.** Rows the store never writes are skipped by the startup
+  read instead of emptying the summary.
+
+Retried launches still count again in the live summary when their event id
+is no longer among the last 32 recorded (or after a restart), until the next
+restart rebuilds the summary; deduplicating against the database would put
+SQL on the search thread. The re-run measurements are in
+[evaluation](../evaluation.md#re-run-after-the-review-fixes-2026-10-08).

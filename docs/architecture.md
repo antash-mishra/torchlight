@@ -141,7 +141,9 @@ validated embedding generation (`emb_gen`) together, without mixing model versio
 ## Query flow (targets: lexical phase p95 < 5ms, final phase p95 < 10ms)
 
 1. The client sends a bounded, versioned JSON-line query with a request id.
-2. Assign a search id in memory and enqueue optional history once. Pin a
+2. Assign a search id and remember its query in memory; nothing is written
+   per query (a search row is saved only with an open that references it,
+   ADR 0033). Pin a
    `catalog_gen`/`emb_gen` pair. **Lexical:** run `prefix`,
 `subseq`, and `trigram`,
    plus eligible one-edit `typo` lookup unless an exact full-basename match

@@ -8,10 +8,13 @@
 #include "torchlight/catalog.h"
 #include "torchlight/desktop.h"
 #include "torchlight/usage.h"
-/* Opens record the query of one of these recent searches: a popup opens a
- * result of one of its latest searches, and a few dozen cover several
- * typing clients. Retried launches repeat one of the recent event ids. */
-#define PERSONAL_RECENT_SEARCHES 32
+/* Opens record the query of one of these recent searches. The popup opens a
+ * result of its latest search on a separate connection, so searches are kept
+ * across clients, not per connection, and enough of them that other clients
+ * searching in between (a script, a second popup) do not push the popup's
+ * search out. Superseded keystrokes are never remembered. Retried launches
+ * repeat one of the recent event ids. */
+#define PERSONAL_RECENT_SEARCHES 256
 #define PERSONAL_RECENT_EVENTS 32
 typedef struct tl_personal tl_personal;
 

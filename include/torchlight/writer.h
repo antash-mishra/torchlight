@@ -69,7 +69,9 @@ tl_status writer_reconcile(tl_writer *writer);
  * Thread-safe, no allocation or SQL. The persistence thread writes queued
  * events in one transaction per drain, independently of scans and builds.
  * TL_LIMIT on saturation (increments dropped), TL_STATE when history disabled,
- * TL_INVALID for inputs; accepted events may fail asynchronously with counters. */
+ * TL_INVALID for inputs; accepted events may fail asynchronously with counters.
+ * If the batch cannot begin (the database is locked elsewhere), that drain
+ * writes each event alone without retrying the begin. */
 tl_status writer_history(tl_writer *writer, const tl_ipc_request *request, const char *search_id);
 /** Take the usage summary the persistence thread built from retained history
  * at startup (before writing any newly queued event). Returns false while that

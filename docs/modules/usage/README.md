@@ -42,7 +42,11 @@ valid until the next call or change. Single owner, no locks.
 **Weights.** Each item and pair keeps one decayed open count and the time it
 was measured. Exponential decay is linear, so adding an open (or merging a
 weight measured at another time) only decays the older value to the later
-time: O(1), no event list. The half-life is 14 days.
+time: O(1), no event list. The half-life is 14 days. Each weight also keeps
+its strength, `log2(value) + time / half-life`: decaying two weights to any
+common time preserves their order, so comparing strengths compares weights
+with no `exp2` and no choice of time, even for weights measured after the
+open being recorded (timestamps may arrive out of order).
 
 **Boosts.** A weight `w` maps to `max * w / (w + half)`: frecency up to
 `USAGE_FRECENCY_BOOST_MAX` (400, half at weight 2), query history up to
@@ -54,12 +58,16 @@ tier (static assertions).
 
 **Query history.** Queries are normalized like the lexical engine (NFC, case
 folding), trimmed, whitespace collapsed, and stored up to 32 symbols. Pairs
-are sorted by query, so the stored queries starting with a typed query are
-one range found by binary search. Typed queries longer than 32 symbols get no
+live in fixed slots; a separate array of two-byte slot numbers keeps them
+sorted by query, so the stored queries starting with a typed query are one
+range found by binary search, and inserting or evicting a pair moves slot
+numbers, not 176-byte pairs. Typed queries longer than 32 symbols get no
 query boost.
 
-**Caps and eviction.** 2048 items and 4096 pairs bound memory (about 1 MB)
-and the per-keystroke side-pass work. A full table evicts its weakest entry.
+**Caps and eviction.** 2048 items and 4096 pairs bound memory (about 1.3 MB)
+and the per-keystroke side-pass work. A full table evicts its weakest entry,
+by strength. Item ids and weights, and pair items and weights, are kept in
+dense arrays so lookups and eviction scan a few kilobytes.
 Evicting an item moves the last item into its index, renumbers that item's
 pairs and changes the version. Entries whose last open is older than
 retention give no boost and are evicted during the next refresh.
@@ -71,21 +79,28 @@ history range.
 ## Invariants
 
 - Item indices `0..usage_count()` are dense; any index change bumps the version.
-- Pairs are sorted by normalized query and reference live items.
+- The slot order is sorted by normalized query, and every used slot
+  references a live item; free slots are exactly the unused ones.
 - Boosts lie in `0..USAGE_FRECENCY_BOOST_MAX + USAGE_QUERY_BOOST_MAX`.
 
 ## Performance
 
 At the caps (2048 items, 4096 pairs), `usage_boosts` costs p95 0.005 ms per
 keystroke (`make bench`, 2026-10-08). Recording an open is O(items) to find
-the key, plus a sorted insert into the pairs.
+the key plus a sorted insert of a slot number; when a table is full, one
+linear scan of strengths finds the entry to evict. The startup rebuild
+replays every retained open: in the worst case (every open with a new query
+and more targets than the cap), 20,000 opens take about 0.2 s at -O2 and
+100,000 about 1.3 s, against 1.25 s and 7.9 s when eviction decayed every
+weight with `exp2` and moved whole pairs (`make bench` reports
+`usage_rebuild`).
 
 ## Testing
 
 `test_usage.c` checks analytic boost values, the half-life, out-of-order
 opens, retention eviction, query prefixes and normalization, capacity
-eviction for both tables, clearing, and that merging equals recording
-everything in one summary.
+eviction for both tables, eviction order with out-of-order timestamps,
+clearing, and that merging equals recording everything in one summary.
 
 ## Gotchas
 

@@ -1,0 +1,61 @@
+ 11:39:54 up 32 days, 23:48,  1 user,  load average: 3.61, 3.56, 3.13
+paths=50000 mean_path_bytes=71.4 build_s=0.247 engine_rss_kib=30992
+typing_ms n=12406 p50=0.048 p95=0.461 p99=1.117 max=3.977
+whole_query_ms n=1200 p50=0.078 p95=0.648 p99=1.156 max=1.898
+cold_workspace_query_ms n=60 p50=0.069 p95=0.443 p99=1.223 max=1.223
+quality tuning/exact n=200 recall@1=0.980 recall@10=1.000 mrr@10=0.987 candidate_recall@1000=1.000
+quality tuning/prefix n=200 recall@1=0.260 recall@10=0.545 mrr@10=0.371 candidate_recall@1000=1.000
+quality tuning/abbreviation n=200 recall@1=0.545 recall@10=0.795 mrr@10=0.626 candidate_recall@1000=0.940
+quality tuning/typo n=200 recall@1=0.755 recall@10=0.865 mrr@10=0.802 candidate_recall@1000=0.965
+quality tuning/partial_typo n=200 recall@1=0.055 recall@10=0.105 mrr@10=0.072 candidate_recall@1000=0.960
+quality tuning/parent n=200 recall@1=0.295 recall@10=0.615 mrr@10=0.398 candidate_recall@1000=1.000
+quality tuning/all n=1200 recall@1=0.482 recall@10=0.654 mrr@10=0.543 candidate_recall@1000=0.978
+quality held_out/exact n=200 recall@1=0.970 recall@10=1.000 mrr@10=0.980 candidate_recall@1000=1.000
+quality held_out/prefix n=200 recall@1=0.245 recall@10=0.430 mrr@10=0.309 candidate_recall@1000=1.000
+quality held_out/abbreviation n=200 recall@1=0.465 recall@10=0.715 mrr@10=0.544 candidate_recall@1000=0.920
+quality held_out/typo n=200 recall@1=0.755 recall@10=0.850 mrr@10=0.791 candidate_recall@1000=0.990
+quality held_out/partial_typo n=200 recall@1=0.050 recall@10=0.075 mrr@10=0.060 candidate_recall@1000=0.960
+quality held_out/parent n=200 recall@1=0.280 recall@10=0.560 mrr@10=0.360 candidate_recall@1000=0.995
+quality held_out/all n=1200 recall@1=0.461 recall@10=0.605 mrr@10=0.507 candidate_recall@1000=0.978
+fixtures=9/9
+personal_typing_boosted_1000_ms n=12406 p50=0.086 p95=0.502 p99=1.124 max=6.082
+personal_typing_boosted_2048_ms n=12406 p50=0.104 p95=0.581 p99=1.208 max=3.405
+personal_typing_boosted_4000_ms n=12406 p50=0.133 p95=0.659 p99=1.312 max=4.736
+usage_items=2048
+usage_boosts_ms n=12406 p50=0.000 p95=0.007 p99=0.015 max=0.069
+usage_rebuild opens=20000 targets=4096 ms=112.1
+personal_scenario habitual n=300 keystrokes_to_first plain=15.32 personal=4.26 mrr@10_after_3 plain=0.022 personal=0.791
+personal_scenario never_opened n=300 keystrokes_to_first plain=10.52 personal=10.54 mrr@10_after_3 plain=0.064 personal=0.077
+steady_rss_kib=41268
+catalog_query_ms n=1200 p50=0.080 p95=0.651 p99=1.593 max=4.279
+peak_rss_kib=45916
+paths=500000 mean_path_bytes=79.6 build_s=2.717 engine_rss_kib=256896
+typing_ms n=12477 p50=0.671 p95=3.640 p99=7.250 max=22.312
+whole_query_ms n=1200 p50=0.861 p95=4.638 p99=8.714 max=26.497
+cold_workspace_query_ms n=60 p50=0.834 p95=5.738 p99=11.748 max=11.748
+quality tuning/exact n=200 recall@1=0.990 recall@10=1.000 mrr@10=0.995 candidate_recall@1000=1.000
+quality tuning/prefix n=200 recall@1=0.140 recall@10=0.395 mrr@10=0.217 candidate_recall@1000=0.940
+quality tuning/abbreviation n=200 recall@1=0.235 recall@10=0.500 mrr@10=0.304 candidate_recall@1000=0.895
+quality tuning/typo n=200 recall@1=0.585 recall@10=0.795 mrr@10=0.663 candidate_recall@1000=0.985
+quality tuning/partial_typo n=200 recall@1=0.080 recall@10=0.090 mrr@10=0.085 candidate_recall@1000=0.400
+quality tuning/parent n=200 recall@1=0.255 recall@10=0.395 mrr@10=0.302 candidate_recall@1000=0.925
+quality tuning/all n=1200 recall@1=0.381 recall@10=0.529 mrr@10=0.428 candidate_recall@1000=0.858
+quality held_out/exact n=200 recall@1=0.980 recall@10=1.000 mrr@10=0.987 candidate_recall@1000=1.000
+quality held_out/prefix n=200 recall@1=0.145 recall@10=0.395 mrr@10=0.210 candidate_recall@1000=0.925
+quality held_out/abbreviation n=200 recall@1=0.260 recall@10=0.570 mrr@10=0.350 candidate_recall@1000=0.910
+quality held_out/typo n=200 recall@1=0.585 recall@10=0.830 mrr@10=0.673 candidate_recall@1000=0.995
+quality held_out/partial_typo n=200 recall@1=0.040 recall@10=0.055 mrr@10=0.048 candidate_recall@1000=0.335
+quality held_out/parent n=200 recall@1=0.220 recall@10=0.385 mrr@10=0.270 candidate_recall@1000=0.945
+quality held_out/all n=1200 recall@1=0.372 recall@10=0.539 mrr@10=0.423 candidate_recall@1000=0.852
+fixtures=9/9
+personal_typing_boosted_1000_ms n=12477 p50=0.724 p95=3.690 p99=7.255 max=24.974
+personal_typing_boosted_2048_ms n=12477 p50=0.802 p95=3.914 p99=7.192 max=25.249
+personal_typing_boosted_4000_ms n=12477 p50=0.970 p95=3.799 p99=6.672 max=17.991
+usage_items=2048
+usage_boosts_ms n=12477 p50=0.000 p95=0.007 p99=0.015 max=0.052
+usage_rebuild opens=20000 targets=4096 ms=113.5
+personal_scenario habitual n=300 keystrokes_to_first plain=9.94 personal=3.47 mrr@10_after_3 plain=0.018 personal=0.773
+personal_scenario never_opened n=300 keystrokes_to_first plain=11.67 personal=11.54 mrr@10_after_3 plain=0.074 personal=0.106
+steady_rss_kib=336152
+catalog_query_ms n=1200 p50=0.938 p95=5.044 p99=7.274 max=11.212
+peak_rss_kib=398680

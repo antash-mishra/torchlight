@@ -47,6 +47,8 @@ void test_writer(void);
 void test_personal(void);
 /** Run periodic scan and watcher recovery checks under instance exhaustion. */
 void test_writer_fallback(void);
+/** Run writer history persistence checks: startup usage, lost batches, locks. */
+void test_writer_history(void);
 /** Run byte/Unicode normalization checks, aborting on failure. */
 void test_tokenize(void);
 /** Run prefix-channel checks, aborting on failure. */

@@ -2,9 +2,9 @@
  * Separate from ASan: its allocator interposition would mask the libc path.
  * Queries may allocate only to compile Frizbee matchers for words a workspace
  * has not cached (bounded per word and scoring thread); a repeated query, a
- * cached one-symbol answer, attaching personal boosts and boosted queries, and
- * vector/fusion queries (including the two-pass prefix shortlist) allocate
- * nothing. */
+ * cached one-symbol answer, attaching personal boosts and boosted queries
+ * (including repeated one-symbol ones), and vector/fusion queries (including
+ * the two-pass prefix shortlist) allocate nothing. */
 #include "torchlight/fuzzy.h"
 #include "torchlight/lexical.h"
 #include "torchlight/rank.h"
@@ -170,6 +170,29 @@ static tl_status check_boosted(const tl_lexical *engine, tl_lexical_workspace *w
         status = check_query(engine, workspace, queries[i]);
     return status;
 }
+/* With boosts attached, a one-symbol query scores the boosted entries through
+ * sparse evidence that is dropped when the query ends. Repeating it must reuse
+ * that cache and its matchers, and must not evict another word's evidence:
+ * "notes" typed again after more one-symbol queries than there are word
+ * caches (four) allocates nothing. */
+static tl_status check_boosted_symbols(const tl_lexical *engine, tl_lexical_workspace *workspace) {
+    enum { SYMBOL_REPEATS = 5 };
+    tl_status status = check_query(engine, workspace, "notes");
+    if (status == TL_OK)
+        status = check_query(engine, workspace, "m");
+    size_t used = 0;
+    for (size_t i = 0; i < SYMBOL_REPEATS && status == TL_OK; i++)
+        used += measured_query(engine, workspace, "m", &status);
+    if (status == TL_OK)
+        used += measured_query(engine, workspace, "notes", &status);
+    if (status == TL_OK && used != 0) {
+        fprintf(stderr,
+                "repeated boosted one-symbol queries, then a cached word, allocated %zu times\n",
+                used);
+        status = TL_STATE;
+    }
+    return status;
+}
 /* Exercise worker dispatch as well as the small-engine serial path. Repeated
  * tokens keep fixture construction cheap; every file matches the abbreviation. */
 static tl_status check_workers(void) {
@@ -194,6 +217,8 @@ static tl_status check_workers(void) {
         status = check_query(engine, workspace, queries[i]);
     if (status == TL_OK)
         status = check_boosted(engine, workspace, queries, sizeof(queries) / sizeof(queries[0]));
+    if (status == TL_OK)
+        status = check_boosted_symbols(engine, workspace);
     lexical_workspace_destroy(workspace);
     lexical_destroy(engine);
     return status;

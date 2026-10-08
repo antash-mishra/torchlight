@@ -85,11 +85,13 @@ void personal_remember(tl_personal *personal, const char *search_id, const char 
     if (personal == NULL || search_id == NULL || search_id[0] == 0 || query == NULL)
         return;
     struct recent_search *slot = &personal->searches[personal->next_search];
-    if (!copy_text(slot->search_id, sizeof(slot->search_id), search_id) ||
-        !copy_text(slot->query, sizeof(slot->query), query)) {
-        slot->search_id[0] = 0;
+    size_t id_length = strnlen(search_id, sizeof(slot->search_id));
+    size_t query_length = strnlen(query, sizeof(slot->query));
+    /* Checked before writing: the slot still holds the oldest search. */
+    if (id_length == sizeof(slot->search_id) || query_length == sizeof(slot->query))
         return;
-    }
+    memcpy(slot->search_id, search_id, id_length + 1);
+    memcpy(slot->query, query, query_length + 1);
     personal->next_search = (personal->next_search + 1) % PERSONAL_RECENT_SEARCHES;
 }
 const char *personal_query_of(const tl_personal *personal, const char *search_id) {

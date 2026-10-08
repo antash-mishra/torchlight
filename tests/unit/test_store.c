@@ -1,6 +1,7 @@
 /* Stable ids, scope isolation, kept scopes, rollback, raw paths and reopen durability. */
 #include "test.h"
 #include "torchlight/store.h"
+#include <sqlite3.h>
 #include <string.h>
 #include <unistd.h>
 struct loaded {
@@ -309,9 +310,72 @@ static void history_batches(void) {
     store_destroy(store);
     CHECK(unlink(database) == 0);
 }
+/* Run SQL on a separate connection to database: fault injection, and rows
+ * that the store's own writes would reject (only another tool writes them). */
+static void raw_sql(const char *database, const char *sql) {
+    sqlite3 *db = NULL;
+    CHECK(sqlite3_open(database, &db) == SQLITE_OK);
+    CHECK(sqlite3_exec(db, sql, NULL, NULL, NULL) == SQLITE_OK);
+    CHECK(sqlite3_close(db) == SQLITE_OK);
+}
+static int64_t raw_count(const char *database, const char *sql) {
+    sqlite3 *db = NULL;
+    sqlite3_stmt *statement = NULL;
+    CHECK(sqlite3_open(database, &db) == SQLITE_OK);
+    CHECK(sqlite3_prepare_v2(db, sql, -1, &statement, NULL) == SQLITE_OK);
+    CHECK(sqlite3_step(statement) == SQLITE_ROW);
+    int64_t count = sqlite3_column_int64(statement, 0);
+    CHECK(sqlite3_finalize(statement) == SQLITE_OK && sqlite3_close(db) == SQLITE_OK);
+    return count;
+}
+/* When SQLite rolls back a whole history batch (an I/O error, out of memory
+ * or, injected here, a trigger), the batch ends with it: the failing write
+ * reports TL_IO, commit finds no batch, and a new batch can begin.
+ * Regression: the batch stayed open in name, later writes committed on their
+ * own, and the commit failed with TL_IO although they were saved. */
+static void history_batch_lost(void) {
+    char database[] = "/tmp/torchlight-lost-XXXXXX";
+    int fd = mkstemp(database);
+    CHECK(fd >= 0 && close(fd) == 0);
+    tl_store *store = NULL;
+    CHECK(store_create(database, &store) == TL_OK);
+    raw_sql(database, "CREATE TRIGGER lose_batch BEFORE INSERT ON searches "
+                      "WHEN NEW.query = 'boom' BEGIN SELECT RAISE(ROLLBACK, 'injected'); END");
+    CHECK(store_history_begin(store) == TL_OK);
+    CHECK(store_search(store, "s1", "lost with the batch", 1) == TL_OK);
+    CHECK(store_search(store, "s2", "boom", 2) == TL_IO);
+    CHECK(store_history_commit(store) == TL_STATE);
+    CHECK(store_history_begin(store) == TL_OK);
+    CHECK(store_search(store, "s3", "next batch", 3) == TL_OK);
+    CHECK(store_history_commit(store) == TL_OK);
+    CHECK(raw_count(database, "SELECT count(*) FROM searches") == 1);
+    CHECK(raw_count(database, "SELECT count(*) FROM searches WHERE id = 's3'") == 1);
+    store_destroy(store);
+    CHECK(unlink(database) == 0);
+}
+/* Retained rows the store would never write are skipped while rebuilding
+ * usage, and the rest are still reported. Regression: one such row failed
+ * the whole read, so personal ranking started empty on every restart. */
+static void history_malformed_rows(void) {
+    char database[] = "/tmp/torchlight-malformed-XXXXXX";
+    int fd = mkstemp(database);
+    CHECK(fd >= 0 && close(fd) == 0);
+    tl_store *store = NULL;
+    CHECK(store_create(database, &store) == TL_OK);
+    raw_sql(database, "INSERT INTO desktop_opens VALUES('negative-time','a.desktop',NULL,-5),"
+                      "('kept','b.desktop',NULL,100),('empty-id','',NULL,101)");
+    struct retained retained = {0};
+    CHECK(store_history_opens(store, -10, collect_open, &retained) == TL_OK);
+    CHECK(retained.count == 1 && strcmp(retained.desktop_ids[0], "b.desktop") == 0 &&
+          retained.timestamps[0] == 100);
+    store_destroy(store);
+    CHECK(unlink(database) == 0);
+}
 void test_store(void) {
     scoped_prunes_and_changes();
     history_batches();
+    history_batch_lost();
+    history_malformed_rows();
     char database[] = "/tmp/torchlight-store-XXXXXX";
     int fd = mkstemp(database);
     CHECK(fd >= 0);

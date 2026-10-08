@@ -36,7 +36,8 @@ dropped; a peer that only shut its write half still receives every reply. See
 Every M2 request ends with `phase: final`; query completion uses
 `reason: lexical_only` when no model is configured. With `--model`, ready matching
 snapshots send lexical then final hybrid/fallback through the semantic service. Each accepted query receives a random-session/sequence
-search id before one optional history enqueue. Resolve leases the current view;
+search id, and its query is remembered in memory instead of being queued
+(see Personal ranking below). Resolve leases the current view;
 stale ids return `stale_result`. Open recording is asynchronous and validates the
 current catalog id, without launching an external application.
 

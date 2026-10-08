@@ -1,8 +1,9 @@
 /* Personal ranking benchmark (see personal.h).
  *
  * Latency: every held-out query is typed byte by byte, as in the plain
- * typing benchmark, with 1000 and then 4000 random entries boosted; and
- * usage_boosts is timed for a summary filled to its caps.
+ * typing benchmark, with 1000, 2048 (the summary's cap) and 4000 random
+ * entries boosted; usage_boosts is timed for a summary filled to its caps;
+ * and the startup rebuild of a summary from retained opens is timed.
  *
  * Scenario: a person has PERSONAL_HABITS habitual files, opened
  * PERSONAL_HISTORY_OPENS times over the past month with Zipf-distributed
@@ -28,6 +29,11 @@ enum {
     PERSONAL_SEED_HABITS = 3,
     PERSONAL_SEED_OTHERS = 4,
     PERSONAL_SEED_BOOSTS = 5,
+    PERSONAL_SEED_REBUILD = 6,
+    /* Rebuild worst case: every open has a new query and targets outnumber
+     * the item cap, so most opens evict an item and a pair. */
+    PERSONAL_REBUILD_OPENS = 20000,
+    PERSONAL_REBUILD_TARGETS = 2 * USAGE_MAX_ITEMS,
     PERSONAL_DAY = 24 * 3600
 };
 /* A fixed clock keeps the scenario deterministic. */
@@ -127,6 +133,32 @@ static tl_status measure_usage_boosts(const bench_query *queries, size_t count) 
         bench_report("usage_boosts", &latency);
     }
     bench_latency_free(&latency);
+    usage_destroy(usage);
+    return status;
+}
+/* Startup rebuild: retained opens replayed oldest first into an empty
+ * summary, as the persistence thread does before writing new history. */
+static tl_status measure_usage_rebuild(const bench_query *queries, size_t count) {
+    tl_usage *usage = NULL;
+    tl_status status = usage_create((int64_t)PERSONAL_HISTORY_DAYS * PERSONAL_DAY, &usage);
+    const int64_t first = PERSONAL_NOW - (int64_t)PERSONAL_HISTORY_DAYS * PERSONAL_DAY;
+    const int64_t spacing = (int64_t)PERSONAL_HISTORY_DAYS * PERSONAL_DAY / PERSONAL_REBUILD_OPENS;
+    uint64_t state = PERSONAL_SEED_REBUILD;
+    double start = 0, end = 0;
+    if (status == TL_OK)
+        status = bench_now(&start);
+    char query[LEXICAL_QUERY_BYTES + 1];
+    for (size_t i = 0; i < PERSONAL_REBUILD_OPENS && status == TL_OK; i++) {
+        int length = snprintf(query, sizeof(query), "%.8s %zu", queries[i % count].text, i);
+        tl_usage_target target = {1 + corpus_random(&state) % PERSONAL_REBUILD_TARGETS, NULL};
+        status = length < 0 ? TL_LIMIT
+                            : usage_record(usage, target, query, first + (int64_t)i * spacing);
+    }
+    if (status == TL_OK)
+        status = bench_now(&end);
+    if (status == TL_OK)
+        printf("usage_rebuild opens=%d targets=%d ms=%.1f\n", PERSONAL_REBUILD_OPENS,
+               PERSONAL_REBUILD_TARGETS, (end - start) * 1e3);
     usage_destroy(usage);
     return status;
 }
@@ -305,6 +337,8 @@ tl_status personal_benchmark(const bench_corpus *corpus, const tl_lexical *engin
         status = measure_boosted(engine, workspace, held_out, held_out_count, BOOSTED[i]);
     if (status == TL_OK)
         status = measure_usage_boosts(held_out, held_out_count);
+    if (status == TL_OK)
+        status = measure_usage_rebuild(held_out, held_out_count);
     if (status == TL_OK)
         status = run_scenario(corpus, engine, workspace);
     return status;

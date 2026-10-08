@@ -4,7 +4,7 @@
 > scan batches, scoped rescans of event directories, delta publication with compaction;
 > M2/M3 reconciliation contracts retained
 > **Source:** `src/service/writer.c` · **Header:** `include/torchlight/writer.h`
-> **Tests:** `tests/unit/test_writer.c`, `tests/unit/test_writer_fallback.c`, `tests/test_daemon.py`
+> **Tests:** `tests/unit/test_writer.c`, `tests/unit/test_writer_fallback.c`, `tests/unit/test_writer_history.c`, `tests/test_daemon.py`
 
 The writer owns two threads and two SQLite connections. The indexing thread
 drains inotify, crawls selected roots into a private batch (copied entries,
@@ -129,8 +129,17 @@ The persistence thread still does all SQLite work for history; the search
 thread only queues events ([ADR 0033](../../adr/0033-m5-personal-ranking.md)).
 
 - **Drains.** Each drain writes all popped events in one transaction. A clear
-  commits what came before it and runs on its own. Written, failed and
-  dropped counters update at commit.
+  commits what came before it and runs on its own. Dropped events and
+  rejected events are counted at once; written events, and failures from a
+  lost commit, are counted when the batch ends. `history_pending` counts
+  queued events only, not those of a batch still being written.
+- **Failures.** An event that fails with an SQL error ends the batch at once:
+  SQLite may have rolled the whole batch back (an I/O error, out of memory),
+  so its earlier events are committed or counted as lost, and later events
+  start a new batch. If the batch cannot begin, because another connection
+  holds the database lock, the drain writes each event alone and does not
+  retry the begin, so a lock costs one busy timeout per event (as before
+  batching) rather than two.
 - **Fewer events.** The daemon no longer queues a search per query. An open
   carries its search's query instead, and the store saves both rows together.
 - **Startup load.** Before draining any event, the persistence thread
@@ -139,4 +148,12 @@ thread only queues events ([ADR 0033](../../adr/0033-m5-personal-ranking.md)).
   any new event is written, the opens the search thread recorded meanwhile
   are not in it, and the [personal](../personal/README.md) state merges them
   without double counting. A failed load counts as a history failure; the
-  live summary simply starts empty.
+  live summary simply starts empty. Retained rows the store never writes are
+  skipped, so one bad row cannot empty the summary.
+
+`test_writer_history.c` checks the startup load (a bad row skipped, the
+summary offered exactly once), the counters when SQLite loses a whole batch
+(the event after the loss is written in a new batch), and that a drain
+blocked by another connection's lock waits one busy timeout per event plus
+one failed begin (about 9 s for two events, against 12 s when the begin was
+retried per event).

@@ -135,10 +135,16 @@ pair lands together or not at all. A rejected event (a deleted file, a
 conflicting retry) rolls back alone. `store_history_begin` and
 `store_history_commit`/`store_history_rollback` wrap many events in one
 transaction: a drained queue costs one commit, and a failed commit loses the
-whole batch, reported as `TL_IO`. `store_search`, `store_open_event` and
+whole batch, reported as `TL_IO`. When SQLite itself rolls back the whole
+transaction during an event (an I/O error, out of memory, a trigger), the
+batch ends there: that write returns `TL_IO`, the earlier events are lost,
+and commit returns `TL_STATE`, so no later write commits alone under the
+batch's name. `store_search`, `store_open_event` and
 `store_desktop_open` keep their contracts as single-event wrappers.
 
 `store_history_opens` streams the retained file and desktop opens since a
 cutoff, oldest first, each with its search's query, in one statement. The
-writer rebuilds the usage summary from it at startup. No schema change was
+writer rebuilds the usage summary from it at startup. Rows the store never
+writes (a negative id or time, an empty desktop id), which only another tool
+could add, are skipped rather than failing the whole read. No schema change was
 needed.

@@ -127,6 +127,42 @@ static void capacity(void) {
     CHECK(boost(usage, "q00000", now, file(1)) < boost(usage, "q04105", now, file(1)));
     usage_destroy(usage);
 }
+/* Eviction compares weights as of one common time, even when timestamps
+ * arrive out of order: one open four weeks (two half-lives) later is worth
+ * four opens now, so it outweighs two opens now. Regression: entries newer
+ * than the incoming open were compared undecayed, evicting the stronger one. */
+static void eviction_order(void) {
+    enum { FILLER_OPENS = 5, LATER = 28 * DAY };
+    tl_usage *usage = NULL;
+    CHECK(usage_create(RETENTION, &usage) == TL_OK);
+    /* Items: file 1 opened once later, file 2 twice now, fillers five times. */
+    for (uint64_t id = 3; id <= USAGE_MAX_ITEMS; id++)
+        for (int k = 0; k < FILLER_OPENS; k++)
+            CHECK(usage_record(usage, file(id), NULL, START) == TL_OK);
+    CHECK(usage_record(usage, file(1), NULL, START + LATER) == TL_OK);
+    CHECK(usage_record(usage, file(2), NULL, START) == TL_OK);
+    CHECK(usage_record(usage, file(2), NULL, START) == TL_OK);
+    CHECK(usage_count(usage) == USAGE_MAX_ITEMS);
+    CHECK(usage_record(usage, file(USAGE_MAX_ITEMS + 1), NULL, START) == TL_OK);
+    CHECK(index_of(usage, file(1)) != SIZE_MAX && index_of(usage, file(2)) == SIZE_MAX);
+    /* Pairs: the same shape with stored queries of one file. */
+    usage_clear(usage);
+    char query[32];
+    for (int i = 0; i < USAGE_MAX_PAIRS - 2; i++) {
+        snprintf(query, sizeof(query), "f%05d", i);
+        for (int k = 0; k < FILLER_OPENS; k++)
+            CHECK(usage_record(usage, file(1), query, START) == TL_OK);
+    }
+    CHECK(usage_record(usage, file(1), "alpha", START + LATER) == TL_OK);
+    CHECK(usage_record(usage, file(1), "beta", START) == TL_OK);
+    CHECK(usage_record(usage, file(1), "beta", START) == TL_OK);
+    CHECK(usage_record(usage, file(1), "gamma", START) == TL_OK);
+    int64_t now = START + LATER;
+    int unmatched = boost(usage, "zzz", now, file(1));
+    CHECK(boost(usage, "alpha", now, file(1)) > unmatched);
+    CHECK(boost(usage, "beta", now, file(1)) == unmatched);
+    usage_destroy(usage);
+}
 /* Merging equals recording everything in one summary. */
 static void merge(void) {
     tl_usage *all = NULL, *left = NULL, *right = NULL;
@@ -162,5 +198,6 @@ void test_usage(void) {
     frecency();
     query_history();
     capacity();
+    eviction_order();
     merge();
 }

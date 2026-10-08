@@ -502,3 +502,31 @@ Correctness of the boosted results is tested, not sampled:
 evaluation. The daemon and desktop integration tests check lifting among
 equal matches, exact names staying first, restart persistence, clearing, and
 that only searches leading to an open are saved.
+
+### Re-run after the review fixes (2026-10-08)
+
+A review of M5 found that a boosted one-symbol query compiled a matcher on
+every keystroke, and that the startup rebuild of the usage summary could take
+seconds; both are fixed ([ADR 0033](adr/0033-m5-personal-ranking.md#review-fixes-2026-10-08)).
+The re-run is
+[2026-10-08-m5-review-fixes.txt](../tests/bench/results/2026-10-08-m5-review-fixes.txt),
+on the same machine under similar load (load average about 3.6):
+
+| Paths | No boosts p95 | 1000 boosted | 2048 boosted (summary cap) | 4000 boosted |
+|---:|---:|---:|---:|---:|
+| 50,000 | 0.461 ms | 0.502 ms | 0.581 ms | 0.659 ms |
+| 500,000 | 3.640 ms | 3.690 ms | 3.914 ms | 3.799 ms |
+
+Every case is below the 5 ms target in this run. The unboosted baseline also
+fell, from 4.63 to 3.64 ms, although that path did not change, so most of
+the difference from the first run is run-to-run variation on this loaded
+machine, larger than the ±0.2 ms assumed above. The boosted cost over the
+baseline at 500k is 0.05 to 0.27 ms here, against 0.18 to 0.51 ms before;
+confirm the margin on an idle machine before treating the 4000-entry gate as
+settled.
+
+`usage_rebuild` replays 20,000 retained opens in the worst case (a new query
+on every open, twice as many targets as the item cap): 112 ms at 50k and
+114 ms at 500k (the rebuild does not depend on the catalog). Before the fix
+the same replay took about 1.25 s (measured separately at -O2). Ranking
+quality, the nine fixtures and the usage scenario are unchanged.

@@ -390,8 +390,12 @@ def watch_exhaustion_and_disabled_history(service):
         wait_for(lambda: service.call("status")["indexing"]["watch_degraded"])
         (service.root / "sub/unwatched.txt").write_bytes(b"")
         file_id = service.indexed(service.root / "sub/unwatched.txt")
+        ranked = lambda: [result["id"] for result in service.call("query", query="txt")["results"]]
+        before = ranked()
         assert service.call("open", file_id=file_id, event_id="disabled")["status"] == "ok"
         time.sleep(0.1)
+        # Disabled history keeps no usage summary: the open changes no ranking.
+        assert ranked() == before and service.call("status")["history"]["personal_items"] == 0
         with sqlite3.connect(service.database) as connection:
             assert connection.execute("SELECT count(*) FROM searches").fetchone()[0] == 0
             assert connection.execute("SELECT count(*) FROM opens").fetchone()[0] == 0
@@ -514,6 +518,15 @@ def personal_ranking(service):
         assert service.call("open", **opened)["status"] == "ok"  # a retry counts once
         assert first("chap") == os.fsencode(target)
         assert first("chapter1.txt") == first_chapter
+        # The full boost (frecency plus query history, since "cha" starts the
+        # stored "chap") lifts the target to second place, never above an
+        # exact name.
+        exact = service.root / "cha"
+        exact.write_bytes(b"")
+        service.indexed(exact)
+        response = service.call("query", query="cha", limit=10)
+        leading = [exact_path(result) for result in response["results"][:2]]
+        assert leading == [os.fsencode(exact), os.fsencode(target)], leading
         assert service.call("status")["history"]["personal_items"] == 1
         def saved():
             with sqlite3.connect(service.database) as connection:
@@ -530,6 +543,32 @@ def personal_ranking(service):
         assert service.call("history_clear")["status"] == "ok"
         assert first("chap") == first_chapter
         assert service.call("status")["history"]["personal_items"] == 0
+    finally:
+        service.stop()
+
+
+def personal_busy_clients(service):
+    """M5: the popup opens a result on its own connection after its search,
+    so other clients may search in between. The open still finds its search's
+    query and saves the search row with it. Regression: 32 remembered
+    searches shared by all clients lost the link to a busy client."""
+    (service.root / "chapter.txt").write_bytes(b"")
+    service.start()
+    try:
+        file_id = service.indexed(service.root / "chapter.txt")
+        search = service.call("query", query="chap")
+        for i in range(100):
+            assert service.call("query", query=f"other {i}")["status"] == "ok"
+        opened = dict(file_id=file_id, search_id=search["search_id"], event_id="busy-open")
+        assert service.call("open", **opened)["status"] == "ok"
+
+        def linked():
+            with sqlite3.connect(service.database) as connection:
+                return connection.execute(
+                    "SELECT o.search_id, s.query FROM opens o LEFT JOIN searches s ON s.id = o.search_id"
+                    " WHERE o.event_id='busy-open'").fetchall()
+        wait_for(linked)
+        assert linked() == [(search["search_id"], "chap")], linked()
     finally:
         service.stop()
 
@@ -585,6 +624,9 @@ with tempfile.TemporaryDirectory(prefix="torchlight-daemon-") as temporary:
     personal = Path(temporary) / "personal"
     personal.mkdir(mode=0o700)
     personal_ranking(Service(personal))
+    busy = Path(temporary) / "busy"
+    busy.mkdir(mode=0o700)
+    personal_busy_clients(Service(busy))
     slow = Path(temporary) / "slow"
     slow.mkdir(mode=0o700)
     slow_output_and_response_limit(Service(slow))

@@ -14,8 +14,8 @@ record it.
 
 ## Responsibilities
 
-- Owns the live usage summary, the last 32 searches (id and query) and the
-  last 32 launch-event ids.
+- Owns the live usage summary, the last 256 searches (id and query) across
+  all clients, and the last 32 launch-event ids.
 - Splits the summary into file ids for `catalog_query_boosted` and desktop
   positions for `desktop_query_boosted`.
 - Adopts the startup summary the persistence thread rebuilt, merging opens
@@ -58,6 +58,13 @@ search thread: query  -> personal_boosts -> catalog_query_boosted + desktop_quer
 persistence thread: store_history_opens -> usage summary -> offered to the search thread
 ```
 
+Searches are remembered across clients rather than per connection: the
+popup opens a result on a separate connection from its search, so a
+per-connection memory would never find it. 256 searches keep the popup's
+search while other clients (a script, a second popup) search in between;
+superseded keystrokes are never remembered. Oversized input is ignored
+without touching the oldest remembered search.
+
 ## Invariants
 
 - Every boost list refers to the summary as it is now: mappings are redone
@@ -66,15 +73,24 @@ persistence thread: store_history_opens -> usage summary -> offered to the searc
 
 ## Testing
 
-`test_personal.c` covers search memory wraparound, retried events counting
-once, file boosts and keys, merging on adoption, and discarding after a clear.
-The daemon and desktop integration tests cover lifting a file or an application
-among equal matches, persistence across a restart, and clearing.
+`test_personal.c` covers search memory wraparound, oversized input, a
+search surviving 200 searches by other clients, retried events counting
+once, file boosts and keys, merging on adoption, and discarding after a
+clear. The daemon integration test covers lifting a file among equal
+matches, an exact name staying above the full boost, persistence across a
+restart, clearing, a busy client searching between a search and its open,
+and unchanged ranking with history disabled. The desktop integration test
+covers lifting an application among equal matches.
 
 ## Gotchas
 
-- An open records a query only if its search is among the last 32. Older opens
-  still count for frecency.
+- An open records a query only if its search is among the last 256. Older
+  opens still count for frecency.
+- Retried launches count once only while their event id is among the last
+  32 recorded. A retry beyond that, or after a restart, counts again in the
+  live summary (the saved history counts it once), until the next restart
+  rebuilds the summary from saved history. Checking with the database would
+  put SQL on the search thread.
 - An open that the bounded history queue drops still counts in the live
   summary; it just won't survive a restart.
 

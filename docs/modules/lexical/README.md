@@ -219,14 +219,19 @@ inside its exact tier. Results equal a full evaluation that adds every boost
   the side pass builds *sparse* evidence for the boosted entries alone: their
   name and field keys through `prefix_score`, and parent folders' keys
   lazily per node. The typo and trigram channels need three symbols, so
-  nothing is missed. The sparse cache is dropped when the query ends.
+  nothing is missed. The sparse cache is dropped when the query ends and
+  becomes the least recently used word cache, keeping its matchers: the next
+  new word reuses it instead of evicting another word's evidence, and
+  repeating the same one-symbol query compiles nothing.
 - **Parallel scoring.** A side batch of at least 1024 entries is split across
   the scoring workers once the main pass has resolved every directory for the
   word. Otherwise the coordinator scores it.
 
 Static assertions keep boosted ordinary scores below exact names and boosted
-exact names below exact paths. Attaching boosts and boosted queries allocate
-nothing (`tests/alloc/query.c`). `tests/unit/test_lexical_boost.c` compares
+exact names below exact paths. Attaching boosts and boosted queries,
+including repeated one-symbol queries, allocate nothing, and one-symbol
+queries do not evict other words' cached evidence (`tests/alloc/query.c`).
+Any error from `lexical_workspace_boost` clears the boosts attached before. `tests/unit/test_lexical_boost.c` compares
 results with brute-force boosted evaluation:
 
 - small engines, with tombstones and fields;

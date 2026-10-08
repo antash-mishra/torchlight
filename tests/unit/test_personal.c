@@ -34,8 +34,33 @@ static void remembered_searches(void) {
     }
     CHECK(personal_query_of(personal, "s1") == NULL && personal_query_of(personal, "n0") != NULL);
     personal_remember(personal, NULL, "x");
+    /* Oversized input is ignored without touching the oldest search (n0 sits
+     * in the slot the next search overwrites). Regression: it was blanked. */
+    char oversized[LEXICAL_QUERY_BYTES + 2];
+    memset(oversized, 'q', sizeof(oversized) - 1);
+    oversized[sizeof(oversized) - 1] = 0;
+    personal_remember(personal, "big", oversized);
+    CHECK(personal_query_of(personal, "big") == NULL && personal_query_of(personal, "n0") != NULL);
     personal_destroy(personal);
     personal_destroy(NULL);
+}
+/* The popup opens a result on its own connection after its latest search,
+ * while other clients may keep searching: an open still finds its search's
+ * query after a couple of hundred searches from anyone. Regression: 32
+ * shared slots lost the query link (and the search row) to a busy client. */
+static void busy_clients(void) {
+    enum { OTHER_SEARCHES = 200 };
+    tl_personal *personal = NULL;
+    CHECK(personal_create(RETENTION, &personal) == TL_OK);
+    personal_remember(personal, "popup:1", "chap");
+    char id[32];
+    for (int i = 0; i < OTHER_SEARCHES; i++) {
+        snprintf(id, sizeof(id), "script:%d", i);
+        personal_remember(personal, id, "x");
+    }
+    const char *query = personal_query_of(personal, "popup:1");
+    CHECK(query != NULL && strcmp(query, "chap") == 0);
+    personal_destroy(personal);
 }
 static void opens_and_boosts(void) {
     tl_personal *personal = NULL;
@@ -88,6 +113,7 @@ static void adoption_and_clearing(void) {
 }
 void test_personal(void) {
     remembered_searches();
+    busy_clients();
     opens_and_boosts();
     adoption_and_clearing();
 }

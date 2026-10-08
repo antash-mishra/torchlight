@@ -20,6 +20,8 @@
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
+/* History retention is configured in days; the usage summary takes seconds. */
+#define DAEMON_SECONDS_PER_DAY 86400
 enum pending_state { PENDING_QUEUED, PENDING_RUNNING };
 /* One decoded request waiting for, or being served by, the search thread. */
 struct pending {
@@ -204,7 +206,8 @@ static tl_status create_services(tl_daemon *daemon, const tl_daemon_options *opt
         }
     }
     if (status == TL_OK && options->history) {
-        status = personal_create((int64_t)options->history_days * 24 * 3600, &daemon->personal);
+        status = personal_create((int64_t)options->history_days * DAEMON_SECONDS_PER_DAY,
+                                 &daemon->personal);
         daemon->usage_loading = status == TL_OK;
     }
     if (status == TL_OK)
@@ -456,8 +459,11 @@ static tl_status record_open(tl_daemon *daemon, tl_ipc_request *event, tl_usage_
     tl_status status = writer_history(daemon->writer, event, NULL);
     if (status == TL_STATE)
         return TL_OK; /* history disabled */
+    /* TL_LIMIT: the history queue is full, so this open is not saved (and is
+     * counted as dropped); the launch itself succeeded, so it still counts. */
     if (status == TL_OK || status == TL_LIMIT) {
-        /* TL_LIMIT here only means a desktop id too long to keep. */
+        /* Ranking is only a hint and never fails an open: the one rejection,
+         * a desktop id too long to keep, just leaves that app unboosted. */
         tl_status counted =
             personal_record(daemon->personal, event->event_id, target, query, (int64_t)time(NULL));
         (void)counted;

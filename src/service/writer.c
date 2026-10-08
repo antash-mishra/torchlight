@@ -842,7 +842,7 @@ static void end_batch(tl_writer *writer, bool *batch, size_t *pending) {
  * deadline the rest is counted as dropped rather than delaying exit. */
 static void drain_history(tl_writer *writer) {
     struct history event;
-    bool batch = false;
+    bool batch = false, begin_failed = false;
     size_t pending = 0;
     for (size_t i = 0; i < WRITER_HISTORY_CAPACITY && pop_history(writer, &event); i++) {
         if (atomic_load(&writer->stop) && milliseconds() >= writer->shutdown_due) {
@@ -855,16 +855,27 @@ static void drain_history(tl_writer *writer) {
             count_history(writer, cleared == TL_OK, cleared != TL_OK, 0);
             continue;
         }
-        /* Without a batch (it failed to begin), each event commits alone. */
-        if (!batch)
+        /* Without a batch, each event commits alone. A failed begin is not
+         * retried in this drain: the database is likely locked elsewhere,
+         * and each retry would add a busy timeout per event. */
+        if (!batch && !begin_failed) {
             batch = store_history_begin(writer->store) == TL_OK;
+            begin_failed = !batch;
+        }
         tl_status status = write_history(writer, &event);
-        if (status != TL_OK)
-            count_history(writer, 0, 1, 0);
-        else if (batch)
-            pending++;
-        else
-            count_history(writer, 1, 0, 0);
+        if (status == TL_OK) {
+            if (batch)
+                pending++;
+            else
+                count_history(writer, 1, 0, 0);
+            continue;
+        }
+        count_history(writer, 0, 1, 0);
+        /* An SQL failure may have taken the whole batch with it: commit what
+         * remains now (a lost batch counts its events as failed), so later
+         * events are counted by a batch of their own. */
+        if (status == TL_IO)
+            end_batch(writer, &batch, &pending);
     }
     end_batch(writer, &batch, &pending);
 }

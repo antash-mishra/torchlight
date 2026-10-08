@@ -432,7 +432,8 @@ tl_status desktop_query_boosted(tl_desktop *desktop, const char *query,
     if (desktop == NULL || query == NULL || results == NULL || capacity == 0 ||
         capacity > LEXICAL_MAX_RESULTS)
         return TL_INVALID;
-    /* Always replace the workspace's boosts, so none outlive this query. */
+    /* Always replace the workspace's boosts, so a query never ranks with
+     * boosts attached for an earlier one. */
     tl_status status = lexical_workspace_boost(desktop->active->workspace, boosts, boost_count);
     if (status != TL_OK || query[0] == 0)
         return status;

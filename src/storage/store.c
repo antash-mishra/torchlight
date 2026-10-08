@@ -996,6 +996,13 @@ tl_status store_history_write(tl_store *store, const tl_store_history_event *eve
     if (status != TL_OK && execute(store, "ROLLBACK TO history_event") != TL_OK)
         status = TL_IO;
     tl_status released = execute(store, "RELEASE history_event");
+    /* SQLite rolls back the whole transaction on some errors (I/O, out of
+     * memory, a RAISE(ROLLBACK) trigger): the batch is gone, so end it here
+     * rather than let later writes commit alone under its name. */
+    if (store->history_batch && sqlite3_get_autocommit(store->db) != 0) {
+        store->history_batch = false;
+        return TL_IO;
+    }
     return status == TL_OK ? released : status;
 }
 tl_status store_history_begin(tl_store *store) {
@@ -1056,14 +1063,17 @@ static const char *const HISTORY_OPENS_SQL =
     "ON s.id = o.search_id WHERE o.ts >= ?1 UNION ALL "
     "SELECT 0, d.desktop_id, s.query, d.ts FROM desktop_opens d LEFT JOIN searches s "
     "ON s.id = d.search_id WHERE d.ts >= ?1 ORDER BY 4";
+/* Report one retained open. A row the store would never write (only another
+ * tool can) is skipped, so one bad row cannot fail the whole rebuild. */
 static tl_status report_open(sqlite3_stmt *statement, tl_store_open_callback callback,
                              void *context) {
     sqlite3_int64 file_id = sqlite3_column_int64(statement, 0);
     const char *desktop_id = (const char *)sqlite3_column_text(statement, 1);
     const char *query = (const char *)sqlite3_column_text(statement, 2);
     sqlite3_int64 timestamp = sqlite3_column_int64(statement, 3);
-    if (file_id < 0 || timestamp < 0 || (file_id == 0) == (desktop_id == NULL))
-        return TL_IO;
+    if (file_id < 0 || timestamp < 0 || (file_id == 0) == (desktop_id == NULL) ||
+        (desktop_id != NULL && desktop_id[0] == 0))
+        return TL_OK;
     return callback(context, (uint64_t)file_id, desktop_id, query, (int64_t)timestamp);
 }
 tl_status store_history_opens(tl_store *store, int64_t cutoff, tl_store_open_callback callback,

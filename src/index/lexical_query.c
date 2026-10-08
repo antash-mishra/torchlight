@@ -307,8 +307,18 @@ static bool same_key(const struct word_cache *cache, const struct word *word) {
     return cache->valid && cache->path == word->path && cache->key_length == word->text.length &&
            memcmp(cache->key, word->text.symbols, word->text.length * sizeof(uint32_t)) == 0;
 }
-/* Assign the least recently used cache to a new word, clearing its hits,
- * directory stamps and matchers. Eviction changes work only, never results. */
+/* Whether cache was last keyed by word's symbols, even if its evidence has
+ * since been dropped: its matchers depend on nothing else. */
+static bool same_symbols(const struct word_cache *cache, const struct word *word) {
+    return cache->key_length == word->text.length &&
+           memcmp(cache->key, word->text.symbols, word->text.length * sizeof(uint32_t)) == 0 &&
+           memcmp(cache->key_boundaries, word->text.boundaries, word->text.length) == 0;
+}
+/* Assign the least recently used cache to a new word, clearing its hits and
+ * directory stamps, and its matchers unless they were compiled for the same
+ * symbols (a dropped one-symbol cache claimed again by the same query).
+ * Dropped caches count as least recently used (reset_workspace). Eviction
+ * changes work only, never results. */
 static struct word_cache *claim_evidence(tl_lexical_workspace *workspace, const struct word *word,
                                          size_t *selected) {
     *selected = 0;
@@ -317,9 +327,11 @@ static struct word_cache *claim_evidence(tl_lexical_workspace *workspace, const 
             *selected = i;
     struct word_cache *cache = &workspace->evidence[*selected];
     reset_hits(cache);
-    for (size_t p = 0; p < LEXICAL_PARALLEL_PARTICIPANTS; p++) {
-        fuzzy_matcher_destroy(cache->matchers[p]);
-        cache->matchers[p] = NULL;
+    if (!same_symbols(cache, word)) {
+        for (size_t p = 0; p < LEXICAL_PARALLEL_PARTICIPANTS; p++) {
+            fuzzy_matcher_destroy(cache->matchers[p]);
+            cache->matchers[p] = NULL;
+        }
     }
     memcpy(cache->key, word->text.symbols, word->text.length * sizeof(uint32_t));
     memcpy(cache->key_boundaries, word->text.boundaries, word->text.length);
@@ -1396,7 +1408,10 @@ static tl_status push_boosted(tl_lexical_workspace *workspace, size_t words, siz
 /* Leave total arrays all zero so the next query starts clean. Word evidence
  * stays: it is keyed by the word and valid for this immutable engine. A
  * failed or cancelled query may leave a cache half-filled, and sparse
- * evidence covers only the side entries, so drop those. */
+ * evidence covers only the side entries, so drop those. A dropped cache
+ * becomes least recently used, so the next new word claims it instead of
+ * evicting a valid cache, and keeps its matchers when the word is the same:
+ * repeating a boosted one-symbol query allocates nothing. */
 static void reset_workspace(tl_lexical_workspace *workspace, tl_status status) {
     for (size_t i = 0; i < LEXICAL_WORD_CACHES; i++) {
         struct word_cache *cache = &workspace->evidence[i];
@@ -1406,6 +1421,7 @@ static void reset_workspace(tl_lexical_workspace *workspace, tl_status status) {
         cache->valid = false;
         cache->complete = false;
         cache->sparse = false;
+        cache->used = 0;
     }
     workspace->symbol_cached = false;
     workspace->touched_count = 0;
@@ -1434,9 +1450,11 @@ static void clear_boosts(tl_lexical_workspace *workspace) {
 }
 tl_status lexical_workspace_boost(tl_lexical_workspace *workspace, const tl_lexical_boost *boosts,
                                   size_t count) {
-    if (workspace == NULL || (boosts == NULL && count != 0))
+    if (workspace == NULL)
         return TL_INVALID;
-    clear_boosts(workspace);
+    clear_boosts(workspace); /* before validating: any error leaves no boosts */
+    if (boosts == NULL && count != 0)
+        return TL_INVALID;
     if (count > LEXICAL_MAX_BOOSTED)
         return TL_LIMIT;
     for (size_t i = 0; i < count; i++) {
