@@ -193,6 +193,29 @@ static void test_reveal(struct launch *launch, const char *marker) {
     stop_bus(bus, saved_address);
     launch->reveal = false;
 }
+/* New window runs the entry's new-window action, else falls back to a normal launch. */
+static void test_new_window(struct launch *launch, const char *script, const char *marker,
+                            const char *desktop) {
+    launch->new_window = true;
+    CHECK(run_action(launch));
+    expect_marker(marker, desktop);
+    CHECK(unlink(marker) == 0);
+    char contents[1024];
+    CHECK(snprintf(contents, sizeof(contents),
+                   "[Desktop Entry]\nType=Application\nName=Fixture\nExec=%s %%k\n"
+                   "Actions=new-window;\n\n[Desktop Action new-window]\nName=New Window\n"
+                   "Exec=%s new-window\n",
+                   script, script) > 0);
+    write_text(desktop, contents);
+    launch->row.desktop_revision = revision(desktop);
+    CHECK(run_action(launch));
+    expect_marker(marker, "new-window");
+    CHECK(unlink(marker) == 0);
+    launch->new_window = false;
+    CHECK(run_action(launch));
+    expect_marker(marker, desktop);
+    CHECK(unlink(marker) == 0);
+}
 void test_actions(void) {
     char directory[] = "/tmp/torchlight-actions-XXXXXX";
     CHECK(mkdtemp(directory) != NULL);
@@ -225,6 +248,7 @@ void test_actions(void) {
     CHECK(run_action(&launch));
     expect_marker(marker, desktop);
     CHECK(unlink(marker) == 0);
+    test_new_window(&launch, script, marker, desktop);
     write_text(desktop, "[Desktop Entry]\nType=Application\nName=Replacement\nExec=/bin/true\n");
     CHECK(!run_action(&launch));
     CHECK(access(marker, F_OK) != 0);

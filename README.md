@@ -11,6 +11,9 @@ letters, and open an application, a settings panel, a file or a folder.
 - **Fast and always current.** A resident daemon keeps the index in memory and
   follows file changes as they happen. Typing stays under about 5 ms at the 95th
   percentile with 500,000 paths ([evaluation](docs/evaluation.md)).
+- **Switch to open windows.** Running apps list their open windows beneath them
+  (on X11). Enter switches to the most recent one; pick another or open a new
+  window from the list.
 - **Learns what you use.** Files and apps you open rank higher. History stays on
   your machine and can be turned off or cleared.
 - **Looks native.** The GTK 4 popup follows your desktop theme, accent color and

@@ -643,6 +643,10 @@ static void encode_result(tl_daemon *daemon, tl_catalog_reader *reader, tl_json_
     json_quote(buffer, entry->desktop_id);
     json_raw(buffer, ",\"icon\":");
     json_quote(buffer, entry->icon == NULL ? "application-x-executable-symbolic" : entry->icon);
+    if (entry->wm_class != NULL) {
+        json_raw(buffer, ",\"wm_class\":");
+        json_quote(buffer, entry->wm_class);
+    }
     json_raw(buffer, "}");
 }
 /* Encode one frame into the search thread's scratch. A frame that cannot fit

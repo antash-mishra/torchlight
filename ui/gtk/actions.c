@@ -81,6 +81,19 @@ cleanup:
     g_key_file_unref(file);
     return info;
 }
+/* Desktop actions that open another window, most common first. */
+static const char *const NEW_WINDOW_ACTIONS[] = {"new-window", "new-empty-window"};
+static bool launch_application(GDesktopAppInfo *info, bool new_window, GAppLaunchContext *context,
+                               GError **error) {
+    const char *const *actions = new_window ? g_desktop_app_info_list_actions(info) : NULL;
+    for (size_t i = 0; actions != NULL && i < G_N_ELEMENTS(NEW_WINDOW_ACTIONS); i++)
+        if (g_strv_contains(actions, NEW_WINDOW_ACTIONS[i])) {
+            /* GIO reports no error for actions; spawning is accepted like a launch. */
+            g_desktop_app_info_launch_action(info, NEW_WINDOW_ACTIONS[i], context);
+            return true;
+        }
+    return g_app_info_launch(G_APP_INFO(info), NULL, context, error);
+}
 void actions_worker(GTask *task, gpointer source, gpointer task_data, GCancellable *cancel) {
     (void)source;
     struct launch *launch = task_data;
@@ -92,7 +105,7 @@ void actions_worker(GTask *task, gpointer source, gpointer task_data, GCancellab
         GDesktopAppInfo *info = validated_info(&launch->row);
         if (info != NULL && !g_desktop_app_info_get_is_hidden(info) &&
             g_app_info_should_show(G_APP_INFO(info)) && !g_cancellable_is_cancelled(cancel))
-            accepted = g_app_info_launch(G_APP_INFO(info), NULL, launch->context, &error);
+            accepted = launch_application(info, launch->new_window, launch->context, &error);
         if (info != NULL)
             g_object_unref(info);
         info = NULL;

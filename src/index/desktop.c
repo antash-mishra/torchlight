@@ -44,6 +44,7 @@ static void snapshot_destroy(struct snapshot *snapshot) {
         g_free((void *)entries[i].public.filename);
         g_free((void *)entries[i].public.name);
         g_free((void *)entries[i].public.icon);
+        g_free((void *)entries[i].public.wm_class);
         g_free(entries[i].key);
         g_free(entries[i].generic_name);
         g_free(entries[i].keywords);
@@ -198,6 +199,9 @@ static tl_status add_entry(struct snapshot *snapshot, const char *filename, cons
         entry.public.icon = g_strdup("application-x-executable-symbolic");
     }
     entry.public.settings = settings_category(info);
+    const char *wm_class = g_desktop_app_info_get_startup_wm_class(info);
+    if (wm_class != NULL && wm_class[0] != 0 && strlen(wm_class) < DESKTOP_WM_CLASS_BYTES)
+        entry.public.wm_class = g_strdup(wm_class);
     entry.key = search_key(info);
     entry.generic_name = generic_field(info);
     entry.keywords = keyword_field(info);
@@ -212,6 +216,7 @@ static tl_status add_entry(struct snapshot *snapshot, const char *filename, cons
         g_free((void *)entry.public.filename);
         g_free((void *)entry.public.name);
         g_free((void *)entry.public.icon);
+        g_free((void *)entry.public.wm_class);
         g_free(entry.key);
         g_free(entry.generic_name);
         g_free(entry.keywords);

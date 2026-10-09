@@ -3,6 +3,7 @@
 int main(void) {
     test_desktop();
     test_popup();
+    test_windows();
     test_actions();
     test_config();
     test_core();

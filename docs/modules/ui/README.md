@@ -1,9 +1,9 @@
 # ui
 
-> **Status:** Implemented (M3 + theme-following popup with motion), verified: GTK4 popup, asynchronous IPC, native desktop actions
-> **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track}.c`, `ui/gtk/popup.css`, `src/bin/torchlight-gtk.c`
-> **Headers:** `include/torchlight/{launcher,popup,async}.h`
-> **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`
+> **Status:** Implemented (M3 + theme-following popup with motion + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching
+> **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track}.c`, `ui/gtk/popup.css`, `src/bin/torchlight-gtk.c`; open windows in [windows](../windows/README.md)
+> **Headers:** `include/torchlight/{launcher,popup,async,windows}.h`
+> **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/unit/test_windows.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`
 
 The thin executable owns an opaque launcher. GtkApplication enforces one instance;
 `torchlight-gtk --toggle` shows/focuses or dismisses its window. Showing clears the
@@ -79,6 +79,33 @@ slot, preserve good results and reconnect/requery after service recovery.
 Retry is keyboard accessible; Enter in the entry retries an unavailable search with no selection; Enter on its focused button follows GTK's normal
 button activation rather than the result-opening shortcut.
 
+Open application windows are listed beneath their result
+([ADR 0035](../../adr/0035-open-windows-under-applications.md)). Each show
+reads the [windows](../windows/README.md) snapshot in an idle callback after
+presenting, and hiding drops it. The model gives each window to the displayed
+application with the strongest evidence and flattens the list into items:
+result, up to three windows (most recent first), "Show N more windows", then
+"New window". Every application with windows lists them wherever it ranks;
+its own row is unchanged and shows no count. Left on a child collapses its application and
+selects it; Right, with the caret at the end of the query, lists them again or
+reveals the rest from "Show N more windows". Expansion choices last for
+one request id, and retained selection across phases and window refreshes is
+keyed by (result id, item kind, window handle). Children are 34px rows whose
+icons align with the application's name; windows use the application icon.
+Up/Down move through every item, and select/launch/flash work on child rows
+unchanged.
+
+Enter on an application with windows brings its most recent window forward;
+Enter on a window brings that one forward. Neither needs a resolve: the window
+system answers at once, the popup records an asynchronous open of the
+application (so personal ranking learns from it) and closes. A window that has
+left the client list reports "That window has closed" and refreshes the list.
+New window resolves like a launch, then the worker runs the entry's
+`new-window` or `new-empty-window` desktop action, or a normal launch without
+one. More windows lists every window in place. Ctrl+Enter on an application
+keeps revealing its desktop file. Without X11 there are no windows and nothing
+else changes.
+
 Actions first resolve the id. A separate GTask performs desktop revision checking,
 GAppInfo launch, argv xdg-open or FileManager1.ShowItems with parent fallback.
 For non-UTF-8 filenames, it also opens the parent after an acknowledged reveal,
@@ -110,7 +137,11 @@ error/restart recovery, no-history mode and 500k rebuild timings are repeatable
 through `make test-ui-isolated` and `make bench-ui`. Native presentation tests check
 highlight geometry and an observed intermediate glide, file-type icons, entrance
 classes, opening/closing timers, spinner and launch states, large pasted queries,
-Unicode and distinguishing paths, geometry and timer destruction. They pass on a bare
+Unicode and distinguishing paths, geometry and timer destruction, child rows and
+application rows without a window count. The acceptance run maps two real windows with
+`tests/fixtures/window_app.c` and checks Enter, choosing a window, Left/Right,
+a window closed after the snapshot, an application ranked below an exact file
+name and New window. They pass on a bare
 X server (GTK's default theme) and on Cinnamon with Mint-Y, and the
 `test-ui-isolated` matrix and AT-SPI run pass with the ADR 0034 presentation. These checks supplement the
 recorded Cinnamon tests; font overrides do not validate real fractional scaling.

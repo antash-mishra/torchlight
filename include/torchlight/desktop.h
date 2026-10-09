@@ -4,11 +4,15 @@
 #include "torchlight/lexical.h"
 #define DESKTOP_ID_BASE (UINT64_C(1) << 62)
 #define DESKTOP_MAX_ENTRIES 8192
+/* Longest StartupWMClass kept; longer values are treated as absent. */
+#define DESKTOP_WM_CLASS_BYTES 256
 typedef struct tl_desktop tl_desktop;
 typedef struct {
     uint64_t id, revision;
     const char *desktop_id, *filename, *name, *icon;
     const char *generic_name, *keywords;
+    /* StartupWMClass naming the entry's windows; NULL when absent or too long. */
+    const char *wm_class;
     bool settings;
 } tl_desktop_entry;
 /** Create owned XDG catalog and refresh worker. Environment/locale must remain

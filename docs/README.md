@@ -8,6 +8,8 @@ keyboard actions, status/error states and asynchronous IPC requirements.
 The GTK popup follows the desktop theme (light or dark, accent and font) with
 short, bounded motion; see [ADR 0034](adr/0034-theme-following-popup-with-motion.md),
 the [design study](popup-directions.html) and [native captures](ui/native-results.png).
+Running applications list their open windows beneath their result, with a New
+window action ([ADR 0035](adr/0035-open-windows-under-applications.md)).
 
 Start here. Read in this order:
 
@@ -112,6 +114,7 @@ the root [README](../README.md) for commands, and
 | service | Personal ranking state (M5) | [personal](modules/personal/README.md) |
 | bin | CLI client | [cli](modules/cli/README.md) |
 | ui | GTK4 popup & optional TUI | [ui](modules/ui/README.md) |
+| ui | Open windows under applications | [windows](modules/windows/README.md) |
 
 ## Current decisions
 
@@ -191,6 +194,10 @@ the root [README](../README.md) for commands, and
 - [0034: Theme-following popup with bounded motion](adr/0034-theme-following-popup-with-motion.md)
   replaces the Quiet System look with theme colors, the desktop font, file-type
   icons and a gliding selection, plus a torch sweep and other non-blocking motion.
+- [0035: Open windows under application results](adr/0035-open-windows-under-applications.md)
+  lists every running application's open X11 windows beneath its result; Enter
+  switches to the most recent window, and New window runs the entry's desktop
+  action.
 
 ## Keeping docs current
 

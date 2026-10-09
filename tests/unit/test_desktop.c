@@ -48,6 +48,14 @@ void test_desktop(void) {
                 "Name=Sound\nKeywords=audio;volume;\nCategories=Settings\n");
     write_entry(user_apps, "keyboard.desktop", "Name=Keyboard\nCategories=Utility;Settings\n");
     write_entry(user_apps, "brand.desktop", "Name=ShortBrand\nX-GNOME-FullName=DifferentLabel\n");
+    write_entry(user_apps, "browser.desktop",
+                "Name=WindowedBrowser\nStartupWMClass=browser-main\n");
+    char long_class[DESKTOP_WM_CLASS_BYTES + 1], long_fields[DESKTOP_WM_CLASS_BYTES + 64];
+    memset(long_class, 'w', DESKTOP_WM_CLASS_BYTES);
+    long_class[DESKTOP_WM_CLASS_BYTES] = 0;
+    CHECK(snprintf(long_fields, sizeof(long_fields), "Name=LongClass\nStartupWMClass=%s\n",
+                   long_class) > 0);
+    write_entry(user_apps, "long.desktop", long_fields);
     tl_desktop *desktop = NULL;
     CHECK(desktop_create(&desktop) == TL_OK);
     desktop_acquire(desktop);
@@ -74,6 +82,12 @@ void test_desktop(void) {
     CHECK(query(desktop, "keyboard", results) == 1);
     CHECK(desktop_resolve(desktop, results[0].id)->settings);
     CHECK(query(desktop, "ShortBrand", results) == 1);
+    CHECK(desktop_resolve(desktop, results[0].id)->wm_class == NULL);
+    /* StartupWMClass names an entry's windows; overlong values are dropped. */
+    CHECK(query(desktop, "WindowedBrowser", results) == 1);
+    CHECK(strcmp(desktop_resolve(desktop, results[0].id)->wm_class, "browser-main") == 0);
+    CHECK(query(desktop, "LongClass", results) == 1);
+    CHECK(desktop_resolve(desktop, results[0].id)->wm_class == NULL);
     CHECK(query(desktop, "DifferentLabel", results) == 1);
     CHECK(query(desktop, "", results) == 0);
     /* Boosts address sorted-id positions and last for one query only:
@@ -110,9 +124,10 @@ void test_desktop(void) {
     }
     CHECK(stale);
     desktop_destroy(desktop);
-    const char *user_ids[] = {"masked.desktop", "duplicate.desktop", "private.desktop",
-                              "other.desktop",  "excluded.desktop",  "missing.desktop",
-                              "sound.desktop",  "keyboard.desktop",  "brand.desktop"};
+    const char *user_ids[] = {"masked.desktop",  "duplicate.desktop", "private.desktop",
+                              "other.desktop",   "excluded.desktop",  "missing.desktop",
+                              "sound.desktop",   "keyboard.desktop",  "brand.desktop",
+                              "browser.desktop", "long.desktop"};
     for (size_t i = 0; i < sizeof(user_ids) / sizeof(user_ids[0]); i++) {
         CHECK(snprintf(removed, sizeof(removed), "%s/%s", user_apps, user_ids[i]) > 0);
         CHECK(unlink(removed) == 0);

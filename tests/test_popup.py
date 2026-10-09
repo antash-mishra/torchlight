@@ -19,6 +19,7 @@ from popup_support import PopupDriver, wait_for
 parser = argparse.ArgumentParser()
 parser.add_argument("--launcher", default="build/torchlight-gtk")
 parser.add_argument("--daemon", default="build/torchlightd")
+parser.add_argument("--window-app", default="build/test_window_app")
 parser.add_argument("--xdotool", default="xdotool")
 parser.add_argument("--capture")
 parser.add_argument("--matrix", action="store_true", help="Repeat in light/dark/high-contrast GTK themes and scale overrides")
@@ -28,6 +29,7 @@ parser.add_argument("--output", help="Write native-frame measurements as JSON")
 args = parser.parse_args()
 launcher = str(Path(args.launcher).resolve())
 daemon_binary = str(Path(args.daemon).resolve())
+window_app = str(Path(args.window_app).resolve())
 
 
 if args.matrix:
@@ -41,7 +43,7 @@ if args.matrix:
     measurements = []
     for label, overrides in configurations:
         command = [sys.executable, __file__, "--launcher", launcher, "--daemon", daemon_binary,
-                   "--xdotool", args.xdotool]
+                   "--window-app", window_app, "--xdotool", args.xdotool]
         if args.capture:
             destination = Path(args.capture)
             command += ["--capture", str(destination.with_name(destination.stem + "-" + label + destination.suffix))]
@@ -53,7 +55,7 @@ if args.matrix:
             subprocess.run(command + ["--output", str(output)], env=dict(os.environ, **overrides), check=True)
             measurements.append(dict(configuration=label, **json.loads(output.read_text())))
     subprocess.run([sys.executable, __file__, "--launcher", launcher, "--daemon", daemon_binary,
-                    "--xdotool", args.xdotool, "--no-history"], check=True)
+                    "--window-app", window_app, "--xdotool", args.xdotool, "--no-history"], check=True)
     if args.output:
         Path(args.output).write_text(json.dumps(measurements, indent=2) + "\n")
     raise SystemExit(0)
@@ -88,6 +90,15 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
         (apps / f"{name.lower()}.desktop").write_text(
             f"[Desktop Entry]\nType=Application\nName={name}\nExec={executable}\n"
             f"Categories=Settings;\nKeywords={keywords}\nIcon=preferences-system-symbolic\n")
+    # Its windows come from the X11 window fixture, matched by StartupWMClass.
+    new_window_marker = base / "new-window-accepted"
+    new_window = base / "new-window-fixture"
+    new_window.write_text(f"#!/bin/sh\nprintf '%s\\n' accepted >> '{new_window_marker}'\n")
+    new_window.chmod(0o700)
+    (apps / "windowed.desktop").write_text(
+        f"[Desktop Entry]\nType=Application\nName=WindowedFixture\nExec={executable}\n"
+        f"Keywords=zebrawin;\nStartupWMClass=torchlight-window-fixture\nActions=new-window;\n\n"
+        f"[Desktop Action new-window]\nName=New Window\nExec={new_window}\n")
     broken = apps / "broken.desktop"
     broken.write_text(f"[Desktop Entry]\nType=Application\nName=BrokenLaunch\nExec={executable}\n"
                       f"Path={base / 'missing-working-directory'}\n")
@@ -147,6 +158,66 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
         xdo("key", "Return")
         time.sleep(.1)
         assert focused(), "Empty search must have no selected item to open"
+
+    def windowed(rows, text="WindowedFixture"):
+        """Show the popup if needed and search the fixture application until rows are listed."""
+        if not focused():
+            toggle()
+        started = time.monotonic_ns() // 1000
+        driver.type_query(text, measure=False)
+        return driver.frame(lambda f: f["query"] == text and f["ready"] and f["rows"] == rows,
+                            after=started)
+
+    def check_open_windows():
+        # Open windows list beneath their application (ADR 0035): two windows,
+        # most recent first, then New window. Enter switches to the most recent.
+        xdo("key", "Escape")
+        wait_for(lambda: not focused())
+        fixture = subprocess.Popen([window_app, "torchlight-window-fixture", "Torchlight-window-fixture",
+                                    "First fixture - WindowedFixture", "Second fixture - WindowedFixture"],
+                                   env=env, stdout=subprocess.PIPE, text=True)
+        try:
+            first, second = (int(fixture.stdout.readline()) for _ in range(2))
+            wait_for(lambda: len(xdo("search", "--onlyvisible", "--classname", "torchlight-window-fixture",
+                                     check=False).split()) == 2)
+            active = lambda: int(xdo("getactivewindow"))
+            windowed(4)
+            xdo("key", "Return")
+            wait_for(lambda: active() == second)
+            windowed(4)
+            xdo("key", "Down", "Down", "Return")
+            wait_for(lambda: active() == first)
+            # Left on a window collapses its application; Right lists the windows again.
+            windowed(4)
+            before = time.monotonic_ns() // 1000
+            xdo("key", "Down", "Left")
+            driver.frame(lambda f: f["rows"] == 1 and f["selected"] == 0, after=before)
+            xdo("key", "Right")
+            driver.frame(lambda f: f["rows"] == 4 and f["selected"] == 0, after=before)
+            # A window gone since the snapshot is reported and dropped from the list.
+            xdo("windowunmap", first)
+            xdo("key", "Down", "Return")
+            driver.frame(lambda f: f["status"] == "That window has closed" and f["rows"] == 3, after=before)
+            assert focused()
+            # An application below the top result lists its windows too: an exact
+            # file name outranks its keyword, and Enter on it still switches.
+            exact = root / "zebrawin"
+            exact.touch()
+            wait_for(lambda: call("query", query="zebrawin", limit=10)["results"][0].get("path")
+                     == str(exact))
+            windowed(4, "zebrawin")
+            xdo("key", "Down", "Return")
+            wait_for(lambda: active() == second)
+            # New window runs the entry's new-window desktop action: it follows
+            # the one window still open.
+            windowed(3)
+            xdo("key", "Down", "Down", "Return")
+            wait_for(new_window_marker.exists)
+            wait_for(lambda: not focused())
+        finally:
+            fixture.terminate()
+            fixture.wait(timeout=8)
+        toggle()
 
     def assert_no_blank_searches():
         with sqlite3.connect(database) as db:
@@ -290,6 +361,7 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
             nodes = list(descendants(tree))
             assert any(node.get_name() == "Sound" for node in nodes), [(node.get_role_name(), node.get_name()) for node in nodes]
             assert any(node.get_state_set().contains(Atspi.StateType.SELECTED) for node in nodes)
+        check_open_windows()
         # Test keyboard-only Retry with the service stopped, then reconnect
         # without restarting the popup when a new daemon instance is ready.
         daemon.terminate()
@@ -315,7 +387,8 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
         def history_count():
             with sqlite3.connect(database) as db:
                 return db.execute("SELECT count(*) FROM desktop_opens").fetchone()[0]
-        wait_for(lambda: history_count() == (0 if args.no_history else 5))
+        # Five launches, three window switches and one new window.
+        wait_for(lambda: history_count() == (0 if args.no_history else 9))
         empty_entry()
         assert_no_blank_searches()
         xdo("key", "Escape")

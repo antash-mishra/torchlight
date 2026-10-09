@@ -28,6 +28,13 @@ void popup_view_set_results(tl_popup_view *view, size_t count);
  * allocation failure; no row retained. */
 GtkWidget *popup_view_result(const tl_popup_row *row, size_t path_keep, tl_popup_entrance entrance,
                              size_t index);
+/** Build a compact floating list row beneath borrowed application parent for a
+ * child item kind: an open window (its title), more windows or new window. text
+ * is borrowed single-line UTF-8 and copied; entrance and index choose the
+ * appearance animation. Returns a GtkListBoxRow for the caller to append. Main
+ * thread; no row retained or errors. */
+GtkWidget *popup_view_child(const tl_popup_row *parent, tl_popup_item_kind kind, const char *text,
+                            tl_popup_entrance entrance, size_t index);
 /** Move the selection highlight to borrowed list row, or hide it for NULL. glide
  * slides from the previous row when animations are enabled. Main thread; live
  * view. The view keeps a reference to row until the next call. No errors. */

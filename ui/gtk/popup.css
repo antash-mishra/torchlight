@@ -25,6 +25,10 @@ window.torchlight { background: transparent; }
 .torchlight .result { padding: 0 64px 0 10px; }
 .torchlight .result-name { color: @theme_fg_color; }
 .torchlight .result-detail { font-size: 0.9em; color: alpha(@theme_fg_color, 0.65); }
+/* An application's windows and actions: compact rows whose icons align with its name. */
+.torchlight list > row.child-row { min-height: 34px; }
+.torchlight .result.child { padding-left: 54px; }
+.torchlight .child-action { color: alpha(@theme_fg_color, 0.75); }
 
 /* Footer: status, then key hints drawn as keycaps. */
 .torchlight .footer { border-top: 1px solid alpha(@theme_fg_color, 0.08); padding: 8px 16px; }
@@ -57,7 +61,7 @@ window.torchlight { background: transparent; }
 
 /* Accessibility and size variants come last so they win over equal specificity. */
 .torchlight .high-contrast { border-color: @theme_fg_color; }
-.torchlight .high-contrast .result-detail, .torchlight .high-contrast .status, .torchlight .high-contrast .hint-label, .torchlight .high-contrast .inline-status, .torchlight .high-contrast .search-icon { color: @theme_fg_color; }
+.torchlight .high-contrast .result-detail, .torchlight .high-contrast .child-action, .torchlight .high-contrast .status, .torchlight .high-contrast .hint-label, .torchlight .high-contrast .inline-status, .torchlight .high-contrast .search-icon { color: @theme_fg_color; }
 .torchlight .compact .search-area { padding: 10px; }
 .torchlight .compact .result { padding-right: 56px; }
 .torchlight .quiet-motion .search-field, .torchlight .quiet-motion .search-field.typing, .torchlight .quiet-motion list > row, .torchlight .quiet-motion .selection-highlight { transition: none; }

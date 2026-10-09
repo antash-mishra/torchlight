@@ -49,6 +49,10 @@ to an old label or prevent the next refresh from retiring its id. An injected
 replacement integration test covers this exact race. They are not persisted file
 ids. File catalog_gen and desktop publication are independent.
 
+Entries keep `StartupWMClass` as `wm_class` when it is present and at most 255
+bytes; longer values are treated as absent. Results carry it so the popup can
+list the application's open windows ([ADR 0035](../../adr/0035-open-windows-under-applications.md)).
+
 Bounds: 8,192 encountered desktop ids (including hidden overrides), 16 nested
 directories, 4,096-byte fields/filenames and 64 KiB desktop files. Directory
 symlinks are not traversed. Failed snapshot builds retain the prior catalog.

@@ -3,6 +3,11 @@
 | Term | Meaning |
 |---|---|
 | **Path entry** | A file or directory known to the index (`files` row). |
+| **WM_CLASS** | An X11 window's instance and class names, such as `google-chrome` and `Google-chrome`. Used to tell which application a window belongs to. |
+| **StartupWMClass** | Desktop-entry key naming the WM_CLASS its windows use. Results carry it as `wm_class`; matching is exact. |
+| **Window snapshot** | The popup's bounded list of open top-level windows, most recently used first, read once per show (`windows` module). |
+| **Window evidence** | How strongly a window belongs to an application: StartupWMClass equals its instance, then its class, then GTK application id, then desktop file name. The strongest displayed application owns the window. |
+| **Child item** | A popup list row beneath an application result: one of its windows, "Show N more windows" or "New window". |
 | **Filesystem incarnation** | Device/inode plus birth timestamp identifying the observed object at a path; ctime is the conservative fallback without birth time. A changed incarnation retires the old file id and descendants during reconciliation. |
 | **Trigram** | A 3-byte substring of a normalized name, used as an index key. |
 | **Posting list** | File ids containing a given trigram. |

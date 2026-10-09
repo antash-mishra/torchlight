@@ -17,6 +17,7 @@
 #define LIST_PADDING 8
 #define COMPACT_WIDTH 560
 #define RESULT_ICON_SIZE 32
+#define CHILD_ICON_SIZE 16
 /* Room for "10 results" before optional key hints give way. */
 #define STATUS_CHARS 10
 #define SEARCH_ICON_SIZE 16
@@ -340,6 +341,39 @@ GtkWidget *popup_view_result(const tl_popup_row *row, size_t path_keep, tl_popup
     gtk_box_append(GTK_BOX(box), text);
     gtk_widget_set_tooltip_text(box, row->display);
     return box;
+}
+/* Windows show their application's icon; the two actions use symbolic icons. */
+static GtkWidget *child_icon(const tl_popup_row *parent, tl_popup_item_kind kind) {
+    GIcon *icon = NULL;
+    if (kind == POPUP_ITEM_WINDOW && parent->icon[0] != 0)
+        icon = g_icon_new_for_string(parent->icon, NULL);
+    if (icon == NULL)
+        icon = g_themed_icon_new(kind == POPUP_ITEM_NEW_WINDOW     ? "list-add-symbolic"
+                                 : kind == POPUP_ITEM_MORE_WINDOWS ? "view-more-symbolic"
+                                                                   : "application-x-executable");
+    GtkWidget *image = gtk_image_new_from_gicon(icon);
+    g_object_unref(icon);
+    gtk_image_set_pixel_size(GTK_IMAGE(image), CHILD_ICON_SIZE);
+    gtk_widget_add_css_class(image, "result-icon");
+    return image;
+}
+GtkWidget *popup_view_child(const tl_popup_row *parent, tl_popup_item_kind kind, const char *text,
+                            tl_popup_entrance entrance, size_t index) {
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_add_css_class(box, "result");
+    gtk_widget_add_css_class(box, "child");
+    add_entrance(box, entrance, index);
+    gtk_box_append(GTK_BOX(box), child_icon(parent, kind));
+    GtkWidget *name = label(text, kind == POPUP_ITEM_WINDOW ? "result-name" : "child-action");
+    gtk_label_set_ellipsize(GTK_LABEL(name), PANGO_ELLIPSIZE_END);
+    gtk_widget_set_hexpand(name, true);
+    gtk_widget_set_valign(name, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(box), name);
+    gtk_widget_set_tooltip_text(box, text);
+    GtkWidget *row = gtk_list_box_row_new();
+    gtk_widget_add_css_class(row, "child-row");
+    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), box);
+    return row;
 }
 void popup_view_select(tl_popup_view *view, GtkWidget *row, bool glide) {
     popup_selection_track_set_target(view->track, row, glide);

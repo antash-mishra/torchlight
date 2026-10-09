@@ -54,7 +54,8 @@ with tempfile.TemporaryDirectory(prefix="torchlight-m3-") as directory:
 
     display = entry(system, "display.desktop", "Name=Display\nKeywords=screen;resolution;\nCategories=Settings;\n")
     entry(system, "editor.desktop", "Name=InstalledEditor\nCategories=Utility;\n")
-    entry(system, "google-chrome.desktop", "Name=Google Chrome\nGenericName=Web Browser\n")
+    entry(system, "google-chrome.desktop",
+          "Name=Google Chrome\nGenericName=Web Browser\nStartupWMClass=google-chrome\n")
     entry(system, "keyword.desktop", "Name=KeywordOnly\nKeywords=chrome;\n")
     for index in range(12):
         entry(system, f"duplicate-{index:02}.desktop", "Name=Duplicate App\n")
@@ -155,6 +156,9 @@ with tempfile.TemporaryDirectory(prefix="torchlight-m3-") as directory:
         response = query("display")
         application = next(r for r in response["results"] if r.get("desktop_id") == "display.desktop")
         assert application["kind"] == "settings" and application["icon"]
+        assert "wm_class" not in application
+        chrome = next(r for r in query("chrome")["results"] if r.get("desktop_id") == "google-chrome.desktop")
+        assert chrome["wm_class"] == "google-chrome", chrome
         assert call("resolve", file_id=application["id"])["results"][0]["desktop_id"] == "display.desktop"
         for _ in range(2):
             assert call("open", file_id=application["id"], event_id="same-launch", search_id=response["search_id"])["status"] == "ok"

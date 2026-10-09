@@ -59,8 +59,10 @@ Opening always uses the exact bytes returned by resolve.
 | Desktop shortcut | Invoke `torchlight-gtk --toggle`. One application instance shows/focuses the popup or hides its already-focused window. A suggested binding is Super+Space; installation documents how to choose an available Cinnamon shortcut. |
 | Show | Clear the previous query and results, show only the search field and focus the entry. No default result is selected. |
 | Type / paste | Keep the entry focused, reset deliberate selection and issue a new query. Respect the protocol's 256-byte UTF-8 query limit; show a small inline message for an oversized paste. |
-| Up / Down | Move selection, clamped to the list ends; scroll the selected row into view. Keep text-entry focus. |
-| Enter | Resolve and open the selected result. When offline with no selected result, retry the query. |
+| Up / Down | Move selection, clamped to the list ends; scroll the selected row into view. Keep text-entry focus. Every running application lists up to three windows and New window beneath it, and these are rows too. |
+| Right | With the caret at the end of the query, list a collapsed application's windows again, or all of them from "Show N more windows". Otherwise move the caret. |
+| Left | On a window or action under an application, hide them and select the application. Otherwise move the caret. |
+| Enter | Resolve and open the selected result. An application with open windows brings its most recent window forward; a window row brings that window forward; New window runs the entry's new-window action. When offline with no selected result, retry the query. |
 | Ctrl+Enter | Resolve, then ask the file manager to reveal a byte-preserving file URI through D-Bus; fall back to opening its parent directory. |
 | Escape | Dismiss and cancel any pending query/action work for this popup. |
 | Click a row | Select and open it through the same resolve path as Enter. |
@@ -153,6 +155,8 @@ Desktop rows use localized names and application icons with Application/System s
 subtitles. Enter resolves their session-scoped result id and activates the native
 desktop entry; Ctrl+Enter reveals its desktop file through the same exact-byte
 action path. File/folder rows retain basename/parent labels and symbolic icons.
+Running applications list their open windows beneath them, as specified in
+[ADR 0035](adr/0035-open-windows-under-applications.md).
 The implemented GTK4 surface and acceptance evidence are in
 [M3 verification](m3-completion.md); the interactive HTML remains the original
 file-oriented design reference, not a screenshot of the application.

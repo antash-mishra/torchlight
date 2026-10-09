@@ -2,6 +2,7 @@
 #ifndef TORCHLIGHT_TEST_H
 #define TORCHLIGHT_TEST_H
 #include "torchlight/tokenize.h"
+#include "torchlight/windows.h"
 #include <stdio.h>
 #include <stdlib.h>
 #define CHECK(condition)                                                                           \
@@ -23,8 +24,13 @@ void test_actions(void);
 void test_async(void);
 /** Run desktop discovery precedence and removal regressions. */
 void test_desktop(void);
-/** Run popup response validation and selection regressions. */
+/** Run popup response validation, selection and open-window hierarchy regressions. */
 void test_popup(void);
+/** Run window snapshot, application evidence and title shortening checks. */
+void test_windows(void);
+/** Return a refreshed snapshot over a fake source copying count borrowed windows
+ * (at most WINDOWS_MAX); free with windows_destroy. Aborts on unexpected errors. */
+tl_windows *test_windows_fixture(const tl_window *windows, size_t count);
 /** Run XDG/override checks, aborting on failure. */
 void test_config(void);
 /** Run isolated core utility checks, aborting on failure. */

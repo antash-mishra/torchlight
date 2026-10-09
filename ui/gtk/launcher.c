@@ -4,6 +4,7 @@
 #include "torchlight/async.h"
 #include "torchlight/popup.h"
 #include "view.h"
+#include "windows_x11.h"
 #include <gio/gdesktopappinfo.h>
 #include <gtk/gtk.h>
 #ifdef GDK_WINDOWING_X11
@@ -15,20 +16,27 @@
 #define POPUP_DEBOUNCE_MS 16
 #define POPUP_PENDING_MS 120
 #define POPUP_STATUS_MS 2000
+/* A list item's identity across re-renders: its result, kind and window. */
+struct shown_item {
+    uint64_t id, handle;
+    tl_popup_item_kind kind;
+};
 struct popup {
     GtkApplication *application;
     GtkWidget *window, *entry, *list, *retry, *scroll;
     tl_popup_model *model;
     tl_popup_view *view;
+    /* Open windows, read once per show; NULL when unavailable. */
+    tl_windows *windows;
     char *socket_path;
     uint64_t sequence;
     char request_id[IPC_REQUEST_ID_BYTES + 1];
-    guint debounce, pending, status_timer;
+    guint debounce, pending, status_timer, windows_idle;
     tl_ipc_exchange *query, *action, *status_exchange, *history;
     bool dirty, launching, visible;
     GCancellable *launch_cancel;
-    /* Ids currently on screen, so a re-render animates only rows that are new. */
-    uint64_t shown[POPUP_RESULTS + 1];
+    /* Items currently on screen, so a re-render animates only rows that are new. */
+    struct shown_item shown[POPUP_ITEMS];
     size_t shown_count;
 };
 static void start_query(struct popup *popup);
@@ -52,6 +60,9 @@ static void close_popup(struct popup *popup) {
     popup->dirty = false;
     remove_timer(&popup->debounce);
     remove_timer(&popup->pending);
+    remove_timer(&popup->windows_idle);
+    /* Windows change while hidden; the next show reads them again. */
+    popup_model_set_windows(popup->model, NULL);
     ipc_exchange_destroy(popup->query);
     popup->query = NULL;
     ipc_exchange_destroy(popup->action);
@@ -61,15 +72,37 @@ static void close_popup(struct popup *popup) {
     /* Work is canceled above at once; only the window's fade-out remains. */
     popup_view_dismiss(popup->view);
 }
+/* What a child item says: a window's short title, or the action it offers. */
+static void child_text(const struct popup *popup, const tl_popup_item *item, char *text,
+                       size_t size) {
+    const tl_popup_row *row = popup_model_row(popup->model, item->row);
+    const tl_window *window = windows_get(popup->windows, item->window);
+    if (item->kind == POPUP_ITEM_WINDOW && window != NULL)
+        windows_short_title(window->title, row->name, text, size);
+    else if (item->kind == POPUP_ITEM_MORE_WINDOWS) {
+        int written = snprintf(text, size, "Show %zu more window%s", item->windows,
+                               item->windows == 1 ? "" : "s");
+        if (written < 0 || (size_t)written >= size)
+            text[0] = 0;
+    } else
+        g_strlcpy(text, item->kind == POPUP_ITEM_NEW_WINDOW ? "New window" : "", size);
+    if (text[0] == 0 && item->kind == POPUP_ITEM_WINDOW)
+        g_strlcpy(text, "Untitled window", size);
+}
 static void select_row(struct popup *popup, bool glide) {
     GtkListBoxRow *row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(popup->list),
                                                        (int)popup_model_position(popup->model));
     gtk_list_box_select_row(GTK_LIST_BOX(popup->list), row);
     popup_view_select(popup->view, row == NULL ? NULL : GTK_WIDGET(row), glide);
-    const tl_popup_row *selected = popup_model_selected(popup->model);
-    if (selected != NULL)
-        gtk_accessible_announce(GTK_ACCESSIBLE(popup->list), selected->name,
-                                GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_MEDIUM);
+    const tl_popup_item *item = popup_model_selected_item(popup->model);
+    char text[WINDOWS_TITLE_BYTES];
+    if (item != NULL && item->kind != POPUP_ITEM_RESULT)
+        child_text(popup, item, text, sizeof(text));
+    if (item != NULL)
+        gtk_accessible_announce(
+            GTK_ACCESSIBLE(popup->list),
+            item->kind == POPUP_ITEM_RESULT ? popup_model_selected(popup->model)->name : text,
+            GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_MEDIUM);
     if (row == NULL)
         return;
     graphene_rect_t bounds;
@@ -85,26 +118,60 @@ static void select_row(struct popup *popup, bool glide) {
     else if (bottom > value + page)
         gtk_adjustment_set_value(adjustment, bottom - page);
 }
-static tl_popup_entrance entrance_for(const struct popup *popup, uint64_t id) {
+static tl_popup_entrance entrance_for(const struct popup *popup, const struct shown_item *key) {
     if (popup->shown_count == 0)
         return POPUP_ENTER_CASCADE;
     for (size_t i = 0; i < popup->shown_count; i++)
-        if (popup->shown[i] == id)
+        if (popup->shown[i].id == key->id && popup->shown[i].handle == key->handle &&
+            popup->shown[i].kind == key->kind)
             return POPUP_ENTER_NONE;
     return POPUP_ENTER_FADE;
 }
+static GtkWidget *item_widget(const struct popup *popup, const tl_popup_item *item,
+                              tl_popup_entrance entrance, size_t index) {
+    const tl_popup_row *row = popup_model_row(popup->model, item->row);
+    if (item->kind == POPUP_ITEM_RESULT)
+        return popup_view_result(row, popup_model_distinct_prefix(popup->model, item->row),
+                                 entrance, index);
+    char text[WINDOWS_TITLE_BYTES];
+    child_text(popup, item, text, sizeof(text));
+    return popup_view_child(row, item->kind, text, entrance, index);
+}
 static void render_rows(struct popup *popup) {
     gtk_list_box_remove_all(GTK_LIST_BOX(popup->list));
-    size_t count = popup_model_count(popup->model);
+    size_t count = popup_model_item_count(popup->model);
+    struct shown_item keys[POPUP_ITEMS] = {0};
     for (size_t i = 0; i < count; i++) {
-        const tl_popup_row *row = popup_model_row(popup->model, i);
-        size_t keep = popup_model_distinct_prefix(popup->model, i);
+        const tl_popup_item *item = popup_model_item(popup->model, i);
+        keys[i] = (struct shown_item){popup_model_row(popup->model, item->row)->id, item->handle,
+                                      item->kind};
         gtk_list_box_append(GTK_LIST_BOX(popup->list),
-                            popup_view_result(row, keep, entrance_for(popup, row->id), i));
+                            item_widget(popup, item, entrance_for(popup, &keys[i]), i));
     }
-    for (size_t i = 0; i < count; i++)
-        popup->shown[i] = popup_model_row(popup->model, i)->id;
+    memcpy(popup->shown, keys, count * sizeof(keys[0]));
     popup->shown_count = count;
+}
+/* Redraw after windows or expansion changed the list without a new response. */
+static void rerender(struct popup *popup, bool glide) {
+    render_rows(popup);
+    select_row(popup, glide);
+}
+/* Read the open windows again and list them, keeping the selection. */
+static void refresh_windows(struct popup *popup) {
+    if (popup->windows == NULL)
+        return;
+    /* An unreadable window list shows none; results still work. */
+    tl_status status = windows_refresh(popup->windows);
+    popup_model_set_windows(popup->model, status == TL_OK ? popup->windows : NULL);
+    if (popup_model_count(popup->model) != 0)
+        rerender(popup, false);
+}
+static gboolean windows_ready(gpointer context) {
+    struct popup *popup = context;
+    popup->windows_idle = 0;
+    if (popup->visible)
+        refresh_windows(popup);
+    return G_SOURCE_REMOVE;
 }
 static void render(struct popup *popup) {
     bool was_empty = popup->shown_count == 0;
@@ -242,6 +309,21 @@ static void history_response(void *context, tl_status status, const char *respon
         popup->history = NULL;
     }
 }
+/* An open event for row, unique per action and tied to the current search. */
+static void open_event(const struct popup *popup, const tl_popup_row *row, tl_ipc_request *event) {
+    *event = (tl_ipc_request){.operation = IPC_OPEN, .file_id = row->id};
+    char *uuid = g_uuid_string_random();
+    g_strlcpy(event->event_id, uuid, sizeof(event->event_id));
+    g_free(uuid);
+    g_strlcpy(event->search_id, popup_model_search_id(popup->model), sizeof(event->search_id));
+    g_strlcpy(event->request_id, event->event_id, sizeof(event->request_id));
+}
+/* Send borrowed event to the daemon's history; replaces an earlier pending send. */
+static tl_status record_open(struct popup *popup, const tl_ipc_request *event) {
+    ipc_exchange_destroy(popup->history);
+    popup->history = NULL;
+    return ipc_exchange_create(popup->socket_path, event, history_response, popup, &popup->history);
+}
 static void launched(GObject *source, GAsyncResult *result, gpointer context) {
     (void)source;
     struct popup *popup = context;
@@ -262,10 +344,7 @@ static void launched(GObject *source, GAsyncResult *result, gpointer context) {
                        launch->reveal ? "Could not reveal this item" : "Could not open this item");
         return;
     }
-    ipc_exchange_destroy(popup->history);
-    popup->history = NULL;
-    tl_status status = ipc_exchange_create(popup->socket_path, &launch->event, history_response,
-                                           popup, &popup->history);
+    tl_status status = record_open(popup, &launch->event);
     if (status != TL_OK && !canceled)
         set_status(popup, "Opened; history could not be recorded");
     /* An accepted action still earns history after cancellation, but its
@@ -307,10 +386,8 @@ static void resolved(void *context, tl_status status, const char *response, size
     g_task_run_in_thread(task, actions_worker);
     g_object_unref(task);
 }
-static void activate_selected(struct popup *popup, bool reveal) {
-    const tl_popup_row *row = popup_model_selected(popup->model);
-    if (row == NULL || popup->action != NULL || popup->launching)
-        return;
+/* Resolve row, then open, reveal or start a new window of it in the worker. */
+static void launch_row(struct popup *popup, const tl_popup_row *row, bool reveal, bool new_window) {
     struct launch *launch = g_try_new0(struct launch, 1);
     if (launch == NULL) {
         set_status(popup, "Could not prepare this action");
@@ -318,14 +395,8 @@ static void activate_selected(struct popup *popup, bool reveal) {
     }
     launch->row = *row;
     launch->reveal = reveal;
-    launch->event.operation = IPC_OPEN;
-    launch->event.file_id = row->id;
-    char *uuid = g_uuid_string_random();
-    g_strlcpy(launch->event.event_id, uuid, sizeof(launch->event.event_id));
-    g_free(uuid);
-    g_strlcpy(launch->event.search_id, popup_model_search_id(popup->model),
-              sizeof(launch->event.search_id));
-    g_strlcpy(launch->event.request_id, launch->event.event_id, sizeof(launch->event.request_id));
+    launch->new_window = new_window;
+    open_event(popup, row, &launch->event);
     tl_ipc_request request = {.operation = IPC_RESOLVE, .file_id = row->id};
     g_strlcpy(request.request_id, launch->event.request_id, sizeof(request.request_id));
     g_object_set_data_full(G_OBJECT(popup->window), "launch", launch, launch_free);
@@ -337,6 +408,63 @@ static void activate_selected(struct popup *popup, bool reveal) {
         popup_view_set_launching(popup->view, false);
         set_status(popup, "Could not resolve this item");
     }
+}
+/* Bring a window of row forward and record it like a launch of row. No resolve
+ * is needed: the window exists whatever the desktop catalog now says. */
+static void activate_window(struct popup *popup, const tl_popup_row *row, size_t window) {
+    if (windows_activate(popup->windows, window) != TL_OK) {
+        set_status(popup, "That window has closed");
+        refresh_windows(popup);
+        return;
+    }
+    popup_view_set_launching(popup->view, true);
+    tl_ipc_request event;
+    open_event(popup, row, &event);
+    /* The switch already happened; a lost history record must not undo it. */
+    if (record_open(popup, &event) != TL_OK)
+        set_status(popup, "Opened; history could not be recorded");
+    close_popup(popup);
+}
+static void activate_selected(struct popup *popup, bool reveal) {
+    const tl_popup_item *item = popup_model_selected_item(popup->model);
+    if (item == NULL || popup->action != NULL || popup->launching)
+        return;
+    const tl_popup_row *row = popup_model_selected(popup->model);
+    if (item->kind == POPUP_ITEM_MORE_WINDOWS) {
+        if (popup_model_expand(popup->model))
+            rerender(popup, false);
+        return;
+    }
+    /* Enter on a running application switches to its most recent window. */
+    if (item->kind == POPUP_ITEM_WINDOW ||
+        (item->kind == POPUP_ITEM_RESULT && item->windows != 0 && !reveal)) {
+        activate_window(popup, row, item->window);
+        return;
+    }
+    launch_row(popup, row, reveal && item->kind == POPUP_ITEM_RESULT,
+               item->kind == POPUP_ITEM_NEW_WINDOW);
+}
+/* Arrows edit the query unless they can move through the hierarchy: Right at
+ * the end of the query lists windows, Left on a child returns to its application. */
+static bool hierarchy_key(struct popup *popup, guint key) {
+    const tl_popup_item *item = popup_model_selected_item(popup->model);
+    if (item == NULL)
+        return false;
+    if (key == GDK_KEY_Left || key == GDK_KEY_KP_Left) {
+        if (item->kind == POPUP_ITEM_RESULT || !popup_model_collapse(popup->model))
+            return false;
+        rerender(popup, true);
+        return true;
+    }
+    GtkEditable *entry = GTK_EDITABLE(popup->entry);
+    int start = 0, end = 0;
+    bool at_end =
+        !gtk_editable_get_selection_bounds(entry, &start, &end) &&
+        gtk_editable_get_position(entry) == (int)g_utf8_strlen(gtk_editable_get_text(entry), -1);
+    if (!at_end || !popup_model_expand(popup->model))
+        return false;
+    rerender(popup, false);
+    return true;
 }
 static gboolean key_pressed(GtkEventControllerKey *controller, guint key, guint keycode,
                             GdkModifierType modifiers, gpointer context) {
@@ -354,6 +482,9 @@ static gboolean key_pressed(GtkEventControllerKey *controller, guint key, guint 
         select_row(popup, true);
         return true;
     }
+    if (key == GDK_KEY_Left || key == GDK_KEY_KP_Left || key == GDK_KEY_Right ||
+        key == GDK_KEY_KP_Right)
+        return hierarchy_key(popup, key);
     if (key == GDK_KEY_Return || key == GDK_KEY_KP_Enter) {
         if (gtk_widget_get_visible(popup->retry) && popup_model_selected(popup->model) == NULL)
             return gtk_widget_activate(popup->retry);
@@ -509,6 +640,12 @@ static tl_status build_window(struct popup *popup) {
     g_signal_connect(popup->window, "notify::is-active", G_CALLBACK(active_changed), popup);
     g_signal_connect(popup->window, "map", G_CALLBACK(place_window), popup);
     popup->status_timer = g_timeout_add(POPUP_STATUS_MS, poll_status, popup);
+    /* Without an X11 display there is no source and no windows are listed. If
+     * even the empty snapshot cannot be allocated, the launcher runs without one. */
+    tl_window_source source;
+    bool x11 = windows_x11_source(popup->window, &source) == TL_OK;
+    if (windows_create(x11 ? &source : NULL, &popup->windows) != TL_OK && x11)
+        source.destroy(source.context);
     return TL_OK;
 }
 static int command_line(GApplication *application, GApplicationCommandLine *command,
@@ -554,6 +691,9 @@ static int command_line(GApplication *application, GApplicationCommandLine *comm
     gtk_window_present(GTK_WINDOW(popup->window));
     gtk_widget_grab_focus(popup->entry);
     popup_view_set_active(popup->view, true);
+    /* Read open windows after the first paint, never on the way to it. */
+    remove_timer(&popup->windows_idle);
+    popup->windows_idle = g_idle_add(windows_ready, popup);
     return 0;
 }
 tl_status launcher_create(tl_launcher **out) {
@@ -594,6 +734,7 @@ void launcher_destroy(tl_launcher *popup) {
     remove_timer(&popup->debounce);
     remove_timer(&popup->pending);
     remove_timer(&popup->status_timer);
+    remove_timer(&popup->windows_idle);
     ipc_exchange_destroy(popup->query);
     ipc_exchange_destroy(popup->action);
     ipc_exchange_destroy(popup->history);
@@ -606,6 +747,10 @@ void launcher_destroy(tl_launcher *popup) {
     if (popup->launch_cancel != NULL)
         g_object_unref(popup->launch_cancel);
     popup->launch_cancel = NULL;
+    /* The X11 source borrows the window, so it goes first. */
+    popup_model_set_windows(popup->model, NULL);
+    windows_destroy(popup->windows);
+    popup->windows = NULL;
     if (popup->window != NULL)
         gtk_window_destroy(GTK_WINDOW(popup->window));
     popup_view_destroy(popup->view);

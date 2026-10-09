@@ -57,8 +57,9 @@ CPPCHECK ?= cppcheck
 .PHONY: all test lint format bench bench-vector eval-vector bench-daemon clean
 GTK_CPPFLAGS = $(subst -I,-isystem ,$(shell $(PKG_CONFIG) --cflags 'gtk4 >= 4.14' x11))
 GTK_LDLIBS = $(shell $(PKG_CONFIG) --libs 'gtk4 >= 4.14' x11)
-UI_SOURCES = ui/gtk/model.c ui/gtk/actions.c ui/gtk/launcher.c ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c src/bin/torchlight-gtk.c
+UI_SOURCES = ui/gtk/model.c ui/gtk/windows.c ui/gtk/windows_x11.c ui/gtk/actions.c ui/gtk/launcher.c ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c src/bin/torchlight-gtk.c
 POPUP_FIXTURE_SOURCE = tests/fixtures/popup_probe.c
+WINDOW_FIXTURE_SOURCE = tests/fixtures/window_app.c
 all: build/torchlight build/torchlightd build/torchlight-gtk
 $(FRIZBEE_LIB): $(FRIZBEE_INPUTS)
 	$(CARGO) build --release --offline --locked --manifest-path $(FRIZBEE_MANIFEST) --target-dir build/frizbee
@@ -75,6 +76,9 @@ build/test_popup_view: ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.
 build/test_popup_probe.so: $(POPUP_FIXTURE_SOURCE)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) -fPIC -shared $< $(GTK_LDLIBS) -ldl -o $@
+build/test_window_app: $(WINDOW_FIXTURE_SOURCE)
+	@mkdir -p build
+	$(CC) $(GTK_CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $< $(shell $(PKG_CONFIG) --libs x11) -o $@
 build/torchlight: $(OBJECTS) build/src/bin/torchlight.o $(FRIZBEE_LIB)
 	$(CC) $(CFLAGS) $(WARNINGS) $^ $(LDFLAGS) $(LDLIBS) -o $@
 build/torchlightd: $(OBJECTS) build/src/bin/torchlightd.o $(FRIZBEE_LIB)
@@ -82,9 +86,9 @@ build/torchlightd: $(OBJECTS) build/src/bin/torchlightd.o $(FRIZBEE_LIB)
 build/%.o: %.c $(HEADERS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -MMD -MP -c $< -o $@
-build/tests: $(SOURCES) ui/gtk/model.c ui/gtk/actions.c $(TEST_SOURCES) $(HEADERS) ui/gtk/actions.h tests/unit/test.h $(FRIZBEE_LIB)
+build/tests: $(SOURCES) ui/gtk/model.c ui/gtk/windows.c ui/gtk/actions.c $(TEST_SOURCES) $(HEADERS) ui/gtk/actions.h tests/unit/test.h $(FRIZBEE_LIB)
 	@mkdir -p build
-	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $(SAN_FLAGS) $(SOURCES) ui/gtk/model.c ui/gtk/actions.c $(TEST_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
+	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $(SAN_FLAGS) $(SOURCES) ui/gtk/model.c ui/gtk/windows.c ui/gtk/actions.c $(TEST_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
 build/torchlight-sanitized: $(SOURCES) src/bin/torchlight.c $(HEADERS) $(FRIZBEE_LIB)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $(SAN_FLAGS) $(SOURCES) src/bin/torchlight.c $(LDFLAGS) $(LDLIBS) -o $@
@@ -112,10 +116,10 @@ lint:
 	@command -v $(CPPCHECK) >/dev/null || { echo 'cppcheck is required'; exit 1; }
 	$(CLANG_TIDY) $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(VECTOR_EVAL_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
 	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(VECTOR_EVAL_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE)
-	$(CLANG_TIDY) $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) tests/gtk/test_view.c --warnings-as-errors='*' -- $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 $(WARNINGS)
-	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE --library=gtk -Iinclude $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) tests/gtk/test_view.c
+	$(CLANG_TIDY) $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(WINDOW_FIXTURE_SOURCE) tests/gtk/test_view.c --warnings-as-errors='*' -- $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 $(WARNINGS)
+	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE --library=gtk -Iinclude $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(WINDOW_FIXTURE_SOURCE) tests/gtk/test_view.c
 format:
-	clang-format -i tests/gtk/test_view.c $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(UI_HEADERS) $(SOURCES) $(BIN_SOURCES) $(HEADERS) tests/unit/*.h $(TEST_SOURCES) tests/bench/*.c tests/bench/*.h $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE)
+	clang-format -i tests/gtk/test_view.c $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(WINDOW_FIXTURE_SOURCE) $(UI_HEADERS) $(SOURCES) $(BIN_SOURCES) $(HEADERS) tests/unit/*.h $(TEST_SOURCES) tests/bench/*.c tests/bench/*.h $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE)
 build/bench_lexical: $(SOURCES) $(BENCH_SOURCES) $(HEADERS) $(wildcard tests/bench/*.h) $(FRIZBEE_LIB)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) $(SOURCES) $(BENCH_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
@@ -168,9 +172,9 @@ install: all
 	install -m 755 build/torchlight build/torchlightd build/torchlight-gtk $(DESTDIR)$(PREFIX)/bin/
 	install -m 644 packaging/org.torchlight.Launcher.desktop $(DESTDIR)$(PREFIX)/share/applications/
 	install -m 644 packaging/torchlightd.service $(DESTDIR)$(PREFIX)/lib/systemd/user/
-test-ui: all build/test_popup_probe.so
+test-ui: all build/test_popup_probe.so build/test_window_app
 	python3 tests/test_popup.py --xdotool $(XDOTOOL)
-test-ui-isolated: all build/test_popup_probe.so build/test_popup_view
+test-ui-isolated: all build/test_popup_probe.so build/test_popup_view build/test_window_app
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --matrix
 bench-ui: all build/test_popup_probe.so build/torchlightd-release build/bench_fixture
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --bench

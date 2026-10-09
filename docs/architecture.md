@@ -220,3 +220,10 @@ Actions resolve current identities and run native GIO launch or file open/reveal
 in a worker, then enqueue accepted history. SQLite schema v3 stores desktop opens
 separately from file opens through the existing writer queue. See ADR 0015 and
 [desktop setup](desktop-setup.md).
+
+The popup also reads the session's open X11 windows once per show, on GTK's
+own connection after the first paint, and lists them beneath their application
+results, matched by the `wm_class` the daemon sends with each application.
+Switching to a window records the same open as a launch. The daemon never sees
+windows ([ADR 0035](adr/0035-open-windows-under-applications.md),
+[windows](modules/windows/README.md)).

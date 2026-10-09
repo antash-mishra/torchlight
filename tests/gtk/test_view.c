@@ -121,6 +121,50 @@ static void test_rows(void) {
     g_object_unref(plain);
     g_object_unref(folder);
 }
+static const char *label_text(GtkWidget *widget, const char *class) {
+    if (GTK_IS_LABEL(widget) && gtk_widget_has_css_class(widget, class))
+        return gtk_label_get_text(GTK_LABEL(widget));
+    for (GtkWidget *child = gtk_widget_get_first_child(widget); child != NULL;
+         child = gtk_widget_get_next_sibling(child)) {
+        const char *text = label_text(child, class);
+        if (text != NULL)
+            return text;
+    }
+    return NULL;
+}
+/* Application rows stay plain; their children are compact rows with their own icons. */
+static void test_children(void) {
+    tl_popup_row app = {.id = 1, .application = true};
+    g_strlcpy(app.name, "Google Chrome", sizeof(app.name));
+    g_strlcpy(app.display, "/apps/google-chrome.desktop", sizeof(app.display));
+    g_strlcpy(app.icon, "google-chrome", sizeof(app.icon));
+    GtkWidget *plain = g_object_ref_sink(popup_view_result(&app, 0, POPUP_ENTER_NONE, 0));
+    CHECK(strcmp(label_text(plain, "result-detail"), "Application") == 0);
+    /* No window count: the row ends with its name and detail. */
+    CHECK(GTK_IS_BOX(gtk_widget_get_last_child(plain)) &&
+          label_text(gtk_widget_get_last_child(plain), "result-name") != NULL);
+    GtkWidget *window = g_object_ref_sink(
+        popup_view_child(&app, POPUP_ITEM_WINDOW, "Docs", POPUP_ENTER_CASCADE, 1));
+    CHECK(GTK_IS_LIST_BOX_ROW(window) && gtk_widget_has_css_class(window, "child-row"));
+    GtkWidget *box = gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(window));
+    CHECK(gtk_widget_has_css_class(box, "child") && gtk_widget_has_css_class(box, "enter-1"));
+    CHECK(strcmp(icon_name(box), "google-chrome") == 0);
+    CHECK(strcmp(label_text(window, "result-name"), "Docs") == 0);
+    GtkWidget *more = g_object_ref_sink(popup_view_child(
+        &app, POPUP_ITEM_MORE_WINDOWS, "Show 3 more windows", POPUP_ENTER_FADE, 6));
+    box = gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(more));
+    CHECK(strcmp(icon_name(box), "view-more-symbolic") == 0 &&
+          gtk_widget_has_css_class(box, "fresh"));
+    CHECK(strcmp(label_text(more, "child-action"), "Show 3 more windows") == 0);
+    GtkWidget *added = g_object_ref_sink(
+        popup_view_child(&app, POPUP_ITEM_NEW_WINDOW, "New window", POPUP_ENTER_NONE, 7));
+    CHECK(strcmp(icon_name(gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(added))),
+                 "list-add-symbolic") == 0);
+    g_object_unref(plain);
+    g_object_unref(window);
+    g_object_unref(more);
+    g_object_unref(added);
+}
 static void check_editing(tl_popup_widgets widgets) {
     CHECK(strcmp(gtk_entry_get_placeholder_text(GTK_ENTRY(widgets.entry)),
                  "Search apps, settings, files and folders") == 0);
@@ -309,6 +353,7 @@ int main(void) {
     gtk_init();
     test_paths();
     test_rows();
+    test_children();
     test_view();
     puts("Native view: path fitting, icons, entrances, glide, motion timers and geometry passed.");
     return 0;

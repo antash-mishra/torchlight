@@ -57,7 +57,9 @@ See [daemon](../daemon/README.md), [core JSON](../core/README.md) and
 
 M3 results add kind (`file`, `folder`, `application`, `settings`). Desktop results
 also include localized name, desktop_id, decimal-string desktop_revision and
-GIcon string icon. File paths remain raw bytes, and desktop paths are actual
+GIcon string icon, plus `wm_class` (the entry's `StartupWMClass`) when it has one
+of at most 255 bytes; the popup matches open windows with it (ADR 0035). The
+field is optional and additive, so the protocol version stays 1. File paths remain raw bytes, and desktop paths are actual
 entry filenames. Desktop ids occupy a session-scoped range above 2^62; the
 existing file_id request field resolves or records either kind. Changed/removed
 entries become stale. catalog_gen still identifies the file snapshot only.
