@@ -27,6 +27,9 @@ struct popup {
     tl_ipc_exchange *query, *action, *status_exchange, *history;
     bool dirty, launching, visible;
     GCancellable *launch_cancel;
+    /* Ids currently on screen, so a re-render animates only rows that are new. */
+    uint64_t shown[POPUP_RESULTS + 1];
+    size_t shown_count;
 };
 static void start_query(struct popup *popup);
 static void set_status(struct popup *popup, const char *text) {
@@ -46,7 +49,6 @@ static bool query_empty(struct popup *popup) {
 }
 static void close_popup(struct popup *popup) {
     popup->visible = false;
-    popup_view_set_active(popup->view, false);
     popup->dirty = false;
     remove_timer(&popup->debounce);
     remove_timer(&popup->pending);
@@ -56,12 +58,14 @@ static void close_popup(struct popup *popup) {
     popup->action = NULL;
     if (popup->launch_cancel != NULL)
         g_cancellable_cancel(popup->launch_cancel);
-    gtk_widget_set_visible(popup->window, false);
+    /* Work is canceled above at once; only the window's fade-out remains. */
+    popup_view_dismiss(popup->view);
 }
-static void select_row(struct popup *popup) {
+static void select_row(struct popup *popup, bool glide) {
     GtkListBoxRow *row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(popup->list),
                                                        (int)popup_model_position(popup->model));
     gtk_list_box_select_row(GTK_LIST_BOX(popup->list), row);
+    popup_view_select(popup->view, row == NULL ? NULL : GTK_WIDGET(row), glide);
     const tl_popup_row *selected = popup_model_selected(popup->model);
     if (selected != NULL)
         gtk_accessible_announce(GTK_ACCESSIBLE(popup->list), selected->name,
@@ -81,15 +85,35 @@ static void select_row(struct popup *popup) {
     else if (bottom > value + page)
         gtk_adjustment_set_value(adjustment, bottom - page);
 }
-static void render(struct popup *popup) {
+static tl_popup_entrance entrance_for(const struct popup *popup, uint64_t id) {
+    if (popup->shown_count == 0)
+        return POPUP_ENTER_CASCADE;
+    for (size_t i = 0; i < popup->shown_count; i++)
+        if (popup->shown[i] == id)
+            return POPUP_ENTER_NONE;
+    return POPUP_ENTER_FADE;
+}
+static void render_rows(struct popup *popup) {
     gtk_list_box_remove_all(GTK_LIST_BOX(popup->list));
     size_t count = popup_model_count(popup->model);
-    for (size_t i = 0; i < count; i++)
+    for (size_t i = 0; i < count; i++) {
+        const tl_popup_row *row = popup_model_row(popup->model, i);
+        size_t keep = popup_model_distinct_prefix(popup->model, i);
         gtk_list_box_append(GTK_LIST_BOX(popup->list),
-                            popup_view_result(popup_model_row(popup->model, i)));
+                            popup_view_result(row, keep, entrance_for(popup, row->id), i));
+    }
+    for (size_t i = 0; i < count; i++)
+        popup->shown[i] = popup_model_row(popup->model, i)->id;
+    popup->shown_count = count;
+}
+static void render(struct popup *popup) {
+    bool was_empty = popup->shown_count == 0;
+    render_rows(popup);
+    size_t count = popup_model_count(popup->model);
     popup_view_set_results(popup->view, count);
+    popup_view_set_searching(popup->view, false);
     gtk_widget_set_sensitive(popup->list, true);
-    select_row(popup);
+    select_row(popup, !was_empty);
     if (query_empty(popup))
         set_status(popup, "");
     else if (count == 0)
@@ -110,8 +134,10 @@ static void render(struct popup *popup) {
 static gboolean pending_status(gpointer context) {
     struct popup *popup = context;
     popup->pending = 0;
-    if (popup->visible && (popup->query != NULL || popup->dirty))
+    if (popup->visible && (popup->query != NULL || popup->dirty)) {
         set_status(popup, "Searching…");
+        popup_view_set_searching(popup->view, true);
+    }
     return G_SOURCE_REMOVE;
 }
 static void query_response(void *context, tl_status status, const char *response, size_t length,
@@ -123,6 +149,7 @@ static void query_response(void *context, tl_status status, const char *response
         render(popup);
     else if (status != TL_STATE && popup->visible && !popup->dirty) {
         set_status(popup, "Search service unavailable");
+        popup_view_set_searching(popup->view, false);
         gtk_widget_set_visible(popup->retry, true);
     }
     if (!terminal)
@@ -182,6 +209,7 @@ static void changed(GtkEditable *entry, gpointer context) {
     popup->action = NULL;
     if (popup->launch_cancel != NULL)
         g_cancellable_cancel(popup->launch_cancel);
+    popup_view_set_launching(popup->view, false);
     popup->dirty = true;
     gtk_widget_set_sensitive(popup->list, false);
     remove_timer(&popup->debounce);
@@ -228,6 +256,7 @@ static void launched(GObject *source, GAsyncResult *result, gpointer context) {
         g_object_unref(popup->launch_cancel);
     popup->launch_cancel = NULL;
     if (!accepted) {
+        popup_view_set_launching(popup->view, false);
         if (popup->visible && !canceled)
             set_status(popup,
                        launch->reveal ? "Could not reveal this item" : "Could not open this item");
@@ -258,6 +287,7 @@ static void resolved(void *context, tl_status status, const char *response, size
     ipc_exchange_destroy(popup->action);
     popup->action = NULL;
     if (status != TL_OK || count != 1) {
+        popup_view_set_launching(popup->view, false);
         set_status(popup, status == TL_STATE ? "This item is no longer indexed"
                                              : "Could not resolve this item");
         if (status == TL_STATE) {
@@ -299,10 +329,14 @@ static void activate_selected(struct popup *popup, bool reveal) {
     tl_ipc_request request = {.operation = IPC_RESOLVE, .file_id = row->id};
     g_strlcpy(request.request_id, launch->event.request_id, sizeof(request.request_id));
     g_object_set_data_full(G_OBJECT(popup->window), "launch", launch, launch_free);
+    /* Acknowledge the choice at once; the fade-out follows an accepted launch. */
+    popup_view_set_launching(popup->view, true);
     tl_status status =
         ipc_exchange_create(popup->socket_path, &request, resolved, popup, &popup->action);
-    if (status != TL_OK)
+    if (status != TL_OK) {
+        popup_view_set_launching(popup->view, false);
         set_status(popup, "Could not resolve this item");
+    }
 }
 static gboolean key_pressed(GtkEventControllerKey *controller, guint key, guint keycode,
                             GdkModifierType modifiers, gpointer context) {
@@ -317,7 +351,7 @@ static gboolean key_pressed(GtkEventControllerKey *controller, guint key, guint 
         return false;
     if (key == GDK_KEY_Up || key == GDK_KEY_Down) {
         popup_model_move(popup->model, key == GDK_KEY_Up ? -1 : 1);
-        select_row(popup);
+        select_row(popup, true);
         return true;
     }
     if (key == GDK_KEY_Return || key == GDK_KEY_KP_Enter) {
@@ -339,6 +373,7 @@ static void row_activated(GtkListBox *list, GtkListBoxRow *row, gpointer context
         popup_model_move(popup->model, current < (size_t)position ? 1 : -1);
         current = popup_model_position(popup->model);
     }
+    select_row(popup, true);
     activate_selected(popup, false);
 }
 static gboolean close_requested(GtkWindow *window, gpointer context) {

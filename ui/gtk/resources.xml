@@ -1,4 +1,4 @@
-<!-- Native popup style embedded in the executable; no runtime CSS path lookup. -->
+<!-- Native popup style embedded (compressed, to stay within ISO C string limits); no runtime CSS lookup. -->
 <gresources><gresource prefix="/org/torchlight/launcher">
-  <file>quiet-system.css</file>
+  <file compressed="true">popup.css</file>
 </gresource></gresources>

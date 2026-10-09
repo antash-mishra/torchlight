@@ -241,6 +241,42 @@ const tl_popup_row *popup_model_selected(const tl_popup_model *model) {
 const tl_popup_row *popup_model_row(const tl_popup_model *model, size_t index) {
     return model != NULL && index < model->count ? &model->rows[index] : NULL;
 }
+static size_t parent_length(const char *display) {
+    const char *slash = strrchr(display, '/');
+    return slash == NULL ? 0 : (size_t)(slash - display);
+}
+/* End offset in a of the first folder that differs from b; 0 when the parents match. */
+static size_t first_difference(const char *a, size_t a_length, const char *b, size_t b_length) {
+    size_t same = 0;
+    while (same < a_length && same < b_length && a[same] == b[same])
+        same++;
+    if (same == a_length)
+        return same == b_length ? 0 : a_length;
+    /* a's folder ended where b's name continued ("y" against "yy"): that folder differs. */
+    if (same < b_length && a[same] == '/')
+        return same;
+    /* b ended at a boundary, so a's next folder is the first one b lacks. */
+    size_t from = same == b_length && a[same] == '/' ? same + 1 : same;
+    const char *slash = memchr(a + from, '/', a_length - from);
+    return slash == NULL ? a_length : (size_t)(slash - a);
+}
+size_t popup_model_distinct_prefix(const tl_popup_model *model, size_t index) {
+    const tl_popup_row *row = popup_model_row(model, index);
+    if (row == NULL || row->application)
+        return 0;
+    size_t length = parent_length(row->display), keep = 0;
+    for (size_t i = 0; i < model->count; i++) {
+        const tl_popup_row *other = &model->rows[i];
+        /* Icons already tell folders from files, so only same-kind names can collide. */
+        if (i == index || other->application || other->folder != row->folder ||
+            strcmp(other->name, row->name) != 0)
+            continue;
+        size_t end =
+            first_difference(row->display, length, other->display, parent_length(other->display));
+        keep = end > keep ? end : keep;
+    }
+    return keep;
+}
 size_t popup_model_count(const tl_popup_model *model) {
     return model == NULL ? 0 : model->count;
 }

@@ -1,6 +1,6 @@
 # 0027. Quiet System native popup
 
-- **Status:** Accepted
+- **Status:** Superseded by 0034 (presentation); IPC, keyboard and geometry contracts remain
 - **Date:** 2026-10-07
 
 ## Context

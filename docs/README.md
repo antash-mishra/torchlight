@@ -5,8 +5,9 @@ browser. It shows the current system, the planned system, and the next steps.
 The implemented M3 popup follows the [GUI specification](m3-gui-design.md) and
 [interactive design preview](m3-gui-preview.html), including Cinnamon X11 focus,
 keyboard actions, status/error states and asynchronous IPC requirements.
-The GTK popup now implements the minimal, shader-free Quiet System presentation;
-see [ADR 0027](adr/0027-quiet-system-native-popup.md) and [native captures](ui/native-empty.png).
+The GTK popup follows the desktop theme (light or dark, accent and font) with
+short, bounded motion; see [ADR 0034](adr/0034-theme-following-popup-with-motion.md),
+the [design study](popup-directions.html) and [native captures](ui/native-results.png).
 
 Start here. Read in this order:
 
@@ -167,7 +168,8 @@ the root [README](../README.md) for commands, and
   and incremental indexing in that order; M6 executes before M5.
 
 - [0027: Quiet System native popup](adr/0027-quiet-system-native-popup.md)
-  implements the accepted minimal layout, shaped underscore cursor and typing light without shaders.
+  implemented the minimal layout, shaped underscore cursor and typing light without
+  shaders; its presentation is superseded by 0034.
 - [0028: M6 step 1, search thread and persistence owner](adr/0028-m6-search-thread-and-persistence-owner.md)
   moves search off the IPC thread with per-client queues and cancellation, and
   splits the writer into indexing and persistence threads.
@@ -186,6 +188,9 @@ the root [README](../README.md) for commands, and
 - [0033: M5 personal ranking without slowing search](adr/0033-m5-personal-ranking.md)
   keeps usage in search-thread memory, all saving on the persistence thread,
   and adds bounded boosts through an exact used-set side query (implemented).
+- [0034: Theme-following popup with bounded motion](adr/0034-theme-following-popup-with-motion.md)
+  replaces the Quiet System look with theme colors, the desktop font, file-type
+  icons and a gliding selection, plus a torch sweep and other non-blocking motion.
 
 ## Keeping docs current
 

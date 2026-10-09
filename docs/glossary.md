@@ -111,3 +111,10 @@
   cosine rescoring; recall must pass evaluation before it becomes a default.
 - **desktop_gen:** Session-local immutable desktop metadata sequence, separate
   from catalog_gen and emb_gen; required for coherent hybrid publication.
+- **Distinct prefix:** The leading part of a result's parent path, through the
+  first folder where it differs from another visible result of the same kind and
+  name. The popup keeps it visible when shortening paths.
+- **Selection track:** The popup widget that draws one selection highlight beneath
+  the result list and glides it between rows on the frame clock.
+- **Torch sweep:** The popup's opening effect: a band of accent light crosses the
+  search field once each time the popup is shown.

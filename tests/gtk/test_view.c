@@ -1,9 +1,10 @@
-/* Native presentation regressions: real allocations, shaped caret pixels and timer cleanup. */
+/* Native presentation regressions: real allocations, gliding selection, motion timers and paths. */
 #include "../../ui/gtk/path_label.h"
 #include "../../ui/gtk/view.h"
 #include "../unit/test.h"
-#include <math.h>
 #include <string.h>
+/* Search area (44px field + 12px padding on each side) plus the 1px surface border. */
+#define EMPTY_HEIGHT 70
 static void settle(int milliseconds) {
     gint64 deadline = g_get_monotonic_time() + (gint64)milliseconds * 1000;
     do {
@@ -28,11 +29,13 @@ static graphene_rect_t bounds(GtkWidget *widget) {
     CHECK(gtk_widget_compute_bounds(widget, GTK_WIDGET(gtk_widget_get_root(widget)), &result));
     return result;
 }
-static int caret_pixels(tl_popup_widgets widgets, const char *artifact) {
-    GtkSnapshot *snapshot = gtk_snapshot_new();
-    GdkPaintable *paintable = gtk_widget_paintable_new(widgets.root);
+/* Render the popup surface; with TORCHLIGHT_TEST_VIEW_CAPTURE set, save it for the docs. */
+static void capture(tl_popup_widgets widgets, const char *artifact) {
+    const char *directory = g_getenv("TORCHLIGHT_TEST_VIEW_CAPTURE");
     int width = (int)bounds(widgets.root).size.width,
         height = (int)bounds(widgets.root).size.height;
+    GtkSnapshot *snapshot = gtk_snapshot_new();
+    GdkPaintable *paintable = gtk_widget_paintable_new(widgets.root);
     gdk_paintable_snapshot(paintable, GDK_SNAPSHOT(snapshot), width, height);
     GskRenderNode *node = gtk_snapshot_free_to_node(snapshot);
     CHECK(node != NULL);
@@ -40,43 +43,18 @@ static int caret_pixels(tl_popup_widgets widgets, const char *artifact) {
     cairo_t *cr = cairo_create(surface);
     gsk_render_node_draw(node, cr);
     cairo_surface_flush(surface);
-    const char *capture = g_getenv("TORCHLIGHT_TEST_VIEW_CAPTURE");
-    if (artifact != NULL && capture != NULL) {
-        char *filename = g_strdup_printf("%s/native-%s.png", capture, artifact);
+    if (directory != NULL) {
+        char *filename = g_strdup_printf("%s/native-%s.png", directory, artifact);
         CHECK(cairo_surface_write_to_png(surface, filename) == CAIRO_STATUS_SUCCESS);
         g_free(filename);
-    }
-    graphene_rect_t entry;
-    CHECK(gtk_widget_compute_bounds(widgets.entry, widgets.root, &entry));
-    unsigned char *bytes = cairo_image_surface_get_data(surface);
-    int stride = cairo_image_surface_get_stride(surface), pixels = 0;
-    int min_x = width, max_x = 0, min_y = height, max_y = 0;
-    for (int y = (int)ceilf(entry.origin.y); y < (int)(entry.origin.y + entry.size.height); y++) {
-        for (int x = (int)ceilf(entry.origin.x); x < (int)(entry.origin.x + entry.size.width);
-             x++) {
-            uint32_t color;
-            memcpy(&color, bytes + y * stride + x * 4, sizeof(color));
-            if ((color & 0xffffffU) != 0xb8d49dU)
-                continue;
-            pixels++;
-            min_x = MIN(min_x, x);
-            max_x = MAX(max_x, x);
-            min_y = MIN(min_y, y);
-            max_y = MAX(max_y, y);
-        }
-    }
-    if (pixels != 0) {
-        CHECK(max_x - min_x >= 10 && max_x - min_x <= 12);
-        CHECK(max_y - min_y <= 2);
     }
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
     gsk_render_node_unref(node);
     g_object_unref(paintable);
-    return pixels;
 }
-static void check_path(const char *full, const char *expected) {
-    GtkWidget *window = gtk_window_new(), *path = popup_path_label_new(full);
+static void check_path(const char *full, size_t keep, const char *expected) {
+    GtkWidget *window = gtk_window_new(), *path = popup_path_label_new(full, keep);
     g_object_ref_sink(window);
     gtk_window_set_decorated(GTK_WINDOW(window), false);
     gtk_window_set_resizable(GTK_WINDOW(window), false);
@@ -95,73 +73,111 @@ static void check_path(const char *full, const char *expected) {
     g_object_unref(window);
 }
 static void test_paths(void) {
-    check_path("~/workspace/torchlight/src/core", "~/…/torchlight/src/core");
-    check_path("/very/long/ancestor/torchlight/src/core", "/…/torchlight/src/core");
-    check_path("/src/core", "/src/core");
+    check_path("~/workspace/torchlight/src/core", 0, "~/…/torchlight/src/core");
+    check_path("/very/long/ancestor/torchlight/src/core", 0, "/…/torchlight/src/core");
+    check_path("/src/core", 0, "/src/core");
     char *home = g_build_filename(g_get_home_dir(), "workspace", "torchlight", "src", "core", NULL);
-    check_path(home, "~/…/torchlight/src/core");
+    check_path(home, 0, "~/…/torchlight/src/core");
     g_free(home);
-    check_path("/界界界界界界界界界界界界界界界界界界界界", "/界界…界界");
+    check_path("/界界界界界界界界界界界界界界界界界界界界", 0, "/界界…界界");
+    /* Same-named results keep the folder that tells them apart (here, an NDK version). */
+    const char *ndk = "/opt/Sdk/ndk/27.0.12077973/toolchains/llvm/usr/include/c++/v1";
+    check_path(ndk, strlen("/opt/Sdk/ndk/27.0.12077973"), "/opt/Sdk/ndk/27.0.12077973/…/c++/v1");
+    char *in_home = g_build_filename(g_get_home_dir(), "Android", "ndk", "27.1.12297006",
+                                     "toolchains", "llvm", "include", "c++", "v1", NULL);
+    size_t version = strlen(in_home) - strlen("/toolchains/llvm/include/c++/v1");
+    check_path(in_home, version, "~/Android/ndk/27.1.12297006/…/c++/v1");
+    g_free(in_home);
+    /* Out-of-range or non-boundary keeps fall back to ordinary shortening. */
+    check_path("/very/long/ancestor/torchlight/src/core", 999, "/…/torchlight/src/core");
+}
+static GtkWidget *result_widget(tl_popup_row *row, tl_popup_entrance entrance, size_t index) {
+    return popup_view_result(row, 0, entrance, index);
+}
+static const char *icon_name(GtkWidget *result) {
+    GIcon *icon = gtk_image_get_gicon(GTK_IMAGE(gtk_widget_get_first_child(result)));
+    CHECK(G_IS_THEMED_ICON(icon));
+    return g_themed_icon_get_names(G_THEMED_ICON(icon))[0];
+}
+static void test_rows(void) {
+    tl_popup_row row = {.id = 1};
+    g_strlcpy(row.name, "config.c", sizeof(row.name));
+    g_strlcpy(row.display, "/src/core/config.c", sizeof(row.display));
+    GtkWidget *cascade = g_object_ref_sink(result_widget(&row, POPUP_ENTER_CASCADE, 9));
+    CHECK(gtk_widget_has_css_class(cascade, "enter-7"));
+    CHECK(strcmp(icon_name(cascade), "text-x-csrc") == 0);
+    GtkWidget *fresh = g_object_ref_sink(result_widget(&row, POPUP_ENTER_FADE, 0));
+    CHECK(gtk_widget_has_css_class(fresh, "fresh") && !gtk_widget_has_css_class(fresh, "enter-0"));
+    /* An extensionless name cannot be placed by its name, so it keeps a generic icon. */
+    g_strlcpy(row.name, "set", sizeof(row.name));
+    GtkWidget *plain = g_object_ref_sink(result_widget(&row, POPUP_ENTER_NONE, 0));
+    CHECK(!gtk_widget_has_css_class(plain, "fresh") && !gtk_widget_has_css_class(plain, "enter-0"));
+    CHECK(strcmp(icon_name(plain), "text-x-generic") == 0);
+    row.folder = true;
+    GtkWidget *folder = g_object_ref_sink(result_widget(&row, POPUP_ENTER_NONE, 0));
+    CHECK(strcmp(icon_name(folder), "folder") == 0);
+    g_object_unref(cascade);
+    g_object_unref(fresh);
+    g_object_unref(plain);
+    g_object_unref(folder);
 }
 static void check_editing(tl_popup_widgets widgets) {
-    gtk_editable_set_text(GTK_EDITABLE(widgets.entry), "abc");
-    gtk_editable_set_position(GTK_EDITABLE(widgets.entry), -1);
-    settle(40);
-    CHECK(caret_pixels(widgets, NULL) >= 12);
-    gtk_editable_select_region(GTK_EDITABLE(widgets.entry), 0, -1);
-    settle(40);
-    CHECK(caret_pixels(widgets, NULL) == 0);
-    gtk_editable_set_position(GTK_EDITABLE(widgets.entry), 0);
-    settle(40);
-    CHECK(caret_pixels(widgets, NULL) >= 12);
-    GtkText *text = GTK_TEXT(gtk_editable_get_delegate(GTK_EDITABLE(widgets.entry)));
-    g_signal_emit_by_name(text, "preedit-changed", "あ");
-    settle(40);
-    CHECK(gtk_widget_has_css_class(widgets.entry, "composing"));
-    g_signal_emit_by_name(text, "preedit-changed", "");
-    settle(40);
-    CHECK(!gtk_widget_has_css_class(widgets.entry, "composing"));
-    CHECK(caret_pixels(widgets, NULL) >= 12);
+    CHECK(strcmp(gtk_entry_get_placeholder_text(GTK_ENTRY(widgets.entry)),
+                 "Search apps, settings, files and folders") == 0);
     char *paste = g_strnfill(300, 'x');
     gtk_editable_set_text(GTK_EDITABLE(widgets.entry), paste);
     gtk_editable_set_position(GTK_EDITABLE(widgets.entry), -1);
     settle(40);
-    CHECK(caret_pixels(widgets, NULL) >= 12);
+    /* An oversized paste stays editable without widening the fixed popup. */
+    CHECK((int)bounds(widgets.root).size.width == 680);
+    CHECK(strlen(gtk_editable_get_text(GTK_EDITABLE(widgets.entry))) == 300);
     g_free(paste);
 }
 static void check_feedback(tl_popup_view *view, tl_popup_widgets widgets) {
-    GtkWidget *surface = find_named(widgets.root, "popup-search");
+    GtkWidget *field = find_named(widgets.root, "popup-search");
     gtk_editable_set_text(GTK_EDITABLE(widgets.entry), "c");
     settle(400);
     gtk_editable_set_text(GTK_EDITABLE(widgets.entry), "co");
     settle(400);
-    CHECK(gtk_widget_has_css_class(surface, "typing"));
+    CHECK(gtk_widget_has_css_class(field, "typing"));
     settle(400);
-    CHECK(!gtk_widget_has_css_class(surface, "typing"));
+    CHECK(!gtk_widget_has_css_class(field, "typing"));
     gtk_editable_set_text(GTK_EDITABLE(widgets.entry), "config");
     gtk_widget_set_visible(widgets.retry, true);
     gtk_widget_grab_focus(widgets.retry);
     settle(40);
-    CHECK(!gtk_widget_has_css_class(surface, "typing"));
+    CHECK(!gtk_widget_has_css_class(field, "typing"));
     gtk_widget_grab_focus(widgets.entry);
     gtk_editable_set_text(GTK_EDITABLE(widgets.entry), "config.c");
-    CHECK(gtk_widget_has_css_class(surface, "typing"));
+    CHECK(gtk_widget_has_css_class(field, "typing"));
     popup_view_set_active(view, false);
     settle(40);
-    CHECK(!gtk_widget_has_css_class(surface, "typing"));
-    CHECK(caret_pixels(widgets, NULL) == 0);
+    CHECK(!gtk_widget_has_css_class(field, "typing"));
+    gtk_widget_set_visible(widgets.retry, false);
+}
+static void fill(tl_popup_view *view, tl_popup_widgets widgets, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        tl_popup_row row = {.id = i + 1};
+        g_strlcpy(row.name, "config.c", sizeof(row.name));
+        g_strlcpy(row.display, "~/workspace/torchlight/src/core/config.c", sizeof(row.display));
+        gtk_list_box_append(GTK_LIST_BOX(widgets.list),
+                            popup_view_result(&row, 0, POPUP_ENTER_CASCADE, i));
+    }
+    popup_view_set_results(view, count);
+}
+static GtkWidget *select_index(tl_popup_view *view, tl_popup_widgets widgets, int index,
+                               bool glide) {
+    GtkListBoxRow *row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(widgets.list), index);
+    gtk_list_box_select_row(GTK_LIST_BOX(widgets.list), row);
+    popup_view_select(view, GTK_WIDGET(row), glide);
+    return GTK_WIDGET(row);
 }
 static void check_results(tl_popup_view *view, tl_popup_widgets widgets) {
     graphene_rect_t before = bounds(widgets.entry), after;
     gtk_editable_set_text(GTK_EDITABLE(widgets.entry), "config");
     gtk_editable_set_position(GTK_EDITABLE(widgets.entry), -1);
-    tl_popup_row row = {.id = 1};
-    g_strlcpy(row.name, "config.c", sizeof(row.name));
-    g_strlcpy(row.display, "~/workspace/torchlight/src/core/config.c", sizeof(row.display));
-    gtk_list_box_append(GTK_LIST_BOX(widgets.list), popup_view_result(&row));
-    gtk_list_box_select_row(GTK_LIST_BOX(widgets.list),
-                            gtk_list_box_get_row_at_index(GTK_LIST_BOX(widgets.list), 0));
-    popup_view_set_results(view, 1);
+    fill(view, widgets, 1);
+    GtkWidget *row = select_index(view, widgets, 0, false);
     popup_view_set_status(view, "1 result");
     settle(60);
     after = bounds(widgets.entry);
@@ -169,32 +185,103 @@ static void check_results(tl_popup_view *view, tl_popup_widgets widgets) {
           before.size.width == after.size.width);
     CHECK(gtk_widget_get_visible(widgets.scroll));
     CHECK(gtk_widget_get_visible(find_named(widgets.root, "popup-footer")));
-    CHECK(caret_pixels(widgets, "results") >= 12);
+    graphene_rect_t highlight = bounds(find_named(widgets.root, "popup-highlight"));
+    graphene_rect_t selected = bounds(row);
+    CHECK(graphene_rect_equal(&highlight, &selected));
+    capture(widgets, "results");
     popup_view_set_results(view, 0);
     gtk_list_box_remove_all(GTK_LIST_BOX(widgets.list));
+    popup_view_select(view, NULL, false);
     popup_view_set_status(view, "No matches. Try a name or part of its folder path.");
     settle(60);
-    CHECK((int)bounds(widgets.root).size.height == 116);
+    CHECK((int)bounds(widgets.root).size.height == EMPTY_HEIGHT);
+    CHECK(!gtk_widget_get_child_visible(find_named(widgets.root, "popup-highlight")));
 }
-static void test_view(void) {
+/* The highlight glides through intermediate places, then rests on the new row. */
+static void check_glide(tl_popup_view *view, tl_popup_widgets widgets) {
+    fill(view, widgets, 4);
+    GtkWidget *first = select_index(view, widgets, 0, false);
+    settle(80);
+    GtkWidget *highlight = find_named(widgets.root, "popup-highlight");
+    float start = bounds(first).origin.y;
+    CHECK(bounds(highlight).origin.y == start);
+    GtkWidget *last = select_index(view, widgets, 3, true);
+    float end = bounds(last).origin.y;
+    bool between = false;
+    for (int i = 0; i < 60; i++) {
+        settle(5);
+        float y = bounds(highlight).origin.y;
+        between = between || (y > start && y < end);
+    }
+    CHECK(between);
+    CHECK(bounds(highlight).origin.y == end);
+    popup_view_set_launching(view, true);
+    GtkWidget *result = gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(last));
+    CHECK(gtk_widget_has_css_class(highlight, "flash"));
+    CHECK(gtk_widget_has_css_class(result, "launching"));
+    popup_view_set_launching(view, false);
+    CHECK(!gtk_widget_has_css_class(highlight, "flash"));
+    CHECK(!gtk_widget_has_css_class(result, "launching"));
+    popup_view_set_results(view, 0);
+    gtk_list_box_remove_all(GTK_LIST_BOX(widgets.list));
+    popup_view_select(view, NULL, false);
+}
+static void check_searching(tl_popup_view *view, tl_popup_widgets widgets) {
+    GtkWidget *spinner = find_named(widgets.root, "popup-spinner");
+    GtkStack *icons = GTK_STACK(gtk_widget_get_parent(spinner));
+    popup_view_set_searching(view, true);
+    CHECK(strcmp(gtk_stack_get_visible_child_name(icons), "spinner") == 0);
+    CHECK(gtk_spinner_get_spinning(GTK_SPINNER(spinner)));
+    popup_view_set_searching(view, false);
+    CHECK(strcmp(gtk_stack_get_visible_child_name(icons), "search") == 0);
+    CHECK(!gtk_spinner_get_spinning(GTK_SPINNER(spinner)));
+}
+/* Opening effects end on a timer; dismissal fades, then hides; showing cancels a hide. */
+static void check_motion(tl_popup_view *view, tl_popup_widgets widgets, GtkWidget *window) {
+    popup_view_set_active(view, true);
+    CHECK(gtk_widget_has_css_class(widgets.root, "opening"));
+    settle(800);
+    CHECK(!gtk_widget_has_css_class(widgets.root, "opening"));
+    popup_view_dismiss(view);
+    CHECK(gtk_widget_get_visible(window) && gtk_widget_has_css_class(widgets.root, "closing"));
+    settle(300);
+    CHECK(!gtk_widget_get_visible(window) && !gtk_widget_has_css_class(widgets.root, "closing"));
+    gtk_window_present(GTK_WINDOW(window));
+    popup_view_set_active(view, true);
+    settle(100);
+    popup_view_dismiss(view);
+    popup_view_set_active(view, false);
+    gtk_window_present(GTK_WINDOW(window));
+    popup_view_set_active(view, true);
+    settle(300);
+    CHECK(gtk_widget_get_visible(window) && !gtk_widget_has_css_class(widgets.root, "closing"));
+}
+static GtkWidget *new_window(void) {
     GtkWidget *window = gtk_window_new();
     g_object_ref_sink(window);
     gtk_window_set_decorated(GTK_WINDOW(window), false);
     gtk_window_set_resizable(GTK_WINDOW(window), false);
     gtk_widget_add_css_class(window, "torchlight");
     gtk_window_set_default_size(GTK_WINDOW(window), 680, -1);
+    return window;
+}
+static void test_view(void) {
+    GtkWidget *window = new_window();
     tl_popup_view *view = NULL;
     CHECK(popup_view_create(NULL, &view) == TL_INVALID && view == NULL);
     CHECK(popup_view_create(window, &view) == TL_OK);
     tl_popup_widgets widgets = popup_view_widgets(view);
+    /* As the launcher does on map: fit hints and the viewport to the work area. */
+    popup_view_configure(view, 680, 800);
     GtkSettings *settings = gtk_widget_get_settings(window);
     g_object_set(settings, "gtk-enable-animations", false, NULL);
     gtk_window_present(GTK_WINDOW(window));
     gtk_widget_grab_focus(widgets.entry);
     popup_view_set_active(view, true);
+    CHECK(!gtk_widget_has_css_class(widgets.root, "opening"));
     settle(100);
-    CHECK((int)bounds(widgets.root).size.height == 116);
-    CHECK(caret_pixels(widgets, "empty") >= 12);
+    CHECK((int)bounds(widgets.root).size.height == EMPTY_HEIGHT);
+    capture(widgets, "empty");
     CHECK(!gtk_widget_get_visible(widgets.scroll));
     CHECK(!gtk_widget_get_visible(find_named(widgets.root, "popup-footer")));
     CHECK(gtk_entry_get_icon_storage_type(GTK_ENTRY(widgets.entry), GTK_ENTRY_ICON_SECONDARY) ==
@@ -202,19 +289,27 @@ static void test_view(void) {
     check_editing(widgets);
     check_results(view, widgets);
     check_feedback(view, widgets);
-    popup_view_set_active(view, true);
+    check_searching(view, widgets);
+    popup_view_dismiss(view);
+    CHECK(!gtk_widget_get_visible(window)); /* Without animations, dismissal is immediate. */
+    g_object_set(settings, "gtk-enable-animations", true, NULL);
+    gtk_window_present(GTK_WINDOW(window));
+    gtk_widget_grab_focus(widgets.entry);
+    check_glide(view, widgets);
+    check_motion(view, widgets, window);
     gtk_widget_grab_focus(widgets.entry);
     gtk_editable_set_text(GTK_EDITABLE(widgets.entry), "destroy");
+    popup_view_dismiss(view);
     gtk_window_destroy(GTK_WINDOW(window));
     popup_view_destroy(view);
     g_object_unref(window);
-    settle(800); /* Destroying with a pending hold must never call freed context. */
+    settle(800); /* Destroying with pending holds and fades must never call freed context. */
 }
 int main(void) {
     gtk_init();
     test_paths();
+    test_rows();
     test_view();
-    puts(
-        "Native view: path fitting, underscore pixels, selection/IME, geometry and timers passed.");
+    puts("Native view: path fitting, icons, entrances, glide, motion timers and geometry passed.");
     return 0;
 }

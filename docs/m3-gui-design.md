@@ -2,8 +2,9 @@
 
 **Status: implemented; see [M3 verification](m3-completion.md) for acceptance coverage.** Follow the launcher behavior
 in [PLAN.md](../PLAN.md#milestones) and the visual/interaction specification below.
-The native presentation now implements Quiet System, accepted in
-[ADR 0027](adr/0027-quiet-system-native-popup.md). The
+The native presentation follows the desktop theme with bounded motion, accepted in
+[ADR 0034](adr/0034-theme-following-popup-with-motion.md), which replaced the
+Quiet System look of [ADR 0027](adr/0027-quiet-system-native-popup.md). The
 [older interactive preview](m3-gui-preview.html) records the original M3 study;
 [current native captures](ui/native-empty.png) reflect the implemented layout.
 
@@ -17,22 +18,34 @@ activation and focus there first; document Wayland results separately during M3.
 |---|---|
 | Window | 680 wide; clamp to monitor work area minus 48; maximum height 70% of the work area. No title bar or resize handle. |
 | Placement | Horizontally centered on the active monitor, near its upper third. Placement is a window-system request, verified in the target session. |
-| Surface | Graphite `#1a1e1b`, quiet foreground and moss accent; outer radius 6. Search area has 24px horizontal padding (18 on narrow screens). |
-| Search | Empty popup 116 high at normal scaling; small `// torchlight` wordmark and `/` prompt. Plain input, placeholder `Search`, preferred JetBrains Mono at 24px, native editing with a 12×2 underscore cursor. No search or clear icon. |
-| Results | Request ten; show up to eight rows before scrolling, reduced by the monitor budget. Each row 58 high, with a 20px icon and 15px text gap. |
-| Row text | Monospace filename 14, application name 15 (preferred Space Grotesk); parent path 11. End-ellipsize names; measured path shortening preserves home/root and trailing folders. |
-| Selection | Quiet green fill and a 2px moss rail; selected action `open ↵`. High contrast raises muted text and border contrast. |
-| Footer | 44 high, visible only with results. Status left, lowercase keyboard hints right; hide reveal hint on narrow screens. |
+| Surface | Theme background and foreground (`@theme_bg_color`, `@theme_fg_color`), a faint foreground border and outer radius 10. The selected-background color is the accent. The desktop font applies; no text is smaller than 0.9em. |
+| Search | Empty popup 70 high: a 44-high field with 12px padding (10 on narrow screens). A symbolic search icon, then a plain input with placeholder `Search apps, settings, files and folders` and GTK's native caret. No clear icon. No-match/offline feedback and Retry sit at the field's end. |
+| Results | Request ten; show up to eight rows before scrolling, reduced by the monitor budget. Each row 58 high, with a 32px full-color icon and 12px text gap. |
+| Row text | Name in the body size; parent path at 0.9em in a dimmed foreground. Apps say Application or System settings. End-ellipsize names; path shortening keeps home/root, the folder that distinguishes same-named rows, and trailing folders. |
+| Selection | One accent-tinted highlight under the rows, carrying an `Enter` keycap, glides between rows. High contrast uses full-strength foreground for secondary text and the border. |
+| Footer | Visible only with results. Status left; keycap hints right (Select, Open, Show in Folder, Close). Select, then Show in Folder, hide when they would widen the popup; Show in Folder also hides on narrow screens. |
 
-Use GTK4 widgets and symbolic file/folder icons; desktop entries retain their
-native icons. Installed font fallbacks are monospace and sans. Honor desktop
-scale factors, cursor preferences and disabled animations. The search field
-stays fixed as matches appear or change. The search edge catches a faint light
-on input (120ms), holds until 700ms idle, then fades over 420ms; continuous input
-extends one hold. Arrow navigation does not trigger it. Disabled animations make
-edge changes instant and stop caret blinking. During selection the custom cursor
-hides; input-method composition uses the native caret. No shader or artwork is
-included. Do not expose scores, `catalog_gen`, wire fields or performance counters.
+Use GTK4 widgets and the icon theme: `folder`, file-type icons guessed from the
+name alone (unplaced names keep `text-x-generic`), and desktop entries' own icons.
+Honor desktop scale factors, fonts, cursor preferences and disabled animations.
+The search field stays fixed as matches appear or change. No shader or image
+artwork is included. Do not expose scores, `catalog_gen`, wire fields or
+performance counters.
+
+Motion never delays input, results or actions, and never loops:
+
+| Effect | Behavior |
+|---|---|
+| Open | Surface fades in from 6px above over 160ms. |
+| Torch sweep | Once per show, a band of accent light crosses the search field (560ms, after 60ms). |
+| Typing glow | The field ring brightens on input (120ms), holds until 700ms idle, then fades over 420ms; continuous input extends one hold. Arrow navigation does not trigger it. |
+| Results | First results fade up 18ms apart (140ms each, at most eight steps); later renders fade in only new rows (100ms). |
+| Selection | The highlight glides to the new row over 130ms; it jumps when results first appear. |
+| Searching | After 120ms pending, the search icon crossfades to a spinner until results render. |
+| Launch | The selected row flashes and its icon pulses while resolving; failure clears it. |
+| Dismiss | Work is canceled at once; the window hides after a 110ms fade. Reopening cancels the hide. |
+
+Disabled GTK animations remove all of these and make dismissal immediate.
 
 Result labels use the daemon's safe display representation. Escape control
 characters, including embedded newlines, into visible single-line text. Hover
@@ -44,7 +57,7 @@ Opening always uses the exact bytes returned by resolve.
 | Input | Behavior |
 |---|---|
 | Desktop shortcut | Invoke `torchlight-gtk --toggle`. One application instance shows/focuses the popup or hides its already-focused window. A suggested binding is Super+Space; installation documents how to choose an available Cinnamon shortcut. |
-| Show | Clear the previous query and results, show only the wordmark/search area and focus the entry. No default result is selected. |
+| Show | Clear the previous query and results, show only the search field and focus the entry. No default result is selected. |
 | Type / paste | Keep the entry focused, reset deliberate selection and issue a new query. Respect the protocol's 256-byte UTF-8 query limit; show a small inline message for an oversized paste. |
 | Up / Down | Move selection, clamped to the list ends; scroll the selected row into view. Keep text-entry focus. |
 | Enter | Resolve and open the selected result. When offline with no selected result, retry the query. |
@@ -77,19 +90,19 @@ changes. Resolve its id before acting. A new query resets this retention rule.
 
 | State | Content |
 |---|---|
-| Empty query | Only wordmark/search; no rows, divider, footer or empty-state copy. Whitespace-only input behaves the same. Cancel pending queries and invalidate old responses immediately on clearing. |
+| Empty query | Only the search field; no rows, divider, footer or empty-state copy. Whitespace-only input behaves the same. Cancel pending queries and invalidate old responses immediately on clearing. |
 | Results | Basename/parent rows; first row selected initially. |
-| Pending query | Keep typing responsive. Show `Searching…` after 120 ms to avoid flashing a spinner on fast queries. |
-| No matches | Compact `No matches.` inside search; full guidance in tooltip/announcement. Keep the entry focused. |
+| Pending query | Keep typing responsive. After 120 ms, swap the search icon for a spinner and announce `Searching…`, so fast queries never flash it. |
+| No matches | Compact `No matches` inside the field; full guidance in tooltip/announcement. Keep the entry focused. |
 | Indexing | Existing searchable results remain available; footer says `Updating index…`. |
 | Degraded coverage | Existing results plus `Some folders are unavailable`; status details explain offline/unreadable folders or limited watching. |
-| Daemon unavailable | Compact `Search offline.` inside search with Retry; the full unavailable status is announced. Retry reconnects and requests the latest query. |
+| Daemon unavailable | Compact `Search offline` inside the field with Retry; the full unavailable status is announced. Retry reconnects and requests the latest query. |
 | Deleted / stale result | `This file is no longer indexed`; refresh the current query and preserve entry focus. |
 | Open / reveal failure | `Could not open this file` or `Could not reveal this file`; retain results for another choice. |
 
 Status is supplementary: its polling and errors do not replace a successful query
 list. Use readable text as well as icons, with accessible names and announced
-result counts/selection. Respect reduced motion; transitions and caret blinking are disabled with GTK animations.
+result counts/selection. Respect reduced motion; every transition and animation is disabled with GTK animations.
 
 ## GTK and IPC implementation contract
 

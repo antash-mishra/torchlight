@@ -41,6 +41,11 @@ void popup_model_move(tl_popup_model *model, int delta);
 const tl_popup_row *popup_model_selected(const tl_popup_model *model);
 /** Borrow row at index until next mutation; NULL for absent index. */
 const tl_popup_row *popup_model_row(const tl_popup_model *model, size_t index);
+/** Return how many leading bytes of row index's display parent must stay visible
+ * to tell it apart from other rows of the same kind (file or folder) and name:
+ * through the first folder where their parents differ. Zero for applications,
+ * absent rows, or when no such row exists. No errors or ownership changes. */
+size_t popup_model_distinct_prefix(const tl_popup_model *model, size_t index);
 /** Read row count/selection/status/search id; borrowed search id expires on apply.
  * NULL-safe getters have zero/false/empty defaults; no errors. */
 size_t popup_model_count(const tl_popup_model *model);

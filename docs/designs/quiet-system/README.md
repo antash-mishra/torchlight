@@ -1,6 +1,6 @@
 # Quiet System
 
-**Status: archived browser design study. Its shader-free presentation is implemented in GTK.**
+**Status: archived browser design study. Its shader-free presentation was implemented in GTK, then superseded by the theme-following popup ([ADR 0034](../../adr/0034-theme-following-popup-with-motion.md)).**
 
 The [native implementation](../../adr/0027-quiet-system-native-popup.md) adopts
 the minimal layout, cursor and typing feedback. Shader artwork remains an

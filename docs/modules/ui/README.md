@@ -1,41 +1,56 @@
 # ui
 
-> **Status:** Implemented (M3 + Quiet System), verified: GTK4 popup, asynchronous IPC, native desktop actions
-> **Source:** `ui/gtk/{launcher,model,actions,view,path_label}.c`, `ui/gtk/quiet-system.css`, `src/bin/torchlight-gtk.c`
+> **Status:** Implemented (M3 + theme-following popup with motion), verified: GTK4 popup, asynchronous IPC, native desktop actions; isolated acceptance matrix pending re-run
+> **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track}.c`, `ui/gtk/popup.css`, `src/bin/torchlight-gtk.c`
 > **Headers:** `include/torchlight/{launcher,popup,async}.h`
 > **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`
 
 The thin executable owns an opaque launcher. GtkApplication enforces one instance;
 `torchlight-gtk --toggle` shows/focuses or dismisses its window. Showing clears the
-query and results, shows only the wordmark/search area and focuses the entry. Empty or
+query and results, shows only the search field and focuses the entry. Empty or
 whitespace-only input cancels pending query work, invalidates old responses and
 leaves no actionable selection. No empty-query IPC request or search-history
 entry is created by the popup. Escape and focus loss
 hide it. Arrow selection keeps entry focus; Enter opens; Ctrl+Enter reveals;
 clicks use the same resolve path. The scroller displays eight 58-pixel rows.
 
-The native surface implements the accepted Quiet System direction in
+The native surface follows the desktop theme, as specified in
 [the GUI specification](../../m3-gui-design.md) and
-[ADR 0027](../../adr/0027-quiet-system-native-popup.md). `tl_popup_view` owns the
-shader-free presentation: embedded CSS, plain GtkEntry, 24px preferred JetBrains
-Mono query, underscore caret, quiet wordmark and six-pixel graphite surface.
-Installed monospace/sans fonts are fallbacks; no new dependency is added.
-GtkText supplies shaped cursor extents, so native editing, Unicode, selection,
-clipboard, undo and scrolling stay intact. Preedit uses GTK's native caret.
-Caret blinking honors GTK settings and stops on inactivity, dismissal or teardown.
+[ADR 0034](../../adr/0034-theme-following-popup-with-motion.md). `tl_popup_view` owns
+the presentation: embedded CSS (`popup.css`, stored compressed) built on GTK's named
+theme colors, the desktop font, a search field holding a symbolic icon, the plain
+GtkEntry with GTK's native caret, and inline feedback. No new dependency is added.
+Light/dark themes, the accent and high contrast come from the theme.
 
-Empty search collapses to the 116px search area. No-match/offline/limit feedback
-is inside that area; results and footer appear only with matches. Entry position
-and X11 window top remain fixed. Chrome is measured before limiting scroll height
-against the work area, including scaled/small screens. A faint edge lights on
-editing, holds until 700ms idle and fades over 420ms; continuous input extends one
-timer. Blur/dismiss/destroy cancel it. Disabled GTK animations remove transitions
-and blinking. Selection has a quiet fill and rail with a 100ms color transition.
+Empty search collapses to the 70px search area. No-match/offline/limit feedback
+sits at the end of the field only when it has text; `Searching…` is shown by the
+spinner instead, so the entry never shifts while typing. Results and footer appear
+only with matches. Entry position and X11 window top remain fixed. Chrome is
+measured before limiting scroll height against the work area, including
+scaled/small screens; the same measurement hides the Select and then Show in
+Folder hints when a large desktop font would otherwise widen the popup.
+
+Rows use 32px full-color icons: desktop icons, `folder`, or a file type guessed
+from the name only (`g_content_type_guess`, no I/O; unplaced names keep
+`text-x-generic`). The launcher remembers which ids are on screen, so first
+results cascade in and later renders fade in only new rows. `selection_track`
+wraps the list box and draws one highlight, with an Enter keycap, beneath
+transparent rows; it glides 130ms on a frame-clock tick callback, jumps when
+results first appear or relayout, and hides at once when cleared. The view's
+`set_searching` crossfades the icon to a spinner after the 120ms pending timer;
+`set_launching` flashes the selected row until the launch is accepted or fails.
+Showing adds an `opening` class (fade-in and torch sweep) removed by a 700ms timer.
+`popup_view_dismiss` hides the window after a 110ms fade; `set_active` and destroy
+cancel it, and queries/actions are canceled before it starts. The typing glow keeps
+its 700ms hold and 420ms fade; blur, dismissal and destruction cancel it. Disabled
+GTK animations turn every effect off and make dismissal immediate.
 
 `path_label` measures safe UTF-8 display paths using Pango when allocated.
 It substitutes `~` for the home directory, drops earlier ancestors while retaining
 the final folders, then shortens a giant final folder in the middle with bounded
-width probes. Tooltips and accessible labels retain the full safe path; action
+width probes. When `popup_model_distinct_prefix` reports that a same-kind,
+same-name row exists, it first keeps the path through the first folder where the
+two differ (an NDK version, say), then as many trailing folders as fit. Tooltips and accessible labels retain the full safe path; action
 resolution still uses exact bytes. Font/width changes recalculate displayed paths.
 The native build contains no shader, PNG art or experimental browser renderer.
 
@@ -92,8 +107,12 @@ It does not auto-start unrelated portal/secret services. A test-only preload
 observer records native GTK after-paint frames and entry-edit timestamps;
 production binaries have no measurement I/O. Small-screen theme/scale checks,
 error/restart recovery, no-history mode and 500k rebuild timings are repeatable
-through `make test-ui-isolated` and `make bench-ui`. Native presentation tests inspect actual Cairo caret pixels, selection/IME,
-large pasted queries, Unicode paths, geometry and timer destruction. These checks supplement the
+through `make test-ui-isolated` and `make bench-ui`. Native presentation tests check
+highlight geometry and an observed intermediate glide, file-type icons, entrance
+classes, opening/closing timers, spinner and launch states, large pasted queries,
+Unicode and distinguishing paths, geometry and timer destruction. They pass on a bare
+X server (GTK's default theme) and on Cinnamon with Mint-Y; the
+`test-ui-isolated` matrix needs Xvfb and xdotool and has not been re-run since ADR 0034. These checks supplement the
 recorded Cinnamon tests; font overrides do not validate real fractional scaling.
 
 See [desktop setup](../../desktop-setup.md), [M3 verification](../../m3-completion.md),

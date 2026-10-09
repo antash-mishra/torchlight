@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{margin:0}</style>
+<title>Torchlight Popup Directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Noto+Sans+Mono:wght@400;500&family=Ubuntu+Sans:wght@400;500;600;700&family=Ubuntu+Sans+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; each direction is a heading, a full-width "screen" holding the popup at real size, then three note columns. */
+:root {
+  --bg: #f3f4f1;
+  --surface: #ffffff;
+  --fg: #1c201d;
+  --muted: #59625b;
+  --line: #d8ddd6;
+  --accent: #2c7a45;
+  --accent-soft: #e2efe5;
+  --code-bg: #eaede8;
+  --warn: #b5651d;
+  --font-display: "Ubuntu Sans", "Noto Sans", system-ui, sans-serif;
+  --font-body: "Noto Sans", system-ui, sans-serif;
+  --font-mono: "Noto Sans Mono", "DejaVu Sans Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141715; --surface: #1b1f1c; --fg: #e3e7e1; --muted: #9ba49d; --line: #2d332f;
+    --accent: #7cc48e; --accent-soft: #1f3125; --code-bg: #232825; --warn: #e3a35f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141715; --surface: #1b1f1c; --fg: #e3e7e1; --muted: #9ba49d; --line: #2d332f;
+  --accent: #7cc48e; --accent-soft: #1f3125; --code-bg: #232825; --warn: #e3a35f;
+  color-scheme: dark;
+}
+
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.6 var(--font-body); }
+.page { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: flex; flex-direction: column; gap: 56px; }
+h1, h2, h3 { font-family: var(--font-display); line-height: 1.2; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 650; letter-spacing: -0.01em; }
+h2 { font-size: 24px; font-weight: 600; }
+h3 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+p { margin: 0; }
+code { font: 0.86em var(--font-mono); background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.eyebrow { font: 600 12px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.lede { max-width: 68ch; color: var(--muted); font-size: 16px; }
+header { display: flex; flex-direction: column; gap: 14px; }
+.rec { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 18px 20px; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; max-width: 820px; margin-top: 8px; }
+.rec .tag { font: 600 12px var(--font-mono); color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 3px 8px; height: fit-content; }
+.rec p { min-width: 0; }
+
+section { display: flex; flex-direction: column; gap: 18px; }
+.section-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.letter { font: 600 14px var(--font-mono); color: var(--accent); border: 1.5px solid var(--accent); border-radius: 6px; padding: 1px 8px; }
+.sub { color: var(--muted); max-width: 70ch; }
+
+.notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; }
+.notes > div { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.notes ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.findings { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px 28px; }
+.findings li { border-top: 1px solid var(--line); padding-top: 10px; min-width: 0; }
+.findings b { display: block; font-family: var(--font-display); font-weight: 600; margin-bottom: 2px; }
+.flag-key { color: var(--warn); font-weight: 600; }
+
+.toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 2; background: var(--bg); padding-block: 10px; border-bottom: 1px solid var(--line); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button { font: 500 13px var(--font-body); color: var(--muted); background: none; border: 0; padding: 6px 14px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.toolbar small { color: var(--muted); font-size: 13px; }
+
+.fixes-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+th { font: 600 12px var(--font-display); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { font-weight: 600; font-family: var(--font-display); white-space: nowrap; }
+td:last-child { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); }
+
+/* ---------- the "screen" each popup sits on; it represents a desktop, so it has its own fixed colors ---------- */
+.screen { overflow-x: auto; border-radius: 12px; padding: 36px 28px; display: flex; }
+.screen > * { margin-inline: auto; flex: none; }
+.desk-dark .screen { background: radial-gradient(120% 90% at 20% 0%, #2c3a33 0%, #161b19 60%, #101312 100%); }
+.desk-light .screen { background: radial-gradient(120% 90% at 20% 0%, #dfe8e1 0%, #c4cfc7 70%, #b6c2ba 100%); }
+.screen svg { display: block; }
+.pop { box-sizing: border-box; overflow: hidden; }
+.ell { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Today: mirrors ui/gtk/quiet-system.css, with the fonts that actually render on this machine */
+.pop-today { width: 680px; background: #1a1e1b; border: 1px solid #3b453e; border-radius: 6px; color: #e7e9e1; font-family: "DejaVu Sans Mono", "Noto Sans Mono", monospace; }
+.t-search { padding: 20px 24px 24px; display: flex; flex-direction: column; gap: 20px; }
+.t-word { font-size: 11px; color: #9aa59c; display: flex; gap: 8px; min-height: 16px; align-items: center; }
+.t-brand, .t-prompt { color: #b8d49d; }
+.t-line { display: flex; gap: 17px; align-items: baseline; min-height: 34px; }
+.t-prompt, .t-query { font-size: 24px; line-height: 34px; }
+.t-query { font-weight: 500; }
+.t-caret { display: inline-block; width: 12px; height: 2px; background: #b8d49d; vertical-align: -4px; margin-left: 1px; }
+.t-list { padding: 8px 12px; border-top: 1px solid #3b453e; }
+.t-row { display: flex; align-items: center; gap: 15px; padding: 9px 12px; border-left: 2px solid transparent; border-radius: 2px; }
+.t-row.sel { background: #29332b; border-left-color: #b8d49d; }
+.t-ic { width: 20px; height: 20px; color: #9aa59c; flex: none; }
+.t-row.sel .t-ic { color: #b8d49d; }
+.t-txt { flex: 1; min-width: 0; }
+.t-name { font-size: 14px; color: #c9d0c8; line-height: 22px; }
+.t-name.app { font-family: "Noto Sans", sans-serif; font-size: 15px; }
+.t-row.sel .t-name { color: #e7e9e1; font-weight: 500; }
+.t-path { font-size: 11px; color: #9aa59c; line-height: 18px; }
+.t-path.flag { outline: 1px dashed #e0a458; outline-offset: 2px; border-radius: 2px; }
+.t-kind { width: 62px; font-size: 10px; color: #7c8980; flex: none; }
+.t-row.sel .t-kind { color: #b8d49d; }
+.t-foot { border-top: 1px solid #3b453e; padding: 12px 24px; display: flex; gap: 16px; font-size: 11px; color: #9aa59c; align-items: center; }
+.t-foot .grow { flex: 1; }
+.t-keys { font-size: 10px; color: #7c8980; white-space: pre; }
+
+/* A and C follow the desktop theme: these are Mint-Y's own GTK4 named colors */
+.desk-dark { --n-bg: #2e2e33; --n-fg: rgba(255,255,255,.87); --n-dim: rgba(255,255,255,.56); --n-border: #202023; --n-line: rgba(255,255,255,.08); --n-entry: rgba(255,255,255,.06); --n-sel: rgba(53,168,84,.26); --n-focus: rgba(53,168,84,.6); --n-key: rgba(255,255,255,.2); --n-keybg: rgba(255,255,255,.05); --n-shadow: rgba(0,0,0,.45);
+  --n-accent: #35a854; --n-glow: rgba(53,168,84,.2); --n-beam: rgba(140,230,165,.26); --n-flash: rgba(53,168,84,.55); --n-hover: rgba(255,255,255,.04); }
+.desk-light { --n-bg: #f8f8f9; --n-fg: rgba(0,0,0,.87); --n-dim: rgba(0,0,0,.56); --n-border: #c8c8ce; --n-line: rgba(0,0,0,.08); --n-entry: #ffffff; --n-sel: rgba(53,168,84,.17); --n-focus: rgba(53,168,84,.65); --n-key: rgba(0,0,0,.22); --n-keybg: rgba(0,0,0,.03); --n-shadow: rgba(0,0,0,.18);
+  --n-accent: #35a854; --n-glow: rgba(53,168,84,.16); --n-beam: rgba(53,168,84,.2); --n-flash: rgba(53,168,84,.4); --n-hover: rgba(0,0,0,.04); }
+.pop-native, .pop-palette { background: var(--n-bg); color: var(--n-fg); border: 1px solid var(--n-border); border-radius: 10px; font-family: "Noto Sans", sans-serif; box-shadow: 0 12px 32px var(--n-shadow); }
+.pop-native { width: 680px; }
+.pop-palette { width: 900px; }
+.n-search { margin: 12px; display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 14px; background: var(--n-entry); border-radius: 8px; box-shadow: inset 0 0 0 2px var(--n-focus); }
+.n-search .mag { width: 16px; height: 16px; color: var(--n-dim); flex: none; }
+.n-query { font-size: 18px; }
+.n-ibeam { width: 1.5px; height: 22px; background: var(--n-fg); margin-left: -8px; }
+.n-list { padding: 0 8px 8px; display: flex; flex-direction: column; gap: 2px; }
+.n-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 8px; }
+.n-row.sel { background: var(--n-sel); }
+.n-ic { width: 32px; height: 32px; flex: none; }
+.n-txt { flex: 1; min-width: 0; }
+.n-name { font-size: 14.5px; line-height: 20px; }
+.n-path { font-size: 12px; color: var(--n-dim); line-height: 17px; }
+.n-end { flex: none; }
+.n-foot { display: flex; align-items: center; gap: 12px; padding: 9px 16px; border-top: 1px solid var(--n-line); font-size: 12px; color: var(--n-dim); }
+.n-foot .grow { flex: 1; }
+.hint { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.pop kbd { font: 500 11px "Noto Sans", sans-serif; border: 1px solid var(--n-key); background: var(--n-keybg); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; min-width: 10px; text-align: center; line-height: 16px; color: var(--n-fg); }
+
+/* B keeps Torchlight's own graphite and moss, with Linux-native type */
+.pop-refined { width: 680px; background: #1b1f1c; border: 1px solid #333b35; border-radius: 10px; color: #e9ece6; font-family: "Ubuntu Sans", "Noto Sans", sans-serif; box-shadow: 0 12px 32px rgba(0,0,0,.4); --n-key: rgba(184,212,157,.32); --n-keybg: rgba(184,212,157,.06); --n-fg: #d3dec7; }
+.r-search { display: flex; align-items: center; gap: 14px; padding: 20px 22px; }
+.r-search .mag { width: 20px; height: 20px; color: #b8d49d; flex: none; }
+.r-query { font-size: 22px; line-height: 30px; }
+.r-caret { display: inline-block; width: 12px; height: 2px; background: #b8d49d; vertical-align: -3px; margin-left: 1px; }
+.r-word { margin-left: auto; font: 11px "Ubuntu Sans Mono", monospace; color: #6f7a72; letter-spacing: 0.05em; }
+.r-list { border-top: 1px solid #2c332e; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px; }
+.r-row { display: flex; align-items: center; gap: 13px; padding: 8px 12px; border-radius: 7px; }
+.r-row.sel { background: #263028; }
+.r-ic { width: 28px; height: 28px; flex: none; }
+.r-txt { flex: 1; min-width: 0; }
+.r-name { font-size: 15px; line-height: 21px; color: #d5dbd3; }
+.r-row.sel .r-name { color: #f4f6f1; }
+.r-name mark { background: none; color: #c6e0a9; font-weight: 600; }
+.r-path { font: 12px/17px "Ubuntu Sans Mono", monospace; color: #8f9a92; }
+.r-type { flex: none; width: 128px; text-align: right; font-size: 12px; color: #7f8a82; }
+.r-foot { border-top: 1px solid #2c332e; padding: 10px 22px; display: flex; gap: 14px; align-items: center; font-size: 12px; color: #8f9a92; }
+.r-foot .grow { flex: 1; }
+.pop-refined kbd { font-family: "Ubuntu Sans", sans-serif; }
+
+/* C: A's styling, plus groups, a detail pane and actions */
+.p-search { display: flex; align-items: center; gap: 10px; }
+.p-search .n-search { flex: 1; }
+.chips { display: flex; gap: 4px; margin-right: 12px; }
+.chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; color: var(--n-dim); border: 1px solid var(--n-line); }
+.chip.on { background: var(--n-sel); color: var(--n-fg); border-color: transparent; }
+.p-body { display: grid; grid-template-columns: minmax(0, 1fr) 340px; border-top: 1px solid var(--n-line); }
+.p-list { padding: 4px 8px 10px; border-right: 1px solid var(--n-line); display: flex; flex-direction: column; gap: 2px; }
+.p-head { font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--n-dim); padding: 10px 10px 3px; }
+.p-list .n-row { padding: 6px 10px; }
+.p-list .n-ic { width: 28px; height: 28px; }
+.p-detail { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.p-hero { display: flex; gap: 12px; align-items: center; }
+.p-hero svg { width: 48px; height: 48px; flex: none; }
+.p-title { font-size: 17px; font-weight: 600; line-height: 1.2; }
+.p-meta { font-size: 12px; color: var(--n-dim); }
+.p-label { font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--n-dim); }
+.p-fullpath { font: 11.5px/1.45 "Noto Sans Mono", monospace; overflow-wrap: anywhere; }
+.p-preview { font: 10.5px/1.5 "Noto Sans Mono", monospace; background: var(--n-entry); border: 1px solid var(--n-line); border-radius: 6px; padding: 7px 10px; white-space: pre; overflow: hidden; color: var(--n-dim); }
+.p-actions { display: flex; flex-direction: column; }
+.p-act { display: flex; align-items: center; justify-content: space-between; font-size: 13px; padding: 5px 8px; border-radius: 6px; }
+.p-act:first-child { background: var(--n-sel); }
+.p-act span:last-child { display: inline-flex; gap: 3px; }
+
+@media (max-width: 760px) {
+  .notes { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .page { gap: 44px; }
+  .screen { padding: 20px 14px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .seg button { transition: background-color 120ms ease-out, color 120ms ease-out; }
+}
+</style>
+</head>
+<body>
+
+<main class="page">
+  <header>
+    <span class="eyebrow">Torchlight · GTK popup</span>
+    <h1>Making the popup feel at home on Linux</h1>
+    <p class="lede">The popup today reads like a terminal: monospace everywhere, <code>//</code> and <code>/</code> prompts, an underscore cursor and fixed graphite colors. Below are three directions, each drawn at real popup size with the real results your index returns for <code>set</code>.</p>
+    <div class="rec">
+      <span class="tag">Pick</span>
+      <p><b>Direction A, with motion.</b> Try the live prototype first: type in it, use the arrow keys and press Enter. Every effect can be switched off to compare, and slow motion lets you inspect each one. The comparison that led to A is further down.</p>
+    </div>
+  </header>
+
+  <div class="toolbar" role="group" aria-label="Desktop theme for the mockups">
+    <span class="seg">
+      <button type="button" id="desk-dark" aria-pressed="true">Mint-Y Dark</button>
+      <button type="button" id="desk-light" aria-pressed="false">Mint-Y Light</button>
+    </span>
+    <small>Switch the desktop theme to see which designs follow it. The prototype, A and C change; Today and B stay dark.</small>
+  </div>
+
+  <section id="motion">
+    <div class="section-head"><span class="letter">A</span><h2>A, in motion</h2><span class="sub">A live prototype using results from your index. Click the search field and type, then use ↑ ↓, Enter and Esc.</span></div>
+    <div class="motion-controls">
+      <button type="button" class="btn primary" id="mo-demo">Play demo</button>
+      <button type="button" class="btn" id="mo-open">Show popup</button>
+      <label><input type="checkbox" id="mo-slow"> Slow motion ×4</label>
+      <label><input type="checkbox" id="mo-latency"> Slow search (450 ms)</label>
+      <span class="mo-reduced" id="mo-reduced" hidden>Your system asks for reduced motion, so the effects start switched off.</span>
+    </div>
+    <div class="desk-dark" data-follows>
+      <div class="screen stage" id="stage">
+        <div class="pop pop-native proto fx-open fx-sweep fx-cascade fx-glide fx-spin fx-launch fx-glow" id="proto">
+          <div class="n-search proto-search" id="proto-search">
+            <span class="proto-icon"><svg class="mag" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="6.8" cy="6.8" r="4.6"/><path d="M10.3 10.3l4 4"/></svg><span class="spinner"></span></span>
+            <input id="proto-input" type="text" autocomplete="off" spellcheck="false" placeholder="Search apps, settings, files and folders" aria-label="Search apps, settings, files and folders">
+          </div>
+          <div class="proto-msg" id="proto-msg" hidden>No matches. Try a name or part of its folder path.</div>
+          <div class="proto-list" id="proto-list" role="listbox" aria-label="Results" hidden><div class="proto-hl" id="proto-hl"><kbd>Enter</kbd></div></div>
+          <div class="n-foot" id="proto-foot" hidden><span class="grow" id="proto-count"></span><span class="hint"><kbd>↑</kbd><kbd>↓</kbd> Select</span><span class="hint"><kbd>Enter</kbd> Open</span><span class="hint"><kbd>Ctrl</kbd><kbd>Enter</kbd> Show in Folder</span><span class="hint"><kbd>Esc</kbd> Close</span></div>
+        </div>
+        <div class="stage-note" id="stage-note" hidden><span id="stage-note-text"></span><button type="button" class="btn" id="mo-reopen">Show popup</button></div>
+      </div>
+    </div>
+    <div class="fixes-wrap">
+      <table class="mo-table">
+        <thead><tr><th>On</th><th>Motion</th><th>What you see</th><th>Timing</th><th>How in GTK</th></tr></thead>
+        <tbody>
+          <tr><td><input type="checkbox" data-fx="sweep" checked aria-label="Torch sweep"></td><td>Torch sweep</td><td>Each time the popup opens, a soft band of accent light crosses the search field once. This is the signature effect.</td><td>560 ms, once</td><td>Gradient background-image on the entry, animated by a background-position keyframe. A class is added on show.</td></tr>
+          <tr><td><input type="checkbox" data-fx="open" checked aria-label="Open and close"></td><td>Open and close</td><td>The popup drops in from 6 px above while fading in, and fades out on Esc or launch.</td><td>160 ms in, 110 ms out</td><td>@keyframes on the root box. The window is already transparent. Work is canceled at once; only the hide waits.</td></tr>
+          <tr><td><input type="checkbox" data-fx="cascade" checked aria-label="Results cascade"></td><td>Results cascade</td><td>The first results fade up one after another. Later keystrokes fade in only the rows that are new.</td><td>140 ms + 18 ms per row</td><td>Per-row CSS animation with animation-delay. The model already tracks ids, so the launcher knows which rows are new.</td></tr>
+          <tr><td><input type="checkbox" data-fx="glide" checked aria-label="Gliding selection"></td><td>Gliding selection</td><td>The highlight slides to the next row instead of jumping, carrying its Enter keycap along.</td><td>130 ms</td><td>A small container widget draws the highlight under the list and animates it with gtk_widget_add_tick_callback. No libadwaita.</td></tr>
+          <tr><td><input type="checkbox" data-fx="glow" checked aria-label="Typing glow"></td><td>Typing glow</td><td>The search ring brightens while you type and fades after you stop.</td><td>120 ms in, 420 ms out after 700 ms idle</td><td>The existing typing class and timers, restyled with the theme accent.</td></tr>
+          <tr><td><input type="checkbox" data-fx="spin" checked aria-label="Searching spinner"></td><td>Searching spinner</td><td>The magnifier turns into a spinner when a search takes longer than 120 ms. Turn on Slow search to see it.</td><td>120 ms crossfade</td><td>GtkStack crossfade to a GtkSpinner, driven by the existing 120 ms pending timer.</td></tr>
+          <tr><td><input type="checkbox" data-fx="launch" checked aria-label="Launch flash"></td><td>Launch flash</td><td>The chosen row flashes accent and its icon pulses, then the popup fades out.</td><td>90 ms, then close</td><td>A CSS class on the row. The launch request goes out immediately; only the hide waits.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="notes rules">
+      <div><h3>Nothing waits</h3><p>Typing, results and launches never wait for an animation. Only the final hide is delayed, by at most 200 ms.</p></div>
+      <div><h3>Nothing loops</h3><p>The spinner runs only while a search is pending, and the sweep plays once per open. The popup stays idle when you're not using it, like the caret blink does today.</p></div>
+      <div><h3>Off means off</h3><p>Turning off animations in the desktop settings (<code>gtk-enable-animations</code>) disables all of it through the existing <code>quiet-motion</code> class. The window itself never animates its size, because on X11 that would redraw the whole window every frame.</p></div>
+    </div>
+  </section>
+
+  <section id="today">
+    <div class="section-head"><h2>Today</h2><span class="sub">As it renders on this machine, from <code>ui/gtk/quiet-system.css</code></span></div>
+    <div class="desk-dark"><div class="screen" id="m-today"></div></div>
+    <ul class="findings">
+      <li><b>The fonts it asks for aren't installed</b>The stylesheet asks for JetBrains Mono and Space Grotesk. Neither is installed here, so GTK falls back to DejaVu Sans Mono and Noto Sans. The design approved in ADR 0027 never actually renders.</li>
+      <li><b>Two rows, same path</b>The two <code>set</code> headers differ only by NDK version (<code>27.0.12077973</code> and <code>27.1.12297006</code>). Path shortening drops leading folders first, so both rows show the same text (<span class="flag-key">dashed outline</span>).</li>
+      <li><b>Every file gets the same icon</b>Every file uses <code>text-x-generic-symbolic</code>, so a Go source file, a C header and a PDF all look the same at a glance.</li>
+      <li><b>Hard-coded colors</b>33 hex values (9 distinct colors) ignore Mint-Y-Dark's palette and accent, and stay dark on a light desktop.</li>
+      <li><b>Terminal vocabulary at 10–11 px</b>Hints like <code>ctrl ↵ reveal</code> and labels like <code>app</code> and <code>file</code> are easy to read if you built it, but confusing for anyone else.</li>
+    </ul>
+  </section>
+
+  <section id="a">
+    <div class="section-head"><span class="letter">A</span><h2>Blend in with Mint-Y</h2><span class="sub">Looks like the GNOME Shell search or the Cinnamon menu search</span></div>
+    <div class="desk-dark" data-follows><div class="screen" id="m-native"></div></div>
+    <div class="notes">
+      <div><h3>What changes</h3><ul>
+        <li>Colors come from the theme's named colors, so light mode, dark mode and the accent follow the desktop.</li>
+        <li>No <code>font-family</code>: the popup uses the desktop font.</li>
+        <li>A search icon in the entry and the native text cursor.</li>
+        <li>Full-color file-type and app icons at 32 px.</li>
+        <li>Key hints drawn as keycaps, using desktop wording.</li>
+      </ul></div>
+      <div><h3>Code</h3><ul>
+        <li><code>quiet-system.css</code> uses <code>@theme_bg_color</code>, <code>@theme_fg_color</code>, <code>@theme_selected_bg_color</code> and <code>@borders</code>. It ends up shorter.</li>
+        <li><code>gtk_entry_set_icon_from_icon_name(…, GTK_ENTRY_ICON_PRIMARY, "system-search-symbolic")</code> on the existing GtkEntry.</li>
+        <li>Delete the caret overlay, <code>draw_caret</code> and both blink timers in <code>view.c</code>.</li>
+      </ul></div>
+      <div><h3>Trade-offs</h3><ul>
+        <li>It looks like the rest of your desktop, so Torchlight loses a visual identity of its own.</li>
+        <li>Your Cinnamon interface font is set to <b>Noto Mono 13</b>, so on your machine A would render in mono. The mockup uses Mint's default, Noto Sans.</li>
+        <li>GTK4 only themes this because Mint-Y ships a <code>gtk-4.0</code> folder. It does, so it works on your setup.</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section id="b">
+    <div class="section-head"><span class="letter">B</span><h2>Keep the look, fix the type</h2><span class="sub">Torchlight's own graphite and moss, with Linux-native typography</span></div>
+    <div class="desk-dark" data-follows><div class="screen" id="m-refined"></div></div>
+    <div class="notes">
+      <div><h3>What changes</h3><ul>
+        <li>Keeps the palette and the underscore cursor you chose in ADR 0027.</li>
+        <li>Ubuntu Sans for the query and names, and Ubuntu Sans Mono only for paths. Both ship with Mint.</li>
+        <li>A moss search icon replaces <code>//</code> and <code>/</code>, and the wordmark moves to a quiet corner.</li>
+        <li>A Type column (Folder, Go source code, Settings) replaces <code>file</code>, <code>app</code> and <code>folder</code>.</li>
+        <li>The part of each name that matched the query is highlighted.</li>
+      </ul></div>
+      <div><h3>Code</h3><ul>
+        <li>Font and size changes in the CSS, plus label and icon changes in <code>view.c</code>.</li>
+        <li>Type text from <code>g_content_type_get_description</code>.</li>
+        <li>Highlight with a <code>PangoAttrList</code> on the name label. Exact substrings are easy to find in the UI. Fuzzy and typo matches need the daemon to send match spans, which is a protocol change.</li>
+      </ul></div>
+      <div><h3>Trade-offs</h3><ul>
+        <li>Distinctive, and closer to what you already approved.</li>
+        <li>Still ignores light themes and accent changes. Switch the toolbar to Mint-Y Light to see a dark popup on a light desktop.</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section id="c">
+    <div class="section-head"><span class="letter">C</span><h2>Command palette</h2><span class="sub">A's styling, with more structure, like KRunner or Raycast</span></div>
+    <div class="desk-dark" data-follows><div class="screen" id="m-palette"></div></div>
+    <div class="notes">
+      <div><h3>What changes</h3><ul>
+        <li>Results are grouped by kind. Groups are ordered by their best-ranked result, so the ranking still decides what comes first.</li>
+        <li>A detail pane for the selected result: type, size, date, full path and a text preview.</li>
+        <li><kbd class="plain">Tab</kbd> shows actions: Open With…, Copy Path, Open Terminal Here.</li>
+        <li>Scope chips to narrow the results to Apps, Folders or Files.</li>
+      </ul></div>
+      <div><h3>Code</h3><ul>
+        <li>Section headers via <code>gtk_list_box_set_header_func</code>.</li>
+        <li>The pane uses <code>g_file_query_info_async</code> and an async read of the first few KB, inside the popup only. The daemon query path stays free of I/O.</li>
+        <li>Scopes need a kind filter in the query protocol, because the popup only requests ten rows.</li>
+        <li>Each new action needs resolve-path tests, like Open and Reveal already have.</li>
+      </ul></div>
+      <div><h3>Trade-offs</h3><ul>
+        <li>The most useful of the three, and the most work.</li>
+        <li>The window grows to about 900 px wide.</li>
+        <li>Shows more than you need for a quick app launch. Worth it if you search for files more often than you launch apps.</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section id="fixes">
+    <div class="section-head"><h2>Six fixes for any direction</h2><span class="sub">Each is small, and each one addresses something visible in your own results</span></div>
+    <div class="fixes-wrap">
+      <table>
+        <thead><tr><th>Fix</th><th>Why</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr><td>Use installed fonts</td><td>The requested fonts are missing, so you get fallbacks. Either name installed families (Ubuntu Sans, Noto Sans) or drop <code>font-family</code> and inherit the desktop font.</td><td>quiet-system.css:3, :22</td></tr>
+          <tr><td>Real file-type icons</td><td><code>g_content_type_guess(name, NULL, 0, &amp;uncertain)</code> looks only at the name and doesn't touch the disk. <code>set.go</code> comes back as Go source code. Names without an extension, like <code>set</code>, come back as Unknown with the uncertain flag set, so keep the generic icon for those or sniff the visible rows asynchronously.</td><td>view.c result_icon()</td></tr>
+          <tr><td>Keep the folder that tells rows apart</td><td>When visible rows share a name, elide the folders they share and keep the first one that differs: <code>~/Android/Sdk/ndk/27.0.12077973/…/c++/v1</code></td><td>path_label.c shorten()</td></tr>
+          <tr><td>Say what it searches</td><td>The placeholder just says “Search”. The accessible name already reads “Search apps, settings, files and folders”, so show that text as the placeholder.</td><td>view.c create_entry()</td></tr>
+          <tr><td>Keycaps and desktop words</td><td>Use “Show in Folder” rather than “reveal”, and “Application” rather than “app”, with keys drawn as keycaps.</td><td>view.c create_footer(), popup_view_result()</td></tr>
+          <tr><td>Nothing under 12 px</td><td>Kind, hint and status text are 10–11 px in a dim gray today, which is hard to read at your 1.1 text scaling.</td><td>quiet-system.css .result-kind, .key-hints, .inline-status, .retry</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub">Whichever direction you pick will need a new ADR to supersede ADR 0027, plus updates to <code>docs/m3-gui-design.md</code> and <code>docs/modules/ui/README.md</code>.</p>
+  </section>
+</main>
+
+<style>
+.notes kbd.plain { font: 500 12px var(--font-body); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--surface); }
+
+/* ---------- A in motion: the live prototype. Every duration scales with --slow. ---------- */
+.motion-controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.btn { font: 500 13px var(--font-body); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 14px; cursor: pointer; }
+.btn.primary { background: var(--accent); color: var(--surface); border-color: transparent; }
+.btn:focus-visible, .motion-controls input:focus-visible, .mo-table input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.motion-controls label { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; color: var(--muted); cursor: pointer; }
+.mo-reduced { font-size: 13px; color: var(--warn); }
+.mo-table td:nth-child(2) { font-weight: 600; font-family: var(--font-display); white-space: nowrap; }
+.mo-table td:nth-child(4) { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
+.mo-table td:first-child { width: 1%; }
+.mo-table input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.rules p { color: var(--muted); font-size: 14px; }
+
+.stage { --slow: 1; min-height: 600px; align-items: flex-start; position: relative; padding-top: 48px; }
+.stage .stage-note { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); font: 14px "Noto Sans", sans-serif; color: var(--n-fg); background: var(--n-bg); border: 1px solid var(--n-border); border-radius: 10px; padding: 10px 12px 10px 16px; display: flex; gap: 14px; align-items: center; box-shadow: 0 12px 32px var(--n-shadow); white-space: nowrap; }
+.stage-note .btn { font-size: 12px; padding: 4px 10px; }
+
+.proto { position: relative; }
+.proto-search { position: relative; overflow: hidden; transition: box-shadow calc(420ms * var(--slow)) ease-out; }
+.proto-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--n-fg); font: 18px "Noto Sans", sans-serif; caret-color: var(--n-fg); padding: 0; }
+.proto-search input::placeholder { color: var(--n-dim); }
+.proto-icon { position: relative; width: 16px; height: 16px; flex: none; color: var(--n-dim); }
+.proto-icon .mag { position: absolute; inset: 0; transition: opacity calc(120ms * var(--slow)); }
+.proto-icon .spinner { position: absolute; inset: 1px; border-radius: 50%; border: 2px solid var(--n-dim); border-top-color: transparent; opacity: 0; transition: opacity calc(120ms * var(--slow)); }
+.fx-spin.searching .proto-icon .mag { opacity: 0; }
+.fx-spin.searching .proto-icon .spinner { opacity: 1; animation: proto-spin calc(700ms * var(--slow)) linear infinite; }
+.fx-glow .proto-search.typing { box-shadow: inset 0 0 0 2px var(--n-accent), 0 0 0 4px var(--n-glow); transition-duration: calc(120ms * var(--slow)); }
+.proto-search::after { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; background-image: linear-gradient(100deg, transparent 35%, var(--n-beam) 50%, transparent 65%); background-size: 300% 100%; background-repeat: no-repeat; background-position: 100% 0; }
+.fx-sweep.opening .proto-search::after { animation: proto-sweep calc(560ms * var(--slow)) cubic-bezier(.4, 0, .2, 1) calc(60ms * var(--slow)) both; }
+.proto-msg { margin: -4px 16px 12px 40px; font-size: 12px; color: var(--n-dim); }
+
+.proto-list { position: relative; padding: 0 8px 8px; display: flex; flex-direction: column; gap: 2px; }
+.proto-hl { position: absolute; left: 8px; right: 8px; top: 0; height: 48px; border-radius: 8px; background: var(--n-sel); transform: translateY(var(--hl-y, 0px)); pointer-events: none; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; box-sizing: border-box; }
+.fx-glide .proto-hl.ready { transition: transform calc(130ms * var(--slow)) cubic-bezier(.2, .8, .2, 1), height calc(130ms * var(--slow)) cubic-bezier(.2, .8, .2, 1), background-color calc(90ms * var(--slow)) ease-out; }
+.proto-row { position: relative; cursor: pointer; padding-right: 72px; }
+.proto-row:hover { background: var(--n-hover); }
+.proto.searching .proto-row { opacity: .55; transition: opacity 120ms ease-out; }
+.fx-cascade .proto-row.enter { animation: proto-row-in calc(140ms * var(--slow)) cubic-bezier(.2, .8, .2, 1) calc(var(--i) * 18ms * var(--slow)) both; }
+.fx-cascade .proto-row.fresh { animation: proto-fade calc(100ms * var(--slow)) ease-out both; }
+.fx-cascade .proto-hl.enter { animation: proto-fade calc(140ms * var(--slow)) ease-out both; }
+.fx-launch .proto-hl.flash { background: var(--n-flash); }
+.fx-launch .proto-row.pulse .n-ic { animation: proto-pulse calc(180ms * var(--slow)) ease-out; }
+.fx-open.opening { animation: proto-in calc(160ms * var(--slow)) cubic-bezier(.2, .8, .2, 1) both; transform-origin: 50% 0; }
+.fx-open.closing { animation: proto-out calc(110ms * var(--slow)) ease-in both; transform-origin: 50% 0; }
+
+@keyframes proto-in { from { opacity: 0; transform: translateY(-6px) scale(.985); } }
+@keyframes proto-out { to { opacity: 0; transform: translateY(-4px) scale(.99); } }
+@keyframes proto-sweep { 0% { opacity: 1; background-position: 100% 0; } 80% { opacity: 1; } 100% { opacity: 0; background-position: 0% 0; } }
+@keyframes proto-row-in { from { opacity: 0; transform: translateY(4px); } }
+@keyframes proto-fade { from { opacity: 0; } }
+@keyframes proto-pulse { 45% { transform: scale(1.1); } }
+@keyframes proto-spin { to { transform: rotate(360deg); } }
+</style>
+
+<script>
+(function () {
+  /* Real results for "set" from the running daemon (torchlight query --json --limit 8 set). */
+  var ROWS = [
+    { name: "set", kind: "file", type: "C source code", icon: "c",
+      today: "~/…/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1",
+      path: "~/Android/Sdk/ndk/27.0.12077973/…/include/c++/v1", flag: true },
+    { name: "set", kind: "file", type: "C source code", icon: "c",
+      today: "~/…/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1",
+      path: "~/Android/Sdk/ndk/27.1.12297006/…/include/c++/v1", flag: true },
+    { name: "set", kind: "folder", type: "Folder", icon: "folder",
+      today: "~/go/pkg/mod/google.golang.org/protobuf@v1.36.10/internal",
+      path: "~/go/pkg/mod/google.golang.org/protobuf@v1.36.10/internal" },
+    { name: "Set", kind: "folder", type: "Folder", icon: "folder",
+      today: "~/workspace/synth/repos/effect/packages/effect/test/Schema/Schema",
+      path: "~/workspace/synth/repos/effect/packages/effect/test/Schema/Schema" },
+    { name: "System Settings", kind: "app", type: "Settings", icon: "gear", today: "System settings", path: "Settings" },
+    { name: "NVIDIA X Server Settings", kind: "app", type: "Settings", icon: "display", today: "System settings", path: "Settings" }
+  ];
+  var QUERY = "set";
+
+  var SYM = {
+    file: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M3.5 1.5h5.5l3.5 3.5v9.5h-9z"/><path d="M9 1.5V5h3.5"/></svg>',
+    folder: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M1.5 3h4.5l1.5 1.5h7v8.5h-13z"/></svg>',
+    search: '<svg class="mag" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="6.8" cy="6.8" r="4.6"/><path d="M10.3 10.3l4 4"/></svg>'
+  };
+  function page(band, label) {
+    return '<svg viewBox="0 0 32 32"><path d="M7 2.5h12.5l6 6V29.5H7z" fill="#f1f1f3"/><path d="M19.5 2.5v6h6z" fill="#c7c9cf"/>' +
+      '<path d="M10 12h12M10 15h12M10 18h8" stroke="#b9bcc4" stroke-width="1.2"/>' +
+      (band ? '<rect x="7" y="21" width="18.5" height="8.5" fill="' + band + '"/><text x="16.25" y="27.6" font-size="6.5" font-weight="700" fill="#fff" text-anchor="middle" font-family="Noto Sans, sans-serif">' + label + '</text>' : '') +
+      '</svg>';
+  }
+  var COLOR = {
+    c: page("#5b7fd4", "C"),
+    go: page("#2aa1bf", "GO"),
+    text: page(null),
+    folder: '<svg viewBox="0 0 32 32"><path d="M3 8.5a2 2 0 0 1 2-2h7l3 3h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="#5f8f48"/><path d="M3 12.5h26v12.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="#8bbf6e"/></svg>',
+    gear: '<svg viewBox="0 0 32 32"><rect x="3" y="3" width="26" height="26" rx="6" fill="#5a6878"/><g fill="#eef1f4" transform="translate(16 16)">' +
+      [0, 45, 90, 135].map(function (a) { return '<rect x="-1.9" y="-10" width="3.8" height="20" rx="1" transform="rotate(' + a + ')"/>'; }).join("") +
+      '<circle r="7"/></g><circle cx="16" cy="16" r="3" fill="#5a6878"/></svg>',
+    display: '<svg viewBox="0 0 32 32"><rect x="3" y="3" width="26" height="26" rx="6" fill="#5f9a3f"/><rect x="8.5" y="9" width="15" height="10.5" rx="1.5" fill="none" stroke="#fff" stroke-width="1.8"/><path d="M13 23.5h6M16 19.5v4" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg>'
+  };
+  function hl(name) {
+    var i = name.toLowerCase().indexOf(QUERY);
+    if (i < 0) return name;
+    return name.slice(0, i) + "<mark>" + name.slice(i, i + QUERY.length) + "</mark>" + name.slice(i + QUERY.length);
+  }
+  function keys(list) { return list.map(function (k) { return "<kbd>" + k + "</kbd>"; }).join(""); }
+  function hint(k, label) { return '<span class="hint">' + keys(k) + " " + label + "</span>"; }
+
+  function today() {
+    var rows = ROWS.map(function (r, i) {
+      var ic = r.kind === "app" ? COLOR[r.icon] : SYM[r.kind === "folder" ? "folder" : "file"];
+      return '<div class="t-row' + (i === 0 ? " sel" : "") + '"><span class="t-ic">' + ic + '</span><div class="t-txt">' +
+        '<div class="t-name ell' + (r.kind === "app" ? " app" : "") + '">' + r.name + "</div>" +
+        '<div class="t-path ell' + (r.flag ? " flag" : "") + '">' + r.today + "</div></div>" +
+        '<div class="t-kind">' + (i === 0 ? "open ↵" : r.kind) + "</div></div>";
+    }).join("");
+    return '<div class="pop pop-today" aria-label="Mockup of the current popup">' +
+      '<div class="t-search"><div class="t-word"><span class="t-brand">//</span><span>torchlight</span></div>' +
+      '<div class="t-line"><span class="t-prompt">/</span><span class="t-query">set<span class="t-caret"></span></span></div></div>' +
+      '<div class="t-list">' + rows + "</div>" +
+      '<div class="t-foot"><span class="grow">8 results</span><span class="t-keys">↑↓ select   ↵ open</span><span class="t-keys">ctrl ↵ reveal</span><span class="t-keys">esc close</span></div></div>';
+  }
+
+  function nativeRow(r, sel) {
+    return '<div class="n-row' + (sel ? " sel" : "") + '"><span class="n-ic">' + COLOR[r.icon] + '</span><div class="n-txt">' +
+      '<div class="n-name ell">' + r.name + '</div><div class="n-path ell">' + r.path + "</div></div>" +
+      '<span class="n-end">' + (sel ? "<kbd>Enter</kbd>" : "") + "</span></div>";
+  }
+  function search(extra) {
+    return '<div class="n-search">' + SYM.search + '<span class="n-query">set</span><span class="n-ibeam"></span>' + (extra || "") + "</div>";
+  }
+  function native() {
+    return '<div class="pop pop-native" aria-label="Mockup of direction A">' + search() +
+      '<div class="n-list">' + ROWS.map(function (r, i) { return nativeRow(r, i === 0); }).join("") + "</div>" +
+      '<div class="n-foot"><span class="grow">8 results</span>' + hint(["↑", "↓"], "Select") + hint(["Enter"], "Open") +
+      hint(["Ctrl", "Enter"], "Show in Folder") + hint(["Esc"], "Close") + "</div></div>";
+  }
+
+  function refined() {
+    var rows = ROWS.map(function (r, i) {
+      return '<div class="r-row' + (i === 0 ? " sel" : "") + '"><span class="r-ic">' + COLOR[r.icon] + '</span><div class="r-txt">' +
+        '<div class="r-name ell">' + hl(r.name) + '</div><div class="r-path ell">' + r.path + "</div></div>" +
+        '<div class="r-type">' + (i === 0 ? "<kbd>Enter</kbd>" : r.type) + "</div></div>";
+    }).join("");
+    return '<div class="pop pop-refined" aria-label="Mockup of direction B">' +
+      '<div class="r-search">' + SYM.search + '<span class="r-query">set<span class="r-caret"></span></span><span class="r-word">torchlight</span></div>' +
+      '<div class="r-list">' + rows + "</div>" +
+      '<div class="r-foot"><span class="grow">8 results</span>' + hint(["↑", "↓"], "Select") + hint(["Enter"], "Open") +
+      hint(["Ctrl", "Enter"], "Show in Folder") + hint(["Esc"], "Close") + "</div></div>";
+  }
+
+  function palette() {
+    var groups = [["Files", [0, 1]], ["Folders", [2, 3]], ["Settings", [4, 5]]];
+    var list = groups.map(function (g) {
+      return '<div class="p-head">' + g[0] + "</div>" + g[1].map(function (i) { return nativeRow(ROWS[i], i === 0); }).join("");
+    }).join("");
+    var preview = [
+      "// -*- C++ -*-",
+      "//===----------------------------------------------------------------------===//",
+      "//",
+      "// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.",
+      "// See https://llvm.org/LICENSE.txt for license information.",
+      "",
+      "#ifndef _LIBCPP_SET",
+      "#define _LIBCPP_SET"
+    ].join("\n");
+    var actions = [["Open", ["Enter"]], ["Open With…", ["Alt", "Enter"]], ["Show in Folder", ["Ctrl", "Enter"]],
+      ["Copy Path", ["Ctrl", "Shift", "C"]], ["Open Terminal Here", ["Ctrl", "T"]]];
+    var chips = '<span class="chips"><span class="chip on">All</span><span class="chip">Apps</span><span class="chip">Folders</span><span class="chip">Files</span></span>';
+    return '<div class="pop pop-palette" aria-label="Mockup of direction C">' +
+      '<div class="p-search">' + search() + chips + "</div>" +
+      '<div class="p-body"><div class="p-list">' + list + "</div>" +
+      '<div class="p-detail"><div class="p-hero">' + COLOR.c + '<div><div class="p-title">set</div><div class="p-meta">C source code · 65.2 kB · Modified 8 Jun 2025</div></div></div>' +
+      '<div class="p-fullpath">~/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1/set</div>' +
+      '<div class="p-preview">' + preview.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</div>" +
+      '<div class="p-label">Actions</div><div class="p-actions">' +
+      actions.map(function (a) { return '<div class="p-act"><span>' + a[0] + "</span><span>" + keys(a[1]) + "</span></div>"; }).join("") +
+      "</div></div></div>" +
+      '<div class="n-foot"><span class="grow">8 results</span>' + hint(["↑", "↓"], "Select") + hint(["Enter"], "Open") +
+      hint(["Tab"], "Actions") + hint(["Esc"], "Close") + "</div></div>";
+  }
+
+  document.getElementById("m-today").innerHTML = today();
+  document.getElementById("m-native").innerHTML = native();
+  document.getElementById("m-refined").innerHTML = refined();
+  document.getElementById("m-palette").innerHTML = palette();
+
+  /* Only A and C follow the desktop; B and Today keep their fixed dark surface but sit on the chosen desktop. */
+  function setDesk(mode) {
+    document.querySelectorAll("[data-follows]").forEach(function (el) {
+      el.classList.remove("desk-dark", "desk-light");
+      el.classList.add("desk-" + mode);
+    });
+    document.getElementById("desk-dark").setAttribute("aria-pressed", String(mode === "dark"));
+    document.getElementById("desk-light").setAttribute("aria-pressed", String(mode === "light"));
+  }
+  document.getElementById("desk-dark").addEventListener("click", function () { setDesk("dark"); });
+  document.getElementById("desk-light").addEventListener("click", function () { setDesk("light"); });
+  window.tlIcons = COLOR;
+})();
+</script>
+
+<script>
+(function () {
+  /* Live prototype of direction A with motion. Items are real results from the daemon for
+     fire, files, term, down, torchlight, readme and set; the filter is a simple stand-in, not Torchlight's ranking. */
+  var ICONS = window.tlIcons;
+  function tile(color, glyph) { return '<svg viewBox="0 0 32 32"><rect x="3" y="3" width="26" height="26" rx="6" fill="' + color + '"/>' + glyph + "</svg>"; }
+  ICONS.browser = tile("#d9632b", '<circle cx="16" cy="16" r="8" fill="none" stroke="#fff" stroke-width="1.8"/><ellipse cx="16" cy="16" rx="3.5" ry="8" fill="none" stroke="#fff" stroke-width="1.5"/><path d="M8 16h16" stroke="#fff" stroke-width="1.5"/>');
+  ICONS.shield = tile("#a9503b", '<path d="M16 7.5l7 2.6v5.4c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9v-5.4z" fill="none" stroke="#fff" stroke-width="1.9" stroke-linejoin="round"/>');
+  ICONS.h = ICONS.c.replace("#5b7fd4", "#8a63c9").replace(">C<", ">H<");
+
+  var APPS = [
+    ["Firefox Web Browser", "Application", "browser"], ["Firewall Configuration", "Settings", "shield"],
+    ["Files", "Application", "folder"], ["System Settings", "Settings", "gear"], ["NVIDIA X Server Settings", "Settings", "display"]
+  ];
+  var FOLDERS = [
+    "/home/antash/workspace/torchlight", "/home/antash/workspace/torchlight/include/torchlight", "/home/antash/workspace/torchlight-reports",
+    "/home/antash/Downloads", "/home/antash/Downloads/fb/files", "/home/antash/Postman/files", "/home/antash/AndroidStudioProjects/Invaders/firebase",
+    "/home/antash/go/pkg/mod/cache/download", "/home/antash/go/pkg/mod/cache/download/golang.org/x/term",
+    "/home/antash/go/pkg/mod/modernc.org/libc@v1.41.0/termios", "/home/antash/go/pkg/mod/google.golang.org/protobuf@v1.36.10/internal/set"
+  ];
+  var FILES = [
+    "/home/antash/workspace/torchlight/src/bin/torchlight.c", "/home/antash/workspace/torchlight/src/bin/torchlight-gtk.c",
+    "/home/antash/workspace/torchlight/src/core/config.c", "/home/antash/Downloads/renderdoc_1.38/README",
+    "/home/antash/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1/set",
+    "/home/antash/Android/Sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/termio.h",
+    "/home/antash/go/pkg/mod/github.com/spiffe/go-spiffe/v2@v2.5.0/bundle/jwtbundle/set.go"
+  ];
+  var KIND_ORDER = { app: 0, folder: 1, file: 2 };
+  function parentOf(path) {
+    var shown = path.replace(/^\/home\/antash(?=\/)/, "~");
+    shown = shown.slice(0, shown.lastIndexOf("/")) || "/";
+    var parts = shown.split("/");
+    return shown.length > 56 && parts.length > 7 ? parts.slice(0, 5).join("/") + "/…/" + parts.slice(-2).join("/") : shown;
+  }
+  function fileIcon(name) { var m = /\.(c|h|go)$/.exec(name); return m ? m[1] : "text"; }
+  var ITEMS = [];
+  APPS.forEach(function (a) { ITEMS.push({ name: a[0], sub: a[1], icon: a[2], kind: "app" }); });
+  FOLDERS.forEach(function (p) { ITEMS.push({ name: p.slice(p.lastIndexOf("/") + 1), sub: parentOf(p), icon: "folder", kind: "folder" }); });
+  FILES.forEach(function (p) { var n = p.slice(p.lastIndexOf("/") + 1); ITEMS.push({ name: n, sub: parentOf(p), icon: fileIcon(n), kind: "file" }); });
+  ITEMS.forEach(function (item, i) { item.id = i; });
+
+  function search(query) {
+    var q = query.trim().toLowerCase();
+    if (!q) return [];
+    var hits = [];
+    ITEMS.forEach(function (item) {
+      var name = item.name.toLowerCase(), at = name.indexOf(q);
+      if (at < 0) return;
+      var where = at === 0 ? 0 : /[\s._\-]/.test(name.charAt(at - 1)) ? 1 : 2;
+      hits.push({ item: item, score: where * 10 + KIND_ORDER[item.kind] });
+    });
+    hits.sort(function (a, b) { return a.score - b.score || a.item.name.length - b.item.name.length || a.item.id - b.item.id; });
+    return hits.slice(0, 8).map(function (h) { return h.item; });
+  }
+
+  function $(id) { return document.getElementById(id); }
+  var stage = $("stage"), proto = $("proto"), input = $("proto-input"), field = $("proto-search"), list = $("proto-list"),
+    hl = $("proto-hl"), foot = $("proto-foot"), msg = $("proto-msg"), count = $("proto-count"), note = $("stage-note");
+  var state = { rows: [], sel: 0, closing: false };
+  var timers = { search: 0, pending: 0, typing: 0, opening: 0, close: 0 }, demo = [];
+
+  function slow() { return $("mo-slow").checked ? 4 : 1; }
+  function fx(name) { return proto.classList.contains("fx-" + name); }
+  function clear(name) { clearTimeout(timers[name]); timers[name] = 0; }
+  function stopDemo() { demo.forEach(clearTimeout); demo = []; }
+  function esc(text) { return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function rowEls() { return list.querySelectorAll(".proto-row"); }
+
+  function makeRow(item, index) {
+    var row = document.createElement("div");
+    row.className = "n-row proto-row";
+    row.setAttribute("role", "option");
+    row.innerHTML = '<span class="n-ic">' + ICONS[item.icon] + '</span><div class="n-txt"><div class="n-name ell">' + esc(item.name) +
+      '</div><div class="n-path ell">' + esc(item.sub) + "</div></div>";
+    row.addEventListener("mouseenter", function () { if (!state.closing) { state.sel = index; placeHighlight(false); } });
+    row.addEventListener("click", function () { stopDemo(); state.sel = index; placeHighlight(false); launch(); input.focus({ preventScroll: true }); });
+    return row;
+  }
+
+  function placeHighlight(jump) {
+    var row = rowEls()[state.sel];
+    if (!row) return;
+    rowEls().forEach(function (el, i) { el.setAttribute("aria-selected", String(i === state.sel)); });
+    if (jump) {
+      hl.classList.remove("ready", "enter");
+      hl.style.setProperty("--hl-y", row.offsetTop + "px");
+      hl.style.height = row.offsetHeight + "px";
+      void hl.offsetWidth;
+      hl.classList.add("ready", "enter");
+      return;
+    }
+    hl.style.setProperty("--hl-y", row.offsetTop + "px");
+    hl.style.height = row.offsetHeight + "px";
+  }
+
+  /* Mirrors render(): the first results cascade in, later renders only fade in rows that are new. */
+  function render(rows) {
+    var wasEmpty = state.rows.length === 0, previous = {}, selected = state.rows[state.sel];
+    state.rows.forEach(function (r) { previous[r.id] = true; });
+    state.rows = rows;
+    var kept = selected ? rows.indexOf(selected) : -1;
+    state.sel = kept >= 0 ? kept : 0;
+    rowEls().forEach(function (el) { el.remove(); });
+    rows.forEach(function (item, i) {
+      var row = makeRow(item, i);
+      if (wasEmpty) { row.classList.add("enter"); row.style.setProperty("--i", i); }
+      else if (!previous[item.id]) row.classList.add("fresh");
+      list.appendChild(row);
+    });
+    var hasRows = rows.length > 0;
+    list.hidden = foot.hidden = !hasRows;
+    msg.hidden = hasRows || !input.value.trim();
+    count.textContent = rows.length + (rows.length === 1 ? " result" : " results");
+    if (hasRows) placeHighlight(wasEmpty);
+  }
+
+  function runSearch() {
+    clear("search"); clear("pending");
+    if (!input.value.trim()) { proto.classList.remove("searching"); render([]); return; }
+    var latency = $("mo-latency").checked ? 450 : 30;
+    timers.pending = setTimeout(function () { proto.classList.add("searching"); }, 120);
+    timers.search = setTimeout(function () {
+      clear("pending");
+      proto.classList.remove("searching");
+      render(search(input.value));
+    }, latency);
+  }
+
+  function typed() {
+    clear("typing");
+    field.classList.add("typing");
+    timers.typing = setTimeout(function () { field.classList.remove("typing"); }, 700);
+    runSearch();
+  }
+
+  function move(delta) {
+    if (!state.rows.length) return;
+    state.sel = Math.max(0, Math.min(state.rows.length - 1, state.sel + delta));
+    placeHighlight(false);
+  }
+
+  function hide(message) {
+    proto.hidden = true;
+    proto.classList.remove("closing", "opening");
+    hl.classList.remove("flash");
+    state.closing = false;
+    $("stage-note-text").textContent = message;
+    note.hidden = false;
+  }
+
+  function close(message) {
+    if (state.closing || proto.hidden) return;
+    state.closing = true;
+    clear("search"); clear("pending"); clear("typing");
+    proto.classList.remove("searching");
+    field.classList.remove("typing");
+    if (!fx("open")) { hide(message); return; }
+    proto.classList.remove("opening");
+    proto.classList.add("closing");
+    timers.close = setTimeout(function () { hide(message); }, 110 * slow());
+  }
+
+  function launch() {
+    if (!state.rows.length || state.closing) return;
+    var item = state.rows[state.sel], label = item.kind === "app" ? "Launched " : "Opened ";
+    if (!fx("launch")) { close(label + item.name); return; }
+    hl.classList.add("flash");
+    rowEls()[state.sel].classList.add("pulse");
+    timers.close = setTimeout(function () { close(label + item.name); }, 90 * slow());
+  }
+
+  /* Showing clears the query and results, exactly like torchlight-gtk --toggle. */
+  function open(query, focus) {
+    Object.keys(timers).forEach(clear);
+    note.hidden = true;
+    state.closing = false;
+    state.rows = [];
+    input.value = query || "";
+    proto.classList.remove("closing", "opening", "searching");
+    field.classList.remove("typing");
+    proto.hidden = false;
+    render(query ? search(query) : []);
+    void proto.offsetWidth;
+    proto.classList.add("opening");
+    timers.opening = setTimeout(function () { proto.classList.remove("opening"); }, 700 * slow());
+    if (focus) input.focus({ preventScroll: true });
+  }
+
+  function playDemo() {
+    stopDemo();
+    var s = slow(), at = 0;
+    function step(delay, fn) { at += delay * s; demo.push(setTimeout(fn, at)); }
+    open("", true);
+    "torch".split("").forEach(function (ch, i) {
+      step(i === 0 ? 700 : 120, function () { input.value += ch; typed(); });
+    });
+    step(900, function () { move(1); });
+    step(450, function () { move(1); });
+    step(450, function () { move(1); });
+    step(600, function () { move(-2); });
+    step(900, function () { launch(); });
+  }
+
+  input.addEventListener("input", function () { stopDemo(); typed(); });
+  input.addEventListener("keydown", function (event) {
+    var keys = { ArrowDown: function () { move(1); }, ArrowUp: function () { move(-1); }, Enter: launch, Escape: function () { close("Closed with Esc"); } };
+    if (!keys[event.key]) return;
+    event.preventDefault();
+    stopDemo();
+    keys[event.key]();
+  });
+  $("mo-demo").addEventListener("click", playDemo);
+  $("mo-open").addEventListener("click", function () { stopDemo(); open("", true); });
+  $("mo-reopen").addEventListener("click", function () { stopDemo(); open("", true); });
+  $("mo-slow").addEventListener("change", function () { stage.style.setProperty("--slow", String(slow())); });
+  var toggles = document.querySelectorAll("[data-fx]");
+  toggles.forEach(function (box) {
+    box.addEventListener("change", function () { proto.classList.toggle("fx-" + box.getAttribute("data-fx"), box.checked); });
+  });
+
+  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduced) {
+    $("mo-reduced").hidden = false;
+    toggles.forEach(function (box) { box.checked = false; proto.classList.remove("fx-" + box.getAttribute("data-fx")); });
+  }
+  open("torch", false);
+})();
+</script>
+</body>
+</html>

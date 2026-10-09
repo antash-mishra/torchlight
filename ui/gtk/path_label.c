@@ -1,4 +1,4 @@
-/* Allocate a path label using Pango measurements, preserving useful final folders. */
+/* Allocate a path label using Pango measurements, preserving distinguishing and final folders. */
 #include "path_label.h"
 #include <stdbool.h>
 #include <string.h>
@@ -6,6 +6,7 @@ typedef struct {
     GtkWidget parent;
     GtkWidget *label;
     char *full;
+    size_t keep;
 } TlPathLabel;
 typedef struct {
     GtkWidgetClass parent;
@@ -17,9 +18,29 @@ static bool fits(PangoLayout *layout, const char *text, int width) {
     pango_layout_get_pixel_size(layout, &measured, NULL);
     return measured <= width;
 }
-static char *shorten(PangoLayout *layout, const char *path, int width) {
+/* Keep a distinguishing head, then as many trailing folders as fit after it. */
+static char *shorten_kept(PangoLayout *layout, const char *path, size_t keep, int width) {
+    char *head = g_strndup(path, keep);
+    for (const char *slash = strchr(path + keep + 1, '/'); slash != NULL;
+         slash = strchr(slash + 1, '/')) {
+        char *candidate = g_strconcat(head, "/…/", slash + 1, NULL);
+        if (fits(layout, candidate, width)) {
+            g_free(head);
+            return candidate;
+        }
+        g_free(candidate);
+    }
+    g_free(head);
+    return NULL;
+}
+static char *shorten(PangoLayout *layout, const char *path, size_t keep, int width) {
     if (fits(layout, path, width))
         return g_strdup(path);
+    if (keep != 0 && path[keep] == '/') {
+        char *kept = shorten_kept(layout, path, keep, width);
+        if (kept != NULL)
+            return kept;
+    }
     const char *root = g_str_has_prefix(path, "~/") ? "~/" : path[0] == '/' ? "/" : "";
     const char *tail = path + strlen(root);
     for (const char *slash = strchr(tail, '/'); slash != NULL; slash = strchr(slash + 1, '/')) {
@@ -67,7 +88,7 @@ static void measure(GtkWidget *widget, GtkOrientation orientation, int for_size,
 static void allocate(GtkWidget *widget, int width, int height, int baseline) {
     TlPathLabel *self = (TlPathLabel *)widget;
     PangoLayout *layout = gtk_widget_create_pango_layout(self->label, NULL);
-    char *text = shorten(layout, self->full, width);
+    char *text = shorten(layout, self->full, self->keep, width);
     if (strcmp(text, gtk_label_get_text(GTK_LABEL(self->label))) != 0)
         gtk_label_set_text(GTK_LABEL(self->label), text);
     g_free(text);
@@ -109,13 +130,16 @@ static void tl_path_label_init(TlPathLabel *self) {
     gtk_accessible_update_state(GTK_ACCESSIBLE(self->label), GTK_ACCESSIBLE_STATE_HIDDEN, true, -1);
     gtk_widget_set_overflow(GTK_WIDGET(self), GTK_OVERFLOW_HIDDEN);
 }
-GtkWidget *popup_path_label_new(const char *path) {
+GtkWidget *popup_path_label_new(const char *path, size_t keep) {
     TlPathLabel *self = g_object_new(tl_path_label_get_type(), NULL);
     const char *home = g_get_home_dir();
     size_t length = strlen(home);
-    self->full = g_str_has_prefix(path, home) && path[length] == '/'
-                     ? g_strconcat("~", path + length, NULL)
-                     : g_strdup(path);
+    bool in_home = g_str_has_prefix(path, home) && path[length] == '/';
+    self->full = in_home ? g_strconcat("~", path + length, NULL) : g_strdup(path);
+    /* keep counts bytes of the original path; "~" stands in for the home bytes. */
+    self->keep = keep < strlen(path) ? keep : 0;
+    if (in_home)
+        self->keep = self->keep > length ? self->keep - length + 1 : 0;
     gtk_widget_set_tooltip_text(GTK_WIDGET(self), path);
     gtk_accessible_update_property(GTK_ACCESSIBLE(self), GTK_ACCESSIBLE_PROPERTY_LABEL, path, -1);
     return GTK_WIDGET(self);

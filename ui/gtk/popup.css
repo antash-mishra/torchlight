@@ -1,0 +1,63 @@
+/* Torchlight popup: the desktop theme's named colors and font, plus bounded motion.
+ * Sizes are logical pixels; text sizes are relative so the desktop font scale applies. */
+window.torchlight { background: transparent; }
+.torchlight .launcher-surface { background-color: @theme_bg_color; color: @theme_fg_color; border: 1px solid alpha(@theme_fg_color, 0.14); border-radius: 10px; }
+
+/* Search field: icon (or spinner), the query, and inline no-match/offline feedback. */
+.torchlight .search-area { padding: 12px; }
+.torchlight .search-field { min-height: 44px; padding: 0 14px; border-radius: 8px; background-color: alpha(@theme_fg_color, 0.06); box-shadow: inset 0 0 0 2px alpha(@theme_selected_bg_color, 0.55); transition: box-shadow 420ms ease-out; }
+.torchlight .search-field.typing { box-shadow: inset 0 0 0 2px @theme_selected_bg_color, 0 0 0 4px alpha(@theme_selected_bg_color, 0.2); transition-duration: 120ms; }
+.torchlight .search-icon, .torchlight .search-field spinner { color: alpha(@theme_fg_color, 0.65); min-width: 16px; min-height: 16px; }
+.torchlight .query-entry { min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none; font-size: 1.35em; }
+.torchlight .query-entry text { padding: 0; }
+.torchlight .query-entry placeholder { color: alpha(@theme_fg_color, 0.5); }
+.torchlight .inline-status { font-size: 0.9em; color: alpha(@theme_fg_color, 0.65); }
+.torchlight .retry { min-width: 0; min-height: 0; padding: 0 2px; border: 0; background: transparent; box-shadow: none; color: @theme_selected_bg_color; }
+.torchlight .retry:focus-visible { outline: 2px solid alpha(@theme_selected_bg_color, 0.6); outline-offset: 2px; }
+
+/* Results: the selection track draws one highlight beneath transparent rows. */
+.torchlight list { padding: 0 8px 8px; background: transparent; }
+.torchlight list > row { min-height: 58px; padding: 0; border-radius: 8px; background: transparent; color: @theme_fg_color; outline: none; box-shadow: none; transition: background-color 100ms ease-out; }
+.torchlight list > row:hover { background-color: alpha(@theme_fg_color, 0.05); }
+.torchlight list > row:selected, .torchlight list > row:selected:hover { background-color: transparent; color: @theme_fg_color; }
+.torchlight .selection-highlight { border-radius: 8px; padding-right: 10px; background-color: alpha(@theme_selected_bg_color, 0.24); transition: background-color 90ms ease-out; }
+.torchlight .selection-highlight.flash { background-color: alpha(@theme_selected_bg_color, 0.5); }
+.torchlight .result { padding: 0 64px 0 10px; }
+.torchlight .result-name { color: @theme_fg_color; }
+.torchlight .result-detail { font-size: 0.9em; color: alpha(@theme_fg_color, 0.65); }
+
+/* Footer: status, then key hints drawn as keycaps. */
+.torchlight .footer { border-top: 1px solid alpha(@theme_fg_color, 0.08); padding: 8px 16px; }
+.torchlight .status, .torchlight .hint-label { font-size: 0.9em; color: alpha(@theme_fg_color, 0.65); }
+.torchlight .keycap { font-size: 0.9em; min-width: 10px; padding: 0 5px; border-radius: 4px; border: 1px solid alpha(@theme_fg_color, 0.22); border-bottom-width: 2px; background-color: alpha(@theme_fg_color, 0.05); color: @theme_fg_color; }
+
+/* Motion. Every effect is short, never loops, and never delays input or results;
+ * GTK disables all of it when the desktop turns animations off. */
+@keyframes popup-open { from { opacity: 0; transform: translateY(-6px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes popup-close { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-4px) scale(0.99); } }
+@keyframes torch-sweep { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+@keyframes result-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes result-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes launch-pulse { from { transform: none; } 45% { transform: scale(1.1); } to { transform: none; } }
+.torchlight .launcher-surface.opening { transform-origin: 50% 0; animation: popup-open 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.torchlight .launcher-surface.closing { transform-origin: 50% 0; animation: popup-close 110ms ease-in both; }
+/* The torch sweep: a band of accent light crosses the field once per opening. */
+.torchlight .opening .search-field { background-image: linear-gradient(100deg, transparent 35%, alpha(@theme_selected_bg_color, 0.3) 50%, transparent 65%); background-size: 300% 100%; background-repeat: no-repeat; background-position: 100% 0; animation: torch-sweep 560ms cubic-bezier(0.4, 0, 0.2, 1) 60ms both; }
+/* First results cascade in 18ms apart; later new rows only fade. */
+.torchlight .result.enter-0 { animation: result-enter 140ms cubic-bezier(0.2, 0.8, 0.2, 1) 0ms both; }
+.torchlight .result.enter-1 { animation: result-enter 140ms cubic-bezier(0.2, 0.8, 0.2, 1) 18ms both; }
+.torchlight .result.enter-2 { animation: result-enter 140ms cubic-bezier(0.2, 0.8, 0.2, 1) 36ms both; }
+.torchlight .result.enter-3 { animation: result-enter 140ms cubic-bezier(0.2, 0.8, 0.2, 1) 54ms both; }
+.torchlight .result.enter-4 { animation: result-enter 140ms cubic-bezier(0.2, 0.8, 0.2, 1) 72ms both; }
+.torchlight .result.enter-5 { animation: result-enter 140ms cubic-bezier(0.2, 0.8, 0.2, 1) 90ms both; }
+.torchlight .result.enter-6 { animation: result-enter 140ms cubic-bezier(0.2, 0.8, 0.2, 1) 108ms both; }
+.torchlight .result.enter-7 { animation: result-enter 140ms cubic-bezier(0.2, 0.8, 0.2, 1) 126ms both; }
+.torchlight .result.fresh { animation: result-fade 100ms ease-out both; }
+.torchlight .result.launching .result-icon { animation: launch-pulse 180ms ease-out; }
+
+/* Accessibility and size variants come last so they win over equal specificity. */
+.torchlight .high-contrast { border-color: @theme_fg_color; }
+.torchlight .high-contrast .result-detail, .torchlight .high-contrast .status, .torchlight .high-contrast .hint-label, .torchlight .high-contrast .inline-status, .torchlight .high-contrast .search-icon { color: @theme_fg_color; }
+.torchlight .compact .search-area { padding: 10px; }
+.torchlight .compact .result { padding-right: 56px; }
+.torchlight .quiet-motion .search-field, .torchlight .quiet-motion .search-field.typing, .torchlight .quiet-motion list > row, .torchlight .quiet-motion .selection-highlight { transition: none; }

@@ -57,7 +57,7 @@ CPPCHECK ?= cppcheck
 .PHONY: all test lint format bench bench-vector eval-vector bench-daemon clean
 GTK_CPPFLAGS = $(subst -I,-isystem ,$(shell $(PKG_CONFIG) --cflags 'gtk4 >= 4.14' x11))
 GTK_LDLIBS = $(shell $(PKG_CONFIG) --libs 'gtk4 >= 4.14' x11)
-UI_SOURCES = ui/gtk/model.c ui/gtk/actions.c ui/gtk/launcher.c ui/gtk/view.c ui/gtk/path_label.c src/bin/torchlight-gtk.c
+UI_SOURCES = ui/gtk/model.c ui/gtk/actions.c ui/gtk/launcher.c ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c src/bin/torchlight-gtk.c
 POPUP_FIXTURE_SOURCE = tests/fixtures/popup_probe.c
 all: build/torchlight build/torchlightd build/torchlight-gtk
 $(FRIZBEE_LIB): $(FRIZBEE_INPUTS)
@@ -65,13 +65,13 @@ $(FRIZBEE_LIB): $(FRIZBEE_INPUTS)
 	@touch $@
 UI_HEADERS = $(wildcard ui/gtk/*.h)
 UI_RESOURCES = build/ui/gtk/resources.c
-$(UI_RESOURCES): ui/gtk/resources.xml ui/gtk/quiet-system.css
+$(UI_RESOURCES): ui/gtk/resources.xml ui/gtk/popup.css
 	@mkdir -p $(@D)
 	glib-compile-resources --sourcedir=ui/gtk --generate-source --target=$@ --c-name=torchlight_ui $<
 build/torchlight-gtk: $(OBJECTS) $(UI_SOURCES) $(UI_HEADERS) $(UI_RESOURCES) $(HEADERS) $(FRIZBEE_LIB)
 	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(UI_SOURCES) $(UI_RESOURCES) $(OBJECTS) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
-build/test_popup_view: ui/gtk/view.c ui/gtk/path_label.c tests/gtk/test_view.c $(UI_HEADERS) $(UI_RESOURCES) $(FRIZBEE_LIB)
-	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(SAN_FLAGS) ui/gtk/view.c ui/gtk/path_label.c tests/gtk/test_view.c $(UI_RESOURCES) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
+build/test_popup_view: ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c tests/gtk/test_view.c $(UI_HEADERS) $(UI_RESOURCES) $(FRIZBEE_LIB)
+	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(SAN_FLAGS) ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c tests/gtk/test_view.c $(UI_RESOURCES) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
 build/test_popup_probe.so: $(POPUP_FIXTURE_SOURCE)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) -fPIC -shared $< $(GTK_LDLIBS) -ldl -o $@
