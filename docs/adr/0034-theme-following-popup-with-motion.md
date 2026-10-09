@@ -93,6 +93,6 @@ fixed-geometry and path-safety contracts remain.
 
 Native tests replace the caret pixel checks with highlight geometry and glide,
 icons, entrance classes, opening and closing timers, the spinner and the launch
-flash. Model tests cover distinct prefixes. The isolated theme/scale acceptance
-matrix (`docs/ui/validation.json`) predates this change and must be re-run where
-Xvfb and xdotool are installed.
+flash. Model tests cover distinct prefixes. The isolated acceptance matrix
+(light, dark at 150% fonts, high contrast at 2× scale, a reserved panel) and the
+AT-SPI run pass with the new presentation; see `docs/ui/validation.json`.

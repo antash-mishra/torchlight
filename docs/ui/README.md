@@ -15,11 +15,11 @@ Replay after building `build/test_popup_view` (set `GTK_THEME` to choose a theme
 GTK_THEME=Mint-Y-Dark TORCHLIGHT_TEST_VIEW_CAPTURE="$PWD/docs/ui" ./build/test_popup_view
 ```
 
-[Validation results](validation.json) record the earlier Quiet System theme/scale
-matrix, AT-SPI checks and native sanitizer checks; re-run
-`make test-ui-isolated` (needs Xvfb and xdotool) to refresh them. The native view
-test disables LeakSanitizer for GTK/font caches; ASan and UBSan still check memory
-errors and timer teardown.
+[Validation results](validation.json) record the theme/scale matrix, AT-SPI checks
+and native sanitizer checks for this presentation (`make test-ui-isolated` and
+`python3 tests/run_popup_checks.py --a11y`; both need Xvfb and xdotool). The native
+view test disables LeakSanitizer for GTK/font caches; ASan and UBSan still check
+memory errors and timer teardown.
 
 See [the GUI specification](../m3-gui-design.md) and
 [ADR 0034](../adr/0034-theme-following-popup-with-motion.md).

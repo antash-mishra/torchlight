@@ -1,6 +1,6 @@
 # ui
 
-> **Status:** Implemented (M3 + theme-following popup with motion), verified: GTK4 popup, asynchronous IPC, native desktop actions; isolated acceptance matrix pending re-run
+> **Status:** Implemented (M3 + theme-following popup with motion), verified: GTK4 popup, asynchronous IPC, native desktop actions
 > **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track}.c`, `ui/gtk/popup.css`, `src/bin/torchlight-gtk.c`
 > **Headers:** `include/torchlight/{launcher,popup,async}.h`
 > **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`
@@ -111,8 +111,8 @@ through `make test-ui-isolated` and `make bench-ui`. Native presentation tests c
 highlight geometry and an observed intermediate glide, file-type icons, entrance
 classes, opening/closing timers, spinner and launch states, large pasted queries,
 Unicode and distinguishing paths, geometry and timer destruction. They pass on a bare
-X server (GTK's default theme) and on Cinnamon with Mint-Y; the
-`test-ui-isolated` matrix needs Xvfb and xdotool and has not been re-run since ADR 0034. These checks supplement the
+X server (GTK's default theme) and on Cinnamon with Mint-Y, and the
+`test-ui-isolated` matrix and AT-SPI run pass with the ADR 0034 presentation. These checks supplement the
 recorded Cinnamon tests; font overrides do not validate real fractional scaling.
 
 See [desktop setup](../../desktop-setup.md), [M3 verification](../../m3-completion.md),

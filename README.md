@@ -1,190 +1,178 @@
 # Torchlight
 
-A Linux application/settings/file launcher written in C17. M1 provides a local index/query
-CLI with a SQLite catalog and Unicode-aware matching: prefixes, initials,
-abbreviations (subsequences), one-edit typos, partial-word trigram overlap and
-parent-folder context. The M1/M2 foundation was accepted at roughly 6 ms
-p95 latency at 500k paths; M6 brought typing p95 under the original 5 ms
-target. See [readiness](docs/m3-readiness.md) and [evaluation](docs/evaluation.md).
+A Spotlight-style launcher for Linux, written in C. Press a shortcut, type a few
+letters, and open an application, a settings panel, a file or a folder.
 
-M2 provides a [resident daemon](docs/modules/daemon/README.md), bounded Unix-socket
-IPC, asynchronous catalog/history writing, live inotify updates, reconciliation,
-file-id resolution and status. Startup serves the saved catalog before scanning.
-M3 adds installed application/settings search, the GTK4 popup and service integration, following the
-[GUI design](docs/m3-gui-design.md) and [interactive preview](docs/m3-gui-preview.html).
-Full index rebuilds were the M2/M3 update path; M6 replaced them for routine changes.
+![The Torchlight popup showing a result for "config"](docs/ui/native-results.png)
 
-M4's [functional opt-in semantic path](docs/m4-implementation.md) provides native
-Potion, float/int8 retrieval, background embedding caches and two-phase daemon
-queries with exact-priority RRF. Semantic search is **parked**: it stays
-available and tested behind `--model`, but its large-catalog latency and broader
-relevance acceptance are deferred ([ADR 0032](docs/adr/0032-park-semantic-search.md)).
-Personalization (M5) is next.
+- **Forgiving search.** Matches prefixes, initials, abbreviations (`prjnts` finds
+  `projectNotes.md`), one-letter typos (`raedme` finds `README.md`) and folder
+  context (`work notes`).
+- **Fast and always current.** A resident daemon keeps the index in memory and
+  follows file changes as they happen. Typing stays under about 5 ms at the 95th
+  percentile with 500,000 paths ([evaluation](docs/evaluation.md)).
+- **Learns what you use.** Files and apps you open rank higher. History stays on
+  your machine and can be turned off or cleared.
+- **Looks native.** The GTK 4 popup follows your desktop theme, accent color and
+  font, and is fully keyboard driven.
+- **Private.** Only names and paths are indexed; file contents are never read.
 
-**M6** (implemented) makes search responsive and updates incremental:
+Tested on Linux Mint (Cinnamon, X11). On Wayland, window placement and focus are
+up to the compositor.
 
-- Search runs on its own thread; a newer keystroke supersedes queued and
-  running queries, and SQLite writes have their own persistence thread.
-- [Frizbee](third_party/README.md) SIMD Smith-Waterman scores fuzzy matches,
-  with per-word evidence cached across keystrokes. At 500k synthetic paths
-  typing p95 is 3.9 to 5.0 ms (from 7.4 ms) with unchanged recall.
-- Filesystem changes rescan only the affected folders and publish a small
-  delta over the shared index (lexical and semantic), so 100 touched files
-  appear in about 110 ms at 500k instead of 4 s, without doubling memory.
+## Build
 
-On a real 213k-path home directory the resident daemon answers typing in
-0.4 ms p50 and 1.9 ms p95 (optimized build). With a model, the hybrid final
-phase now shortlists vectors by their first 128 components and rescores 8000
-exactly, keeping 99.6% of the exhaustive top ten: 24 ms p95 at 500k synthetic
-paths instead of 95 ms ([ADR 0031](docs/adr/0031-m4-prefix-shortlist-vector-search.md)).
-The 10 ms M4 gate is deferred with the rest of semantic acceptance. See
-[the plan](PLAN.md), the [M6 plan and measurements](docs/m6-plan.md) and
-[milestone status](docs/milestone-status.md).
-
-## Build and use
-
-On Debian/Ubuntu/Mint, install `build-essential`, `pkg-config`, `libsqlite3-dev`,
-`libutf8proc-dev`, `libgtk-4-dev` (GTK4 ≥ 4.14), `libglib2.0-dev`,
-`libx11-dev`, `clang-format`, `clang-tidy`, and `cppcheck`, plus a Rust
-toolchain (`cargo`, Rust 1.89 or newer, e.g. from rustup). SQLite, utf8proc and
-Frizbee were approved for this implementation. Frizbee v0.13.0, the SIMD fuzzy
-matcher, is vendored in `third_party/frizbee`; `make` compiles it offline into
-a static library once (about four minutes), see
-[third_party/README.md](third_party/README.md).
+Install the build dependencies (Debian, Ubuntu, Mint):
 
 ```sh
-make
-./build/torchlightd                          # keep running in this terminal
+sudo apt install build-essential pkg-config libsqlite3-dev libutf8proc-dev \
+    libgtk-4-dev libglib2.0-dev libx11-dev
 ```
 
-In another terminal:
+You also need Rust 1.89 or newer (for example from [rustup](https://rustup.rs)) to
+compile the vendored [Frizbee](third_party/README.md) fuzzy matcher. GTK 4.14 or
+newer is required.
 
 ```sh
-./build/torchlight query "prjnts"             # abbreviation -> projectNotes.md
-./build/torchlight query "raedme"             # one-edit typo -> README.md
-./build/torchlight query --limit 20 "work notes"
-./build/torchlight query --null "report"      # exact paths, NUL-separated
-./build/torchlight query --json "report"      # ids, exact paths and status
-./build/torchlight status
-./build/torchlight reconcile                 # request a background refresh
-./build/torchlight history-clear             # clear persisted search/open history
+make                             # debug build: build/torchlight, torchlightd, torchlight-gtk
+make build/torchlightd-release   # optimized daemon, about half the tail latency
 ```
 
-`make` builds unoptimized (`-O0 -g3`) binaries for development. For the
-lowest latency run the optimized daemon instead (about half the tail latency):
+The first `make` compiles Frizbee offline, which takes about four minutes; later
+builds reuse it.
+
+## Install and set up the desktop launcher
 
 ```sh
-make build/torchlightd-release
-./build/torchlightd-release
+make install                     # installs into ~/.local (set PREFIX to change it)
+systemctl --user daemon-reload
+systemctl --user import-environment DISPLAY XDG_CURRENT_DESKTOP DBUS_SESSION_BUS_ADDRESS
+systemctl --user enable --now torchlightd.service
 ```
 
-The default socket is `$XDG_RUNTIME_DIR/torchlight.sock`; `--socket PATH` selects
-another socket on both commands. SIGINT/SIGTERM shut down cleanly. The daemon
-accepts `--no-history`, `--history-days N` (default 30), `--rescan-ms N` (default
-30000), `--watch-capacity N`, `--max-entries N` and `--max-path-bytes N`.
-`resolve FILE_ID` retrieves a current path; `record FILE_ID EVENT_ID [SEARCH_ID]`
-queues an accepted open record. The GTK popup opens/reveals files and activates installed desktop entries.
+This installs the three programs, a desktop entry and a systemd user service for
+the daemon. Make sure `~/.local/bin` is on your PATH.
 
-When the daemon is stopped, offline commands remain available:
+Then bind a keyboard shortcut to the popup. In Cinnamon, open
+**System Settings → Keyboard → Shortcuts → Custom Shortcuts**, add a shortcut
+with the command `/home/YOUR_USER/.local/bin/torchlight-gtk --toggle`, and bind it
+to a free key such as Super+Space.
+
+| Key | Action |
+|---|---|
+| Type | Search apps, settings, files and folders |
+| ↑ ↓ | Move the selection |
+| Enter | Open the selected item |
+| Ctrl+Enter | Show the file in its folder |
+| Esc | Close |
+
+[Desktop setup](docs/desktop-setup.md) covers other desktops, staged installs and
+service troubleshooting.
+
+## Try it without installing
+
+Run the daemon in one terminal:
 
 ```sh
-./build/torchlight index                     # sync the configured roots
-./build/torchlight index "$HOME/Documents"   # or refresh specific roots
-./build/torchlight query --db "$HOME/.local/share/torchlight/catalog.db" "prjnts"
+./build/torchlightd
 ```
 
-Offline indexing and the daemon share a database lock. Explicit `query --db`
-uses a local engine; queries without `--db` use the resident daemon.
-
-The catalog is `$XDG_DATA_HOME/torchlight/catalog.db` (or
-`~/.local/share/torchlight/catalog.db`); `--db PATH` selects another one whose
-parent directory exists. The optional configuration file is
-`$XDG_CONFIG_HOME/torchlight/config` (or `~/.config/torchlight/config`;
-`--config PATH` overrides it):
-
-```text
-# Roots to index (default: $HOME). "~/" expands to $HOME.
-root = ~/Documents
-root = ~/projects
-# Hidden or ignored directories to index anyway.
-allow = ~/.config/nvim
-```
-
-`index` without roots syncs the catalog to this file in one transaction:
-overlapping roots are scanned once, unavailable roots and unreadable folders keep
-their saved entries, and roots removed from the file are forgotten (including
-roots that were only ever indexed from the command line). Hidden directories and
-`node_modules`/`target`/`build`/`__pycache__` are skipped unless allowlisted;
-hidden files remain searchable; symlinks are indexed without following
-directory symlinks. Torchlight's own state directory is never indexed.
-
-When a configured root cannot be resolved, removal of unmatched saved roots is
-deferred until a later sync resolves every root, preserving unavailable aliases.
-Accessible roots still refresh. Storage write failures roll back the entire run
-and return an error.
-
-Multiword queries need every word to match the file name or one of its folder
-names (`work notes`); a word containing `/` may match across the whole path.
-Use `--` before a query beginning with a dash. An empty query lists indexed
-roots. Plain output is a UTF-8 display with invalid bytes replaced and controls
-escaped; use `--null` when passing exact paths to another program. The local CLI
-rebuilds the engine on each query, so it is slower than the warm engine the
-benchmark measures; the M2 daemon keeps it resident.
-
-## Desktop launcher
+Then, in another terminal, open the popup or search from the command line:
 
 ```sh
 ./build/torchlight-gtk --toggle
-./build/torchlight query --json "resolution"
+./build/torchlight query "prjnts"             # abbreviation
+./build/torchlight query --limit 20 "work notes"
+./build/torchlight query --json "report"      # ids, exact paths and status
+./build/torchlight query --null "report"      # exact paths, NUL-separated, for scripts
+./build/torchlight status
+./build/torchlight reconcile                  # rescan in the background
+./build/torchlight history-clear              # forget search and open history
 ```
 
-Enter activates the selected application/settings entry or opens the resolved
-file. Ctrl+Enter reveals, arrows select and Escape closes. Results include app
-icons and native Cinnamon settings panels. Install and configure the systemd user
-service and your desktop shortcut using [desktop setup](docs/desktop-setup.md).
-`make install` supplies the executables, desktop entry and user unit.
-See [M3 verification](docs/m3-completion.md) for tested platform coverage.
+Every word of a query must match the file name or one of its folders; a word
+containing `/` can match across the whole path. Put `--` before a query that
+starts with a dash.
 
-## Checks
+With the daemon stopped, you can index and search directly:
 
 ```sh
-make test    # ASan + UBSan + leak checks, unit, CLI and daemon integration tests
-make lint    # clang-tidy and cppcheck, warnings fail the build
-make format
-make bench   # release engine: latency and labeled ranking quality, 50k/500k paths
-make bench-vector # synthetic float, int8 and prefix-shortlist scans and fusion, 50k/500k vectors
-make eval-vector MODEL=build/models/potion-256.tlm # shortlist recall on trained vectors
-make test-ui # Cinnamon/X11 keyboard acceptance (requires xdotool)
-make bench-daemon # release daemon: startup, IPC, indexing load, update lag and RSS
+./build/torchlight index                      # sync the configured roots
+./build/torchlight index "$HOME/Documents"    # or refresh specific folders
+./build/torchlight query --db ~/.local/share/torchlight/catalog.db "prjnts"
 ```
 
-Measurements and limitations are recorded in [evaluation](docs/evaluation.md).
-The engine benchmark excludes SQLite loading and CLI startup; the daemon
-benchmark measures startup separately. To add a real corpus to the engine benchmark:
+## Configuration
+
+Torchlight indexes your home folder by default. To choose folders, create
+`~/.config/torchlight/config` (or `$XDG_CONFIG_HOME/torchlight/config`):
+
+```text
+# Folders to index. "~/" expands to your home folder.
+root = ~/Documents
+root = ~/projects
+# Hidden or normally skipped folders to index anyway.
+allow = ~/.config/nvim
+```
+
+Hidden folders and `node_modules`, `target`, `build` and `__pycache__` are skipped
+unless allowed; hidden files are still searchable. Symlinked folders are not
+followed. The catalog and history live in `~/.local/share/torchlight/`.
+
+Daemon options:
+
+| Option | Meaning |
+|---|---|
+| `--no-history` | Don't record what you open |
+| `--history-days N` | Keep history for N days (default 30) |
+| `--rescan-ms N` | Milliseconds between full background rescans (default 30000) |
+| `--socket PATH` | Use another socket (also accepted by `torchlight`) |
+| `--db PATH`, `--config PATH` | Use another catalog or configuration file |
+| `--watch-capacity N`, `--max-entries N`, `--max-path-bytes N` | Resource limits |
+| `--model PATH.tlm` | Enable optional semantic search (see below) |
+
+To change the options of the installed service, run
+`systemctl --user edit torchlightd`, set a new `ExecStart=`, then restart it.
+
+### Optional semantic search
+
+Torchlight can also match by meaning using a local
+[Potion](docs/m4-model-evaluation.md) model passed with `--model`. It works and is
+tested, but it is parked: it is slower on large catalogs and is not enabled by
+default ([ADR 0032](docs/adr/0032-park-semantic-search.md)).
+
+## Development
+
+```sh
+make test               # unit, CLI and daemon tests under ASan, UBSan and leak checks
+make lint               # clang-tidy and cppcheck; warnings fail the build
+make format             # clang-format
+make bench              # search latency and ranking quality at 50k and 500k paths
+make bench-daemon       # daemon startup, IPC, indexing load, update lag and memory
+make test-ui-isolated   # popup acceptance on a private X display (needs xvfb, xdotool, metacity)
+make bench-ui           # popup paint timing during a 500k rebuild
+make test-ui            # popup keyboard acceptance on your own X11 session (needs xdotool)
+```
+
+Lint needs `clang-format`, `clang-tidy` and `cppcheck`. A local `machine.mk`
+(ignored by git) can point the build at custom tool or dependency locations
+(`DEPS_PREFIX`, `CLANG_TIDY`, `CPPCHECK`). To benchmark against your own files:
 
 ```sh
 ./scripts/make_corpus.sh /usr /tmp/usr.paths   # NUL-separated path list; keep it private
 make bench BENCH_PATHS=/tmp/usr.paths
 ```
 
-A local `machine.mk` (ignored) can set `DEPS_PREFIX`, `CLANG_TIDY`, and
-`CPPCHECK` for an unpacked development environment; normal builds use
-`pkg-config`. This workspace's validation packages were unpacked under
-`/tmp/torchlight-deps` because system installation required a sudo password.
+After rebuilding, restart the daemon (`systemctl --user restart torchlightd`) and
+quit any running popup (`pkill -x torchlight-gtk`) so your next shortcut press
+starts the new one.
 
-### Optional local semantic search
+Contributors should read [CLAUDE.md](CLAUDE.md) for the code rules.
 
-M4's provisional English backend is native Potion retrieval 32M (256d).
-Export the pinned model using `scripts/export_potion.py`, then pass
-`torchlightd --model /absolute/path/potion-256.tlm`. The daemon embeds names,
-nearby folders and app metadata in the background; contents are not read.
-Lexical results appear first, followed by a semantic final or bounded fallback.
-Model loading is local and does not require Python in the launcher. Without
-`--model` the daemon runs fuzzy (lexical) search only and answers each query in
-a single frame; with it, every query also pays a vector search for its final
-phase (a two-pass prefix shortlist above 8000 embedded entries). Semantic search
-is parked: supported and tested, but not accepted at large catalogs. To switch an installed user service to fuzzy-only, override its
-`ExecStart` without `--model` (`systemctl --user edit torchlightd`) and restart
-it.
-[Model research, setup and measured limits](docs/m4-model-evaluation.md) explain
-the optional evaluation tools and remaining 500k performance acceptance.
+## Documentation
+
+- [Docs index](docs/README.md): where everything is
+- [Architecture](docs/architecture.md): components, data flow and dependencies
+- [Plan](PLAN.md) and [milestone status](docs/milestone-status.md)
+- [Evaluation](docs/evaluation.md): measurements and known limits
+- [Design decisions](docs/adr/): the ADRs
