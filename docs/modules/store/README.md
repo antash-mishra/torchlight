@@ -1,6 +1,7 @@
 # store
 
-> **Status:** Implemented (M4; M5 history batches): schema v4, versioned embedding cache plus catalog/history
+> **Status:** Implemented (M4; M5 history batches; M7 metadata refreshes): schema v4, versioned embedding
+> cache plus catalog/history
 > **Source:** `src/storage/store.c` · **Header:** `include/torchlight/store.h`
 > **Tests:** `tests/unit/test_store.c`, `tests/unit/test_identity.c`, CLI/daemon integration
 
@@ -18,8 +19,8 @@ search/open history through the service writer.
 `store_begin/put/prune/commit` form one refresh of one or more roots. A temporary BLOB
 `seen` table records visits. Upserts preserve AUTOINCREMENT ids for unchanged
 filesystem incarnations; successful scope pruning is byte-aware and distinguishes
-`/root` from `/root2`. Metadata
-changes clear embedding columns. Commit validates decimal catalog_gen metadata
+`/root` from `/root2`. An update at the same path keeps the embedding
+columns, which describe the path text (M7). Commit validates decimal catalog_gen metadata
 and rejects malformed/missing values or exhaustion at INT64_MAX, then increments
 it. Rollback or connection destruction discards partial work. Callers must not prune a failed
 scan. Root registration and catalog changes commit together.
@@ -125,6 +126,23 @@ changes; rollback clears them. `store_load_ids` streams the committed rows of
 given ids from one read snapshot with its `catalog_gen`. Tests cover byte-prefix
 siblings, kept and nested-root spares, the exact touched-id sets, load by id,
 overflow and rollback.
+
+## Metadata refreshes (M7)
+
+Before an upsert, the prepared lookup now reads the saved row's `is_dir`
+along with its identity. When the row exists, keeps its identity and is still
+a file or still a directory, the upsert can only refresh mtime/size or adopt
+an identity for a legacy row. The update hook then records it as a metadata
+change: `store_metadata_changed` reports it, while `store_catalog_changed`
+stays false and no change id is recorded. Inserts, replacements (retired and
+re-inserted), file/directory kind changes, moves, prunes and root changes are
+still catalog changes. The writer commits metadata-only transactions, so
+later scans stop rewriting the same rows, but publishes nothing for them.
+`store_commit` still advances `catalog_gen` for them, so the stored
+generation may run ahead of the published one until the next publication;
+publications only require it to increase. A regression test refreshes
+metadata, adopts an identity and checks every kind of name change. See
+[ADR 0038](../../adr/0038-repair-scans-and-metadata-events.md).
 
 ## History batches and retained opens (M5)
 

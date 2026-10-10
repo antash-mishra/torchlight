@@ -1,18 +1,52 @@
-/* Thin executable: parse daemon options and wire the reusable service module. */
+/* Thin executable: parse daemon options, set the process allocator policy and
+ * wire the reusable service module. */
 #include "torchlight/daemon.h"
 #include "torchlight/semantic.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-static bool number(const char *text, size_t maximum, size_t *out) {
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
+#define DEFAULT_RESCAN_MS 30000
+/* Backstop full scan of every root while inotify coverage is complete. */
+#define DEFAULT_REPAIR_MS 3600000
+#define MAX_INTERVAL_MS 86400000
+static bool parse_number(const char *text, size_t maximum, size_t *out) {
     char *end = NULL;
     errno = 0;
     unsigned long long value = strtoull(text, &end, 10);
-    if (errno != 0 || text[0] < '0' || text[0] > '9' || *end != 0 || value == 0 || value > maximum)
+    if (errno != 0 || text[0] < '0' || text[0] > '9' || *end != 0 || value > maximum)
         return false;
     *out = (size_t)value;
     return true;
+}
+static bool number(const char *text, size_t maximum, size_t *out) {
+    return parse_number(text, maximum, out) && *out != 0;
+}
+/* Blocks at least this large come straight from mmap and go back to the OS
+ * when freed. Engine arrays are larger; paths and tokens are far smaller. A
+ * fixed value also stops glibc from raising the threshold after the first
+ * large free (ADR 0039 has the measurements behind it). */
+#define ALLOCATOR_MMAP_THRESHOLD (1024 * 1024)
+/* Process-wide allocator policy: set here, in the executable, so the library
+ * stays allocator-neutral. Best effort; other C libraries keep defaults. */
+static void set_allocator_policy(void) {
+#ifdef __GLIBC__
+    int applied = mallopt(M_MMAP_THRESHOLD, ALLOCATOR_MMAP_THRESHOLD);
+    (void)applied;
+#endif
+}
+/* The writer calls this after freeing a full scan's batch or a retired whole
+ * engine: glibc keeps freed heap in its arenas otherwise, so RSS would stay
+ * at the rebuild peak. */
+static void release_memory(void *context) {
+    (void)context;
+#ifdef __GLIBC__
+    int released = malloc_trim(0);
+    (void)released;
+#endif
 }
 static tl_status parse(int argc, char **argv, tl_daemon_options *options, const char **database,
                        const char **config) {
@@ -20,8 +54,10 @@ static tl_status parse(int argc, char **argv, tl_daemon_options *options, const 
                                    .watch_capacity = 65536,
                                    .max_entries = 500000,
                                    .max_path_bytes = 128U * 1024U * 1024U,
-                                   .rescan_ms = 30000,
-                                   .history_days = 30};
+                                   .rescan_ms = DEFAULT_RESCAN_MS,
+                                   .repair_ms = DEFAULT_REPAIR_MS,
+                                   .history_days = 30,
+                                   .release_memory = release_memory};
     options->semantic_deadline_ms = SEMANTIC_DEADLINE_MS;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--no-history") == 0) {
@@ -45,6 +81,9 @@ static tl_status parse(int argc, char **argv, tl_daemon_options *options, const 
         else if (strcmp(key, "--rescan-ms") == 0 && number(value, 3600000, &parsed) &&
                  parsed >= 100)
             options->rescan_ms = (unsigned)parsed;
+        else if (strcmp(key, "--repair-ms") == 0 && parse_number(value, MAX_INTERVAL_MS, &parsed) &&
+                 (parsed == 0 || parsed >= 100))
+            options->repair_ms = (unsigned)parsed;
         else if (strcmp(key, "--watch-capacity") == 0 && number(value, 1000000, &parsed))
             options->watch_capacity = parsed;
         else if (strcmp(key, "--max-entries") == 0 && number(value, 10000000, &parsed))
@@ -59,12 +98,13 @@ static tl_status parse(int argc, char **argv, tl_daemon_options *options, const 
     return TL_OK;
 }
 int main(int argc, char **argv) {
+    set_allocator_policy();
     tl_daemon_options options;
     const char *database = NULL, *file = NULL;
     tl_status status = parse(argc, argv, &options, &database, &file);
     if (status != TL_OK) {
         fputs("Usage: torchlightd [--db PATH] [--config PATH] [--socket PATH]\n"
-              "  [--no-history] [--history-days N] [--rescan-ms N]\n"
+              "  [--no-history] [--history-days N] [--rescan-ms N] [--repair-ms N]\n"
               "  [--watch-capacity N] [--max-entries N] [--max-path-bytes N]\n"
               "  [--model PATH.tlm] [--semantic-deadline-ms N]\n",
               stderr);

@@ -371,8 +371,114 @@ static void history_malformed_rows(void) {
     store_destroy(store);
     CHECK(unlink(database) == 0);
 }
+struct change_flags {
+    bool catalog, metadata;
+};
+static struct change_flags pending_changes(tl_store *store) {
+    struct change_flags flags = {0};
+    CHECK(store_catalog_changed(store, &flags.catalog) == TL_OK);
+    CHECK(store_metadata_changed(store, &flags.metadata) == TL_OK);
+    return flags;
+}
+static size_t committed_change_count(tl_store *store) {
+    const uint64_t *ids = NULL;
+    size_t count = 0;
+    bool complete = false, roots = false;
+    CHECK(store_changes(store, &ids, &count, &complete, &roots) == TL_OK && complete);
+    return count;
+}
+static void set_embedding(const char *database, const char *path) {
+    sqlite3 *connection = NULL;
+    CHECK(sqlite3_open(database, &connection) == SQLITE_OK);
+    sqlite3_stmt *statement = NULL;
+    CHECK(sqlite3_prepare_v2(connection, "UPDATE files SET emb_version='fixture' WHERE path=?1", -1,
+                             &statement, NULL) == SQLITE_OK);
+    CHECK(sqlite3_bind_blob(statement, 1, path, (int)strlen(path), SQLITE_STATIC) == SQLITE_OK);
+    CHECK(sqlite3_step(statement) == SQLITE_DONE && sqlite3_changes(connection) == 1);
+    CHECK(sqlite3_finalize(statement) == SQLITE_OK && sqlite3_close(connection) == SQLITE_OK);
+}
+static bool has_embedding(const char *database, const char *path) {
+    sqlite3 *connection = NULL;
+    CHECK(sqlite3_open(database, &connection) == SQLITE_OK);
+    sqlite3_stmt *statement = NULL;
+    CHECK(sqlite3_prepare_v2(connection, "SELECT emb_version IS NOT NULL FROM files WHERE path=?1",
+                             -1, &statement, NULL) == SQLITE_OK);
+    CHECK(sqlite3_bind_blob(statement, 1, path, (int)strlen(path), SQLITE_STATIC) == SQLITE_OK);
+    CHECK(sqlite3_step(statement) == SQLITE_ROW);
+    bool present = sqlite3_column_int(statement, 0) != 0;
+    CHECK(sqlite3_finalize(statement) == SQLITE_OK && sqlite3_close(connection) == SQLITE_OK);
+    return present;
+}
+/* Regression (M7): a rewritten file refreshed mtime/size, which counted as a
+ * catalog change and published a new snapshot although no name changed. A
+ * metadata refresh, or adopting an identity, now commits as metadata only,
+ * keeps the id and embedding columns and records no change id; inserts,
+ * replacements, kind changes, moves and deletions still change the catalog. */
+static void metadata_refreshes(void) {
+    char database[] = "/tmp/torchlight-metadata-XXXXXX";
+    int fd = mkstemp(database);
+    CHECK(fd >= 0 && close(fd) == 0);
+    tl_store *store = NULL;
+    CHECK(store_create(database, &store) == TL_OK && store_track_changes(store, 16) == TL_OK);
+    tl_crawl_entry file = {.path = "/m/file",
+                           .has_stat = true,
+                           .has_identity = true,
+                           .identity_birth = true,
+                           .device = 1,
+                           .inode = 2,
+                           .identity_sec = 3};
+    tl_crawl_entry legacy = {.path = "/m/legacy", .has_stat = true};
+    CHECK(store_begin(store) == TL_OK && store_put(store, &file) == TL_OK &&
+          store_put(store, &legacy) == TL_OK);
+    struct change_flags flags = pending_changes(store);
+    CHECK(flags.catalog && !flags.metadata && store_commit(store) == TL_OK);
+    uint64_t id = id_of(store, file.path);
+    set_embedding(database, file.path);
+    file.size = 10;
+    file.mtime = 20;
+    legacy.size = 5;
+    CHECK(store_begin(store) == TL_OK && store_put(store, &file) == TL_OK &&
+          store_put(store, &legacy) == TL_OK);
+    flags = pending_changes(store);
+    CHECK(!flags.catalog && flags.metadata && store_commit(store) == TL_OK);
+    CHECK(committed_change_count(store) == 0 && id_of(store, file.path) == id);
+    CHECK(has_embedding(database, file.path));
+    /* A legacy row adopting its identity keeps its name too. */
+    legacy = file;
+    legacy.path = "/m/legacy";
+    CHECK(store_begin(store) == TL_OK && store_put(store, &legacy) == TL_OK);
+    flags = pending_changes(store);
+    CHECK(!flags.catalog && flags.metadata && store_commit(store) == TL_OK);
+    CHECK(store_begin(store) == TL_OK && store_put(store, &file) == TL_OK);
+    flags = pending_changes(store);
+    CHECK(!flags.catalog && !flags.metadata && store_rollback(store) == TL_OK);
+    /* Replacement: another object at the path gets a fresh id. */
+    file.inode = 9;
+    CHECK(store_begin(store) == TL_OK && store_put(store, &file) == TL_OK);
+    flags = pending_changes(store);
+    CHECK(flags.catalog && store_commit(store) == TL_OK && id_of(store, file.path) > id);
+    CHECK(committed_change_count(store) == 2); /* old id deleted, new id inserted */
+    /* Without identities, a file turning into a directory is a name change. */
+    tl_crawl_entry kind = {.path = "/m/kind", .has_stat = true};
+    CHECK(store_begin(store) == TL_OK && store_put(store, &kind) == TL_OK &&
+          store_commit(store) == TL_OK);
+    kind.is_dir = true;
+    CHECK(store_begin(store) == TL_OK && store_put(store, &kind) == TL_OK);
+    CHECK(pending_changes(store).catalog && store_commit(store) == TL_OK);
+    CHECK(store_begin(store) == TL_OK && store_move(store, "/m/kind", "/m/moved") == TL_OK);
+    CHECK(pending_changes(store).catalog && store_commit(store) == TL_OK);
+    CHECK(store_begin(store) == TL_OK && store_put(store, &file) == TL_OK &&
+          store_prune(store, "/m") == TL_OK);
+    CHECK(pending_changes(store).catalog && store_commit(store) == TL_OK);
+    CHECK(id_of(store, "/m/moved") == 0 && id_of(store, file.path) != 0);
+    CHECK(store_metadata_changed(store, &flags.metadata) == TL_STATE);
+    CHECK(store_metadata_changed(NULL, &flags.metadata) == TL_INVALID);
+    store_destroy(store);
+    CHECK(unlink(database) == 0);
+}
 void test_store(void) {
     scoped_prunes_and_changes();
+    metadata_refreshes();
     history_batches();
     history_batch_lost();
     history_malformed_rows();

@@ -146,7 +146,8 @@ Daemon options:
 |---|---|
 | `--no-history` | Don't record what you open |
 | `--history-days N` | Keep history for N days (default 30) |
-| `--rescan-ms N` | Milliseconds between full background rescans (default 30000) |
+| `--rescan-ms N` | Milliseconds between rescans of folders the watcher cannot cover, such as unwatchable, unreadable or network folders (default 30000) |
+| `--repair-ms N` | Milliseconds between safety-net full rescans (default 3600000, one hour; `0` turns them off) |
 | `--socket PATH` | Use another socket (also accepted by `torchlight`) |
 | `--db PATH`, `--config PATH` | Use another catalog or configuration file |
 | `--watch-capacity N`, `--max-entries N`, `--max-path-bytes N` | Resource limits |

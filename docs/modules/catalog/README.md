@@ -40,7 +40,11 @@ The module validates the catalog mapping, not current filesystem existence.
 Release only updates lifecycle counters. It never destroys engines/workspaces
 on an interactive thread. The writer calls `catalog_reclaim`, which detaches
 unleased retired views under the mutex and frees them outside it. Detached views
-continue counting toward capacity until destruction completes. Destroy the
+continue counting toward capacity until destruction completes. `catalog_reclaim`
+returns how many base engines it freed (a base goes with the last snapshot
+sharing it), so the writer can hand that memory back to the OS (M7,
+[ADR 0039](../../adr/0039-returning-freed-memory.md)). A delta snapshot shares
+its base and frees only its small delta. Destroy the
 registry after joining all workers; destruction rejects outstanding leases.
 
 ## Bounds and failure behavior

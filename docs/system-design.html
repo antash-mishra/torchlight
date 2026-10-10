@@ -235,7 +235,8 @@
     <p class="lede">Torchlight is a Spotlight-style launcher for Linux. You press a shortcut, type a few
       letters, and open an app, a settings panel, a file or a folder. This page explains the pieces
       behind that popup, how they talk to each other, and why typing stays fast.</p>
-    <p class="meta">Based on the code and docs at commit <code>da125c3</code>, October 2026.
+    <p class="meta">Based on the code and docs at commit <code>dec4b59</code> plus M7 phase 1
+      (quiet indexing), October 2026.
       The <a href="architecture.md">architecture doc</a> has the full technical detail.</p>
     <nav class="toc" aria-label="On this page">
       <a href="#short">The short version</a>
@@ -722,12 +723,13 @@
   <section id="fresh">
     <h2><span class="num">5</span>How the index stays up to date</h2>
     <p class="sub">Your files change all the time. Torchlight follows those changes without rescanning
-      everything, and without making any search wait.</p>
+      everything, without making any search wait, and without doing anything at all for changes that
+      leave every name as it was.</p>
 
     <figure class="fig">
       <div class="fig-scroll">
         <svg class="dia" viewBox="0 0 1000 340" role="img"
-             aria-label="Indexing flow across four lanes. A file changes and inotify reports it. The indexing thread waits 100 milliseconds, groups changes by folder and rescans just those folders. The persistence thread commits the batch in one SQLite transaction and returns the changed ids. The indexing thread builds a small delta and publishes catalog_gen plus one. The next keystroke on the search thread sees the change; searches keep using the current version the whole time.">
+             aria-label="Indexing flow across four lanes. A file is created, deleted or renamed and inotify reports it. The indexing thread waits 100 milliseconds, groups changes by folder and rescans just those folders. The persistence thread commits the batch in one SQLite transaction and returns the changed ids. The indexing thread builds a small delta and publishes catalog_gen plus one. The next keystroke on the search thread sees the change; searches keep using the current version the whole time.">
           <defs>
             <marker id="d4b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-b" d="M0 0L10 5L0 10z"/></marker>
             <marker id="d4h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path class="mk-h" d="M0 0L10 5L0 10z"/></marker>
@@ -744,7 +746,7 @@
 
           <!-- Steps -->
           <rect class="bx-disk" x="170" y="24" width="120" height="52" rx="9"/>
-          <text class="t" x="230" y="46" text-anchor="middle">A file changes</text>
+          <text class="t" x="230" y="46" text-anchor="middle">A name changes</text>
           <text class="s" x="230" y="64" text-anchor="middle">inotify tells us</text>
           <path class="ln ln-bg" d="M290 50H370V101" marker-end="url(#d4b)"/>
 
@@ -784,23 +786,106 @@
           <text class="s" x="930" y="304" text-anchor="middle">sees the change</text>
         </svg>
       </div>
-      <figcaption><strong>From a saved file to a searchable name.</strong> Work moves between the
+      <figcaption><strong>From a new or renamed file to a searchable name.</strong> Work moves between the
         indexing thread and the persistence thread, but never onto the search thread. The search lane
         only meets the change at the very end, when the new version is swapped in.</figcaption>
     </figure>
 
     <ol class="steps">
-      <li>Linux's <strong>inotify</strong> tells the indexing thread that something in a folder changed.</li>
+      <li>Linux's <strong>inotify</strong> tells the indexing thread that a name in a folder changed:
+        something was created, deleted or renamed. Saving a file changes no name, so Torchlight no longer
+        even asks to hear about it.</li>
       <li>It waits 100 ms, so a burst of changes (unzipping an archive, a <code>git checkout</code>)
         becomes one update, and notes which folders were touched.</li>
       <li>It rescans only those folders, not your whole home folder.</li>
       <li>It hands the batch to the persistence thread, which saves it in one short SQLite transaction
         and reports which rows changed. No scanning or index building happens while the database is
-        locked for writing.</li>
+        locked for writing. If the rescan only found new sizes or times, those are saved, but nothing
+        is published: search never looks at them.</li>
       <li>The indexing thread builds a small <strong>delta</strong> index of just the changed entries and
         publishes a new version. The version number, <code>catalog_gen</code>, goes up by one.</li>
       <li>The next keystroke searches the new version. Searches already running finish on the old one.</li>
     </ol>
+
+    <h3>What each kind of change costs</h3>
+    <figure class="fig">
+      <div class="fig-scroll">
+        <svg class="dia" viewBox="0 0 1000 452" role="img"
+             aria-label="What the daemon does for each signal. From inotify: a name that appears, goes or moves rescans just that folder and publishes a delta; a file that is saved or whose permissions change causes nothing; a folder whose permissions change is rescanned with everything below it only if it could not be read or watched before. From timers and the system: every 30 seconds the repair set of folders inotify cannot cover is rescanned, which is usually empty; startup, a mount change, an inotify overflow or torchlight reconcile, and an hour without a full rescan, each cause one full rescan of every root.">
+          <defs>
+            <marker id="d7b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-b" d="M0 0L10 5L0 10z"/></marker>
+            <marker id="d7n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-n" d="M0 0L10 5L0 10z"/></marker>
+          </defs>
+
+          <text class="cap" x="20" y="18">INOTIFY EVENTS</text>
+          <text class="cap" x="600" y="18">WHAT THE DAEMON DOES</text>
+
+          <!-- A name changes -->
+          <rect class="bx" x="20" y="30" width="400" height="52" rx="9"/>
+          <text class="t" x="38" y="52">A name appears, goes or moves</text>
+          <text class="s" x="38" y="70">a file or folder created, deleted or renamed</text>
+          <line class="ln ln-bg" x1="420" y1="56" x2="597" y2="56" marker-end="url(#d7b)"/>
+          <text class="lbl" x="508" y="48" text-anchor="middle">after 100 ms, by folder</text>
+          <rect class="bx-bg" x="600" y="30" width="380" height="52" rx="9"/>
+          <text class="t" x="618" y="52">Rescan just that folder</text>
+          <text class="s" x="618" y="70">publish a delta · searchable about 0.1 s later</text>
+
+          <!-- Contents or permissions of a file -->
+          <rect class="bx" x="20" y="96" width="400" height="52" rx="9"/>
+          <text class="t" x="38" y="118">A file is saved or its permissions change</text>
+          <text class="s" x="38" y="136">contents, size, times or mode, never its name</text>
+          <line class="ln" x1="420" y1="122" x2="597" y2="122" marker-end="url(#d7n)"/>
+          <rect class="ghost-n" x="600" y="96" width="380" height="52" rx="9"/>
+          <text class="t" x="618" y="118">Nothing</text>
+          <text class="s" x="618" y="136">search reads names only: no rescan, no SQL, no publish</text>
+
+          <!-- A folder's permissions -->
+          <rect class="bx" x="20" y="162" width="400" height="52" rx="9"/>
+          <text class="t" x="38" y="184">A folder's permissions change</text>
+          <text class="s" x="38" y="202">for example <tspan class="mono">chmod</tspan> on a folder you could not open</text>
+          <line class="ln ln-bg" x1="420" y1="188" x2="597" y2="188" marker-end="url(#d7b)"/>
+          <rect class="bx-bg" x="600" y="162" width="380" height="52" rx="9"/>
+          <text class="t" x="618" y="184">Rescan it and everything below it</text>
+          <text class="s" x="618" y="202">only if it could not be read or watched before</text>
+
+          <line class="sep" x1="20" y1="230" x2="980" y2="230"/>
+          <text class="cap" x="20" y="248">TIMERS AND THE SYSTEM</text>
+
+          <!-- Repair tick -->
+          <rect class="bx" x="20" y="260" width="400" height="52" rx="9"/>
+          <text class="t" x="38" y="282">Every 30 seconds</text>
+          <text class="s" x="38" y="300"><tspan class="mono">--rescan-ms</tspan></text>
+          <line class="ln ln-bg" x1="420" y1="286" x2="597" y2="286" marker-end="url(#d7b)"/>
+          <text class="lbl" x="508" y="278" text-anchor="middle">if there are any</text>
+          <rect class="bx-bg" x="600" y="260" width="380" height="52" rx="9"/>
+          <text class="t" x="618" y="282">Rescan the repair set</text>
+          <text class="s" x="618" y="300">folders inotify can't cover · usually empty</text>
+
+          <!-- Full rescans -->
+          <rect class="bx" x="20" y="326" width="400" height="52" rx="9"/>
+          <text class="t" x="38" y="348">Startup, a mount change or an inotify overflow</text>
+          <text class="s" x="38" y="366">or you run <tspan class="mono">torchlight reconcile</tspan></text>
+          <line class="ln ln-bg" x1="420" y1="352" x2="597" y2="352" marker-end="url(#d7b)"/>
+
+          <rect class="bx" x="20" y="392" width="400" height="52" rx="9"/>
+          <text class="t" x="38" y="414">An hour without a full rescan</text>
+          <text class="s" x="38" y="432">the backstop · <tspan class="mono">--repair-ms</tspan>, <tspan class="mono">0</tspan> turns it off</text>
+          <line class="ln ln-bg" x1="420" y1="418" x2="597" y2="418" marker-end="url(#d7b)"/>
+
+          <rect class="bx-bg" x="600" y="326" width="380" height="118" rx="9"/>
+          <text class="t" x="618" y="364">Full rescan of every root</text>
+          <text class="s" x="618" y="384">publishes only what changed</text>
+          <text class="s" x="618" y="402">a few CPU-seconds at 200k files</text>
+          <text class="s" x="618" y="420">its cause is shown as <tspan class="mono">last_full_reason</tspan></text>
+        </svg>
+      </div>
+      <figcaption><strong>Only name changes make work, and only where they happened.</strong> When every
+        folder is watched, the repair set is empty and the only routine full rescan is the hourly
+        backstop, so an idle daemon uses under 0.1% of a CPU core (it used about 7% when it rescanned
+        everything every 30 seconds). Folders inotify can't cover are the <em>repair set</em>: ones it
+        could not watch or read, and network or FUSE mounts, where other machines can change files
+        without this kernel hearing of it.</figcaption>
+    </figure>
 
     <h3>Safety nets</h3>
     <div class="cards">
@@ -811,8 +896,20 @@
       </div>
       <div class="card">
         <span class="tag cool">every 30 seconds</span>
-        <p>A full background rescan repairs anything the watcher missed, such as folders it could not
-          watch. Change the interval with <code>--rescan-ms</code>.</p>
+        <p>Folders the watcher cannot cover are rescanned, and roots that were offline are checked.
+          With every folder watched there is nothing to do. Change the interval with
+          <code>--rescan-ms</code>.</p>
+      </div>
+      <div class="card">
+        <span class="tag cool">every hour</span>
+        <p>A backstop full rescan catches anything the watcher might have missed. Change it with
+          <code>--repair-ms</code>; <code>0</code> turns it off.</p>
+      </div>
+      <div class="card">
+        <span class="tag cool">something shifted</span>
+        <p>A mount appearing or going away, an inotify overflow, or <code>torchlight reconcile</code>
+          triggers a full rescan at once. A root that comes back online starts one at the next
+          30-second check.</p>
       </div>
       <div class="card">
         <span class="tag cool">big changes</span>
@@ -821,10 +918,14 @@
       </div>
       <div class="card">
         <span class="tag cool">watcher trouble</span>
-        <p>If inotify cannot be set up, Torchlight keeps going with periodic rescans only, and
+        <p>If inotify cannot be set up, Torchlight falls back to a full rescan every 30 seconds, and
           <code>torchlight status</code> reports the reduced coverage.</p>
       </div>
     </div>
+    <p><code>torchlight status</code> shows how many folders are in the repair set
+      (<code>repair_scopes</code>) and why the last full rescan ran (<code>last_full_reason</code>:
+      <code>startup</code>, <code>reconcile</code>, <code>overflow</code>, <code>mount</code>,
+      <code>backstop</code> and a few rarer ones).</p>
   </section>
 
   <!-- 6 ─────────────────────────────────────────────────────────────── -->
@@ -877,6 +978,10 @@
       returns it when it's done. The indexing thread builds the next snapshot privately, then publishes
       it with a single pointer swap, so there is never a half-updated index to see. Apps and settings
       work the same way, with their own snapshots from the desktop worker.</p>
+    <p>When an old base is finally freed, or a full rescan is done with its list of every path, the
+      daemon also hands that memory back to the system. Without this, the C library keeps freed memory
+      for later and the daemon stays at its peak size: at 213k files it used to sit at about 410 MB
+      after a big burst of changes, and now settles back near its steady 170 MB.</p>
 
     <figure class="fig">
       <div class="fig-scroll">
@@ -987,7 +1092,7 @@
             <td>Help the search thread score very large batches in parallel on big catalogs.</td>
             <td>Anything else</td></tr>
           <tr><td>Indexing thread</td><td><code>torchlightd</code></td>
-            <td>Watches folders (inotify), rescans, builds and publishes new file snapshots.</td>
+            <td>Watches folders (inotify) and the mount table, rescans only folders whose names changed (plus the repair set), builds and publishes new file snapshots, hands freed memory back.</td>
             <td>Hold the database write lock</td></tr>
           <tr><td>Persistence thread</td><td><code>torchlightd</code></td>
             <td>The only SQLite writer: catalog batches, history, retention, and the usage load at startup.</td>
@@ -1113,6 +1218,8 @@
       <dt>Channel</dt><dd>One way of finding candidates: prefix, subsequence, trigram or typo.</dd>
       <dt>Trigram</dt><dd>A three-letter piece of a name, like <code>rep</code>, <code>epo</code>, <code>por</code> in <code>report</code>.</dd>
       <dt>inotify</dt><dd>The Linux feature that tells a program when files in a watched folder change.</dd>
+      <dt>Repair set</dt><dd>Folders inotify can't keep track of (not watchable, not readable, or on a network or FUSE mount). They are rescanned every 30 seconds.</dd>
+      <dt>Backstop</dt><dd>The hourly full rescan of every root that catches anything the watcher missed.</dd>
       <dt>Frecency</dt><dd>A score that mixes how <em>fre</em>quently and how re<em>cently</em> you opened something.</dd>
       <dt>Resolve</dt><dd>Checking a result's id against the current index right before opening it.</dd>
     </dl>

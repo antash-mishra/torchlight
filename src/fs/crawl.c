@@ -133,6 +133,15 @@ static void file_identity(const FTSENT *entry, tl_crawl_entry *record) {
     record->identity_sec = stamp.tv_sec;
     record->identity_nsec = stamp.tv_nsec;
 }
+/* The walk's start has no stat'd parent to compare with, so it counts too. */
+static bool device_boundary(const FTSENT *entry) {
+    if (!directory(entry))
+        return false;
+    if (entry->fts_level == 0)
+        return true;
+    const FTSENT *parent = entry->fts_parent;
+    return parent->fts_statp != NULL && entry->fts_statp->st_dev != parent->fts_statp->st_dev;
+}
 static tl_status report(const FTSENT *entry, bool has_stat, enum walk_mode mode,
                         tl_crawl_callback callback, void *context) {
     if (has_stat && entry->fts_statp == NULL)
@@ -143,7 +152,8 @@ static tl_status report(const FTSENT *entry, bool has_stat, enum walk_mode mode,
                              .unreadable = failed(entry),
                              .has_stat = has_stat,
                              .mtime = has_stat ? (int64_t)entry->fts_statp->st_mtime : 0,
-                             .size = has_stat ? (int64_t)entry->fts_statp->st_size : 0};
+                             .size = has_stat ? (int64_t)entry->fts_statp->st_size : 0,
+                             .device_boundary = has_stat && device_boundary(entry)};
     if (has_stat)
         file_identity(entry, &record);
     return callback(context, &record);

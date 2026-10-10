@@ -183,9 +183,12 @@ static tl_status create_services(tl_daemon *daemon, const tl_daemon_options *opt
                                         .max_entries = options->max_entries,
                                         .max_path_bytes = options->max_path_bytes,
                                         .rescan_ms = options->rescan_ms,
+                                        .repair_ms = options->repair_ms,
                                         .history_days = options->history_days,
                                         .history = options->history,
-                                        .readers = 1};
+                                        .readers = 1,
+                                        .release_memory = options->release_memory,
+                                        .release_context = options->release_context};
     tl_status status = writer_create(&writer_options, &daemon->writer);
     if (status == TL_OK)
         status = desktop_create(&daemon->desktop);
@@ -359,6 +362,10 @@ static void indexing_status(tl_json_buffer *b, const tl_writer_stats *stats,
     json_number(b, stats->offline_roots);
     json_raw(b, ",\"unreadable_scopes\":");
     json_number(b, stats->unreadable_scopes);
+    json_raw(b, ",\"repair_scopes\":");
+    json_number(b, stats->repair_scopes);
+    json_raw(b, ",\"last_full_reason\":");
+    json_quote(b, writer_full_reason_name(stats->last_full_reason));
     json_raw(b, "},\"history\":{\"enabled\":");
     boolean(b, stats->history_enabled);
     json_raw(b, ",\"pending\":");

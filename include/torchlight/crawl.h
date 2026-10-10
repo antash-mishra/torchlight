@@ -22,6 +22,10 @@ typedef struct {
     uint64_t device, inode;
     int64_t identity_sec;
     uint32_t identity_nsec;
+    /* Directories with stat only: the walk's starting directory, or one on a
+     * different device than its parent (a mount point). Its filesystem type
+     * may differ from the parent's. */
+    bool device_boundary;
 } tl_crawl_entry;
 typedef tl_status (*tl_crawl_callback)(void *context, const tl_crawl_entry *entry);
 /** Create a crawler. exclude (optional) is a scope never crawled, not even

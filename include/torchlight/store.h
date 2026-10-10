@@ -43,8 +43,10 @@ void store_destroy(tl_store *store);
  * active; TL_INVALID for NULL, TL_IO on SQL error. */
 tl_status store_begin(tl_store *store);
 /** Record a visited entry. With stat data, upsert borrowed entry bytes,
- * preserving the id for the same filesystem incarnation and invalidating
- * embeddings when metadata changed. A changed identity retires the row and
+ * preserving the id (and embedding columns) for the same filesystem
+ * incarnation. Refreshing an existing row's mtime/size, or adopting an
+ * identity for it, counts as a metadata change (store_metadata_changed), not
+ * a catalog change: no change id is recorded. A changed identity retires the row and
  * descendants, allocating fresh ids; unknown legacy identities are adopted.
  * Birth time detects reused inodes; ctime fallback conservatively retires ids
  * on metadata changes too. Without
@@ -126,9 +128,15 @@ tl_status store_roots(tl_store *store, tl_store_root_callback callback, void *co
  * errors. Prepares a resident candidate without publishing uncommitted data. */
 tl_status store_prepare_catalog(tl_store *store, tl_store_callback callback, void *context,
                                 uint64_t *out_catalog_gen);
-/** Report whether files/roots changed in the active scan, excluding temporary
- * membership and sequence bookkeeping. TL_INVALID/STATE; no ownership. */
+/** Report whether names changed in the active scan: files inserted, deleted,
+ * moved, replaced or changed between file and directory, or roots changed.
+ * Excludes metadata refreshes and temporary membership and sequence
+ * bookkeeping. TL_INVALID/STATE; no ownership. */
 tl_status store_catalog_changed(tl_store *store, bool *out);
+/** Report whether the active scan refreshed metadata (mtime/size, identity
+ * adoption) of rows whose names it kept. Worth committing so later scans stop
+ * rewriting them, but no snapshot depends on it. TL_INVALID/STATE. */
+tl_status store_metadata_changed(tl_store *store, bool *out);
 /** Move an exact byte path and descendants in an active transaction, preserving
  * ids, replacing destination rows and invalidating embeddings. Paths must be
  * absolute, distinct and neither within the other; caller validates eligibility

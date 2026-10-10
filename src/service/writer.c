@@ -3,7 +3,10 @@
  * rows and publishes snapshots; a persistence thread owns the SQLite write
  * connection and serializes catalog batches, history and retention.
  * Filesystem scans and index construction never run inside a write
- * transaction, so history writes wait at most for one short batch commit. */
+ * transaction, so history writes wait at most for one short batch commit.
+ * A healthy watcher makes periodic full scans unnecessary: only the repair
+ * set (directories inotify cannot cover) is rescanned every rescan_ms, with a
+ * backstop full scan every repair_ms. */
 #include "torchlight/writer.h"
 #include "torchlight/delta.h"
 #include "torchlight/path.h"
@@ -12,13 +15,16 @@
 #include "torchlight/vec.h"
 #include "torchlight/watch.h"
 #include <errno.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
+#include <unistd.h>
 #define WRITER_TICK_MS 50
 #define WRITER_COALESCE_MS 100
 #define WRITER_RETRY_MS 1000
@@ -27,6 +33,14 @@
 /* Directories one scoped reconciliation may rescan; beyond this (e.g. a large
  * recursive delete) a full scan is cheaper than many small ones. */
 #define WRITER_SCOPE_CAPACITY 1024
+/* Directories inotify cannot keep current that one rescan_ms tick rescans;
+ * beyond this, coverage is poor enough that full scans are simpler. */
+#define WRITER_REPAIR_CAPACITY 256
+/* Smallest spacing of release_memory calls: trimming walks the heap. */
+#define WRITER_RELEASE_MS 1000
+#define WRITER_MOUNT_TABLE "/proc/self/mountinfo"
+/* Smallest rescan_ms/repair_ms: shorter timers would scan continuously. */
+#define WRITER_MIN_INTERVAL_MS 100
 /* A delta segment may hold max(WRITER_DELTA_MIN, base / WRITER_DELTA_DIVISOR)
  * changed entries before a full rebuild compacts it: at 500k entries about
  * 15k, which builds in roughly a tenth of a second while queries over the
@@ -102,16 +116,31 @@ struct tl_writer {
     struct rename_pair renames[WRITER_RENAME_CAPACITY];
     size_t rename_count;
     /* Directories touched by events since the last reconciliation; full asks
-     * for a scan of every root instead (startup, overflow, requests, periodic
-     * repair, failures and changes no scope can describe). */
+     * for a scan of every root instead and names the first cause. pass_reason
+     * is the cause of the pass in progress (NONE for a scoped pass). */
     struct scope scopes[WRITER_SCOPE_CAPACITY];
     size_t scope_count;
-    bool full, last_scoped;
+    tl_writer_full_reason full, pass_reason;
+    /* Indexing thread only. The repair set: recursive scopes inotify cannot
+     * keep current (unwatched, unreadable, network/FUSE mounts), rebuilt by
+     * each full scan and rescanned every rescan_ms. repair_overflow (below):
+     * some did not fit. coverage_lost: the last full scan could not create a
+     * watcher. offline: roots the last full scan could not read, probed for
+     * their return. */
+    char *repairs[WRITER_REPAIR_CAPACITY];
+    size_t repair_count;
+    tl_vec *offline; /* char * */
+    uint64_t repair_due, backstop_due;
+    /* release_pending: a full scan's batch or a retired whole engine was
+     * freed; release_memory runs at release_due. */
+    uint64_t release_due;
     uint64_t counted_unavailable;
-    bool dirty, reload;
     uint64_t due;
     uint64_t shutdown_due;
+    /* Mount-table descriptor polled for POLLPRI, -1 without one. */
+    int mounts;
     tl_status callback_status;
+    bool dirty, reload, last_scoped, repair_overflow, coverage_lost, release_pending;
     size_t scan_entries, offline_roots, unreadable_scopes;
     /* Batch handoff, guarded by mutex. job_ids holds the committed batch's
      * touched row ids; job_complete is false when they cannot describe it. */
@@ -253,8 +282,14 @@ static tl_status make_snapshot(tl_writer *writer, tl_catalog_snapshot **out,
     builder->engine = NULL;
     return status;
 }
+/* Indexing thread: free unleased retired snapshots. A freed whole engine
+ * (a retired full build) leaves enough free heap to hand back to the OS. */
+static void reclaim(tl_writer *writer) {
+    if (catalog_reclaim(writer->options.catalog) != 0)
+        writer->release_pending = true;
+}
 static tl_status publish(tl_writer *writer, tl_catalog_snapshot **snapshot) {
-    catalog_reclaim(writer->options.catalog);
+    reclaim(writer);
     if (writer->options.publish != NULL)
         return writer->options.publish(writer->options.publish_context, writer->options.catalog,
                                        snapshot);
@@ -335,11 +370,25 @@ static void free_scopes(struct scope *scopes, size_t *count) {
         free(scopes[i].path);
     *count = 0;
 }
+/* Ask for a scan of every root; the first pending cause is the one reported
+ * (last_full_reason) once that pass succeeds. */
+static void request_full(tl_writer *writer, tl_writer_full_reason reason) {
+    if (writer->full == WRITER_FULL_NONE)
+        writer->full = reason;
+}
+/* Indexing thread: run a pass delay milliseconds from now, or sooner if one
+ * is already due earlier. */
+static void schedule(tl_writer *writer, uint64_t delay) {
+    uint64_t due = milliseconds() + delay;
+    if (!writer->dirty || writer->due > due)
+        writer->due = due;
+    writer->dirty = true;
+}
 /* Record directory (taking ownership of the copy) as a scope to rescan,
  * merging repeats. A full set or a failed copy asks for a full scan. */
 static void add_scope(tl_writer *writer, char *directory, bool recursive) {
     if (directory == NULL) {
-        writer->full = true;
+        request_full(writer, WRITER_FULL_SCOPES);
         return;
     }
     for (size_t i = 0; i < writer->scope_count; i++) {
@@ -350,7 +399,7 @@ static void add_scope(tl_writer *writer, char *directory, bool recursive) {
         }
     }
     if (writer->scope_count == WRITER_SCOPE_CAPACITY) {
-        writer->full = true;
+        request_full(writer, WRITER_FULL_SCOPES);
         free(directory);
         return;
     }
@@ -364,17 +413,28 @@ static void add_parent_scope(tl_writer *writer, const char *path) {
     size_t length = slash == path ? 1 : (size_t)(slash - path);
     add_scope(writer, strndup(path, length), false);
 }
+/* Whether directory lies at or below a repair scope (exact: is one). */
+static bool repairing(const tl_writer *writer, const char *directory, bool exact) {
+    for (size_t i = 0; i < writer->repair_count; i++)
+        if (exact ? strcmp(directory, writer->repairs[i]) == 0
+                  : path_within(directory, writer->repairs[i]))
+            return true;
+    return false;
+}
 static tl_status changed(void *context, const tl_watch_event *event) {
     tl_writer *writer = context;
     if (event->path != NULL && excluded(writer, event->path))
         return TL_OK;
-    uint64_t due = milliseconds() + WRITER_COALESCE_MS;
-    if (!writer->dirty || writer->due > due)
-        writer->due = due;
-    writer->dirty = true;
+    /* Search reads names only. A directory's new permissions matter only if
+     * it could not be listed or watched before (it is itself a repair scope,
+     * reported through its watched parent); then it may be readable now. */
+    bool listable = event->metadata && event->is_dir && repairing(writer, event->path, true);
+    if (event->metadata && !listable)
+        return TL_OK;
+    schedule(writer, WRITER_COALESCE_MS);
     if (event->overflow) {
         clear_renames(writer);
-        writer->full = true;
+        request_full(writer, WRITER_FULL_OVERFLOW);
         lock_writer(writer);
         writer->stats.watch_overflows++;
         unlock_writer(writer);
@@ -382,6 +442,10 @@ static tl_status changed(void *context, const tl_watch_event *event) {
     }
     if (event->path == NULL)
         return TL_OK;
+    if (listable) {
+        add_scope(writer, strdup(event->path), true);
+        return TL_OK;
+    }
     add_parent_scope(writer, event->path);
     if (event->old_path != NULL)
         add_parent_scope(writer, event->old_path);
@@ -470,10 +534,121 @@ static tl_status batch_keep(struct batch *batch, const char *path) {
         free(copy);
     return status;
 }
+/* ---- repair set ----------------------------------------------------------- */
+/* Remember directory as a recursive scope inotify cannot keep current. A
+ * scope inside an existing one is already covered; overflow (or a failed
+ * copy) means only full scans can keep the catalog exact. */
+static void add_repair(tl_writer *writer, const char *directory) {
+    if (writer->repair_overflow || repairing(writer, directory, false))
+        return;
+    char *copy = writer->repair_count == WRITER_REPAIR_CAPACITY ? NULL : strdup(directory);
+    if (copy == NULL) {
+        writer->repair_overflow = true;
+        return;
+    }
+    writer->repairs[writer->repair_count++] = copy;
+}
+/* An entry that could not be read: a directory is repaired itself, anything
+ * else (a failed stat) through its parent, whose listing it belongs to. */
+static void add_unreadable(tl_writer *writer, const tl_crawl_entry *entry) {
+    if (entry->is_dir) {
+        add_repair(writer, entry->path);
+        return;
+    }
+    const char *slash = strrchr(entry->path, '/');
+    char *parent =
+        slash == NULL
+            ? NULL
+            : strndup(entry->path, slash == entry->path ? 1 : (size_t)(slash - entry->path));
+    if (parent == NULL) {
+        writer->repair_overflow = true;
+        return;
+    }
+    add_repair(writer, parent);
+    free(parent);
+}
+/* A mount point (or a walk's start) on a filesystem where other machines can
+ * change files without this kernel's inotify hearing of it. */
+static void check_filesystem(tl_writer *writer, const char *directory) {
+    bool reliable = true;
+    if (watch_reliable(directory, &reliable) == TL_OK && !reliable)
+        add_repair(writer, directory);
+}
+/* A recursive rescan of directory re-verifies every repair scope inside it;
+ * those that still fail come back as that scan reports them. */
+static void settle_repairs(tl_writer *writer, const char *directory) {
+    size_t kept = 0;
+    for (size_t i = 0; i < writer->repair_count; i++) {
+        if (path_within(writer->repairs[i], directory))
+            free(writer->repairs[i]);
+        else
+            writer->repairs[kept++] = writer->repairs[i];
+    }
+    writer->repair_count = kept;
+}
+static void clear_repairs(tl_writer *writer) {
+    for (size_t i = 0; i < writer->repair_count; i++)
+        free(writer->repairs[i]);
+    writer->repair_count = 0;
+    writer->repair_overflow = false;
+}
+static void clear_offline(tl_writer *writer) {
+    char **paths = vec_data(writer->offline);
+    for (size_t i = 0; i < vec_count(writer->offline); i++)
+        free(paths[i]);
+    vec_clear(writer->offline);
+}
+static tl_status record_offline(tl_writer *writer, const char *root) {
+    char *copy = strdup(root);
+    tl_status status = copy == NULL ? TL_NOMEM : vec_append(writer->offline, &copy);
+    if (status != TL_OK)
+        free(copy);
+    return status;
+}
+/* Nothing watches a missing root, so each repair tick probes whether an
+ * offline root is a readable directory again (recreated, renamed back,
+ * remounted without a mount-table signal). */
+static bool root_returned(const tl_writer *writer) {
+    char *const *paths = vec_const_data(writer->offline);
+    for (size_t i = 0; i < vec_count(writer->offline); i++) {
+        struct stat info;
+        if (stat(paths[i], &info) == 0 && S_ISDIR(info.st_mode) &&
+            access(paths[i], R_OK | X_OK) == 0)
+            return true;
+    }
+    return false;
+}
+/* Indexing thread, every rescan_ms: rescan the repair set through scoped
+ * passes, or everything when coverage itself is missing. */
+static void schedule_repair(tl_writer *writer) {
+    if (writer->watch == NULL || writer->coverage_lost || writer->repair_overflow ||
+        root_returned(writer)) {
+        request_full(writer, WRITER_FULL_REPAIR);
+        schedule(writer, 0);
+        return;
+    }
+    for (size_t i = 0; i < writer->repair_count; i++)
+        add_scope(writer, strdup(writer->repairs[i]), true);
+    if (writer->repair_count != 0)
+        schedule(writer, 0);
+}
+/* ---- scans ------------------------------------------------------------------ */
 struct scan {
     tl_writer *writer;
     struct batch *batch;
 };
+/* Install a crawled directory's watch; directories it cannot cover go to the
+ * repair set. Only allocation/argument failures stop the scan. */
+static tl_status cover_directory(tl_writer *writer, const tl_crawl_entry *entry) {
+    if (entry->device_boundary)
+        check_filesystem(writer, entry->path);
+    if (writer->scan_watch == NULL)
+        return TL_OK;
+    tl_status watched = watch_add(writer->scan_watch, entry->path);
+    if (watched == TL_IO || watched == TL_LIMIT)
+        add_repair(writer, entry->path);
+    return watched == TL_IO || watched == TL_LIMIT ? TL_OK : watched;
+}
 static tl_status scan_entry(void *context, const tl_crawl_entry *entry) {
     struct scan *scan = context;
     tl_writer *writer = scan->writer;
@@ -483,12 +658,14 @@ static tl_status scan_entry(void *context, const tl_crawl_entry *entry) {
         return TL_OK;
     if (++writer->scan_entries > writer->options.max_entries)
         return writer->callback_status = TL_LIMIT;
-    if (entry->unreadable)
+    if (entry->unreadable) {
         writer->unreadable_scopes++;
-    if (entry->is_dir && !entry->unreadable && writer->scan_watch != NULL) {
-        tl_status watched = watch_add(writer->scan_watch, entry->path);
-        if (watched != TL_OK && watched != TL_IO && watched != TL_LIMIT)
-            return writer->callback_status = watched;
+        add_unreadable(writer, entry);
+    }
+    if (entry->is_dir && !entry->unreadable) {
+        tl_status covered = cover_directory(writer, entry);
+        if (covered != TL_OK)
+            return writer->callback_status = covered;
     }
     struct batch_entry copy = {.path = strdup(entry->path), .entry = *entry};
     if (copy.path == NULL)
@@ -509,6 +686,9 @@ static tl_status scan_roots(tl_writer *writer, struct batch *batch) {
     writer->callback_status = TL_OK;
     writer->scan_watch = writer->building_watch;
     batch->full = true;
+    /* This scan rebuilds the repair set and the offline roots from scratch. */
+    clear_repairs(writer);
+    clear_offline(writer);
     struct scan scan = {writer, batch};
     tl_status status = TL_OK;
     for (size_t i = 0; i < writer->roots.count && status == TL_OK; i++) {
@@ -523,6 +703,8 @@ static tl_status scan_roots(tl_writer *writer, struct batch *batch) {
         if (scanned == TL_IO) {
             writer->offline_roots++;
             status = batch_keep(batch, writer->roots.items[i]);
+            if (status == TL_OK)
+                status = record_offline(writer, writer->roots.items[i]);
         }
     }
     /* Cookies received during the scan apply before pruning old rows. The next
@@ -582,6 +764,8 @@ static tl_status scan_scopes(tl_writer *writer, struct batch *batch) {
     size_t unreadable = writer->unreadable_scopes, listed = 0;
     for (size_t i = 0; i < batch->scope_count; i++) {
         struct scope scope = batch->scopes[i];
+        if (scope.recursive)
+            settle_repairs(writer, scope.path);
         tl_status scanned =
             crawl_scope(writer->crawler, scope.path, scope.recursive, scan_entry, &scan);
         if (writer->callback_status != TL_OK)
@@ -703,8 +887,10 @@ static tl_status prepare_watch(tl_writer *writer) {
                                            writer->options.watch_capacity, &writer->building_watch);
     if (status != TL_IO)
         return status;
-    /* Instance exhaustion cannot be a prerequisite for periodic repair. Keep
-     * the existing watcher live, and retry creation on the next scan. */
+    /* Instance exhaustion cannot be a prerequisite for repair. Keep the
+     * existing watcher live; until a later full scan creates one, new
+     * directories go unwatched, so every repair tick scans everything. */
+    writer->coverage_lost = true;
     lock_writer(writer);
     writer->stats.watch_degraded = true;
     writer->stats.watch_unavailable++;
@@ -717,6 +903,7 @@ static void swap_watch(tl_writer *writer) {
     watch_destroy(writer->watch);
     writer->watch = writer->building_watch;
     writer->building_watch = NULL;
+    writer->coverage_lost = false;
     writer->counted_unavailable = 0;
     update_watch_stats(writer, writer->watch);
 }
@@ -724,26 +911,30 @@ static void swap_watch(tl_writer *writer) {
  * committed view and publish it. A failed build or publication after a commit
  * sets reload so the saved catalog is republished before later batches. */
 /* Move the pending event scopes into the batch, so events arriving during
- * this pass start a fresh set. Returns whether every root must be scanned. */
-static bool take_scopes(tl_writer *writer, struct batch *batch) {
+ * this pass start a fresh set. Returns why every root must be scanned, or
+ * WRITER_FULL_NONE. Without a watcher nothing else can find changes. */
+static tl_writer_full_reason take_scopes(tl_writer *writer, struct batch *batch) {
     memcpy(batch->scopes, writer->scopes, writer->scope_count * sizeof(struct scope));
     batch->scope_count = writer->scope_count;
     writer->scope_count = 0;
-    bool full = writer->full || writer->watch == NULL;
-    writer->full = false;
+    tl_writer_full_reason full = writer->full;
+    if (full == WRITER_FULL_NONE && writer->watch == NULL)
+        full = WRITER_FULL_REPAIR;
+    writer->full = WRITER_FULL_NONE;
     return full;
 }
 /* Indexing thread: fill the batch from a scan of every root, or of only the
  * directories events touched when they describe every change. */
 static tl_status collect(tl_writer *writer, struct batch *batch) {
     tl_status status = prepare_paths(writer);
-    bool full = take_scopes(writer, batch);
+    tl_writer_full_reason full = take_scopes(writer, batch);
     if (status != TL_OK)
         return status;
-    if (!full)
-        full = !resolve_scopes(writer, batch);
-    writer->last_scoped = !full;
-    if (full) {
+    if (full == WRITER_FULL_NONE && !resolve_scopes(writer, batch))
+        full = WRITER_FULL_SCOPES;
+    writer->pass_reason = full;
+    writer->last_scoped = full == WRITER_FULL_NONE;
+    if (!writer->last_scoped) {
         free_scopes(batch->scopes, &batch->scope_count);
         status = prepare_watch(writer);
     }
@@ -751,7 +942,7 @@ static tl_status collect(tl_writer *writer, struct batch *batch) {
         return status;
     filter_renames(writer);
     batch->rename_pre = writer->rename_count;
-    status = full ? scan_roots(writer, batch) : scan_scopes(writer, batch);
+    status = writer->last_scoped ? scan_scopes(writer, batch) : scan_roots(writer, batch);
     /* An overflow during the scan discards every pair, including earlier ones. */
     if (batch->rename_pre > writer->rename_count)
         batch->rename_pre = writer->rename_count;
@@ -759,7 +950,7 @@ static tl_status collect(tl_writer *writer, struct batch *batch) {
 }
 static tl_status reconcile(tl_writer *writer) {
     tl_catalog_stats catalog;
-    catalog_reclaim(writer->options.catalog);
+    reclaim(writer);
     tl_status status = catalog_stats(writer->options.catalog, &catalog);
     if (status != TL_OK || catalog.snapshots >= 2)
         return status == TL_OK ? TL_LIMIT : status;
@@ -772,12 +963,16 @@ static tl_status reconcile(tl_writer *writer) {
     if (status == TL_OK)
         status = persist(writer, &batch, &catalog_changed);
     batch_free(&batch);
+    /* A full scan's batch copied every path: tens of MB of small blocks that
+     * would otherwise stay in the allocator's free lists. */
+    if (!writer->last_scoped)
+        writer->release_pending = true;
     if (status == TL_OK) {
         clear_renames(writer);
         swap_watch(writer);
     } else {
         /* The taken scopes are gone; a full pass repairs whatever they held. */
-        writer->full = true;
+        request_full(writer, WRITER_FULL_FAILURE);
     }
     if (status == TL_OK && catalog_changed)
         status = publish_changes(writer);
@@ -927,7 +1122,11 @@ static void scan_cycle(tl_writer *writer) {
     writer->stats.indexing = true;
     unlock_writer(writer);
     writer->last_scoped = false;
+    writer->pass_reason = WRITER_FULL_NONE;
     tl_status status = writer->reload ? load_saved(writer) : reconcile(writer);
+    /* A completed full scan restarts the backstop interval. */
+    if (status == TL_OK && writer->pass_reason != WRITER_FULL_NONE)
+        writer->backstop_due = milliseconds() + writer->options.repair_ms;
     if (status == TL_OK)
         writer->reload = false;
     else {
@@ -942,48 +1141,78 @@ static void scan_cycle(tl_writer *writer) {
                              writer->unreadable_scopes != 0 || writer->stats.watch_degraded;
     writer->stats.recovering = writer->reload;
     writer->stats.last_scan_ms = milliseconds() - start;
+    writer->stats.repair_scopes = writer->repair_count;
+    if (status == TL_OK && writer->pass_reason != WRITER_FULL_NONE)
+        writer->stats.last_full_reason = writer->pass_reason;
     if (status == TL_OK)
         writer->stats.reconciliations++;
     if (status == TL_OK && writer->last_scoped)
         writer->stats.scoped_reconciliations++;
     unlock_writer(writer);
 }
+/* Indexing thread: hand freed heap back at most once per WRITER_RELEASE_MS. */
+static void release_memory(tl_writer *writer, uint64_t now) {
+    if (!writer->release_pending || now < writer->release_due)
+        return;
+    writer->release_pending = false;
+    writer->release_due = now + WRITER_RELEASE_MS;
+    if (writer->options.release_memory != NULL)
+        writer->options.release_memory(writer->options.release_context);
+}
+/* Indexing thread: periodic work. Every rescan_ms the repair set (directories
+ * inotify cannot cover) is rescanned; every repair_ms without a full scan a
+ * backstop full scan catches whatever inotify might still have missed. */
+static void timers(tl_writer *writer, uint64_t now) {
+    if (now >= writer->repair_due) {
+        schedule_repair(writer);
+        writer->repair_due = now + writer->options.rescan_ms;
+    }
+    if (writer->options.repair_ms != 0 && now >= writer->backstop_due) {
+        request_full(writer, WRITER_FULL_BACKSTOP);
+        schedule(writer, 0);
+        writer->backstop_due = now + writer->options.repair_ms;
+    }
+}
+/* Sleep until an inotify event, a mount-table change or the next tick. */
+static void wait_events(tl_writer *writer) {
+    struct pollfd fds[] = {{watch_descriptor(writer->watch), POLLIN, 0},
+                           {writer->mounts, POLLPRI, 0}};
+    if (poll(fds, sizeof(fds) / sizeof(fds[0]), WRITER_TICK_MS) <= 0)
+        return;
+    /* A new mount can hide or reveal a whole tree without any inotify event. */
+    if ((fds[1].revents & (POLLPRI | POLLERR)) != 0) {
+        request_full(writer, WRITER_FULL_MOUNT);
+        schedule(writer, WRITER_COALESCE_MS);
+    }
+}
 static void *worker(void *context) {
     tl_writer *writer = context;
-    writer->dirty = true;
-    writer->full = true;
-    writer->due = 0;
-    uint64_t periodic = 0;
+    uint64_t start = milliseconds();
+    request_full(writer, WRITER_FULL_STARTUP);
+    schedule(writer, 0);
+    /* The startup scan builds the repair set; the first repair tick follows. */
+    writer->repair_due = start + writer->options.rescan_ms;
+    writer->backstop_due = start + writer->options.repair_ms;
     while (!atomic_load(&writer->stop)) {
         lock_writer(writer);
         bool requested = writer->requested;
         writer->requested = false;
         unlock_writer(writer);
         if (requested) {
-            writer->dirty = true;
-            writer->full = true;
-            writer->due = 0;
+            request_full(writer, WRITER_FULL_RECONCILE);
+            schedule(writer, 0);
         }
-        if (writer->watch != NULL) {
-            tl_status status = drain_watch(writer);
-            if (status != TL_OK) {
-                writer->dirty = true;
-                writer->full = true;
-                writer->due = 0;
-            }
+        if (writer->watch != NULL && drain_watch(writer) != TL_OK) {
+            request_full(writer, WRITER_FULL_OVERFLOW);
+            schedule(writer, 0);
         }
         uint64_t now = milliseconds();
-        if (now >= periodic)
-            writer->full = true;
-        if ((writer->dirty && now >= writer->due) || now >= periodic ||
-            (writer->reload && now >= writer->due)) {
+        timers(writer, now);
+        if ((writer->dirty || writer->reload) && now >= writer->due)
             scan_cycle(writer);
-            periodic = milliseconds() + writer->options.rescan_ms;
-        }
-        catalog_reclaim(writer->options.catalog);
-        struct pollfd fd = {watch_descriptor(writer->watch), POLLIN, 0};
-        int code = poll(&fd, 1, WRITER_TICK_MS);
-        (void)code;
+        reclaim(writer);
+        release_memory(writer, milliseconds());
+        wait_events(writer);
     }
     lock_writer(writer);
     atomic_store(&writer->indexing_exited, true);
@@ -1085,6 +1314,13 @@ static tl_status init_sync(tl_writer *writer) {
     pthread_condattr_destroy(&attributes);
     return code == 0 ? TL_OK : TL_IO;
 }
+/* Without a mount table (no /proc), mount changes are found by the backstop
+ * scan and by offline-root probes instead. */
+static void open_mounts(tl_writer *writer) {
+    writer->mounts = writer->options.open_mounts != NULL
+                         ? writer->options.open_mounts(writer->options.mounts_context)
+                         : open(WRITER_MOUNT_TABLE, O_RDONLY | O_CLOEXEC);
+}
 tl_status writer_create(const tl_writer_options *options, tl_writer **out) {
     if (out == NULL)
         return TL_INVALID;
@@ -1092,13 +1328,15 @@ tl_status writer_create(const tl_writer_options *options, tl_writer **out) {
     if (options == NULL || options->config == NULL || options->catalog == NULL ||
         options->socket_path == NULL || options->watch_capacity == 0 || options->max_entries == 0 ||
         options->max_path_bytes == 0 || options->readers == 0 ||
-        options->readers > CATALOG_MAX_READERS || options->rescan_ms < 100 ||
+        options->readers > CATALOG_MAX_READERS || options->rescan_ms < WRITER_MIN_INTERVAL_MS ||
+        (options->repair_ms != 0 && options->repair_ms < WRITER_MIN_INTERVAL_MS) ||
         options->history_days == 0)
         return TL_INVALID;
     tl_writer *writer = calloc(1, sizeof(*writer));
     if (writer == NULL)
         return TL_NOMEM;
     writer->options = *options;
+    writer->mounts = -1;
     atomic_init(&writer->stop, false);
     atomic_init(&writer->indexing_exited, false);
     if (init_sync(writer) != TL_OK) {
@@ -1119,7 +1357,11 @@ tl_status writer_create(const tl_writer_options *options, tl_writer **out) {
     if (status == TL_OK)
         status = vec_create(sizeof(uint64_t), &writer->job_ids);
     if (status == TL_OK)
+        status = vec_create(sizeof(char *), &writer->offline);
+    if (status == TL_OK)
         status = delta_create(&writer->delta);
+    if (status == TL_OK)
+        open_mounts(writer);
     if (status == TL_OK)
         status = load_saved(writer);
     if (status == TL_OK &&
@@ -1158,6 +1400,12 @@ void writer_destroy(tl_writer *writer) {
     store_destroy(writer->reader);
     usage_destroy(writer->usage);
     vec_destroy(writer->job_ids);
+    clear_repairs(writer);
+    if (writer->offline != NULL)
+        clear_offline(writer);
+    vec_destroy(writer->offline);
+    if (writer->mounts >= 0)
+        close(writer->mounts);
     delta_destroy(writer->delta);
     watch_destroy(writer->watch);
     watch_destroy(writer->building_watch);
@@ -1248,4 +1496,27 @@ tl_status writer_stats(tl_writer *writer, tl_writer_stats *out) {
     *out = writer->stats;
     unlock_writer(writer);
     return TL_OK;
+}
+const char *writer_full_reason_name(tl_writer_full_reason reason) {
+    switch (reason) {
+    case WRITER_FULL_STARTUP:
+        return "startup";
+    case WRITER_FULL_RECONCILE:
+        return "reconcile";
+    case WRITER_FULL_OVERFLOW:
+        return "overflow";
+    case WRITER_FULL_SCOPES:
+        return "scopes";
+    case WRITER_FULL_FAILURE:
+        return "failure";
+    case WRITER_FULL_REPAIR:
+        return "repair";
+    case WRITER_FULL_MOUNT:
+        return "mount";
+    case WRITER_FULL_BACKSTOP:
+        return "backstop";
+    case WRITER_FULL_NONE:
+        break;
+    }
+    return "none";
 }

@@ -122,9 +122,11 @@ tl_status catalog_resolve(const tl_catalog_reader *reader, uint64_t id, const ch
  * Caller must hold the lease. No errors. */
 uint64_t catalog_reader_gen(const tl_catalog_reader *reader);
 /** Detach unleased retired snapshots under the lock and destroy outside it.
- * Call from background writer; no reader thread reclaims. Thread-safe, no
- * allocation. NULL allowed, no errors. */
-void catalog_reclaim(tl_catalog *catalog);
+ * Returns how many base engines this freed: a base goes when the last
+ * snapshot sharing it does, so nonzero means a retired full build's memory
+ * was released to the allocator. Call from background writer; no reader
+ * thread reclaims. Thread-safe, no allocation. NULL allowed (returns 0). */
+size_t catalog_reclaim(tl_catalog *catalog);
 /** Copy active view counts and total retained snapshots/leases under the lock.
  * Thread-safe; TL_INVALID for NULL; TL_OK otherwise. No allocation or I/O. */
 tl_status catalog_stats(tl_catalog *catalog, tl_catalog_stats *out);

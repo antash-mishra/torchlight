@@ -10,12 +10,27 @@
 typedef struct tl_writer tl_writer;
 #define WRITER_HISTORY_CAPACITY 256
 #define WRITER_RENAME_CAPACITY 256
+/* Why a pass scanned every root (see tl_writer_stats.last_full_reason). */
+typedef enum {
+    WRITER_FULL_NONE,      /* no full pass has completed yet */
+    WRITER_FULL_STARTUP,   /* the first pass after start */
+    WRITER_FULL_RECONCILE, /* an explicit writer_reconcile request */
+    WRITER_FULL_OVERFLOW,  /* inotify lost events or could not be drained */
+    WRITER_FULL_SCOPES,    /* more scopes than one pass holds, or a root itself changed */
+    WRITER_FULL_FAILURE,   /* retry after a failed pass */
+    WRITER_FULL_REPAIR,    /* coverage needs it: no watcher, a root came back, too many repairs */
+    WRITER_FULL_MOUNT,     /* the mount table changed */
+    WRITER_FULL_BACKSTOP   /* repair_ms passed since the last full pass */
+} tl_writer_full_reason;
 typedef struct {
     const tl_config *config;
     tl_catalog *catalog;
     const char *socket_path;
     size_t watch_capacity, max_entries, max_path_bytes, readers;
-    unsigned rescan_ms, history_days;
+    /* rescan_ms (at least 100): how often the repair set (directories inotify
+     * cannot keep current) is rescanned. repair_ms: the backstop interval of a
+     * full scan of every root; 0 disables it. */
+    unsigned rescan_ms, repair_ms, history_days;
     bool history;
     /* Optional publication adapter for deterministic fault-injection tests. */
     tl_status (*publish)(void *context, tl_catalog *catalog, tl_catalog_snapshot **snapshot);
@@ -31,6 +46,17 @@ typedef struct {
     /* Smallest delta bound before a full rebuild compacts it; 0 selects the
      * default. Small values let tests exercise compaction. */
     size_t delta_entries;
+    /* Optional mount-table signal for deterministic tests: return an owned
+     * descriptor (the writer closes it) that polls POLLPRI or POLLERR after a
+     * mount change, or -1 for none. NULL opens /proc/self/mountinfo, whose
+     * poll reports each change once. A change schedules a full scan. */
+    int (*open_mounts)(void *context);
+    void *mounts_context;
+    /* Optional: called on the indexing thread, at most once per second, after
+     * a full scan's batch or a retired whole engine was freed, so the process
+     * can hand freed heap back to the OS. The library assumes no allocator. */
+    void (*release_memory)(void *context);
+    void *release_context;
 } tl_writer_options;
 typedef struct {
     bool indexing, degraded, history_enabled, watch_degraded, recovering;
@@ -39,8 +65,11 @@ typedef struct {
      * full_builds whole-engine rebuilds (startup, recovery, compaction). */
     uint64_t reconciliations, scoped_reconciliations, delta_publications, full_builds,
         watch_overflows, watch_unavailable, history_dropped, history_failures, history_written;
-    size_t watches, history_pending, offline_roots, unreadable_scopes;
+    /* repair_scopes: directories rescanned every rescan_ms because inotify
+     * cannot cover them (unwatched, unreadable, network/FUSE mounts). */
+    size_t watches, history_pending, offline_roots, unreadable_scopes, repair_scopes;
     uint64_t last_scan_ms;
+    tl_writer_full_reason last_full_reason;
 } tl_writer_stats;
 /** Create owned writer, load/publish the saved catalog before crawling and start
  * its indexing and persistence threads. The persistence thread owns the SQLite
@@ -83,4 +112,7 @@ bool writer_take_usage(tl_writer *writer, tl_usage **out);
 /** Copy coherent worker status under a short mutex. TL_INVALID for NULL;
  * TL_OK otherwise. No allocation/I/O; mutex never held during SQL/crawl/build. */
 tl_status writer_stats(tl_writer *writer, tl_writer_stats *out);
+/** Static lowercase name of a full-scan reason ("startup", "backstop", ...),
+ * "none" for WRITER_FULL_NONE and unknown values. No errors. */
+const char *writer_full_reason_name(tl_writer_full_reason reason);
 #endif

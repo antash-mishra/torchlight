@@ -93,14 +93,16 @@ tl_status catalog_create(size_t snapshot_capacity, tl_catalog **out) {
     return TL_OK;
 }
 /* ---- bases ---------------------------------------------------------------- */
-static void base_release(struct catalog_base *base) {
+/* Drop one reference; returns whether that freed the base. */
+static bool base_release(struct catalog_base *base) {
     if (base == NULL || atomic_fetch_sub(&base->references, 1) != 1)
-        return;
+        return false;
     for (size_t i = 0; i < base->capacity; i++)
         lexical_workspace_destroy(base->workspaces[i].workspace);
     free(base->workspaces);
     lexical_destroy(base->engine);
     free(base);
+    return true;
 }
 static tl_status base_create(tl_lexical *engine, size_t capacity, struct catalog_base **out) {
     struct catalog_base *base = calloc(1, sizeof(*base));
@@ -114,7 +116,8 @@ static tl_status base_create(tl_lexical *engine, size_t capacity, struct catalog
         base->capacity = i + 1;
     }
     if (status != TL_OK) {
-        base_release(base); /* engine stays with the caller */
+        bool freed = base_release(base); /* engine stays with the caller */
+        (void)freed;
         return status;
     }
     base->engine = engine;
@@ -122,9 +125,10 @@ static tl_status base_create(tl_lexical *engine, size_t capacity, struct catalog
     return TL_OK;
 }
 /* ---- snapshots ---------------------------------------------------------------- */
-void catalog_snapshot_destroy(tl_catalog_snapshot *snapshot) {
+/* Free snapshot; returns whether its base went with it (last reference). */
+static bool snapshot_free(tl_catalog_snapshot *snapshot) {
     if (snapshot == NULL)
-        return;
+        return false;
     for (size_t i = 0; i < snapshot->reader_capacity; i++) {
         lexical_workspace_destroy(snapshot->readers[i].delta_workspace);
         free(snapshot->readers[i].merge);
@@ -135,8 +139,13 @@ void catalog_snapshot_destroy(tl_catalog_snapshot *snapshot) {
     lexical_destroy(snapshot->delta);
     free(snapshot->tombstones);
     free(snapshot->live);
-    base_release(snapshot->base);
+    bool freed = base_release(snapshot->base);
     free(snapshot);
+    return freed;
+}
+void catalog_snapshot_destroy(tl_catalog_snapshot *snapshot) {
+    bool freed = snapshot_free(snapshot);
+    (void)freed;
 }
 /* Reader slots; a delta snapshot gives each its own delta workspace and the
  * merge buffers that combine both segments without allocating per query. */
@@ -535,9 +544,9 @@ bool catalog_is_dir(const tl_catalog_reader *reader, uint64_t id) {
     return lexical_is_dir(snapshot->base->engine, id);
 }
 /* ---- retirement and statistics ------------------------------------------------ */
-void catalog_reclaim(tl_catalog *catalog) {
+size_t catalog_reclaim(tl_catalog *catalog) {
     if (catalog == NULL)
-        return;
+        return 0;
     tl_catalog_snapshot *garbage = NULL;
     lock_catalog(catalog);
     tl_catalog_snapshot **link = &catalog->retired;
@@ -552,9 +561,10 @@ void catalog_reclaim(tl_catalog *catalog) {
         garbage = snapshot;
     }
     unlock_catalog(catalog);
+    size_t bases = 0;
     while (garbage != NULL) {
         tl_catalog_snapshot *next = garbage->next;
-        catalog_snapshot_destroy(garbage);
+        bases += snapshot_free(garbage) ? 1 : 0;
         /* Detached snapshots still count toward capacity while being freed,
          * including when another publisher/reclaimer runs concurrently. */
         lock_catalog(catalog);
@@ -562,6 +572,7 @@ void catalog_reclaim(tl_catalog *catalog) {
         unlock_catalog(catalog);
         garbage = next;
     }
+    return bases;
 }
 static size_t live_entries(const tl_catalog_snapshot *snapshot) {
     return lexical_count(snapshot->base->engine) - snapshot->tombstone_count +

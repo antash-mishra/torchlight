@@ -333,8 +333,9 @@ def live_catalog(service):
 def scoped_updates(service):
     """Without periodic repair, watch events alone keep the catalog exact
     through scoped rescans: creations, deletions, a tree moved in from outside
-    the roots, a deleted subtree, a paired directory rename and a file in a
-    directory the scoped rescan just started watching."""
+    the roots, a deleted subtree, a paired directory rename, a file in a
+    directory the scoped rescan just started watching, file writes that cause
+    no pass at all and a directory that becomes readable (M7)."""
     root = service.root
     (root / "a/b").mkdir(parents=True)
     (root / "a/b/deep.txt").write_bytes(b"")
@@ -343,6 +344,7 @@ def scoped_updates(service):
     outside = service.base / "outside"
     (outside / "inner").mkdir(parents=True)
     (outside / "inner/arrived.txt").write_bytes(b"")
+    locked = lock_directory(root) if os.geteuid() != 0 else None
     service.start()
     try:
         deep_id = service.indexed(root / "a/b/deep.txt")
@@ -370,13 +372,88 @@ def scoped_updates(service):
         (root / "a/b").rmdir()
         wait_for(lambda: service.call("resolve", file_id=deep_id)["reason"] == "stale_result")
         assert os.fsencode(root / "a/b") not in service.paths()
+        metadata_writes_publish_nothing(service)
+        if locked is not None:
+            readable_again(service, locked)
         status = service.call("status")["indexing"]
         assert status["scoped_reconciliations"] > before
         # Every update above was scoped: only the startup pass scanned all roots.
         assert status["reconciliations"] - status["scoped_reconciliations"] == 1, status
+        assert status["last_full_reason"] == "startup", status
         # And published as deltas: only the saved catalog load and the startup
         # scan's commit rebuilt the engine (the latter at most).
         assert status["delta_publications"] >= 5 and status["full_builds"] <= 2, status
+    finally:
+        if locked is not None:
+            locked.chmod(0o700)
+        service.stop()
+
+
+def idle_passes(service):
+    """Wait until no pass runs, then return the indexing status."""
+    wait_for(lambda: not service.call("status")["indexing"]["active"])
+    return service.call("status")["indexing"]
+
+
+def metadata_writes_publish_nothing(service):
+    """Regression (M7): appending to a file rescanned its folder and published
+    a snapshot every time. Writes and attribute changes of files change no
+    name, so they cause no pass; a new file beside them still arrives."""
+    log = service.root / "d/app.log"
+    log.write_bytes(b"")
+    service.indexed(log)
+    before = idle_passes(service)
+    for _ in range(50):
+        with open(log, "ab") as stream:
+            stream.write(b"line\n")
+    log.chmod(0o640)
+    time.sleep(0.5)
+    after = idle_passes(service)
+    for counter in ("reconciliations", "delta_publications", "full_builds"):
+        assert after[counter] == before[counter], (counter, before, after)
+    fresh = service.root / "d/after-log.txt"
+    fresh.write_bytes(b"")
+    service.indexed(fresh)
+
+
+def lock_directory(root):
+    """Before start: a directory the startup scan cannot list."""
+    locked = root / "locked"
+    (locked / "inner").mkdir(parents=True)
+    (locked / "inner/hidden-until-readable.txt").write_bytes(b"")
+    locked.chmod(0)
+    return locked
+
+
+def readable_again(service, locked):
+    """A directory that could not be listed is in the repair set; when its
+    permissions change it is rescanned recursively at once, without waiting
+    for a repair tick (this daemon runs with an hour between them)."""
+    status = idle_passes(service)
+    assert status["repair_scopes"] >= 1 and status["unreadable_scopes"] >= 1, status
+    assert os.fsencode(locked / "inner/hidden-until-readable.txt") not in service.paths()
+    locked.chmod(0o700)
+    service.indexed(locked / "inner/hidden-until-readable.txt")
+
+
+def quiet_repair_ticks(service):
+    """With every directory watched, a short repair interval stays idle: only
+    the startup pass scans every root, and an explicit request is the only
+    other full scan."""
+    (service.root / "folder").mkdir()
+    service.start()
+    try:
+        service.indexed(service.root / "folder")
+        started = idle_passes(service)
+        time.sleep(1.5)
+        status = idle_passes(service)
+        assert status["reconciliations"] == started["reconciliations"], (started, status)
+        assert status["reconciliations"] - status["scoped_reconciliations"] == 1, status
+        assert status["last_full_reason"] == "startup" and status["repair_scopes"] == 0, status
+        (service.root / "folder/new.txt").write_bytes(b"")
+        service.indexed(service.root / "folder/new.txt")
+        assert service.call("reconcile")["status"] == "ok"
+        wait_for(lambda: service.call("status")["indexing"]["last_full_reason"] == "reconcile")
     finally:
         service.stop()
 
@@ -390,6 +467,12 @@ def watch_exhaustion_and_disabled_history(service):
         wait_for(lambda: service.call("status")["indexing"]["watch_degraded"])
         (service.root / "sub/unwatched.txt").write_bytes(b"")
         file_id = service.indexed(service.root / "sub/unwatched.txt")
+        # The unwatched subtree is a repair scope: a scoped pass found the
+        # file within the repair interval, no full scan.
+        status = service.call("status")["indexing"]
+        assert status["repair_scopes"] >= 1 and status["scoped_reconciliations"] >= 1, status
+        assert status["reconciliations"] - status["scoped_reconciliations"] == 1, status
+        assert status["last_full_reason"] == "startup", status
         ranked = lambda: [result["id"] for result in service.call("query", query="txt")["results"]]
         before = ranked()
         assert service.call("open", file_id=file_id, event_id="disabled")["status"] == "ok"
@@ -615,6 +698,9 @@ with tempfile.TemporaryDirectory(prefix="torchlight-daemon-") as temporary:
     scoped = Path(temporary) / "scoped"
     scoped.mkdir(mode=0o700)
     scoped_updates(Service(scoped, "--rescan-ms", "3600000"))
+    quiet = Path(temporary) / "quiet"
+    quiet.mkdir(mode=0o700)
+    quiet_repair_ticks(Service(quiet, "--rescan-ms", "100"))
     fallback = Path(temporary) / "fallback"
     fallback.mkdir(mode=0o700)
     watch_exhaustion_and_disabled_history(Service(fallback, "--watch-capacity", "1", "--no-history"))

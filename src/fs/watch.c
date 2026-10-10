@@ -1,4 +1,5 @@
-/* inotify event collection with bounded watch/cookie storage and loss signals. */
+/* inotify event collection with bounded watch/cookie storage and loss signals,
+ * plus the filesystem types whose changes inotify cannot fully report. */
 #include "torchlight/watch.h"
 #include "torchlight/hashmap.h"
 #include "torchlight/path.h"
@@ -7,9 +8,27 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/inotify.h>
+#include <sys/vfs.h>
 #include <unistd.h>
 #define WATCH_MOVE_SLOTS 256
 #define WATCH_DRAIN_BYTES (256U * 1024U)
+/* Names, places and directory permissions only: IN_CLOSE_WRITE/IN_MODIFY
+ * would wake the writer for every save without changing what search reads. */
+#define WATCH_MASK                                                                                 \
+    (IN_CREATE | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO | IN_ATTRIB | IN_DELETE_SELF |            \
+     IN_MOVE_SELF | IN_ONLYDIR | IN_DONT_FOLLOW)
+/* statfs f_type values (linux/magic.h) of filesystems whose changes by other
+ * clients or the server never reach this kernel's inotify. */
+#define WATCH_NFS_MAGIC 0x6969U
+#define WATCH_SMB_MAGIC 0x517bU
+#define WATCH_CIFS_MAGIC 0xff534d42U
+#define WATCH_SMB2_MAGIC 0xfe534d42U
+#define WATCH_FUSE_MAGIC 0x65735546U
+#define WATCH_V9FS_MAGIC 0x01021997U
+#define WATCH_CEPH_MAGIC 0x00c36400U
+#define WATCH_AFS_MAGIC 0x5346414fU
+#define WATCH_KAFS_MAGIC 0x6b414653U
+#define WATCH_CODA_MAGIC 0x73757245U
 struct directory {
     int wd;
     char *path;
@@ -88,10 +107,7 @@ void watch_destroy(tl_watch *watch) {
 tl_status watch_add(tl_watch *watch, const char *path) {
     if (watch == NULL || path == NULL || path[0] != '/')
         return TL_INVALID;
-    int wd = inotify_add_watch(watch->fd, path,
-                               IN_CREATE | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO | IN_ATTRIB |
-                                   IN_CLOSE_WRITE | IN_DELETE_SELF | IN_MOVE_SELF | IN_ONLYDIR |
-                                   IN_DONT_FOLLOW);
+    int wd = inotify_add_watch(watch->fd, path, WATCH_MASK);
     if (wd < 0) {
         watch->stats.unavailable++;
         return TL_IO;
@@ -190,7 +206,9 @@ static tl_status dispatch(tl_watch *watch, const struct inotify_event *event,
     tl_status status = event_path(directory, event, &path);
     if (status != TL_OK)
         return status;
-    tl_watch_event update = {.path = path, .is_dir = (event->mask & IN_ISDIR) != 0};
+    tl_watch_event update = {.path = path,
+                             .is_dir = (event->mask & IN_ISDIR) != 0,
+                             .metadata = (event->mask & (IN_ATTRIB | IN_CLOSE_WRITE)) != 0};
     size_t paired = WATCH_MOVE_SLOTS;
     if ((event->mask & IN_MOVED_FROM) != 0 && event->cookie != 0)
         status = remember_move(watch, event, path, callback, context);
@@ -275,4 +293,23 @@ tl_watch_stats watch_stats(const tl_watch *watch) {
         return empty;
     }
     return watch->stats;
+}
+bool watch_type_reliable(uint64_t filesystem_type) {
+    static const uint64_t remote[] = {
+        WATCH_NFS_MAGIC,  WATCH_SMB_MAGIC,  WATCH_CIFS_MAGIC, WATCH_SMB2_MAGIC, WATCH_FUSE_MAGIC,
+        WATCH_V9FS_MAGIC, WATCH_CEPH_MAGIC, WATCH_AFS_MAGIC,  WATCH_KAFS_MAGIC, WATCH_CODA_MAGIC};
+    for (size_t i = 0; i < sizeof(remote) / sizeof(remote[0]); i++)
+        if (filesystem_type == remote[i])
+            return false;
+    return true;
+}
+tl_status watch_reliable(const char *path, bool *out) {
+    if (path == NULL || out == NULL)
+        return TL_INVALID;
+    struct statfs info;
+    if (statfs(path, &info) != 0)
+        return TL_IO;
+    /* f_type is a signed word; magic numbers are 32-bit patterns. */
+    *out = watch_type_reliable((uint64_t)(uint32_t)info.f_type);
+    return TL_OK;
 }

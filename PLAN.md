@@ -363,7 +363,8 @@ The float reference need not stay loaded in production.
   Coalesce events, pair move cookies where possible, and handle event overflow,
   watch exhaustion, and unavailable roots.
 - Overflow triggers reconciliation. Watch exhaustion uses periodic rescans for
-  unwatched subtrees. Reconcile at restart and periodically. Retire missing
+  unwatched subtrees. Reconcile at restart; while inotify covers every
+  directory, only a backstop full scan runs periodically (hourly, M7). Retire missing
   entries only after a successful scan of their scope; an unreadable/offline
   subtree must not be mistaken for deletion.
 - Use preallocated query scratch and bounded background queues. A full history
@@ -505,7 +506,10 @@ M3 Part 2 search quality is implemented; see
 queries; large-catalog latency and broader relevance acceptance remain open.
 M6 worker separation, Frizbee SIMD search and incremental indexing are
 implemented; semantic search is parked (ADR 0032) and M5 personal
-recommendations are implemented (ADR 0033).
+recommendations are implemented (ADR 0033). M7 phase 1 (quiet indexing:
+repair scans only where inotify can miss changes, no work for metadata-only
+writes, freed memory returned) is implemented (ADR 0038, ADR 0039); phase 2
+(cheaper full scans) is next.
 Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
 tracked explicitly in the verification report.
 
@@ -720,6 +724,27 @@ tracked explicitly in the verification report.
    pairs Frizbee with candidate-volume reduction; step 3 splits into scoped
    reconcile, a base-plus-delta segmented engine, and incremental semantic
    snapshots. It records the baseline numbers each step must beat.
+8. **M7: Quiet indexing and lean memory.** Phase 1 implemented (2026-10-10).
+   A headless profile ([M7 plan](docs/m7-plan.md)) showed that the 30-second
+   full rescan cost 7 to 9% of a core at 213k entries and that a file written
+   20 times a second cost 43%, while search reads only names.
+
+   - **Phase 1: stop paying for work that changes nothing.** A scenario
+     benchmark (`make bench-scenarios`) and a per-thread sampler for machines
+     where perf is locked; full scans only for a reason, with a repair set of
+     scopes inotify cannot cover rescanned every `rescan_ms`, an hourly
+     backstop and a mount-table signal (ADR 0038); metadata-only events and
+     refreshes neither rescan nor publish (ADR 0038); freed engines returned to
+     the OS after full rebuilds (ADR 0039).
+   - **Phase 2: make the remaining full scans cheap.** One stat per entry,
+     reuse of the live watcher, and an in-memory comparison so that only
+     differences reach SQLite.
+
+   Acceptance for phase 1 at 213k: idle at most 0.2% of a core with no full
+   scan while coverage is complete, the 20 Hz churn at most 2% with no
+   publication, RSS after burst/rename/churn within 10% of steady, unchanged
+   create/delete lag, and repair still finding unwatched, overflowed and
+   remounted changes.
 
 ## Evaluation
 

@@ -34,7 +34,77 @@ static void wait_events(tl_watch *watch, struct observations *seen) {
     CHECK(poll(&fd, 1, 1000) > 0);
     CHECK(watch_drain(watch, observed, seen) == TL_OK);
 }
+struct metadata_seen {
+    size_t events;
+    bool file, directory, other;
+};
+static tl_status observe_metadata(void *context, const tl_watch_event *event) {
+    struct metadata_seen *seen = context;
+    seen->events++;
+    if (event->metadata && !event->is_dir && strstr(event->path, "/file.txt") != NULL)
+        seen->file = true;
+    else if (event->metadata && event->is_dir && strstr(event->path, "/sub") != NULL)
+        seen->directory = true;
+    else
+        seen->other = true;
+    return TL_OK;
+}
+/* Attribute changes leave names alone and say so; writes are not subscribed
+ * at all, but a fed close-write still classifies as metadata. */
+static void metadata_events(void) {
+    char root[] = "/tmp/torchlight-watch-meta-XXXXXX";
+    CHECK(mkdtemp(root) != NULL);
+    char file[256], sub[256];
+    CHECK(snprintf(file, sizeof(file), "%s/file.txt", root) > 0);
+    CHECK(snprintf(sub, sizeof(sub), "%s/sub", root) > 0 && mkdir(sub, 0700) == 0);
+    int fd = open(file, O_CREAT | O_WRONLY, 0600);
+    CHECK(fd >= 0 && close(fd) == 0);
+    tl_watch *watch = NULL;
+    CHECK(watch_create(4, &watch) == TL_OK && watch_add(watch, root) == TL_OK);
+    CHECK(chmod(file, 0644) == 0 && chmod(sub, 0755) == 0);
+    struct metadata_seen seen = {0};
+    struct pollfd ready = {watch_descriptor(watch), POLLIN, 0};
+    while (!(seen.file && seen.directory) && poll(&ready, 1, 1000) > 0)
+        CHECK(watch_drain(watch, observe_metadata, &seen) == TL_OK);
+    CHECK(seen.file && seen.directory && !seen.other);
+    fd = open(file, O_WRONLY | O_APPEND);
+    CHECK(fd >= 0 && write(fd, "x", 1) == 1 && close(fd) == 0);
+    CHECK(poll(&ready, 1, 100) == 0); /* no close-write event */
+    /* The first watch of a fresh instance has descriptor 1. */
+    union {
+        struct inotify_event event;
+        unsigned char bytes[sizeof(struct inotify_event) + 16];
+    } closed = {.event = {.wd = 1, .mask = IN_CLOSE_WRITE, .len = 16}};
+    memcpy(closed.event.name, "file.txt", sizeof("file.txt"));
+    seen = (struct metadata_seen){0};
+    CHECK(watch_feed(watch, closed.bytes, sizeof(closed.bytes), observe_metadata, &seen) == TL_OK);
+    CHECK(seen.events == 1 && seen.file);
+    watch_destroy(watch);
+    CHECK(unlink(file) == 0 && rmdir(sub) == 0 && rmdir(root) == 0);
+}
+/* statfs f_type values (linux/magic.h). */
+#define EXT4_MAGIC 0xef53U
+#define TMPFS_MAGIC 0x01021994U
+#define BTRFS_MAGIC 0x9123683eU
+#define NFS_MAGIC 0x6969U
+#define FUSE_MAGIC 0x65735546U
+#define CIFS_MAGIC 0xff534d42U
+#define SMB2_MAGIC 0xfe534d42U
+#define V9FS_MAGIC 0x01021997U
+static void filesystem_types(void) {
+    CHECK(watch_type_reliable(EXT4_MAGIC) && watch_type_reliable(TMPFS_MAGIC) &&
+          watch_type_reliable(BTRFS_MAGIC));
+    CHECK(!watch_type_reliable(NFS_MAGIC) && !watch_type_reliable(FUSE_MAGIC) &&
+          !watch_type_reliable(CIFS_MAGIC) && !watch_type_reliable(SMB2_MAGIC) &&
+          !watch_type_reliable(V9FS_MAGIC));
+    bool reliable = false;
+    CHECK(watch_reliable("/proc", &reliable) == TL_OK && reliable);
+    CHECK(watch_reliable("/torchlight-missing-path", &reliable) == TL_IO);
+    CHECK(watch_reliable(NULL, &reliable) == TL_INVALID && watch_reliable("/", NULL) == TL_INVALID);
+}
 void test_watch(void) {
+    metadata_events();
+    filesystem_types();
     char root[] = "/tmp/torchlight-watch-XXXXXX";
     CHECK(mkdtemp(root) != NULL);
     char old[256], renamed[256], fresh[256];

@@ -106,6 +106,20 @@ that were not embedded), `derived_stages` (snapshots holding only rows changed
 since a shared full base) and `full_stages`. See
 [ADR 0030](../../adr/0030-m6-incremental-indexing.md).
 
+## M7 repair and memory options
+
+`tl_daemon_options.repair_ms` (`--repair-ms`, default one hour, `0` disables)
+sets the backstop full scan; `rescan_ms` (`--rescan-ms`, default 30 s) now
+paces only the repair set's rescans. `indexing` adds `repair_scopes` (the
+size of the repair set) and `last_full_reason` (`startup`, `reconcile`,
+`overflow`, `scopes`, `failure`, `repair`, `mount`, `backstop`, or `none`
+before the first full scan completes). A healthy daemon shows `startup` until
+the backstop runs. `release_memory` passes the executable's allocator hook to
+the writer: `torchlightd` supplies a glibc `malloc_trim(0)` wrapper and sets
+the process allocator policy in `main`, the only process-wide state. See
+[ADR 0038](../../adr/0038-repair-scans-and-metadata-events.md) and
+[ADR 0039](../../adr/0039-returning-freed-memory.md).
+
 ## Personal ranking (M5)
 
 With history enabled, the search thread owns [personal](../personal/README.md)

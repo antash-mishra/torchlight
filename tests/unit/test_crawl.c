@@ -161,7 +161,43 @@ static void scoped_walks(void) {
     }
     CHECK(rmdir(root) == 0);
 }
+struct boundaries {
+    size_t entries, boundaries;
+    bool start;
+};
+static tl_status observe_boundary(void *context, const tl_crawl_entry *entry) {
+    struct boundaries *seen = context;
+    seen->entries++;
+    if (entry->device_boundary) {
+        CHECK(entry->is_dir && entry->has_stat);
+        seen->boundaries++;
+        seen->start = seen->start || strstr(entry->path, "/sub") == NULL;
+    }
+    return TL_OK;
+}
+/* The walk's start counts as a device boundary (nothing to compare it with);
+ * a subdirectory and a file on the same device do not. A scoped walk starts
+ * a new comparison at its own directory. */
+static void device_boundaries(void) {
+    char root[] = "/tmp/torchlight-boundary-XXXXXX", sub[64], file[80];
+    CHECK(mkdtemp(root) != NULL);
+    CHECK(snprintf(sub, sizeof(sub), "%s/sub", root) < (int)sizeof(sub) && mkdir(sub, 0700) == 0);
+    CHECK(snprintf(file, sizeof(file), "%s/file", sub) < (int)sizeof(file));
+    FILE *created = fopen(file, "w");
+    CHECK(created != NULL && fclose(created) == 0);
+    tl_crawl *crawler = NULL;
+    CHECK(crawl_create(NULL, NULL, 0, &crawler) == TL_OK);
+    struct boundaries seen = {0};
+    CHECK(crawl_run(crawler, root, observe_boundary, &seen) == TL_OK);
+    CHECK(seen.entries == 3 && seen.boundaries == 1 && seen.start);
+    seen = (struct boundaries){0};
+    CHECK(crawl_scope(crawler, sub, true, observe_boundary, &seen) == TL_OK);
+    CHECK(seen.entries == 2 && seen.boundaries == 1 && !seen.start);
+    crawl_destroy(crawler);
+    CHECK(unlink(file) == 0 && rmdir(sub) == 0 && rmdir(root) == 0);
+}
 void test_crawl(void) {
+    device_boundaries();
     scoped_walks();
     tl_crawl *crawler = NULL;
     CHECK(crawl_create(NULL, NULL, 0, &crawler) == TL_OK);

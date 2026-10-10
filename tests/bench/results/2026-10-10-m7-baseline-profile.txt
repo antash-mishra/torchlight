@@ -1,0 +1,101 @@
+M7 baseline profiles (2026-10-10). Companion to 2026-10-10-m7-baseline.jsonl.
+Sampler: LD_PRELOAD shim, per-thread CLOCK_THREAD_CPUTIME_ID timers at 500 Hz (2 ms of thread CPU per
+sample), frame-pointer stacks, symbolized with nm (libc via /usr/lib/debug). Time inside a system call is
+charged to the libc wrapper (fstatat64, statx, pread64, ...). Thread names are thread start routines:
+worker = writer indexing thread, persistence_worker = SQLite owner, search_worker = search thread,
+worker_loop = search pool, main = IPC loop. "incl" = share of samples with the function anywhere on the stack.
+
+== home-cold: cold index, 213k mirror (fresh database)
+   total 5.53 CPU-s; threads: worker 3.11s, persistence_worker 2.38s, main 0.03s, search_worker 0.01s, worker_loop 0.01s
+   self:  libc:fstatat64 9.1%; libc:statx 7.8%; libc:__memmove_avx_unaligned_erms 7.3%; libc:pwrite64 6.1%; libsqlite3:sqlite3VdbeExec 4.2%; compare_keys 4.2%; libsqlite3:sqlite3PageFree 3.4%; libc:pread64 3.1%; libc:__memcmp_avx2_movbe 3.1%; libc:getdents64 3.0%; compare_occurrences 2.3%; libsqlite3:sqlite3BtreeIndexMoveto 2.2%
+   incl:  store_put 1.88s/34%; publish_full 1.57s/28%; walk_from.part.0 1.51s/27%; lexical_finish 1.18s/21%; libc:qsort_r 0.72s/13%; libc:fstatat64 0.51s/9%; prefix_finish 0.44s/8%; libc:statx 0.43s/8%; store_load_catalog 0.39s/7%; libc:pwrite64 0.34s/6%; run_scoped.part.0 0.27s/5%; build_entry 0.25s/4%; typo_finish 0.22s/4%; libc:pread64 0.17s/3%; libc:getdents64 0.17s/3%; report 0.16s/3%; libc:malloc 0.13s/2%; libc:inotify_add_watch 0.09s/2%; lexical_query 0.06s/1%; libc:free 0.05s/1%
+
+== home-warmstart: warm start: load saved catalog + one startup full rescan, 213k
+   total 5.92 CPU-s; threads: persistence_worker 2.62s, worker 1.65s, main 1.64s, worker_loop 0.01s, search_worker 0.00s
+   self:  libc:fstatat64 9.2%; libc:statx 7.9%; libc:__memmove_avx_unaligned_erms 5.8%; libsqlite3:sqlite3VdbeExec 4.9%; libc:pread64 4.3%; libc:__memcmp_avx2_movbe 4.2%; compare_keys 4.1%; libsqlite3:sqlite3PageFree 3.4%; libc:getdents64 3.2%; libsqlite3:sqlite3BtreeIndexMoveto 2.8%; libc:pthread_mutex_lock@@GLIBC_2.2.5 2.1%; libc:inotify_add_watch 2.0%
+   incl:  store_put 2.23s/38%; walk_from.part.0 1.63s/28%; publish_full 1.55s/26%; lexical_finish 1.23s/21%; libc:qsort_r 0.72s/12%; libc:fstatat64 0.54s/9%; libc:statx 0.47s/8%; prefix_finish 0.44s/7%; store_load_catalog 0.33s/6%; run_scoped.part.0 0.32s/5%; libc:pread64 0.25s/4%; typo_finish 0.22s/4%; report 0.21s/3%; build_entry 0.20s/3%; libc:getdents64 0.19s/3%; libc:inotify_add_watch 0.12s/2%; libc:pwrite64 0.11s/2%; libc:malloc 0.09s/1%; libc:free 0.05s/1%; lexical_query 0.05s/1%
+
+== home-idle30: 95 s idle with --rescan-ms 30000 (two no-change full rescans), 213k
+   total 8.18 CPU-s; threads: persistence_worker 4.77s, worker 3.35s, main 0.04s, refresh_worker 0.01s
+   self:  libc:fstatat64 13.6%; libc:statx 12.6%; libsqlite3:sqlite3VdbeExec 6.7%; libc:__memcmp_avx2_movbe 4.5%; libc:getdents64 4.5%; libsqlite3:sqlite3PageFree 4.3%; libsqlite3:sqlite3BtreeIndexMoveto 4.1%; libc:pread64 4.1%; libc:pwrite64 3.6%; libsqlite3:sqlite3VdbeRecordCompareWithSkip 3.0%; libc:__open_nocancel 2.2%; libc:pthread_mutex_unlock@@GLIBC_2.2.5 2.1%
+   incl:  store_put 4.12s/50%; walk_from.part.0 3.25s/40%; libc:fstatat64 1.11s/14%; libc:statx 1.03s/13%; run_scoped.part.0 0.55s/7%; libc:getdents64 0.36s/4%; libc:pread64 0.33s/4%; libc:pwrite64 0.30s/4%; report 0.29s/4%; libc:malloc 0.19s/2%; libc:inotify_add_watch 0.16s/2%; libc:free 0.14s/2%
+
+== home-idle-norescan: 60 s idle, periodic rescans off, 213k
+   total 0.05 CPU-s; threads: main 0.02s, worker 0.02s, refresh_worker 0.00s
+   self:  libc:poll 52.2%; libc:pthread_mutex_lock@@GLIBC_2.2.5 26.1%; daemon_run 8.7%; libc:read 4.3%; libc:__futex_abstimed_wait_cancelable64 4.3%; ipc_listener_descriptor 4.3%
+   incl:  
+
+== home-query-during-rescan: 900 queries during a forced full rescan, 213k
+   total 3.88 CPU-s; threads: search_worker 1.70s, worker 1.36s, worker_loop 0.71s, main 0.11s
+   self:  frizbee SIMD matcher 18.8%; libc:statx 11.4%; libc:fstatat64 11.4%; entry_score 8.9%; typo_query 5.3%; trigram_query 4.4%; libc:getdents64 3.5%; score_directories 2.8%; libc:inotify_add_watch 2.3%; lexical_query 2.1%; libc:__open_nocancel 2.1%; prefix_row 2.0%
+   incl:  walk_from.part.0 1.36s/35%; lexical_query 1.15s/30%; libc:statx 0.44s/11%; libc:fstatat64 0.44s/11%; report 0.13s/3%; libc:getdents64 0.13s/3%; libc:inotify_add_watch 0.09s/2%; libc:malloc 0.05s/1%; libc:free 0.03s/1%
+
+== home-lag: 15+15 single-file create/delete in a small dir and a 2,838-entry dir
+   total 2.69 CPU-s; threads: persistence_worker 1.47s, worker 1.03s, main 0.11s, search_worker 0.09s, refresh_worker 0.00s
+   self:  libc:fstatat64 10.3%; libc:statx 9.7%; libsqlite3:sqlite3VdbeExec 6.7%; libc:pwrite64 6.6%; libc:inotify_add_watch 6.5%; libc:pread64 5.9%; libc:__memcmp_avx2_movbe 5.3%; libsqlite3:sqlite3BtreeIndexMoveto 4.2%; catalog_snapshot_derive 2.7%; libsqlite3:sqlite3PageFree 2.6%; libc:_int_malloc 1.9%; libc:pthread_mutex_lock@@GLIBC_2.2.5 1.8%
+   incl:  walk_from.part.0 0.85s/32%; store_put 0.76s/28%; libc:fstatat64 0.28s/10%; libc:statx 0.26s/10%; report 0.21s/8%; libc:pwrite64 0.18s/7%; libc:inotify_add_watch 0.18s/7%; libc:pread64 0.16s/6%; libc:malloc 0.06s/2%; libc:free 0.06s/2%; lexical_query 0.04s/1%; libc:getdents64 0.03s/1%
+
+== home-burst: 20,000 files in 2,000 new directories
+   total 4.27 CPU-s; threads: worker 3.65s, persistence_worker 0.45s, search_worker 0.11s, main 0.04s, worker_loop 0.02s, refresh_worker 0.00s
+   self:  libc:__memmove_avx_unaligned_erms 15.8%; compare_keys 14.2%; compare_occurrences 5.3%; libc:msort_with_tmp.part.0 4.4%; tokenize_into 3.8%; libc:__strcmp_avx2 3.7%; sort_u64 3.4%; libsqlite3:sqlite3VdbeExec 2.7%; hashmap_find 2.4%; libc:pread64 2.2%; hashmap_hash 2.2%; vec_append 1.5%
+   incl:  publish_full 3.38s/79%; lexical_finish 2.65s/62%; libc:qsort_r 1.60s/37%; prefix_finish 1.06s/25%; store_load_catalog 0.74s/17%; build_entry 0.47s/11%; typo_finish 0.42s/10%; store_put 0.19s/4%; lexical_query 0.19s/4%; walk_from.part.0 0.14s/3%; libc:pread64 0.10s/2%; libc:fstatat64 0.05s/1%; libc:statx 0.04s/1%; libc:free 0.03s/1%; libc:pwrite64 0.03s/1%; libc:malloc 0.03s/1%; libc:getdents64 0.02s/0%
+
+== home-rename: rename of the 22k-entry burst tree
+   total 2.61 CPU-s; threads: worker 1.83s, persistence_worker 0.53s, search_worker 0.20s, main 0.04s, worker_loop 0.02s
+   self:  libc:__memmove_avx_unaligned_erms 12.9%; compare_keys 10.9%; compare_occurrences 5.6%; libc:pread64 5.3%; libc:__strcmp_avx2 4.4%; libsqlite3:sqlite3VdbeExec 3.9%; libc:msort_with_tmp.part.0 3.4%; libc:__memcmp_avx2_movbe 3.2%; libc:pwrite64 3.1%; tokenize_into 2.9%; sort_u64 2.7%; entry_score 2.4%
+   incl:  publish_full 1.75s/67%; lexical_finish 1.39s/53%; libc:qsort_r 0.84s/32%; prefix_finish 0.50s/19%; store_load_catalog 0.36s/14%; store_move 0.32s/12%; typo_finish 0.24s/9%; lexical_query 0.20s/8%; build_entry 0.20s/8%; libc:pread64 0.14s/5%; libc:pwrite64 0.08s/3%
+
+== home-delete: rm -rf of the renamed tree
+   total 0.52 CPU-s; threads: persistence_worker 0.31s, worker 0.19s, search_worker 0.01s, main 0.00s
+   self:  libc:__strcmp_avx2 18.1%; libsqlite3:sqlite3VdbeExec 10.8%; libc:__memcmp_avx2_movbe 5.0%; libc:pwrite64 5.0%; libc:pread64 4.6%; libsqlite3:sqlite3Fts5Init 4.2%; libc:readlink 3.8%; libc:poll 3.5%; libc:__memmove_avx_unaligned_erms 3.5%; libsqlite3:sqlite3VdbeRecordCompareWithSkip 3.1%; libsqlite3:sqlite3PageFree 3.1%; libc:read 2.7%
+   incl:  libc:pwrite64 0.03s/5%; libc:pread64 0.02s/5%; walk_from.part.0 0.02s/4%
+
+== home-churn: append+close one file 20x/s for 30 s in the 2,838-entry directory
+   total 13.10 CPU-s; threads: persistence_worker 7.80s, worker 5.27s, main 0.02s, refresh_worker 0.00s
+   self:  libc:fstatat64 10.8%; libc:statx 10.7%; libc:inotify_add_watch 8.3%; libsqlite3:sqlite3VdbeExec 7.8%; libc:__memcmp_avx2_movbe 5.6%; libsqlite3:sqlite3BtreeIndexMoveto 4.9%; libsqlite3:sqlite3PageFree 3.8%; libc:pwrite64 3.5%; libc:pread64 3.4%; libsqlite3:sqlite3VdbeRecordCompareWithSkip 2.4%; libc:pthread_mutex_lock@@GLIBC_2.2.5 1.8%; libsqlite3:sqlite3Fts5Init 1.8%
+   incl:  store_put 4.73s/36%; walk_from.part.0 4.70s/36%; libc:fstatat64 1.42s/11%; libc:statx 1.40s/11%; report 1.38s/11%; libc:inotify_add_watch 1.08s/8%; libc:pwrite64 0.45s/3%; libc:pread64 0.45s/3%; libc:malloc 0.35s/3%; libc:free 0.26s/2%; libc:getdents64 0.18s/1%; lexical_finish 0.02s/0%
+
+== fx500-cold: cold index, 494k fixture
+   total 12.63 CPU-s; threads: worker 7.14s, persistence_worker 5.38s, main 0.06s, worker_loop 0.05s, search_worker 0.02s
+   self:  libc:fstatat64 13.6%; libc:statx 8.1%; libc:pwrite64 6.7%; libc:__memmove_avx_unaligned_erms 6.1%; compare_keys 5.1%; libsqlite3:sqlite3VdbeExec 4.1%; libc:pread64 2.9%; libc:__memcmp_avx2_movbe 2.7%; libc:getdents64 2.6%; libsqlite3:sqlite3BtreeIndexMoveto 2.5%; libsqlite3:sqlite3PageFree 2.5%; libsqlite3:sqlite3VdbeRecordCompareWithSkip 1.8%
+   incl:  store_put 4.38s/35%; walk_from.part.0 3.73s/30%; publish_full 3.33s/26%; lexical_finish 2.65s/21%; libc:fstatat64 1.71s/14%; libc:qsort_r 1.66s/13%; prefix_finish 1.12s/9%; libc:statx 1.03s/8%; libc:pwrite64 0.85s/7%; store_load_catalog 0.67s/5%; run_scoped.part.0 0.47s/4%; build_entry 0.37s/3%; typo_finish 0.37s/3%; libc:pread64 0.37s/3%; libc:getdents64 0.33s/3%; report 0.28s/2%; libc:malloc 0.21s/2%; lexical_query 0.18s/1%; libc:free 0.16s/1%; libc:inotify_add_watch 0.16s/1%
+
+== fx500-rescan: forced no-change full rescan, 494k fixture
+   total 9.54 CPU-s; threads: persistence_worker 6.21s, worker 3.26s, main 0.06s, search_worker 0.02s
+   self:  libc:fstatat64 13.3%; libc:statx 11.1%; libc:pread64 9.6%; libc:pwrite64 6.5%; libsqlite3:sqlite3VdbeExec 6.3%; libsqlite3:sqlite3PageFree 4.8%; libc:__memcmp_avx2_movbe 4.1%; libsqlite3:sqlite3BtreeIndexMoveto 3.5%; libc:getdents64 3.1%; libsqlite3:sqlite3VdbeRecordCompareWithSkip 2.5%; libc:pthread_mutex_lock@@GLIBC_2.2.5 2.1%; libc:pthread_mutex_unlock@@GLIBC_2.2.5 2.1%
+   incl:  store_put 4.65s/49%; walk_from.part.0 3.21s/34%; libc:fstatat64 1.27s/13%; libc:statx 1.06s/11%; libc:pread64 0.92s/10%; libc:pwrite64 0.62s/7%; run_scoped.part.0 0.55s/6%; report 0.29s/3%; libc:getdents64 0.29s/3%; libc:free 0.15s/2%; libc:malloc 0.15s/2%; libc:inotify_add_watch 0.12s/1%
+
+== strace -f -c -w: warm start plus one forced full rescan (two full walks), 213k mirror
+   % time     seconds  usecs/call     calls    errors syscall
+   ------ ----------- ----------- --------- --------- ------------------
+    80.62  265.372608       34455      7702       364 futex
+    13.47   44.320595        6929      6396           poll
+     1.59    5.240558          12    426606         5 newfstatat
+     1.57    5.160163          12    426572           statx
+     0.75    2.475953          12    204954           pread64
+     0.55    1.816849          13    138024           getdents64
+     0.29    0.951518          13     68942           inotify_add_watch
+     0.29    0.947425          18     51403           pwrite64
+     0.29    0.942706          13     69070        99 openat
+     0.25    0.833536          12     68977           close
+     0.22    0.717522          10     68982           fstat
+     0.03    0.101403          14      6848           mprotect
+     0.02    0.051416          24      2127           recvfrom
+     0.01    0.046214          21      2127           sendto
+     0.01    0.045407          21      2127           write
+     0.01    0.035041        8760         4           ftruncate
+     0.01    0.027029        6757         4           unlink
+     0.01    0.026161          12      2162        14 read
+
+== strace -y, one forced no-change full rescan only (startup excluded), 213k mirror
+   47,869 pread64  187.0 MiB  /var/tmp/etilqs_* (SQLite temp file: seen/kept temp tables)
+   25,694 pwrite64 100.4 MiB  /var/tmp/etilqs_*
+   47,067 pread64  183.9 MiB  catalog.db (123 MB database, default 2 MB page cache)
+   34,517 openat (directory opens by fts)
+
+== bench_lexical --paths (213,286 mirror paths, mean 96.3 bytes)
+   build_s=1.352 engine_rss_kib=172400 steady_rss_kib=199652 peak_rss_kib=235136
+
+== malloc_trim(0) through the sampler control FIFO
+   213k after burst+rename+delete+churn: RSS 445,160 KiB -> 229,244 KiB; malloc_info reports 12 heaps (arenas)
+   494k after cold index + one rescan:   RSS 414,788 KiB -> 381,868 KiB

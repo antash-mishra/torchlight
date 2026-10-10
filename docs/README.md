@@ -14,6 +14,13 @@ window action ([ADR 0035](adr/0035-open-windows-under-applications.md)). Results
 take one line each, with a short folder ([ADR 0036](adr/0036-one-line-results.md)).
 Machines without GTK can build and install just the daemon and command line
 with `make headless` and `make install-headless` ([ADR 0037](adr/0037-headless-build.md)).
+The [M7 plan](m7-plan.md) profiles indexing headlessly and plans two
+phases. Phase 1 is implemented: full scans only for a reason, with periodic
+rescans limited to the folders inotify cannot cover
+([ADR 0038](adr/0038-repair-scans-and-metadata-events.md)), no work for
+metadata-only writes, and freed memory returned to the OS
+([ADR 0039](adr/0039-returning-freed-memory.md)). Phase 2 (cheaper full
+scans) is next.
 
 Start here. Read in this order:
 
@@ -205,6 +212,15 @@ the root [README](../README.md) for commands, and
 - [0036: One-line results with short folders](adr/0036-one-line-results.md)
   puts each result on one line with a short, right-aligned folder, drops app
   subtitles and the hover tint, and slims the footer to its key hints.
+- [0037: Headless build and install](adr/0037-headless-build.md)
+  builds and installs the daemon and command line without GTK.
+- [0038: Repair scans only where inotify can miss changes](adr/0038-repair-scans-and-metadata-events.md)
+  replaces the 30-second full scan with a repair set, an hourly backstop and a
+  mount-table signal, and makes metadata-only writes cause no pass or
+  publication.
+- [0039: Returning freed memory](adr/0039-returning-freed-memory.md)
+  trims the heap after a retired full build and sets the daemon's allocator
+  policy in `torchlightd`.
 
 ## Keeping docs current
 

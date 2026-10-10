@@ -1,6 +1,7 @@
 # crawl
 
-> **Status:** Implemented (M1/M2; M6 scoped walks): physical crawl, allowlist, roots and filesystem identity
+> **Status:** Implemented (M1/M2; M6 scoped walks; M7 device boundaries): physical crawl, allowlist,
+> roots and filesystem identity
 > **Source:** `src/fs/crawl.c` · **Header:** `include/torchlight/crawl.h`
 > **Tests:** `tests/unit/test_crawl.c`, `tests/test_cli.py`
 
@@ -17,6 +18,12 @@ without following symlinks. Missing birth time falls back to ctime; unsupported
 statx uses the fts stat. Other lookup failures mark the scope unreadable so the
 store cannot mistake failed observation for replacement. The store decides
 whether a changed incarnation must retire an id; crawl never calls storage.
+
+**Device boundaries (M7).** A directory record sets `device_boundary` when it
+is the walk's starting directory or lies on a different device than its parent
+(a mount point). The writer checks only those directories' filesystem types,
+one `statfs` each, to find network and FUSE mounts that need periodic repair.
+`device_boundaries` in `test_crawl.c` covers a root walk and a scoped walk.
 
 **Scopes.** One decision function (`classify`) is shared by walks and coverage
 checks:

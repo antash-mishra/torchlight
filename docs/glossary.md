@@ -58,6 +58,11 @@
 | **Compaction** | Full rebuild of a new base segment from the committed catalog once the delta exceeds max(4096, base/32) entries (or the change set is incomplete); runs on the indexing thread while queries continue on the old view, and publishes like any other `catalog_gen`. |
 | **Scoped reconcile** | Crawling and upserting only the directories named by coalesced watch events, instead of every root (M6 step 3a). |
 | **Event scope** | A directory to rescan after watch events: its direct children (the parent of a changed entry), or its whole subtree when it appeared with unseen contents. |
+| **Repair set** | Directories inotify cannot keep current: ones whose watch could not be installed, ones that could not be listed, and mount points of network or FUSE filesystems. The writer rescans them recursively every `rescan_ms`; each full scan rebuilds the set (M7, ADR 0038). |
+| **Backstop scan** | A full scan of every root after `repair_ms` (default one hour) without one, catching anything inotify missed while its coverage looked complete. `--repair-ms 0` disables it. |
+| **Metadata event** | A watch event that leaves a name and its place unchanged: an attribute change, or (when fed) a write. Search reads names only, so it causes no pass for a file; for a directory in the repair set it causes a recursive rescan, since the directory may have become listable. |
+| **Metadata refresh** | An upsert that only updates an existing row's mtime/size or adopts its identity. Committed, but not a catalog change: no change id, no publication. |
+| **Full-scan reason** | Why the last full scan ran (`last_full_reason` in status): startup, reconcile, overflow, scopes, failure, repair, mount or backstop. |
 | **Fuzzy matcher** | A word compiled for Frizbee's SIMD Smith-Waterman (`fuzzy_matcher_create`), weighted to score on the portable scorer's scale; one per word and scoring thread (M6 step 2). |
 | **Word evidence cache** | Per-workspace cache of one word's channel hits, directory scores and matchers, keyed by the word's symbols and reused across queries (M6 step 2). |
 | **Incremental semantic stage** | A semantic snapshot built by copying the previous snapshot's vector for every row whose prepared text is unchanged, embedding only the rest (M6 step 3c). |

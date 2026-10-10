@@ -33,8 +33,12 @@ struct tl_store {
     sqlite3_stmt *put, *mark_seen, *keep, *identity;
     sqlite3_stmt *embedding_get, *embedding_put, *embedding_touch;
     sqlite3_stmt *history[HISTORY_STATEMENTS];
-    /* history_batch: a store_history_begin transaction is open. */
+    /* history_batch: a store_history_begin transaction is open. changed: the
+     * transaction changed names (files or roots); metadata_changed: it only
+     * refreshed existing rows' metadata. metadata_write is set while an upsert
+     * runs that can only refresh metadata, for the update hook. */
     bool transaction, reading, changed, embedding_batch, history_batch;
+    bool metadata_changed, metadata_write;
     /* Ids of files rows inserted, updated or deleted by the current catalog
      * transaction (see store_changes), up to change_limit before overflow. */
     uint64_t *change_ids;
@@ -66,9 +70,13 @@ static void record_change(tl_store *store, sqlite3_int64 row) {
 static void catalog_change(void *context, int operation, const char *database, const char *table,
                            sqlite3_int64 row) {
     tl_store *store = context;
-    (void)operation;
     if (strcmp(database, "main") != 0)
         return;
+    /* Search reads names only: a refreshed mtime/size is no catalog change. */
+    if (store->metadata_write && operation == SQLITE_UPDATE && strcmp(table, "files") == 0) {
+        store->metadata_changed = true;
+        return;
+    }
     if (strcmp(table, "files") == 0) {
         store->changed = true;
         record_change(store, row);
@@ -77,12 +85,13 @@ static void catalog_change(void *context, int operation, const char *database, c
         store->roots_changed = true;
     }
 }
+/* Embedding columns describe the path text, which an update at the same path
+ * keeps; a replaced object is deleted first (retire_scope) and re-inserted. */
 static const char PUT_SQL[] =
     "INSERT INTO files(path,name,ext,is_dir,mtime,size,identity) VALUES(?1,?2,?3,?4,?5,?6,?7) "
     "ON CONFLICT(path) DO UPDATE SET "
     "name=excluded.name,ext=excluded.ext,is_dir=excluded.is_dir,"
-    "mtime=excluded.mtime,size=excluded.size,identity=COALESCE(excluded.identity,files.identity),"
-    "emb_version=NULL,emb_bin=NULL,emb_i8=NULL,emb_scale=NULL "
+    "mtime=excluded.mtime,size=excluded.size,identity=COALESCE(excluded.identity,files.identity) "
     "WHERE files.mtime IS NOT excluded.mtime OR files.size IS NOT excluded.size "
     "OR files.is_dir IS NOT excluded.is_dir "
     "OR (excluded.identity IS NOT NULL AND files.identity IS NOT excluded.identity)";
@@ -222,7 +231,7 @@ static tl_status prepare_statements(tl_store *store) {
     if (sqlite3_prepare_v2(store->db, PUT_SQL, -1, &store->put, NULL) != SQLITE_OK ||
         sqlite3_prepare_v2(store->db, MARK_SEEN_SQL, -1, &store->mark_seen, NULL) != SQLITE_OK ||
         sqlite3_prepare_v2(store->db, KEEP_SQL, -1, &store->keep, NULL) != SQLITE_OK ||
-        sqlite3_prepare_v2(store->db, "SELECT identity FROM files WHERE path=?1", -1,
+        sqlite3_prepare_v2(store->db, "SELECT identity,is_dir FROM files WHERE path=?1", -1,
                            &store->identity, NULL) != SQLITE_OK ||
         sqlite3_prepare_v2(store->db,
                            "SELECT payload FROM embedding_cache WHERE emb_gen=?1 AND text=?2", -1,
@@ -302,6 +311,7 @@ tl_status store_begin(tl_store *store) {
         return status;
     store->transaction = true;
     store->changed = false;
+    store->metadata_changed = false;
     store->change_count = 0;
     store->changes_overflow = false;
     store->roots_changed = false;
@@ -342,27 +352,43 @@ static void encode_identity(const tl_crawl_entry *entry, unsigned char out[IDENT
     identity_number(out + 17, 8, (uint64_t)entry->identity_sec);
     identity_number(out + 25, 4, entry->identity_nsec);
 }
-static tl_status identity_changed(tl_store *store, const tl_crawl_entry *entry, bool *changed) {
-    *changed = false;
-    if (!entry->has_identity)
+/* What the catalog holds at an entry's path before its upsert. replaced: a
+ * different filesystem object now has the path (its saved identity differs). */
+struct saved_row {
+    bool exists, is_dir, replaced;
+};
+static bool identity_differs(const unsigned char *saved, const unsigned char *incoming) {
+    return memcmp(saved + 1, incoming + 1, IDENTITY_OBJECT_BYTES) != 0 ||
+           (saved[0] != IDENTITY_RENAMED && memcmp(saved, incoming, IDENTITY_BYTES) != 0);
+}
+/* Compare the identity column of the current row with entry's; a NULL saved
+ * identity (legacy or unknown) is adopted rather than treated as replaced. */
+static tl_status compare_identity(sqlite3_stmt *statement, const tl_crawl_entry *entry,
+                                  bool *replaced) {
+    if (!entry->has_identity || sqlite3_column_type(statement, 0) == SQLITE_NULL)
         return TL_OK;
+    const unsigned char *saved = sqlite3_column_blob(statement, 0);
+    if (saved == NULL || sqlite3_column_type(statement, 0) != SQLITE_BLOB ||
+        sqlite3_column_bytes(statement, 0) != IDENTITY_BYTES || saved[0] > IDENTITY_RENAMED)
+        return TL_IO;
     unsigned char incoming[IDENTITY_BYTES];
     encode_identity(entry, incoming);
+    *replaced = identity_differs(saved, incoming);
+    return TL_OK;
+}
+static tl_status read_saved(tl_store *store, const tl_crawl_entry *entry, struct saved_row *out) {
+    *out = (struct saved_row){0};
     sqlite3_stmt *statement = store->identity;
     tl_status status = bind_blob(statement, 1, entry->path, strlen(entry->path));
     if (status == TL_OK) {
         int code = sqlite3_step(statement);
-        if (code == SQLITE_ROW && sqlite3_column_type(statement, 0) != SQLITE_NULL) {
-            const unsigned char *saved = sqlite3_column_blob(statement, 0);
-            if (saved == NULL || sqlite3_column_type(statement, 0) != SQLITE_BLOB ||
-                sqlite3_column_bytes(statement, 0) != IDENTITY_BYTES || saved[0] > IDENTITY_RENAMED)
-                status = TL_IO;
-            else
-                *changed =
-                    memcmp(saved + 1, incoming + 1, IDENTITY_OBJECT_BYTES) != 0 ||
-                    (saved[0] != IDENTITY_RENAMED && memcmp(saved, incoming, IDENTITY_BYTES) != 0);
-        } else if (code != SQLITE_ROW && code != SQLITE_DONE)
+        if (code == SQLITE_ROW) {
+            out->exists = true;
+            out->is_dir = sqlite3_column_int(statement, 1) != 0;
+            status = compare_identity(statement, entry, &out->replaced);
+        } else if (code != SQLITE_DONE) {
             status = TL_IO;
+        }
     }
     if (sqlite3_reset(statement) != SQLITE_OK)
         status = TL_IO;
@@ -397,14 +423,18 @@ static tl_status bind_entry(sqlite3_stmt *statement, const tl_crawl_entry *entry
     return TL_OK;
 }
 static tl_status upsert(tl_store *store, const tl_crawl_entry *entry) {
-    bool replaced = false;
-    tl_status status = identity_changed(store, entry, &replaced);
-    if (status == TL_OK && replaced)
+    struct saved_row saved;
+    tl_status status = read_saved(store, entry, &saved);
+    if (status == TL_OK && saved.replaced)
         status = retire_scope(store, entry->path);
     if (status == TL_OK)
         status = bind_entry(store->put, entry);
+    /* The same object, still a file or still a directory, at the same path:
+     * an update can only refresh mtime/size or adopt an identity. */
+    store->metadata_write = saved.exists && !saved.replaced && saved.is_dir == entry->is_dir;
     if (status == TL_OK && sqlite3_step(store->put) != SQLITE_DONE)
         status = TL_IO;
+    store->metadata_write = false;
     if (sqlite3_reset(store->put) != SQLITE_OK)
         status = TL_IO;
     sqlite3_clear_bindings(store->put);
@@ -841,6 +871,14 @@ tl_status store_catalog_changed(tl_store *store, bool *out) {
     if (!store->transaction)
         return TL_STATE;
     *out = store->changed;
+    return TL_OK;
+}
+tl_status store_metadata_changed(tl_store *store, bool *out) {
+    if (store == NULL || out == NULL)
+        return TL_INVALID;
+    if (!store->transaction)
+        return TL_STATE;
+    *out = store->metadata_changed;
     return TL_OK;
 }
 static tl_status move_statement(tl_store *store, const char *sql, const char *old_path,

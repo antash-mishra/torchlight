@@ -530,3 +530,28 @@ on every open, twice as many targets as the item cap): 112 ms at 50k and
 114 ms at 500k (the rebuild does not depend on the catalog). Before the fix
 the same replay took about 1.25 s (measured separately at -O2). Ranking
 quality, the nine fixtures and the usage scenario are unchanged.
+
+## M7 phase 1: quiet indexing (2026-10-10)
+
+`make bench-scenarios` (`tests/bench/bench_scenarios.py`) runs one isolated
+headless daemon per phase over a corpus mirrored as empty files, with
+per-thread CPU, wakeups, I/O and RSS from `/proc` and optional profiles from
+the `LD_PRELOAD` sampler (`make profile-daemon`; `perf` is locked on the
+reference machine). Corpus: a 213k-entry real home catalog (`BENCH_PATHS`),
+`-O3` with frame pointers, the user's `-O0` daemon running alongside.
+
+| Scenario | Before (HEAD dec4b59) | After phase 1 |
+|---|---|---|
+| Idle, default settings | 6.9% of a core, 2 full scans and 151 MiB written per 95 s | 0.09% over 10 min, no full scan, nothing written |
+| One file appended 20 times a second for 30 s | 44% of a core, 191 publications | 0.4%, 1 publication (the file's creation) |
+| Steady RSS / after burst, rename, delete and churn | 214 / 412 MB | 168 / 192 MB |
+| Create lag p50, small / 2,838-entry folder | 108 / 162 ms | 108 / 161 ms |
+| Query round trip p50 / p95, idle | 0.71 / 2.48 ms | 0.75 / 2.20 ms |
+
+The remaining RSS above steady after the events is live data: the deleted
+20k-entry tree stays tombstoned in the base engine until the next compaction.
+Results: `tests/bench/results/2026-10-10-m7-harness-baseline.jsonl`,
+`2026-10-10-m7-phase1.jsonl` and `2026-10-10-m7-allocator.jsonl`; analysis in
+the [M7 plan](m7-plan.md#phase-1-results-2026-10-10),
+[ADR 0038](adr/0038-repair-scans-and-metadata-events.md) and
+[ADR 0039](adr/0039-returning-freed-memory.md).

@@ -10,9 +10,16 @@ typedef struct {
     const char *socket_path;
     const char *model_path;
     size_t watch_capacity, max_entries, max_path_bytes;
-    unsigned rescan_ms, history_days;
+    /* rescan_ms: repair-set interval; repair_ms: backstop full-scan interval,
+     * 0 disables it (see tl_writer_options). */
+    unsigned rescan_ms, repair_ms, history_days;
     unsigned semantic_deadline_ms;
     bool history;
+    /* Optional hook the writer calls after freeing a full scan's batch or a
+     * retired whole engine (see tl_writer_options.release_memory); the
+     * executable owns the policy. */
+    void (*release_memory)(void *context);
+    void *release_context;
 } tl_daemon_options;
 /** Create owned daemon with socket/database singleton locks, saved resident
  * catalog, writer, preallocated client buffers and a search thread. config must
