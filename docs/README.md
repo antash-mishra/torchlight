@@ -1,7 +1,8 @@
 # Torchlight docs
 
-For a simple visual overview, open [Built and next](system-overview.html) in a
-browser. It shows the current system, the planned system, and the next steps.
+For a plain-language tour of how the whole system works, with diagrams, open
+[System design](system-design.html) in a browser. For an overview of what was
+built and what comes next, open [Built and next](system-overview.html).
 The implemented M3 popup follows the [GUI specification](m3-gui-design.md) and
 [interactive design preview](m3-gui-preview.html), including Cinnamon X11 focus,
 keyboard actions, status/error states and asynchronous IPC requirements.

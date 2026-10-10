@@ -1,0 +1,1130 @@
+<!-- Plain-language system design of Torchlight: components, flows and data, with diagrams. -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="How Torchlight works: the daemon, the popup, how a search runs, how the index stays fresh, and where data lives.">
+  <title>Torchlight System Design</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23b45309'/%3E%3Cpath d='M11 8h10l-2 9h-6z' fill='white'/%3E%3Crect x='14' y='18' width='4' height='8' rx='1' fill='white'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f6f2;
+      --surface: #ffffff;
+      --surface-2: #f1efe9;
+      --ink: #1c1d21;
+      --ink-2: #43464d;
+      --muted: #676b73;
+      --line: #e2dfd7;
+      --line-strong: #b5b1a7;
+      --hot: #b45309;
+      --hot-soft: #fdf1e1;
+      --hot-ink: #8f4107;
+      --cool: #2f6aa8;
+      --cool-soft: #e8f0f9;
+      --code-bg: #f3f1ec;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --bg: #121316;
+        --surface: #1b1c20;
+        --surface-2: #23252a;
+        --ink: #ecebe6;
+        --ink-2: #c6c4be;
+        --muted: #9a9ea6;
+        --line: #2f3137;
+        --line-strong: #50545d;
+        --hot: #f0a23b;
+        --hot-soft: #2f2414;
+        --hot-ink: #f6bd6a;
+        --cool: #7db1e8;
+        --cool-soft: #16222f;
+        --code-bg: #202227;
+      }
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #121316; --surface: #1b1c20; --surface-2: #23252a; --ink: #ecebe6; --ink-2: #c6c4be;
+      --muted: #9a9ea6; --line: #2f3137; --line-strong: #50545d; --hot: #f0a23b; --hot-soft: #2f2414;
+      --hot-ink: #f6bd6a; --cool: #7db1e8; --cool-soft: #16222f; --code-bg: #202227;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 16px/1.65 "Noto Sans", Inter, Ubuntu, Cantarell, "Segoe UI", -apple-system, "DejaVu Sans", system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    main { max-width: 1060px; margin: 0 auto; padding: 56px 32px 40px; }
+    code, pre, .mono { font-family: ui-monospace, "JetBrains Mono", "DejaVu Sans Mono", Menlo, monospace; }
+    code { font-size: .88em; background: var(--code-bg); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+    a { color: var(--cool); text-underline-offset: 3px; }
+    a:focus-visible, summary:focus-visible { outline: 3px solid var(--cool); outline-offset: 3px; border-radius: 4px; }
+
+    /* Header */
+    .eyebrow { margin: 0 0 10px; color: var(--hot-ink); font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(34px, 5.2vw, 52px); line-height: 1.1; letter-spacing: -.03em; }
+    .lede { max-width: 720px; margin: 18px 0 0; color: var(--ink-2); font-size: 19px; line-height: 1.6; }
+    .meta { margin: 14px 0 0; color: var(--muted); font-size: 13px; }
+    nav.toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 30px 0 8px; padding: 0; list-style: none; }
+    nav.toc a { display: inline-block; padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2); font-size: 13px; font-weight: 600; text-decoration: none; }
+    nav.toc a:hover { border-color: var(--line-strong); color: var(--ink); }
+
+    /* Sections */
+    section { margin-top: 64px; scroll-margin-top: 20px; }
+    h2 { margin: 0 0 6px; font-size: 28px; line-height: 1.25; letter-spacing: -.02em; }
+    h2 .num { color: var(--hot); font-variant-numeric: tabular-nums; margin-right: 10px; }
+    h3 { margin: 0 0 6px; font-size: 17px; line-height: 1.35; }
+    p { margin: 0 0 14px; }
+    .sub { max-width: 760px; color: var(--ink-2); font-size: 17px; }
+    ul, ol { margin: 10px 0 16px; padding-left: 22px; }
+    li { margin: 6px 0; }
+    li::marker { color: var(--muted); }
+
+    /* Cards */
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin: 22px 0; }
+    .card { padding: 20px 22px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+    .card p { margin: 0; color: var(--ink-2); font-size: 15px; }
+    .card .tag { display: inline-block; margin-bottom: 10px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+    .tag.hot { background: var(--hot-soft); color: var(--hot-ink); border: 1px solid color-mix(in srgb, var(--hot) 35%, transparent); }
+    .tag.cool { background: var(--cool-soft); color: var(--cool); border: 1px solid color-mix(in srgb, var(--cool) 35%, transparent); }
+    .tag.plain { background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); }
+    .card h3 code { font-size: .95em; background: none; padding: 0; }
+
+    .note { margin: 22px 0; padding: 16px 20px; border-left: 4px solid var(--hot); border-radius: 0 12px 12px 0; background: var(--hot-soft); color: var(--ink); }
+    .note p:last-child { margin: 0; }
+
+    /* Figures */
+    figure.fig { margin: 22px 0; padding: 22px 22px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; }
+    .fig-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .fig svg { display: block; width: 100%; height: auto; min-width: 760px; }
+    .fig svg.narrow { min-width: 640px; }
+    figcaption { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; line-height: 1.55; }
+    figcaption strong { color: var(--ink-2); }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 14px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--ink-2); }
+    .legend li { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+    .sw { display: inline-block; width: 22px; height: 14px; border-radius: 4px; border: 1.5px solid; }
+    .sw.hot { background: var(--hot-soft); border-color: var(--hot); }
+    .sw.cool { background: var(--cool-soft); border-color: var(--cool); }
+    .sw.data { background: var(--surface); border-color: var(--line-strong); }
+    .sw.disk { background: var(--surface-2); border-color: var(--line-strong); border-style: dashed; }
+
+    /* SVG vocabulary (shared by every diagram) */
+    .dia text { font-family: inherit; }
+    .dia .t { font-size: 13px; font-weight: 650; fill: var(--ink); }
+    .dia .t-sm { font-size: 12px; font-weight: 650; fill: var(--ink); }
+    .dia .s { font-size: 11.5px; fill: var(--muted); }
+    .dia .lbl { font-size: 11px; fill: var(--ink-2); }
+    .dia .lbl-hot { font-size: 11px; font-weight: 650; fill: var(--hot-ink); }
+    .dia .lbl-strong { font-size: 12px; font-weight: 600; fill: var(--ink-2); }
+    .dia .cap { font-size: 10.5px; font-weight: 700; letter-spacing: .12em; fill: var(--muted); }
+    .dia .lane { font-size: 12.5px; font-weight: 700; fill: var(--ink-2); }
+    .dia .ex { font-size: 11.5px; fill: var(--hot-ink); }
+    .dia .mono { font-family: ui-monospace, "JetBrains Mono", "DejaVu Sans Mono", Menlo, monospace; }
+    .dia .bx { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.2; }
+    .dia .bx-hot { fill: var(--hot-soft); stroke: var(--hot); stroke-width: 1.5; }
+    .dia .bx-bg { fill: var(--cool-soft); stroke: var(--cool); stroke-width: 1.5; }
+    .dia .bx-disk { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .dia .bx-mem { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1.2; }
+    .dia .bx-group { fill: none; stroke: var(--line-strong); stroke-width: 1.4; }
+    .dia .ghost-n { fill: none; stroke: var(--line-strong); stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .dia .ghost-b { fill: none; stroke: var(--cool); stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .dia .ghost-h { fill: none; stroke: var(--hot); stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .dia .band { fill: var(--surface-2); stroke: var(--line-strong); stroke-width: 1.2; stroke-dasharray: 6 4; }
+    .dia .lane-bg { fill: var(--surface-2); }
+    .dia .sep { stroke: var(--line); stroke-width: 1; }
+    .dia .ln { fill: none; stroke: var(--ink-2); stroke-width: 1.4; }
+    .dia .ln-hot { stroke: var(--hot); stroke-width: 1.7; }
+    .dia .ln-bg { stroke: var(--cool); stroke-width: 1.5; }
+    .dia .dot { stroke: var(--ink-2); stroke-width: 1.2; stroke-dasharray: 2 4; fill: none; }
+    .dia .life { stroke: var(--line-strong); stroke-width: 1.2; stroke-dasharray: 3 5; }
+    .dia .pub { stroke: var(--hot); stroke-width: 1.5; stroke-dasharray: 5 4; }
+    .dia .act-hot { fill: var(--hot); }
+    .dia .act-bg { fill: var(--cool); }
+    .dia .relay { fill: var(--surface); stroke: var(--hot); stroke-width: 1.5; }
+    .dia .pill { fill: var(--surface); stroke: var(--line); }
+    .dia .mk-n { fill: var(--ink-2); }
+    .dia .mk-h { fill: var(--hot); }
+    .dia .mk-b { fill: var(--cool); }
+
+    /* Steps */
+    ol.steps { counter-reset: step; list-style: none; padding: 0; margin: 20px 0; display: grid; gap: 10px; }
+    ol.steps > li { counter-increment: step; position: relative; margin: 0; padding: 2px 0 2px 44px; }
+    ol.steps > li::before {
+      content: counter(step); position: absolute; left: 0; top: 2px; width: 28px; height: 28px;
+      display: grid; place-items: center; border-radius: 50%; background: var(--hot-soft);
+      border: 1.5px solid var(--hot); color: var(--hot-ink); font-size: 13px; font-weight: 700;
+    }
+
+    /* Tables */
+    .table-wrap { overflow-x: auto; margin: 18px 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+    th, td { padding: 11px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    tr:last-child td { border-bottom: 0; }
+    th { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; background: var(--surface-2); }
+    td:first-child { font-weight: 650; white-space: nowrap; }
+    td .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+
+    /* Details */
+    details { margin: 18px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+    summary { cursor: pointer; padding: 12px 18px; font-weight: 650; color: var(--ink-2); }
+    details[open] summary { border-bottom: 1px solid var(--line); }
+    details .inner { padding: 14px 18px 4px; font-size: 15px; }
+    pre { margin: 0 0 14px; padding: 14px 16px; overflow-x: auto; background: var(--code-bg); border-radius: 10px; font-size: 12.5px; line-height: 1.55; }
+    pre .c { color: var(--muted); }
+
+    /* Two columns */
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 22px 0; }
+    .col { padding: 20px 22px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); }
+    .col.disk { border-style: dashed; border-color: var(--line-strong); background: var(--surface-2); }
+    .col h3 { display: flex; align-items: center; gap: 10px; }
+    .col ul { padding-left: 18px; font-size: 15px; }
+    .col li strong { color: var(--ink); }
+
+    /* Code map */
+    .layers { margin: 22px 0; display: grid; gap: 0; }
+    .layer { display: grid; grid-template-columns: 230px 1fr; gap: 18px; padding: 18px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+    .layer h3 { margin: 0; }
+    .layer .path { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; }
+    .layer p { margin: 6px 0 0; color: var(--ink-2); font-size: 14px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
+    .chip { padding: 3px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); font-size: 12.5px; color: var(--ink-2); }
+    .chip.key { border-color: var(--hot); background: var(--hot-soft); color: var(--hot-ink); font-weight: 650; }
+    .chip .desc { color: var(--muted); font-weight: 400; }
+    .group { margin-right: 10px; }
+    .group-name { display: block; margin: 0 0 4px; color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    .layer-groups { display: flex; flex-wrap: wrap; gap: 14px 20px; }
+    .down { display: flex; align-items: center; justify-content: center; gap: 8px; height: 30px; color: var(--muted); font-size: 12.5px; }
+    .down::before { content: "↓"; font-size: 16px; color: var(--line-strong); }
+
+    /* Glossary */
+    dl.gloss { display: grid; grid-template-columns: 200px 1fr; margin: 20px 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; }
+    dl.gloss dt, dl.gloss dd { margin: 0; padding: 11px 16px; border-bottom: 1px solid var(--line); }
+    dl.gloss dt { font-weight: 650; background: var(--surface-2); }
+    dl.gloss dt:last-of-type, dl.gloss dd:last-of-type { border-bottom: 0; }
+    dl.gloss dd { color: var(--ink-2); font-size: 15px; }
+
+    footer { margin-top: 72px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px; }
+    footer a { margin-right: 4px; }
+
+    @media (max-width: 760px) {
+      main { padding: 36px 16px 32px; }
+      .lede { font-size: 17px; }
+      section { margin-top: 48px; }
+      h2 { font-size: 24px; }
+      figure.fig { padding: 14px 12px 12px; }
+      .cols { grid-template-columns: 1fr; }
+      .layer { grid-template-columns: 1fr; gap: 10px; }
+      dl.gloss { grid-template-columns: 1fr; }
+      dl.gloss dt { border-bottom: 0; padding-bottom: 2px; background: none; }
+    }
+  </style>
+</head>
+<body>
+<main>
+
+  <header>
+    <p class="eyebrow">Torchlight · system design</p>
+    <h1>How Torchlight works</h1>
+    <p class="lede">Torchlight is a Spotlight-style launcher for Linux. You press a shortcut, type a few
+      letters, and open an app, a settings panel, a file or a folder. This page explains the pieces
+      behind that popup, how they talk to each other, and why typing stays fast.</p>
+    <p class="meta">Based on the code and docs at commit <code>da125c3</code>, October 2026.
+      The <a href="architecture.md">architecture doc</a> has the full technical detail.</p>
+    <nav class="toc" aria-label="On this page">
+      <a href="#short">The short version</a>
+      <a href="#big-picture">Big picture</a>
+      <a href="#typing">When you type</a>
+      <a href="#matching">Finding matches</a>
+      <a href="#fresh">Staying up to date</a>
+      <a href="#snapshots">Snapshots</a>
+      <a href="#data">Where data lives</a>
+      <a href="#threads">Threads</a>
+      <a href="#extras">Extras</a>
+      <a href="#code">Code map</a>
+      <a href="#words">Words</a>
+    </nav>
+  </header>
+
+  <!-- 1 ─────────────────────────────────────────────────────────────── -->
+  <section id="short">
+    <h2><span class="num">1</span>The short version</h2>
+    <p class="sub">Torchlight is three programs. Only one of them does the real work.</p>
+
+    <div class="cards">
+      <div class="card">
+        <span class="tag hot">the brain</span>
+        <h3><code>torchlightd</code>, the daemon</h3>
+        <p>Runs in the background all the time. It keeps every file, folder and app name in memory,
+          watches your folders for changes, and answers searches.</p>
+      </div>
+      <div class="card">
+        <span class="tag hot">the face</span>
+        <h3><code>torchlight-gtk</code>, the popup</h3>
+        <p>The window you see. It sends what you type to the daemon, shows the results, and opens
+          whatever you pick.</p>
+      </div>
+      <div class="card">
+        <span class="tag plain">for terminals and scripts</span>
+        <h3><code>torchlight</code>, the command line</h3>
+        <p>The same searches from a terminal, plus <code>status</code>, <code>reconcile</code> (rescan)
+          and <code>history-clear</code>.</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <p><strong>The main idea:</strong> the popup never searches by itself. All searching happens in
+        the daemon, which already has everything loaded in memory. So the popup can appear instantly,
+        and each keystroke is answered in a few milliseconds, even with half a million files.</p>
+      <p>Only <em>names and paths</em> are indexed. Torchlight never reads what is inside your files.</p>
+    </div>
+  </section>
+
+  <!-- 2 ─────────────────────────────────────────────────────────────── -->
+  <section id="big-picture">
+    <h2><span class="num">2</span>The big picture</h2>
+    <p class="sub">Read the diagram from top to bottom: what you see on screen, the private connection
+      in between, the daemon's moving parts, and the files on disk.</p>
+
+    <figure class="fig">
+      <div class="fig-scroll">
+        <svg class="dia" viewBox="0 -28 1000 748" role="img"
+             aria-label="The popup and command line talk to the torchlightd daemon over a Unix socket. Inside the daemon, the IPC thread and the search thread answer queries from read-only in-memory snapshots, while the desktop worker, the indexing thread and the persistence thread keep those snapshots and the SQLite catalog up to date from files on disk.">
+          <defs>
+            <marker id="d1n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-n" d="M0 0L10 5L0 10z"/></marker>
+            <marker id="d1h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path class="mk-h" d="M0 0L10 5L0 10z"/></marker>
+            <marker id="d1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-b" d="M0 0L10 5L0 10z"/></marker>
+          </defs>
+
+          <!-- Row A: on your screen -->
+          <text class="cap" x="20" y="-10">ON YOUR SCREEN</text>
+          <rect class="bx" x="20" y="20" width="130" height="68" rx="10"/>
+          <text class="t" x="85" y="49" text-anchor="middle">Shortcut</text>
+          <text class="s" x="85" y="68" text-anchor="middle">Super+Space</text>
+          <line class="ln" x1="150" y1="54" x2="203" y2="54" marker-end="url(#d1n)"/>
+          <text class="lbl" x="177" y="46" text-anchor="middle">toggles</text>
+
+          <rect class="bx-hot" x="206" y="20" width="220" height="68" rx="10"/>
+          <text class="t" x="316" y="49" text-anchor="middle">Popup</text>
+          <text class="s" x="316" y="68" text-anchor="middle">torchlight-gtk · GTK 4</text>
+          <line class="ln" x1="426" y1="54" x2="479" y2="54" marker-end="url(#d1n)"/>
+          <text class="lbl" x="453" y="46" text-anchor="middle">opens</text>
+
+          <rect class="bx" x="482" y="20" width="220" height="68" rx="10"/>
+          <text class="t" x="592" y="49" text-anchor="middle">Apps, files, windows</text>
+          <text class="s" x="592" y="68" text-anchor="middle">launched by the popup itself</text>
+
+          <rect class="bx" x="780" y="20" width="200" height="68" rx="10"/>
+          <text class="t" x="880" y="49" text-anchor="middle">Command line</text>
+          <text class="s mono" x="880" y="68" text-anchor="middle">torchlight query …</text>
+
+          <line class="ln ln-hot" x1="304" y1="88" x2="304" y2="125" marker-end="url(#d1h)"/>
+          <line class="ln ln-hot" x1="328" y1="128" x2="328" y2="91" marker-end="url(#d1h)"/>
+          <text class="lbl" x="296" y="113" text-anchor="end">query</text>
+          <text class="lbl" x="336" y="113">results</text>
+          <line class="ln ln-hot" x1="868" y1="88" x2="868" y2="125" marker-end="url(#d1h)"/>
+          <line class="ln ln-hot" x1="892" y1="128" x2="892" y2="91" marker-end="url(#d1h)"/>
+          <text class="lbl" x="860" y="113" text-anchor="end">query</text>
+          <text class="lbl" x="900" y="113">results</text>
+
+          <!-- Row B: the socket -->
+          <rect class="band" x="20" y="128" width="960" height="32" rx="16"/>
+          <text class="lbl-strong" x="500" y="149" text-anchor="middle">Unix socket · one JSON message per line · only your user can connect</text>
+
+          <!-- Row C: the daemon -->
+          <rect class="bx-group" x="20" y="196" width="960" height="394" rx="16"/>
+          <text class="t" x="500" y="226" text-anchor="middle">torchlightd <tspan class="s">· the daemon, always running in the background</tspan></text>
+
+          <line class="ln ln-hot" x1="148" y1="160" x2="148" y2="245" marker-end="url(#d1h)"/>
+          <line class="ln ln-hot" x1="172" y1="248" x2="172" y2="163" marker-end="url(#d1h)"/>
+
+          <!-- Tier 1: answering searches -->
+          <rect class="bx-hot" x="60" y="248" width="200" height="56" rx="10"/>
+          <text class="t" x="160" y="272" text-anchor="middle">IPC thread</text>
+          <text class="s" x="160" y="292" text-anchor="middle">reads &amp; writes messages</text>
+
+          <line class="ln ln-hot" x1="260" y1="268" x2="397" y2="268" marker-end="url(#d1h)"/>
+          <line class="ln ln-hot" x1="400" y1="286" x2="263" y2="286" marker-end="url(#d1h)"/>
+          <text class="lbl" x="330" y="261" text-anchor="middle">query</text>
+          <text class="lbl" x="330" y="301" text-anchor="middle">results</text>
+
+          <rect class="bx-hot" x="400" y="248" width="200" height="56" rx="10"/>
+          <text class="t" x="500" y="272" text-anchor="middle">Search thread</text>
+          <text class="s" x="500" y="292" text-anchor="middle">runs the newest query</text>
+
+          <line class="ln" x1="603" y1="276" x2="737" y2="276" marker-start="url(#d1n)" marker-end="url(#d1n)"/>
+          <text class="lbl" x="670" y="268" text-anchor="middle">boosts ranking</text>
+          <text class="lbl" x="670" y="293" text-anchor="middle">updated on open</text>
+
+          <rect class="bx" x="740" y="248" width="200" height="56" rx="10"/>
+          <text class="t" x="840" y="272" text-anchor="middle">Usage summary</text>
+          <text class="s" x="840" y="292" text-anchor="middle">what you open, in memory</text>
+
+          <line class="ln ln-hot" x1="500" y1="304" x2="500" y2="333" marker-end="url(#d1h)"/>
+          <text class="lbl" x="510" y="324">leases the current snapshot</text>
+
+          <!-- Tier 2: in-memory index -->
+          <rect class="bx-mem" x="40" y="336" width="580" height="134" rx="12"/>
+          <text class="t" x="60" y="362">In-memory index</text>
+          <text class="s" x="184" y="362">read-only snapshots, swapped in whole</text>
+          <rect class="bx" x="60" y="384" width="200" height="70" rx="9"/>
+          <text class="t" x="160" y="413" text-anchor="middle">Apps &amp; settings</text>
+          <text class="s" x="160" y="433" text-anchor="middle">from .desktop entries</text>
+          <rect class="bx" x="400" y="384" width="200" height="70" rx="9"/>
+          <text class="t" x="500" y="413" text-anchor="middle">Files &amp; folders</text>
+          <text class="s" x="500" y="433" text-anchor="middle">version: <tspan class="mono">catalog_gen</tspan></text>
+
+          <!-- Tier 3: keeping it fresh -->
+          <line class="ln ln-bg" x1="160" y1="510" x2="160" y2="457" marker-end="url(#d1b)"/>
+          <text class="lbl" x="170" y="492">publishes</text>
+          <line class="ln ln-bg" x1="500" y1="510" x2="500" y2="457" marker-end="url(#d1b)"/>
+          <text class="lbl" x="510" y="492">publishes a new version</text>
+
+          <rect class="bx-bg" x="60" y="510" width="200" height="56" rx="10"/>
+          <text class="t" x="160" y="534" text-anchor="middle">Desktop worker</text>
+          <text class="s" x="160" y="554" text-anchor="middle">refreshes the app list</text>
+
+          <rect class="bx-bg" x="400" y="510" width="200" height="56" rx="10"/>
+          <text class="t" x="500" y="534" text-anchor="middle">Indexing thread</text>
+          <text class="s" x="500" y="554" text-anchor="middle">watches &amp; rescans folders</text>
+
+          <line class="ln ln-bg" x1="600" y1="528" x2="737" y2="528" marker-end="url(#d1b)"/>
+          <line class="ln ln-bg" x1="740" y1="548" x2="603" y2="548" marker-end="url(#d1b)"/>
+          <text class="lbl" x="670" y="521" text-anchor="middle">changes</text>
+          <text class="lbl" x="670" y="563" text-anchor="middle">committed ids</text>
+
+          <rect class="bx-bg" x="740" y="510" width="200" height="56" rx="10"/>
+          <text class="t" x="840" y="534" text-anchor="middle">Persistence thread</text>
+          <text class="s" x="840" y="554" text-anchor="middle">the only SQLite writer</text>
+
+          <line class="ln" x1="840" y1="304" x2="840" y2="507" marker-end="url(#d1n)"/>
+          <text class="lbl" x="850" y="420">opens, for history</text>
+
+          <!-- Row D: on disk -->
+          <text class="cap" x="20" y="628">ON DISK</text>
+          <line class="ln ln-bg" x1="160" y1="640" x2="160" y2="569" marker-end="url(#d1b)"/>
+          <text class="lbl" x="170" y="612">reads</text>
+          <line class="ln ln-bg" x1="500" y1="640" x2="500" y2="569" marker-end="url(#d1b)"/>
+          <text class="lbl" x="510" y="612">change events + scans</text>
+          <line class="ln ln-bg" x1="840" y1="566" x2="840" y2="637" marker-end="url(#d1b)"/>
+          <text class="lbl" x="850" y="612">writes</text>
+
+          <rect class="bx-disk" x="60" y="640" width="200" height="60" rx="10"/>
+          <text class="t" x="160" y="665" text-anchor="middle">App entries</text>
+          <text class="s" x="160" y="684" text-anchor="middle">.desktop files</text>
+          <rect class="bx-disk" x="400" y="640" width="200" height="60" rx="10"/>
+          <text class="t" x="500" y="665" text-anchor="middle">Your folders</text>
+          <text class="s" x="500" y="684" text-anchor="middle">home folder by default</text>
+          <rect class="bx-disk" x="740" y="640" width="200" height="60" rx="10"/>
+          <text class="t" x="840" y="665" text-anchor="middle">catalog.db</text>
+          <text class="s" x="840" y="684" text-anchor="middle">SQLite database</text>
+        </svg>
+      </div>
+      <ul class="legend" aria-label="Legend">
+        <li><span class="sw hot"></span>Answers your keystrokes (the fast path)</li>
+        <li><span class="sw cool"></span>Background work</li>
+        <li><span class="sw data"></span>Data in memory</li>
+        <li><span class="sw disk"></span>On disk</li>
+      </ul>
+      <figcaption><strong>The whole system on one page.</strong> The amber path (popup → socket → IPC
+        thread → search thread → in-memory index) is the only thing a keystroke waits for. The blue
+        threads prepare new versions of the index on the side and publish them when ready, so
+        background work never makes a search wait.</figcaption>
+    </figure>
+
+    <h3>In plain words</h3>
+    <ol class="steps">
+      <li>You press the shortcut. The popup appears with an empty search box. (There is only ever one
+        popup; pressing the shortcut again hides it.)</li>
+      <li>Each keystroke becomes a small message sent through a <strong>Unix socket</strong>: a private,
+        local connection that only your own user account can open.</li>
+      <li>Inside the daemon, the <strong>IPC thread</strong> receives the message and hands it to the
+        <strong>search thread</strong>, which looks it up in the <strong>in-memory index</strong> and
+        sends back the best matches.</li>
+      <li>In the background, the <strong>indexing thread</strong> notices file changes, the
+        <strong>persistence thread</strong> saves them to a SQLite database, and the <strong>desktop
+        worker</strong> keeps the list of installed apps current. Each publishes a fresh, read-only
+        version of the index when it's ready.</li>
+      <li>When you press Enter, the popup itself opens the app, file or folder. The daemon only checks
+        that the result is still valid and remembers what you opened.</li>
+    </ol>
+  </section>
+
+  <!-- 3 ─────────────────────────────────────────────────────────────── -->
+  <section id="typing">
+    <h2><span class="num">3</span>What happens when you type</h2>
+    <p class="sub">Here is one search and one launch, step by step. Time runs downward.</p>
+
+    <figure class="fig">
+      <div class="fig-scroll">
+        <svg class="dia" viewBox="0 0 1000 744" role="img"
+             aria-label="Sequence of a search: you type, the popup sends a query to the IPC thread, which queues it for the search thread; older queries are cancelled. The search thread leases the current snapshot, matches and scores in a few milliseconds without disk, SQL or memory allocation, and returns results. When you press Enter the popup asks the daemon to resolve the id, launches in a worker, records the open, and the persistence thread saves the history event later.">
+          <defs>
+            <marker id="d2n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-n" d="M0 0L10 5L0 10z"/></marker>
+            <marker id="d2h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path class="mk-h" d="M0 0L10 5L0 10z"/></marker>
+            <marker id="d2b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-b" d="M0 0L10 5L0 10z"/></marker>
+          </defs>
+
+          <!-- Participants -->
+          <rect class="bx" x="15" y="16" width="150" height="44" rx="10"/>
+          <text class="t" x="90" y="43" text-anchor="middle">You</text>
+          <rect class="bx-hot" x="215" y="16" width="150" height="44" rx="10"/>
+          <text class="t" x="290" y="43" text-anchor="middle">Popup</text>
+          <rect class="bx-hot" x="415" y="16" width="150" height="44" rx="10"/>
+          <text class="t" x="490" y="43" text-anchor="middle">IPC thread</text>
+          <rect class="bx-hot" x="615" y="16" width="150" height="44" rx="10"/>
+          <text class="t" x="690" y="43" text-anchor="middle">Search thread</text>
+          <rect class="bx-bg" x="815" y="16" width="150" height="44" rx="10"/>
+          <text class="t" x="890" y="43" text-anchor="middle">Persistence</text>
+
+          <line class="life" x1="90" y1="60" x2="90" y2="730"/>
+          <line class="life" x1="290" y1="60" x2="290" y2="730"/>
+          <line class="life" x1="490" y1="60" x2="490" y2="730"/>
+          <line class="life" x1="690" y1="60" x2="690" y2="730"/>
+          <line class="life" x1="890" y1="60" x2="890" y2="730"/>
+
+          <!-- Search -->
+          <line class="ln" x1="90" y1="100" x2="287" y2="100" marker-end="url(#d2n)"/>
+          <text class="lbl" x="190" y="92" text-anchor="middle">types “prjnts”</text>
+          <line class="ln ln-hot" x1="290" y1="140" x2="487" y2="140" marker-end="url(#d2h)"/>
+          <text class="lbl" x="390" y="132" text-anchor="middle">query, as one JSON line</text>
+          <line class="ln ln-hot" x1="490" y1="180" x2="683" y2="180" marker-end="url(#d2h)"/>
+          <text class="lbl" x="590" y="172" text-anchor="middle">queued; older ones cancelled</text>
+
+          <rect class="act-hot" x="683" y="190" width="14" height="84" rx="3"/>
+          <text class="s" x="672" y="214" text-anchor="end">lease the current snapshot</text>
+          <text class="s" x="672" y="234" text-anchor="end">match, score, add boosts</text>
+          <text class="s" x="672" y="254" text-anchor="end">no disk, SQL or malloc</text>
+          <text class="lbl-hot" x="706" y="236">a few ms</text>
+
+          <line class="ln ln-hot" x1="683" y1="290" x2="493" y2="290" marker-end="url(#d2h)"/>
+          <text class="lbl" x="590" y="282" text-anchor="middle">results, as JSON</text>
+          <line class="ln ln-hot" x1="490" y1="330" x2="293" y2="330" marker-end="url(#d2h)"/>
+          <text class="lbl" x="390" y="322" text-anchor="middle">results</text>
+          <line class="ln" x1="290" y1="370" x2="93" y2="370" marker-end="url(#d2n)"/>
+          <text class="lbl" x="190" y="362" text-anchor="middle">shows the list</text>
+
+          <!-- Divider -->
+          <line class="sep" x1="20" y1="406" x2="980" y2="406" stroke-dasharray="2 4"/>
+          <rect class="pill" x="410" y="394" width="180" height="24" rx="12"/>
+          <text class="lbl" x="500" y="410" text-anchor="middle">later, you press Enter</text>
+
+          <!-- Launch -->
+          <line class="ln" x1="90" y1="446" x2="287" y2="446" marker-end="url(#d2n)"/>
+          <text class="lbl" x="190" y="438" text-anchor="middle">Enter</text>
+          <line class="ln ln-hot" x1="290" y1="486" x2="687" y2="486" marker-end="url(#d2h)"/>
+          <circle class="relay" cx="490" cy="486" r="3.5"/>
+          <text class="lbl" x="590" y="478" text-anchor="middle">resolve the id: still there?</text>
+          <line class="ln ln-hot" x1="690" y1="526" x2="293" y2="526" marker-end="url(#d2h)"/>
+          <circle class="relay" cx="490" cy="526" r="3.5"/>
+          <text class="lbl" x="590" y="518" text-anchor="middle">current path, or “stale”</text>
+
+          <rect class="act-hot" x="283" y="540" width="14" height="52" rx="3"/>
+          <text class="s" x="274" y="562" text-anchor="end">launch in a worker</text>
+          <text class="s" x="274" y="580" text-anchor="end">(GIO, or switch window)</text>
+
+          <line class="ln ln-hot" x1="290" y1="614" x2="687" y2="614" marker-end="url(#d2h)"/>
+          <circle class="relay" cx="490" cy="614" r="3.5"/>
+          <text class="lbl" x="590" y="606" text-anchor="middle">record the open</text>
+          <text class="s" x="672" y="640" text-anchor="end">updates usage summary</text>
+
+          <line class="ln ln-bg" x1="690" y1="664" x2="883" y2="664" marker-end="url(#d2b)"/>
+          <text class="lbl" x="790" y="656" text-anchor="middle">history event (queued)</text>
+          <rect class="act-bg" x="883" y="674" width="14" height="40" rx="3"/>
+          <text class="s" x="906" y="691">saves to</text>
+          <text class="s" x="906" y="707">SQLite later</text>
+        </svg>
+      </div>
+      <figcaption><strong>One search, then one launch.</strong> Every message passes through the IPC
+        thread; the small circles mark where it relays a request without doing work. The popup never
+        waits for the database: history is queued and saved later by the persistence thread.</figcaption>
+    </figure>
+
+    <h3>Three rules keep it fast and safe</h3>
+    <div class="cards">
+      <div class="card">
+        <span class="tag hot">nothing slow</span>
+        <h3>The search path does no slow work</h3>
+        <p>While searching, the search thread never reads the disk, never runs SQL and never asks the
+          system for new memory. Everything it needs, including scratch space, is prepared in advance.</p>
+      </div>
+      <div class="card">
+        <span class="tag hot">newest wins</span>
+        <h3>Old keystrokes are cancelled</h3>
+        <p>If you type faster than answers come back, a newer query cancels the older ones still queued
+          or running. The popup also ignores any late answer for text you have already changed.</p>
+      </div>
+      <div class="card">
+        <span class="tag hot">check first</span>
+        <h3>Results are checked before opening</h3>
+        <p>Results carry an id, not just a path. Before launching, the popup asks the daemon whether
+          that id is still current, so a file that was moved or deleted is never opened by mistake.</p>
+      </div>
+    </div>
+
+    <details>
+      <summary>Under the hood: what the messages look like</summary>
+      <div class="inner">
+        <p>Each message is one line of JSON. A request (at most 8 KiB) looks like this:</p>
+<pre>{"version":1,"request_id":"7","op":"query","query":"prjnts","limit":10}</pre>
+        <p>The answer, trimmed, from a real daemon:</p>
+<pre>{"version":1,"request_id":"7","phase":"final","catalog_gen":1311,
+ "search_id":"e9e4…:52","status":"ok","reason":"lexical_only",
+ "indexing":{"active":false,"degraded":false, <span class="c">…</span>},
+ "history":{"enabled":true, <span class="c">…</span>},
+ "results":[{"id":"12666","kind":"file",
+             "display":"/home/you/notes/projectNotes.md",
+             "path":"/home/you/notes/projectNotes.md"}],
+ "timing":{"engine_us":1460}}</pre>
+        <ul>
+          <li>Operations: <code>query</code>, <code>status</code>, <code>resolve</code>, <code>open</code>,
+            <code>reconcile</code> and <code>history_clear</code>.</li>
+          <li>Paths are raw bytes on Linux. A path that is not valid UTF-8 is sent as
+            <code>path_b64</code> instead of <code>path</code>; <code>display</code> is only for showing,
+            never for opening.</li>
+          <li>Ids are strings so no JSON client loses precision on 64-bit numbers.</li>
+          <li>Limits keep one bad client from hurting others: 16 clients, 4 open requests and 1 MiB of
+            queued output per client, and a 5-second deadline for slow clients.</li>
+          <li>With the optional semantic model, a query gets two answers: a fast <code>lexical</code>
+            one, then a <code>final</code> one. Without it (the default) there is one <code>final</code>
+            answer with <code>reason: lexical_only</code>.</li>
+        </ul>
+      </div>
+    </details>
+  </section>
+
+  <!-- 4 ─────────────────────────────────────────────────────────────── -->
+  <section id="matching">
+    <h2><span class="num">4</span>How a search finds matches</h2>
+    <p class="sub">Comparing your text with half a million names one by one would be too slow. So when
+      the index is built, the engine also builds several lookup tables. A search uses them to find a
+      short list of candidates, then scores only those.</p>
+
+    <figure class="fig">
+      <div class="fig-scroll">
+        <svg class="dia" viewBox="0 0 1000 380" role="img"
+             aria-label="Your query fans out to four candidate channels: prefix, subsequence, trigram and typo. Their hits are merged into one candidate set, scored with the Frizbee fuzzy matcher plus folder context, and ranked with exact names first. Usage boosts and app results are merged in at the ranking step.">
+          <defs>
+            <marker id="d3n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-n" d="M0 0L10 5L0 10z"/></marker>
+          </defs>
+
+          <text class="cap" x="330" y="17" text-anchor="middle">FOUR WAYS TO FIND CANDIDATES</text>
+
+          <rect class="bx-hot" x="16" y="157" width="130" height="80" rx="10"/>
+          <text class="t" x="81" y="191" text-anchor="middle">Your query</text>
+          <text class="ex mono" x="81" y="213" text-anchor="middle">prjnts</text>
+          <text class="s" x="81" y="262" text-anchor="middle">each word must match</text>
+          <text class="s" x="81" y="278" text-anchor="middle">the name or a folder</text>
+
+          <line class="ln" x1="146" y1="197" x2="197" y2="65" marker-end="url(#d3n)"/>
+          <line class="ln" x1="146" y1="197" x2="197" y2="153" marker-end="url(#d3n)"/>
+          <line class="ln" x1="146" y1="197" x2="197" y2="241" marker-end="url(#d3n)"/>
+          <line class="ln" x1="146" y1="197" x2="197" y2="329" marker-end="url(#d3n)"/>
+
+          <rect class="bx" x="200" y="30" width="260" height="70" rx="10"/>
+          <text class="t" x="218" y="54">Prefix</text>
+          <text class="s" x="218" y="72">the start of a word</text>
+          <text class="ex mono" x="218" y="90">conf → config.yaml</text>
+
+          <rect class="bx" x="200" y="118" width="260" height="70" rx="10"/>
+          <text class="t" x="218" y="142">Subsequence</text>
+          <text class="s" x="218" y="160">letters in order, gaps allowed</text>
+          <text class="ex mono" x="218" y="178">prjnts → projectNotes.md</text>
+
+          <rect class="bx" x="200" y="206" width="260" height="70" rx="10"/>
+          <text class="t" x="218" y="230">Trigram</text>
+          <text class="s" x="218" y="248">three-letter pieces, anywhere</text>
+          <text class="ex mono" x="218" y="266">port → report.pdf</text>
+
+          <rect class="bx" x="200" y="294" width="260" height="70" rx="10"/>
+          <text class="t" x="218" y="318">Typo</text>
+          <text class="s" x="218" y="336">one letter wrong</text>
+          <text class="ex mono" x="218" y="354">raedme → README.md</text>
+
+          <line class="ln" x1="460" y1="65" x2="507" y2="197" marker-end="url(#d3n)"/>
+          <line class="ln" x1="460" y1="153" x2="507" y2="197" marker-end="url(#d3n)"/>
+          <line class="ln" x1="460" y1="241" x2="507" y2="197" marker-end="url(#d3n)"/>
+          <line class="ln" x1="460" y1="329" x2="507" y2="197" marker-end="url(#d3n)"/>
+
+          <rect class="bx" x="510" y="157" width="130" height="80" rx="10"/>
+          <text class="t" x="575" y="191" text-anchor="middle">Candidates</text>
+          <text class="s" x="575" y="210" text-anchor="middle">merged, no repeats</text>
+
+          <line class="ln" x1="640" y1="197" x2="677" y2="197" marker-end="url(#d3n)"/>
+
+          <rect class="bx-hot" x="680" y="157" width="140" height="80" rx="10"/>
+          <text class="t" x="750" y="186" text-anchor="middle">Score</text>
+          <text class="s" x="750" y="205" text-anchor="middle">Frizbee fuzzy match</text>
+          <text class="s" x="750" y="221" text-anchor="middle">+ folder context</text>
+
+          <line class="ln" x1="820" y1="197" x2="857" y2="197" marker-end="url(#d3n)"/>
+
+          <rect class="bx-hot" x="860" y="157" width="130" height="80" rx="10"/>
+          <text class="t" x="925" y="186" text-anchor="middle">Top results</text>
+          <text class="s" x="925" y="205" text-anchor="middle">exact names first</text>
+          <text class="s" x="925" y="221" text-anchor="middle">then by score</text>
+
+          <path class="ln" d="M750 290V262H895V240" marker-end="url(#d3n)"/>
+          <text class="lbl" x="822" y="256" text-anchor="middle">boosts</text>
+          <line class="ln" x1="955" y1="290" x2="955" y2="240" marker-end="url(#d3n)"/>
+          <text class="lbl" x="947" y="280" text-anchor="end">merged</text>
+
+          <rect class="bx" x="680" y="290" width="140" height="64" rx="10"/>
+          <text class="t" x="750" y="317" text-anchor="middle">Your usage</text>
+          <text class="s" x="750" y="336" text-anchor="middle">small, capped boosts</text>
+          <rect class="bx" x="860" y="290" width="130" height="64" rx="10"/>
+          <text class="t" x="925" y="317" text-anchor="middle">Apps &amp; settings</text>
+          <text class="s" x="925" y="336" text-anchor="middle">same engine</text>
+        </svg>
+      </div>
+      <figcaption><strong>Find candidates, score them, rank them.</strong> Each channel is an index
+        built ahead of time, so a lookup jumps straight to matching names instead of reading all of
+        them. Scoring is the only careful, letter-by-letter step, and it runs on the short list.</figcaption>
+    </figure>
+
+    <ol class="steps">
+      <li><strong>Split into words.</strong> Every word you type must match either the name or one of
+        its parent folders. So <code>work notes</code> finds <code>notes.md</code> inside a
+        <code>work</code> folder. A word containing <code>/</code> can match across the whole path.</li>
+      <li><strong>Find candidates four ways.</strong> Prefix catches the start of a word, subsequence
+        catches abbreviations, trigram catches a piece from the middle, and typo catches one wrong,
+        missing, extra or swapped letter.</li>
+      <li><strong>Score.</strong> Each candidate gets a score for how well the letters line up: at word
+        starts, next to each other, without big gaps. Torchlight uses <strong>Frizbee</strong>, a fast
+        fuzzy matcher (a vendored Rust library using SIMD instructions) for this. Each folder is
+        stored once and scored once, not once per file inside it.</li>
+      <li><strong>Rank.</strong> An exact path beats an exact name, and both beat everything else.
+        Apps and settings have their own small engine and are merged with files by score. Things you
+        open often get a small, capped boost, so history can reorder results but never bury an exact
+        match.</li>
+    </ol>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>You type</th><th>It finds</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td><code>prjnts</code></td><td><code>projectNotes.md</code></td><td>Letters in order (subsequence), with bonus points for word starts.</td></tr>
+          <tr><td><code>raedme</code></td><td><code>README.md</code></td><td>One swapped letter (typo channel).</td></tr>
+          <tr><td><code>work notes</code></td><td><code>~/work/…/notes.md</code></td><td>One word matches the name, the other a parent folder.</td></tr>
+          <tr><td><code>display</code></td><td>Display settings</td><td>Apps and settings panels are searched by name, generic name and keywords.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 5 ─────────────────────────────────────────────────────────────── -->
+  <section id="fresh">
+    <h2><span class="num">5</span>How the index stays up to date</h2>
+    <p class="sub">Your files change all the time. Torchlight follows those changes without rescanning
+      everything, and without making any search wait.</p>
+
+    <figure class="fig">
+      <div class="fig-scroll">
+        <svg class="dia" viewBox="0 0 1000 340" role="img"
+             aria-label="Indexing flow across four lanes. A file changes and inotify reports it. The indexing thread waits 100 milliseconds, groups changes by folder and rescans just those folders. The persistence thread commits the batch in one SQLite transaction and returns the changed ids. The indexing thread builds a small delta and publishes catalog_gen plus one. The next keystroke on the search thread sees the change; searches keep using the current version the whole time.">
+          <defs>
+            <marker id="d4b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-b" d="M0 0L10 5L0 10z"/></marker>
+            <marker id="d4h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto"><path class="mk-h" d="M0 0L10 5L0 10z"/></marker>
+          </defs>
+
+          <!-- Lanes -->
+          <rect class="lane-bg" x="0" y="90" width="1000" height="80"/>
+          <rect class="lane-bg" x="0" y="250" width="1000" height="80"/>
+          <line class="sep" x1="160" y1="10" x2="160" y2="330"/>
+          <text class="lane" x="12" y="54">Your folders</text>
+          <text class="lane" x="12" y="134">Indexing thread</text>
+          <text class="lane" x="12" y="214">Persistence thread</text>
+          <text class="lane" x="12" y="294">Search thread</text>
+
+          <!-- Steps -->
+          <rect class="bx-disk" x="170" y="24" width="120" height="52" rx="9"/>
+          <text class="t" x="230" y="46" text-anchor="middle">A file changes</text>
+          <text class="s" x="230" y="64" text-anchor="middle">inotify tells us</text>
+          <path class="ln ln-bg" d="M290 50H370V101" marker-end="url(#d4b)"/>
+
+          <rect class="bx-bg" x="310" y="104" width="120" height="52" rx="9"/>
+          <text class="t" x="370" y="126" text-anchor="middle">Wait 100 ms</text>
+          <text class="s" x="370" y="144" text-anchor="middle">group by folder</text>
+          <line class="ln ln-bg" x1="430" y1="130" x2="447" y2="130" marker-end="url(#d4b)"/>
+
+          <rect class="bx-bg" x="450" y="104" width="120" height="52" rx="9"/>
+          <text class="t" x="510" y="126" text-anchor="middle">Rescan</text>
+          <text class="s" x="510" y="144" text-anchor="middle">changed folders</text>
+          <path class="ln ln-bg" d="M570 130H650V181" marker-end="url(#d4b)"/>
+          <text class="lbl" x="610" y="122" text-anchor="middle">the batch</text>
+
+          <rect class="bx-bg" x="590" y="184" width="120" height="52" rx="9"/>
+          <text class="t" x="650" y="206" text-anchor="middle">Commit</text>
+          <text class="s" x="650" y="224" text-anchor="middle">one transaction</text>
+          <path class="ln ln-bg" d="M710 210H790V159" marker-end="url(#d4b)"/>
+          <text class="lbl" x="750" y="202" text-anchor="middle">changed ids</text>
+
+          <rect class="bx-bg" x="730" y="104" width="120" height="52" rx="9"/>
+          <text class="t" x="790" y="126" text-anchor="middle">Build a delta</text>
+          <text class="s" x="790" y="144" text-anchor="middle">changes only</text>
+          <line class="ln ln-bg" x1="850" y1="130" x2="867" y2="130" marker-end="url(#d4b)"/>
+
+          <rect class="bx-hot" x="870" y="104" width="120" height="52" rx="9"/>
+          <text class="t" x="930" y="126" text-anchor="middle">Publish</text>
+          <text class="s mono" x="930" y="144" text-anchor="middle">catalog_gen + 1</text>
+          <line class="ln ln-hot" x1="930" y1="156" x2="930" y2="261" marker-end="url(#d4h)"/>
+          <text class="lbl-hot" x="938" y="214">swap</text>
+
+          <rect class="ghost-h" x="170" y="272" width="680" height="36" rx="9"/>
+          <text class="lbl" x="510" y="295" text-anchor="middle">meanwhile, searches keep using the current version; nothing waits</text>
+
+          <rect class="bx-hot" x="870" y="264" width="120" height="52" rx="9"/>
+          <text class="t" x="930" y="286" text-anchor="middle">Next keystroke</text>
+          <text class="s" x="930" y="304" text-anchor="middle">sees the change</text>
+        </svg>
+      </div>
+      <figcaption><strong>From a saved file to a searchable name.</strong> Work moves between the
+        indexing thread and the persistence thread, but never onto the search thread. The search lane
+        only meets the change at the very end, when the new version is swapped in.</figcaption>
+    </figure>
+
+    <ol class="steps">
+      <li>Linux's <strong>inotify</strong> tells the indexing thread that something in a folder changed.</li>
+      <li>It waits 100 ms, so a burst of changes (unzipping an archive, a <code>git checkout</code>)
+        becomes one update, and notes which folders were touched.</li>
+      <li>It rescans only those folders, not your whole home folder.</li>
+      <li>It hands the batch to the persistence thread, which saves it in one short SQLite transaction
+        and reports which rows changed. No scanning or index building happens while the database is
+        locked for writing.</li>
+      <li>The indexing thread builds a small <strong>delta</strong> index of just the changed entries and
+        publishes a new version. The version number, <code>catalog_gen</code>, goes up by one.</li>
+      <li>The next keystroke searches the new version. Searches already running finish on the old one.</li>
+    </ol>
+
+    <h3>Safety nets</h3>
+    <div class="cards">
+      <div class="card">
+        <span class="tag cool">startup</span>
+        <p>The daemon loads the saved catalog from SQLite and starts answering right away. A full
+          rescan then runs in the background to catch anything that changed while it was off.</p>
+      </div>
+      <div class="card">
+        <span class="tag cool">every 30 seconds</span>
+        <p>A full background rescan repairs anything the watcher missed, such as folders it could not
+          watch. Change the interval with <code>--rescan-ms</code>.</p>
+      </div>
+      <div class="card">
+        <span class="tag cool">big changes</span>
+        <p>When the delta grows past <code>max(4096, base/32)</code> entries, the indexing thread
+          rebuilds a fresh base index from SQLite (<em>compaction</em>), again on the side.</p>
+      </div>
+      <div class="card">
+        <span class="tag cool">watcher trouble</span>
+        <p>If inotify cannot be set up, Torchlight keeps going with periodic rescans only, and
+          <code>torchlight status</code> reports the reduced coverage.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 ─────────────────────────────────────────────────────────────── -->
+  <section id="snapshots">
+    <h2><span class="num">6</span>Snapshots: why searches never wait</h2>
+    <p class="sub">The search side and the indexing side share data without blocking each other. The
+      trick is that the index is never changed in place.</p>
+
+    <figure class="fig">
+      <div class="fig-scroll">
+        <svg class="dia" viewBox="0 0 1000 270" role="img"
+             aria-label="Timeline of two index versions. Version 41 is live until version 42 is published by a single pointer swap; version 42 was built in private before that. Query A started on version 41 and keeps using it after the swap; version 41 is freed when Query A finishes. Query B starts after the swap and uses version 42.">
+          <defs>
+            <marker id="d5n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-n" d="M0 0L10 5L0 10z"/></marker>
+          </defs>
+
+          <line class="pub" x1="520" y1="32" x2="520" y2="222"/>
+          <text class="lbl-hot" x="520" y="24" text-anchor="middle">publish: one pointer swap</text>
+          <text class="lane" x="16" y="70">Version 41</text>
+          <text class="lane" x="16" y="160">Version 42</text>
+          <line class="sep" x1="0" y1="124" x2="1000" y2="124"/>
+
+          <rect class="bx" x="130" y="50" width="390" height="30" rx="7"/>
+          <text class="t-sm" x="325" y="70" text-anchor="middle">catalog_gen 41 · live</text>
+          <rect class="ghost-n" x="520" y="50" width="200" height="30" rx="7"/>
+          <text class="s" x="620" y="70" text-anchor="middle">retired, still leased</text>
+          <text class="lbl" x="730" y="70">freed</text>
+          <rect class="bx-hot" x="440" y="88" width="280" height="26" rx="7"/>
+          <text class="t-sm" x="580" y="105" text-anchor="middle">Query A · started on 41</text>
+
+          <rect class="ghost-b" x="300" y="140" width="220" height="30" rx="7"/>
+          <text class="s" x="410" y="160" text-anchor="middle">built in private</text>
+          <rect class="bx-bg" x="520" y="140" width="440" height="30" rx="7"/>
+          <text class="t-sm" x="740" y="160" text-anchor="middle">catalog_gen 42 · live</text>
+          <rect class="bx-hot" x="600" y="178" width="180" height="26" rx="7"/>
+          <text class="t-sm" x="690" y="195" text-anchor="middle">Query B · uses 42</text>
+
+
+          <line class="ln" x1="130" y1="242" x2="955" y2="242" marker-end="url(#d5n)"/>
+          <text class="s" x="958" y="262" text-anchor="end">time</text>
+        </svg>
+      </div>
+      <figcaption><strong>Each search keeps the version it started with.</strong> Query A began before
+        the swap, so it finishes on version 41 even though 42 is already live. Version 41 is freed only
+        when its last search lets go. Query B starts after the swap and sees version 42.</figcaption>
+    </figure>
+
+    <p>Each version of the index is a read-only <strong>snapshot</strong> with a number,
+      <code>catalog_gen</code>. A search <strong>leases</strong> the current snapshot when it starts and
+      returns it when it's done. The indexing thread builds the next snapshot privately, then publishes
+      it with a single pointer swap, so there is never a half-updated index to see. Apps and settings
+      work the same way, with their own snapshots from the desktop worker.</p>
+
+    <figure class="fig">
+      <div class="fig-scroll">
+        <svg class="dia narrow" viewBox="0 0 1000 226" role="img"
+             aria-label="Two snapshot versions, catalog_gen 41 and 42, both share one large base index. Each owns its own small delta; delta 42 also holds tombstones that hide replaced or deleted base entries.">
+          <defs>
+            <marker id="d6n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-n" d="M0 0L10 5L0 10z"/></marker>
+          </defs>
+
+          <rect class="bx" x="300" y="20" width="400" height="60" rx="10"/>
+          <text class="t" x="500" y="46" text-anchor="middle">Base index</text>
+          <text class="s" x="500" y="66" text-anchor="middle">almost every entry · built once · shared</text>
+
+          <rect class="bx" x="40" y="100" width="150" height="44" rx="10"/>
+          <text class="t-sm mono" x="115" y="127" text-anchor="middle">catalog_gen 41</text>
+          <rect class="bx-hot" x="810" y="100" width="150" height="44" rx="10"/>
+          <text class="t-sm mono" x="885" y="127" text-anchor="middle">catalog_gen 42</text>
+
+          <rect class="bx-bg" x="300" y="160" width="190" height="52" rx="10"/>
+          <text class="t" x="395" y="182" text-anchor="middle">Delta 41</text>
+          <text class="s" x="395" y="200" text-anchor="middle">entries changed so far</text>
+          <rect class="bx-bg" x="510" y="160" width="190" height="52" rx="10"/>
+          <text class="t" x="605" y="182" text-anchor="middle">Delta 42</text>
+          <text class="s" x="605" y="200" text-anchor="middle">changes + tombstones</text>
+
+          <line class="ln" x1="190" y1="112" x2="297" y2="64" marker-end="url(#d6n)"/>
+          <text class="lbl" x="236" y="80" text-anchor="end">shares</text>
+          <line class="ln" x1="190" y1="132" x2="297" y2="180" marker-end="url(#d6n)"/>
+          <text class="lbl" x="236" y="172" text-anchor="end">owns</text>
+          <line class="ln" x1="810" y1="112" x2="703" y2="64" marker-end="url(#d6n)"/>
+          <text class="lbl" x="764" y="80">shares</text>
+          <line class="ln" x1="810" y1="132" x2="703" y2="180" marker-end="url(#d6n)"/>
+          <text class="lbl" x="764" y="172">owns</text>
+        </svg>
+      </div>
+      <figcaption><strong>Why a new version is cheap.</strong> Copying half a million entries for every
+        saved file would be slow, so a snapshot is a big shared <em>base</em> plus a small
+        <em>delta</em> holding every entry changed since that base. <em>Tombstones</em> hide the base's
+        old copies of changed or deleted entries. Both parts are searched together and merged into one
+        ranking, so an entry scores the same wherever it lives.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 7 ─────────────────────────────────────────────────────────────── -->
+  <section id="data">
+    <h2><span class="num">7</span>Where data lives</h2>
+    <p class="sub">SQLite is the lasting copy. The in-memory index is rebuilt from it when the daemon
+      starts, and searches only ever read memory.</p>
+
+    <div class="cols">
+      <div class="col">
+        <h3><span class="sw data"></span>In memory, inside the daemon</h3>
+        <ul>
+          <li><strong>Files &amp; folders snapshot:</strong> every indexed path, the lookup tables for the
+            four channels, and a tree of folders (each folder stored once).</li>
+          <li><strong>Apps &amp; settings snapshot:</strong> names, generic names and keywords from
+            <code>.desktop</code> entries.</li>
+          <li><strong>Usage summary:</strong> how often and how recently you opened things, and which
+            typed query led to which open. Capped in size.</li>
+          <li><strong>Client queues:</strong> a small, bounded queue per connected client.</li>
+        </ul>
+      </div>
+      <div class="col disk">
+        <h3><span class="sw disk"></span>On disk</h3>
+        <ul>
+          <li><code>~/.local/share/torchlight/catalog.db</code>: the SQLite database. Tables
+            <code>files</code>, <code>roots</code>, <code>searches</code>, <code>opens</code>,
+            <code>desktop_opens</code> and <code>meta</code>. Paths are stored as raw bytes.</li>
+          <li><code>~/.config/torchlight/config</code>: which folders to index (<code>root =</code>)
+            and which hidden folders to include anyway (<code>allow =</code>).</li>
+          <li><code>$XDG_RUNTIME_DIR/torchlight.sock</code>: the socket, readable only by you, plus lock
+            files that stop a second daemon from starting.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note">
+      <p><strong>Privacy:</strong> only names and paths are stored, never file contents. History stays
+        on your machine, is kept for 30 days by default (<code>--history-days</code>), and can be turned
+        off (<code>--no-history</code>) or erased (<code>torchlight history-clear</code>). Hidden folders
+        and <code>node_modules</code>, <code>target</code>, <code>build</code> and <code>__pycache__</code>
+        are skipped unless you allow them.</p>
+    </div>
+  </section>
+
+  <!-- 8 ─────────────────────────────────────────────────────────────── -->
+  <section id="threads">
+    <h2><span class="num">8</span>Who does what: the threads</h2>
+    <p class="sub">Each slow job has its own thread, so nothing slow sits in front of a keystroke.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Thread</th><th>Program</th><th>Its job</th><th>Never does</th></tr></thead>
+        <tbody>
+          <tr><td>Popup main thread</td><td><code>torchlight-gtk</code></td>
+            <td>Draws the window, sends queries without waiting for them, keeps your selection steady as results update.</td>
+            <td>Wait for the daemon</td></tr>
+          <tr><td>Launch worker</td><td><code>torchlight-gtk</code></td>
+            <td>Opens apps, files and folders through GIO; shows a file in its folder; switches to an open window.</td>
+            <td>Search</td></tr>
+          <tr><td>IPC thread</td><td><code>torchlightd</code></td>
+            <td>Accepts connections, reads and writes JSON lines, enforces size limits and deadlines.</td>
+            <td>Search</td></tr>
+          <tr><td>Search thread</td><td><code>torchlightd</code></td>
+            <td>Runs queries one at a time, taking turns between clients, newest first. Owns the usage summary. Answers resolve and open.</td>
+            <td>Disk reads, SQL, memory allocation</td></tr>
+          <tr><td>Scoring workers (3)</td><td><code>torchlightd</code></td>
+            <td>Help the search thread score very large batches in parallel on big catalogs.</td>
+            <td>Anything else</td></tr>
+          <tr><td>Indexing thread</td><td><code>torchlightd</code></td>
+            <td>Watches folders (inotify), rescans, builds and publishes new file snapshots.</td>
+            <td>Hold the database write lock</td></tr>
+          <tr><td>Persistence thread</td><td><code>torchlightd</code></td>
+            <td>The only SQLite writer: catalog batches, history, retention, and the usage load at startup.</td>
+            <td>Scan or build indexes</td></tr>
+          <tr><td>Desktop worker</td><td><code>torchlightd</code></td>
+            <td>Reads installed <code>.desktop</code> entries and publishes the apps &amp; settings snapshot.</td>
+            <td>Touch files snapshots</td></tr>
+          <tr><td>Semantic worker</td><td><code>torchlightd</code></td>
+            <td>Only with <code>--model</code>: turns the query into a vector and finds similar names.</td>
+            <td>Delay the first answer</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 9 ─────────────────────────────────────────────────────────────── -->
+  <section id="extras">
+    <h2><span class="num">9</span>Extras around the core</h2>
+    <div class="cards">
+      <div class="card">
+        <span class="tag hot">X11 only</span>
+        <h3>Open windows under their app</h3>
+        <p>Each time the popup opens, it reads the list of open windows itself and shows them beneath
+          the matching app result, matched by the app's <code>wm_class</code>. Enter switches to the most
+          recent window. The daemon never sees your windows.</p>
+      </div>
+      <div class="card">
+        <span class="tag plain">off by default</span>
+        <h3>Semantic search</h3>
+        <p>With <code>--model PATH.tlm</code>, a small local Potion model also matches by meaning. The
+          daemon sends the normal results first, then a merged "final" list. It works, but it is parked
+          because it is slower on large catalogs.</p>
+      </div>
+      <div class="card">
+        <span class="tag plain">no daemon needed</span>
+        <h3>Offline mode</h3>
+        <p>With the daemon stopped, <code>torchlight index</code> scans into SQLite and
+          <code>torchlight query --db …</code> searches it directly. A lock file stops this from racing
+          a running daemon.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 ────────────────────────────────────────────────────────────── -->
+  <section id="code">
+    <h2><span class="num">10</span>Code map</h2>
+    <p class="sub">The C code is split into layers. A layer may only use the layers below it, which
+      keeps every module testable on its own.</p>
+
+    <div class="layers">
+      <div class="layer">
+        <div>
+          <h3>Programs</h3>
+          <span class="path mono">src/bin/ · ui/gtk/</span>
+          <p>Thin executables that wire modules together. The popup's model, view and actions live here.</p>
+        </div>
+        <div class="layer-groups">
+          <div class="group"><span class="group-name">executables</span>
+            <div class="chips"><span class="chip key mono">torchlightd</span><span class="chip key mono">torchlight-gtk</span><span class="chip key mono">torchlight</span></div></div>
+          <div class="group"><span class="group-name">popup</span>
+            <div class="chips"><span class="chip">launcher</span><span class="chip">model</span><span class="chip">view</span><span class="chip">actions</span><span class="chip">windows</span><span class="chip">path_label</span><span class="chip">selection_track</span></div></div>
+        </div>
+      </div>
+      <div class="down">uses</div>
+      <div class="layer">
+        <div>
+          <h3>Service</h3>
+          <span class="path mono">src/service/</span>
+          <p>The daemon's loop and its background workers.</p>
+        </div>
+        <div class="chips">
+          <span class="chip key">daemon <span class="desc">· IPC + search threads</span></span>
+          <span class="chip key">writer <span class="desc">· indexing + persistence</span></span>
+          <span class="chip">delta <span class="desc">· changed entries</span></span>
+          <span class="chip">personal <span class="desc">· usage boosts</span></span>
+          <span class="chip">semantic <span class="desc">· optional model</span></span>
+        </div>
+      </div>
+      <div class="down">uses</div>
+      <div class="layer">
+        <div>
+          <h3>Building blocks</h3>
+          <span class="path mono">src/index/ · src/fs/ · src/storage/ · src/ipc/</span>
+          <p>The search engine, filesystem access, the database, and the message protocol.</p>
+        </div>
+        <div class="layer-groups">
+          <div class="group"><span class="group-name">index (search engine)</span>
+            <div class="chips"><span class="chip">tokenize</span><span class="chip">dirtree</span><span class="chip">prefix</span><span class="chip">subseq</span><span class="chip">trigram</span><span class="chip">typo</span><span class="chip">fuzzy</span><span class="chip key">lexical</span><span class="chip key">catalog</span><span class="chip">desktop</span><span class="chip">usage</span><span class="chip">rank</span><span class="chip">embed</span><span class="chip">vector</span><span class="chip">potion</span></div></div>
+          <div class="group"><span class="group-name">fs</span>
+            <div class="chips"><span class="chip">crawl</span><span class="chip">watch</span></div></div>
+          <div class="group"><span class="group-name">storage</span>
+            <div class="chips"><span class="chip key">store <span class="desc">· the only SQL</span></span></div></div>
+          <div class="group"><span class="group-name">ipc</span>
+            <div class="chips"><span class="chip">ipc</span><span class="chip">client</span><span class="chip">async</span></div></div>
+        </div>
+      </div>
+      <div class="down">uses</div>
+      <div class="layer">
+        <div>
+          <h3>Core</h3>
+          <span class="path mono">src/core/</span>
+          <p>Generic helpers with no knowledge of Torchlight.</p>
+        </div>
+        <div class="chips"><span class="chip">vec</span><span class="chip">hashmap</span><span class="chip">json</span><span class="chip">config</span><span class="chip">path</span><span class="chip">mask</span><span class="chip">sort</span><span class="chip">parallel</span><span class="chip">common</span></div>
+      </div>
+    </div>
+    <p>Outside these layers, <code>third_party/frizbee</code> is the vendored Rust fuzzy matcher, built
+      offline by <code>make</code> and called through its C interface.</p>
+  </section>
+
+  <!-- 11 ────────────────────────────────────────────────────────────── -->
+  <section id="words">
+    <h2><span class="num">11</span>Words you'll see</h2>
+    <dl class="gloss">
+      <dt>Daemon</dt><dd>A program that runs in the background without a window. Here, <code>torchlightd</code>.</dd>
+      <dt>Unix socket</dt><dd>A private connection between programs on the same computer, opened like a file.</dd>
+      <dt>Snapshot</dt><dd>One complete, read-only version of the index. Replaced as a whole, never edited.</dd>
+      <dt><code>catalog_gen</code></dt><dd>The version number of the files snapshot. It goes up by one with every publish.</dd>
+      <dt>Lease</dt><dd>A search's hold on a snapshot. A snapshot is freed only when no search holds it.</dd>
+      <dt>Base and delta</dt><dd>A snapshot's big shared part, and its small part with recent changes.</dd>
+      <dt>Tombstone</dt><dd>A marker that hides a base entry because it changed or was deleted.</dd>
+      <dt>Compaction</dt><dd>Rebuilding a fresh base once the delta gets big.</dd>
+      <dt>Channel</dt><dd>One way of finding candidates: prefix, subsequence, trigram or typo.</dd>
+      <dt>Trigram</dt><dd>A three-letter piece of a name, like <code>rep</code>, <code>epo</code>, <code>por</code> in <code>report</code>.</dd>
+      <dt>inotify</dt><dd>The Linux feature that tells a program when files in a watched folder change.</dd>
+      <dt>Frecency</dt><dd>A score that mixes how <em>fre</em>quently and how re<em>cently</em> you opened something.</dd>
+      <dt>Resolve</dt><dd>Checking a result's id against the current index right before opening it.</dd>
+    </dl>
+  </section>
+
+  <footer>
+    <p>Want more detail? <a href="architecture.md">Architecture</a> ·
+      <a href="../PLAN.md">Plan</a> · <a href="glossary.md">Full glossary</a> ·
+      <a href="modules/">Module docs</a> · <a href="adr/">Design decisions (ADRs)</a> ·
+      <a href="evaluation.md">Measurements</a></p>
+  </footer>
+
+</main>
+</body>
+</html>
