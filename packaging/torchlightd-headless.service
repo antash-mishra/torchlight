@@ -1,0 +1,14 @@
+# Resident per-user search daemon for machines without a graphical session.
+# Installed as torchlightd.service by `make install-headless` (ADR 0037).
+[Unit]
+Description=Torchlight search daemon
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/torchlightd
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target

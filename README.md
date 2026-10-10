@@ -72,6 +72,24 @@ to a free key such as Super+Space.
 [Desktop setup](docs/desktop-setup.md) covers other desktops, staged installs and
 service troubleshooting.
 
+## Headless: daemon and command line only
+
+On a server, in WSL, or anywhere without GTK 4.14, build and install just the
+daemon and the command line. They need no GTK, X11 or display:
+
+```sh
+sudo apt install build-essential pkg-config libsqlite3-dev libutf8proc-dev libglib2.0-dev
+make headless                    # build/torchlight and build/torchlightd
+make install-headless            # into ~/.local, with a service that starts at login
+systemctl --user daemon-reload
+systemctl --user enable --now torchlightd.service
+loginctl enable-linger "$USER"   # optional: keep it running while you are logged out
+```
+
+Rust is still needed for Frizbee. Search with `torchlight query`, or talk to the
+daemon's socket from your own front end ([IPC protocol](docs/modules/ipc/README.md)).
+See [ADR 0037](docs/adr/0037-headless-build.md).
+
 ## Try it without installing
 
 Run the daemon in one terminal:
@@ -149,6 +167,7 @@ default ([ADR 0032](docs/adr/0032-park-semantic-search.md)).
 ```sh
 make test               # unit, CLI and daemon tests under ASan, UBSan and leak checks
 make lint               # clang-tidy and cppcheck; warnings fail the build
+make lint-headless      # the same without the GTK popup, for machines without GTK
 make format             # clang-format
 make bench              # search latency and ranking quality at 50k and 500k paths
 make bench-daemon       # daemon startup, IPC, indexing load, update lag and memory

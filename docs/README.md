@@ -12,6 +12,8 @@ the [design study](popup-directions.html) and [native captures](ui/native-result
 Running applications list their open windows beneath their result, with a New
 window action ([ADR 0035](adr/0035-open-windows-under-applications.md)). Results
 take one line each, with a short folder ([ADR 0036](adr/0036-one-line-results.md)).
+Machines without GTK can build and install just the daemon and command line
+with `make headless` and `make install-headless` ([ADR 0037](adr/0037-headless-build.md)).
 
 Start here. Read in this order:
 

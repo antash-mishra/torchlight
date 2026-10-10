@@ -54,13 +54,16 @@ BENCH_PATHS ?=
 SAN_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie
 CLANG_TIDY ?= clang-tidy
 CPPCHECK ?= cppcheck
-.PHONY: all test lint format bench bench-vector eval-vector bench-daemon clean
+.PHONY: all headless test lint lint-headless format bench bench-vector eval-vector bench-daemon clean
+# Only GTK recipes expand these, so headless targets never require GTK or X11.
 GTK_CPPFLAGS = $(subst -I,-isystem ,$(shell $(PKG_CONFIG) --cflags 'gtk4 >= 4.14' x11))
 GTK_LDLIBS = $(shell $(PKG_CONFIG) --libs 'gtk4 >= 4.14' x11)
 UI_SOURCES = ui/gtk/model.c ui/gtk/windows.c ui/gtk/windows_x11.c ui/gtk/actions.c ui/gtk/launcher.c ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c src/bin/torchlight-gtk.c
 POPUP_FIXTURE_SOURCE = tests/fixtures/popup_probe.c
 WINDOW_FIXTURE_SOURCE = tests/fixtures/window_app.c
-all: build/torchlight build/torchlightd build/torchlight-gtk
+all: headless build/torchlight-gtk
+# Daemon and CLI only, for servers and systems without GTK 4.14 (ADR 0037).
+headless: build/torchlight build/torchlightd
 $(FRIZBEE_LIB): $(FRIZBEE_INPUTS)
 	$(CARGO) build --release --offline --locked --manifest-path $(FRIZBEE_MANIFEST) --target-dir build/frizbee
 	@touch $@
@@ -111,11 +114,13 @@ test: build/tests build/torchlight-sanitized build/torchlightd-sanitized build/t
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_desktop.py ./build/torchlightd-sanitized ./build/test_desktop_replace.so
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_daemon.py ./build/torchlight-sanitized ./build/torchlightd-sanitized
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_semantic.py ./build/torchlightd-sanitized ./build/test_semantic_stall.so ./build/torchlight-sanitized
-lint:
+	python3 tests/test_headless.py $(MAKE)
+lint-headless:
 	@command -v $(CLANG_TIDY) >/dev/null || { echo 'clang-tidy is required'; exit 1; }
 	@command -v $(CPPCHECK) >/dev/null || { echo 'cppcheck is required'; exit 1; }
 	$(CLANG_TIDY) $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(VECTOR_EVAL_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
 	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(VECTOR_EVAL_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE)
+lint: lint-headless
 	$(CLANG_TIDY) $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(WINDOW_FIXTURE_SOURCE) tests/gtk/test_view.c --warnings-as-errors='*' -- $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 $(WARNINGS)
 	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE --library=gtk -Iinclude $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(WINDOW_FIXTURE_SOURCE) tests/gtk/test_view.c
 format:
@@ -164,7 +169,7 @@ clean:
 # Staged installs are reviewable with DESTDIR; prefix defaults to per-user tools.
 PREFIX ?= $(HOME)/.local
 DESTDIR ?=
-.PHONY: install test-ui test-ui-isolated bench-ui
+.PHONY: install install-headless test-ui test-ui-isolated bench-ui
 XVFB ?= Xvfb
 XDOTOOL ?= xdotool
 install: all
@@ -172,6 +177,11 @@ install: all
 	install -m 755 build/torchlight build/torchlightd build/torchlight-gtk $(DESTDIR)$(PREFIX)/bin/
 	install -m 644 packaging/org.torchlight.Launcher.desktop $(DESTDIR)$(PREFIX)/share/applications/
 	install -m 644 packaging/torchlightd.service $(DESTDIR)$(PREFIX)/lib/systemd/user/
+# Same unit name, but started with the user manager instead of a graphical session.
+install-headless: headless
+	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/lib/systemd/user
+	install -m 755 build/torchlight build/torchlightd $(DESTDIR)$(PREFIX)/bin/
+	install -m 644 packaging/torchlightd-headless.service $(DESTDIR)$(PREFIX)/lib/systemd/user/torchlightd.service
 test-ui: all build/test_popup_probe.so build/test_window_app
 	python3 tests/test_popup.py --xdotool $(XDOTOOL)
 test-ui-isolated: all build/test_popup_probe.so build/test_popup_view build/test_window_app
