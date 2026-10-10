@@ -110,15 +110,10 @@ static void tl_selection_track_class_init(TlSelectionTrackClass *class) {
     G_OBJECT_CLASS(class)->dispose = dispose;
 }
 static void tl_selection_track_init(TlSelectionTrack *self) {
+    /* A plain tint: one-line rows use their full width, and the footer names Enter. */
     self->highlight = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_widget_add_css_class(self->highlight, "selection-highlight");
     gtk_widget_set_name(self->highlight, "popup-highlight");
-    GtkWidget *keycap = gtk_label_new("Enter");
-    gtk_widget_add_css_class(keycap, "keycap");
-    gtk_widget_set_hexpand(keycap, true);
-    gtk_widget_set_halign(keycap, GTK_ALIGN_END);
-    gtk_widget_set_valign(keycap, GTK_ALIGN_CENTER);
-    gtk_box_append(GTK_BOX(self->highlight), keycap);
     gtk_widget_set_can_target(self->highlight, false);
     gtk_accessible_update_state(GTK_ACCESSIBLE(self->highlight), GTK_ACCESSIBLE_STATE_HIDDEN, true,
                                 -1);

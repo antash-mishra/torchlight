@@ -1,11 +1,13 @@
 /* Allocate a path label using Pango measurements, preserving distinguishing and final folders. */
 #include "path_label.h"
+#include "torchlight/popup.h"
 #include <stdbool.h>
 #include <string.h>
 typedef struct {
     GtkWidget parent;
     GtkWidget *label;
-    char *full;
+    /* The short form and the byte length of its distinguishing head (0 for none). */
+    char *shown;
     size_t keep;
 } TlPathLabel;
 typedef struct {
@@ -76,6 +78,39 @@ static char *shorten(PangoLayout *layout, const char *path, size_t keep, int wid
     g_free(prefix);
     return best;
 }
+/* Number of the folder that ends at byte keep of path, counted after root;
+ * count when keep is not past the root or not at a folder boundary. */
+static guint kept_folder(const char *path, size_t root, size_t keep, guint count) {
+    if (keep <= root || (path[keep] != '/' && path[keep] != 0))
+        return count;
+    guint folder = 0;
+    for (size_t i = root; i < keep; i++)
+        folder += path[i] == '/';
+    return folder;
+}
+/* The short form: at most the last POPUP_SHORT_FOLDERS folders, or the distinguishing
+ * folder and the last one. keep_out is its distinguishing head's length. */
+static char *short_form(const char *path, size_t keep, size_t *keep_out) {
+    *keep_out = 0;
+    const char *root = g_str_has_prefix(path, "~/") ? "~/" : path[0] == '/' ? "/" : "";
+    const char *tail = path + strlen(root);
+    char **folders = g_strsplit(tail, "/", -1);
+    guint count = g_strv_length(folders);
+    guint kept = kept_folder(path, strlen(root), keep, count);
+    char *result = NULL;
+    if (tail[0] == 0 || count <= POPUP_SHORT_FOLDERS)
+        result = g_strdup(path);
+    else if (kept + POPUP_SHORT_FOLDERS >= count) /* none, or already among the last folders */
+        result = g_strconcat(root, "…/", folders[count - 2], "/", folders[count - 1], NULL);
+    else {
+        char *head = g_strconcat(root, kept == 0 ? "" : "…/", folders[kept], NULL);
+        *keep_out = strlen(head);
+        result = g_strconcat(head, "/…/", folders[count - 1], NULL);
+        g_free(head);
+    }
+    g_strfreev(folders);
+    return result;
+}
 static void measure(GtkWidget *widget, GtkOrientation orientation, int for_size, int *minimum,
                     int *natural, int *minimum_baseline, int *natural_baseline) {
     TlPathLabel *self = (TlPathLabel *)widget;
@@ -88,7 +123,7 @@ static void measure(GtkWidget *widget, GtkOrientation orientation, int for_size,
 static void allocate(GtkWidget *widget, int width, int height, int baseline) {
     TlPathLabel *self = (TlPathLabel *)widget;
     PangoLayout *layout = gtk_widget_create_pango_layout(self->label, NULL);
-    char *text = shorten(layout, self->full, self->keep, width);
+    char *text = shorten(layout, self->shown, self->keep, width);
     if (strcmp(text, gtk_label_get_text(GTK_LABEL(self->label))) != 0)
         gtk_label_set_text(GTK_LABEL(self->label), text);
     g_free(text);
@@ -107,7 +142,7 @@ static void dispose(GObject *object) {
     G_OBJECT_CLASS(tl_path_label_parent_class)->dispose(object);
 }
 static void finalize(GObject *object) {
-    g_free(((TlPathLabel *)object)->full);
+    g_free(((TlPathLabel *)object)->shown);
     G_OBJECT_CLASS(tl_path_label_parent_class)->finalize(object);
 }
 static void tl_path_label_class_init(TlPathLabelClass *class) {
@@ -122,7 +157,7 @@ static void tl_path_label_class_init(TlPathLabelClass *class) {
 }
 static void tl_path_label_init(TlPathLabel *self) {
     self->label = gtk_label_new(NULL);
-    gtk_label_set_xalign(GTK_LABEL(self->label), 0);
+    gtk_label_set_xalign(GTK_LABEL(self->label), 1);
     gtk_label_set_ellipsize(GTK_LABEL(self->label), PANGO_ELLIPSIZE_END);
     gtk_widget_add_css_class(self->label, "result-detail");
     gtk_widget_set_parent(self->label, GTK_WIDGET(self));
@@ -134,12 +169,14 @@ GtkWidget *popup_path_label_new(const char *path, size_t keep) {
     TlPathLabel *self = g_object_new(tl_path_label_get_type(), NULL);
     const char *home = g_get_home_dir();
     size_t length = strlen(home);
-    bool in_home = g_str_has_prefix(path, home) && path[length] == '/';
-    self->full = in_home ? g_strconcat("~", path + length, NULL) : g_strdup(path);
+    bool in_home = g_str_has_prefix(path, home) && (path[length] == '/' || path[length] == 0);
+    char *full = in_home ? g_strconcat("~", path + length, NULL) : g_strdup(path);
     /* keep counts bytes of the original path; "~" stands in for the home bytes. */
-    self->keep = keep < strlen(path) ? keep : 0;
+    size_t kept = keep < strlen(path) ? keep : 0;
     if (in_home)
-        self->keep = self->keep > length ? self->keep - length + 1 : 0;
+        kept = kept > length ? kept - length + 1 : 0;
+    self->shown = short_form(full, kept, &self->keep);
+    g_free(full);
     gtk_widget_set_tooltip_text(GTK_WIDGET(self), path);
     gtk_accessible_update_property(GTK_ACCESSIBLE(self), GTK_ACCESSIBLE_PROPERTY_LABEL, path, -1);
     return GTK_WIDGET(self);

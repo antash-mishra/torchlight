@@ -72,24 +72,31 @@ static void check_path(const char *full, size_t keep, const char *expected) {
     gtk_window_destroy(GTK_WINDOW(window));
     g_object_unref(window);
 }
+/* Folders show short: home as ~, then at most the last two folders. */
 static void test_paths(void) {
-    check_path("~/workspace/torchlight/src/core", 0, "~/…/torchlight/src/core");
-    check_path("/very/long/ancestor/torchlight/src/core", 0, "/…/torchlight/src/core");
+    check_path("~/workspace/torchlight/src/core", 0, "~/…/src/core");
+    check_path("/very/long/ancestor/torchlight/src/core", 0, "/…/src/core");
     check_path("/src/core", 0, "/src/core");
     char *home = g_build_filename(g_get_home_dir(), "workspace", "torchlight", "src", "core", NULL);
-    check_path(home, 0, "~/…/torchlight/src/core");
+    check_path(home, 0, "~/…/src/core");
+    char *shallow = g_build_filename(g_get_home_dir(), "Documents", "notes", NULL);
+    check_path(shallow, 0, "~/Documents/notes");
+    check_path(g_get_home_dir(), 0, "~");
+    g_free(shallow);
     g_free(home);
     check_path("/界界界界界界界界界界界界界界界界界界界界", 0, "/界界…界界");
     /* Same-named results keep the folder that tells them apart (here, an NDK version). */
     const char *ndk = "/opt/Sdk/ndk/27.0.12077973/toolchains/llvm/usr/include/c++/v1";
-    check_path(ndk, strlen("/opt/Sdk/ndk/27.0.12077973"), "/opt/Sdk/ndk/27.0.12077973/…/c++/v1");
+    check_path(ndk, strlen("/opt/Sdk/ndk/27.0.12077973"), "/…/27.0.12077973/…/v1");
     char *in_home = g_build_filename(g_get_home_dir(), "Android", "ndk", "27.1.12297006",
                                      "toolchains", "llvm", "include", "c++", "v1", NULL);
     size_t version = strlen(in_home) - strlen("/toolchains/llvm/include/c++/v1");
-    check_path(in_home, version, "~/Android/ndk/27.1.12297006/…/c++/v1");
+    check_path(in_home, version, "~/…/27.1.12297006/…/v1");
     g_free(in_home);
     /* Out-of-range or non-boundary keeps fall back to ordinary shortening. */
-    check_path("/very/long/ancestor/torchlight/src/core", 999, "/…/torchlight/src/core");
+    check_path("/very/long/ancestor/torchlight/src/core", 999, "/…/src/core");
+    /* A distinguishing folder among the last two needs no extra room. */
+    check_path("/opt/ndk/27.0/include", strlen("/opt/ndk/27.0"), "/…/27.0/include");
 }
 static GtkWidget *result_widget(tl_popup_row *row, tl_popup_entrance entrance, size_t index) {
     return popup_view_result(row, 0, entrance, index);
@@ -113,6 +120,11 @@ static void test_rows(void) {
     GtkWidget *plain = g_object_ref_sink(result_widget(&row, POPUP_ENTER_NONE, 0));
     CHECK(!gtk_widget_has_css_class(plain, "fresh") && !gtk_widget_has_css_class(plain, "enter-0"));
     CHECK(strcmp(icon_name(plain), "text-x-generic") == 0);
+    /* One line: name, then the folder filling the rest; the row's tooltip is the full path. */
+    GtkWidget *location = gtk_widget_get_last_child(plain);
+    CHECK(strcmp(gtk_widget_get_css_name(location), "path-label") == 0);
+    CHECK(gtk_widget_get_hexpand(location) &&
+          strcmp(gtk_widget_get_tooltip_text(plain), "/src/core/config.c") == 0);
     row.folder = true;
     GtkWidget *folder = g_object_ref_sink(result_widget(&row, POPUP_ENTER_NONE, 0));
     CHECK(strcmp(icon_name(folder), "folder") == 0);
@@ -132,17 +144,17 @@ static const char *label_text(GtkWidget *widget, const char *class) {
     }
     return NULL;
 }
-/* Application rows stay plain; their children are compact rows with their own icons. */
+/* Application rows are plain; their children are compact rows with their own icons. */
 static void test_children(void) {
     tl_popup_row app = {.id = 1, .application = true};
     g_strlcpy(app.name, "Google Chrome", sizeof(app.name));
     g_strlcpy(app.display, "/apps/google-chrome.desktop", sizeof(app.display));
     g_strlcpy(app.icon, "google-chrome", sizeof(app.icon));
     GtkWidget *plain = g_object_ref_sink(popup_view_result(&app, 0, POPUP_ENTER_NONE, 0));
-    CHECK(strcmp(label_text(plain, "result-detail"), "Application") == 0);
-    /* No window count: the row ends with its name and detail. */
-    CHECK(GTK_IS_BOX(gtk_widget_get_last_child(plain)) &&
-          label_text(gtk_widget_get_last_child(plain), "result-name") != NULL);
+    /* An application row is its icon and name alone: no subtitle, count or tooltip. */
+    CHECK(label_text(plain, "result-detail") == NULL && gtk_widget_get_tooltip_text(plain) == NULL);
+    GtkWidget *name = gtk_widget_get_last_child(plain);
+    CHECK(GTK_IS_LABEL(name) && strcmp(gtk_label_get_text(GTK_LABEL(name)), "Google Chrome") == 0);
     GtkWidget *window = g_object_ref_sink(
         popup_view_child(&app, POPUP_ITEM_WINDOW, "Docs", POPUP_ENTER_CASCADE, 1));
     CHECK(GTK_IS_LIST_BOX_ROW(window) && gtk_widget_has_css_class(window, "child-row"));
@@ -222,7 +234,7 @@ static void check_results(tl_popup_view *view, tl_popup_widgets widgets) {
     gtk_editable_set_position(GTK_EDITABLE(widgets.entry), -1);
     fill(view, widgets, 1);
     GtkWidget *row = select_index(view, widgets, 0, false);
-    popup_view_set_status(view, "1 result");
+    popup_view_set_status(view, "");
     settle(60);
     after = bounds(widgets.entry);
     CHECK(before.origin.x == after.origin.x && before.origin.y == after.origin.y &&

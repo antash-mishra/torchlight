@@ -12,18 +12,21 @@
 #define SPINNER_FADE_MS 120
 /* Rows past this share the last cascade delay, so long lists never feel slow. */
 #define CASCADE_STEPS 8U
-#define ROW_HEIGHT 58
-#define VISIBLE_ROWS 8
+/* One-line rows; eleven fit in about the height eight two-line rows used. */
+#define ROW_HEIGHT 40
+#define VISIBLE_ROWS 11
 #define LIST_PADDING 8
 #define COMPACT_WIDTH 560
-#define RESULT_ICON_SIZE 32
+#define RESULT_ICON_SIZE 24
+/* A name keeps up to this many characters before its folder gets less room. */
+#define NAME_MAX_CHARS 40
 #define CHILD_ICON_SIZE 16
 /* Room for "10 results" before optional key hints give way. */
 #define STATUS_CHARS 10
 #define SEARCH_ICON_SIZE 16
 struct popup_view {
     tl_popup_widgets widgets;
-    GtkWidget *window, *field, *footer, *message, *message_box, *text, *select, *reveal, *icons,
+    GtkWidget *window, *field, *footer, *message, *message_box, *text, *reveal, *close, *icons,
         *spinner, *track;
     GtkSettings *settings;
     GdkDisplay *display;
@@ -167,12 +170,11 @@ static GtkWidget *create_footer(tl_popup_view *view) {
     gtk_label_set_width_chars(GTK_LABEL(view->widgets.status), STATUS_CHARS);
     gtk_widget_set_hexpand(view->widgets.status, true);
     gtk_box_append(GTK_BOX(view->footer), view->widgets.status);
-    view->select = hint((const char *const[]){"↑", "↓", NULL}, "Select");
-    gtk_box_append(GTK_BOX(view->footer), view->select);
     gtk_box_append(GTK_BOX(view->footer), hint((const char *const[]){"Enter", NULL}, "Open"));
     view->reveal = hint((const char *const[]){"Ctrl", "Enter", NULL}, "Show in Folder");
     gtk_box_append(GTK_BOX(view->footer), view->reveal);
-    gtk_box_append(GTK_BOX(view->footer), hint((const char *const[]){"Esc", NULL}, "Close"));
+    view->close = hint((const char *const[]){"Esc", NULL}, "Close");
+    gtk_box_append(GTK_BOX(view->footer), view->close);
     gtk_widget_set_visible(view->footer, false);
     return view->footer;
 }
@@ -305,9 +307,11 @@ static GtkWidget *result_icon(const tl_popup_row *row) {
     gtk_widget_add_css_class(image, "result-icon");
     return image;
 }
-static GtkWidget *result_detail(const tl_popup_row *row, size_t path_keep) {
+/* A file or folder's short parent folder, right-aligned after its name;
+ * applications and settings show their name alone. */
+static GtkWidget *result_location(const tl_popup_row *row, size_t path_keep) {
     if (row->application)
-        return label(row->settings ? "System settings" : "Application", "result-detail");
+        return NULL;
     char parent[POPUP_PATH_BYTES];
     g_strlcpy(parent, row->display, sizeof(parent));
     char *slash = strrchr(parent, '/');
@@ -331,15 +335,22 @@ GtkWidget *popup_view_result(const tl_popup_row *row, size_t path_keep, tl_popup
     gtk_widget_add_css_class(box, "result");
     add_entrance(box, entrance, index);
     gtk_box_append(GTK_BOX(box), result_icon(row));
-    GtkWidget *text = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_set_hexpand(text, true);
-    gtk_widget_set_valign(text, GTK_ALIGN_CENTER);
     GtkWidget *name = label(row->name, "result-name");
     gtk_label_set_ellipsize(GTK_LABEL(name), PANGO_ELLIPSIZE_END);
-    gtk_box_append(GTK_BOX(text), name);
-    gtk_box_append(GTK_BOX(text), result_detail(row, path_keep));
-    gtk_box_append(GTK_BOX(box), text);
-    gtk_widget_set_tooltip_text(box, row->display);
+    /* The name takes its width first, up to a cap; the folder gets the rest. */
+    gtk_label_set_max_width_chars(GTK_LABEL(name), NAME_MAX_CHARS);
+    gtk_widget_set_valign(name, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(box), name);
+    GtkWidget *location = result_location(row, path_keep);
+    if (location == NULL)
+        gtk_widget_set_hexpand(name, true);
+    else {
+        gtk_widget_set_hexpand(location, true);
+        gtk_widget_set_valign(location, GTK_ALIGN_CENTER);
+        gtk_box_append(GTK_BOX(box), location);
+        /* Files keep their full path on hover; a desktop file's path means nothing. */
+        gtk_widget_set_tooltip_text(box, row->display);
+    }
     return box;
 }
 /* Windows show their application's icon; the two actions use symbolic icons. */
@@ -399,10 +410,10 @@ void popup_view_set_launching(tl_popup_view *view, bool launching) {
         gtk_widget_remove_css_class(result, "launching");
 }
 /* Large desktop fonts must never widen the popup: drop the least essential hints
- * (Select, then Show in Folder) until the footer fits. Open and Close stay. */
+ * (Close, then Show in Folder) until the footer fits. Open always stays. */
 static void fit_hints(tl_popup_view *view, int width) {
-    GtkWidget *optional[] = {view->select, view->reveal};
-    gtk_widget_set_visible(view->select, true);
+    GtkWidget *optional[] = {view->close, view->reveal};
+    gtk_widget_set_visible(view->close, true);
     gtk_widget_set_visible(view->reveal, width >= COMPACT_WIDTH);
     for (size_t i = 0; i < G_N_ELEMENTS(optional); i++) {
         int minimum, natural;

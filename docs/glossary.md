@@ -7,6 +7,7 @@
 | **StartupWMClass** | Desktop-entry key naming the WM_CLASS its windows use. Results carry it as `wm_class`; matching is exact. |
 | **Window snapshot** | The popup's bounded list of open top-level windows, most recently used first, read once per show (`windows` module). |
 | **Window evidence** | How strongly a window belongs to an application: StartupWMClass equals its instance, then its class, then GTK application id, then desktop file name. The strongest displayed application owns the window. |
+| **Short folder** | The parent folder a file or folder row shows: `~` for home and at most the last two folders (`~/…/docs/modules`), plus the folder that tells same-named rows apart when needed. The tooltip keeps the full path. |
 | **Child item** | A popup list row beneath an application result: one of its windows, "Show N more windows" or "New window". |
 | **Filesystem incarnation** | Device/inode plus birth timestamp identifying the observed object at a path; ctime is the conservative fallback without birth time. A changed incarnation retires the old file id and descendants during reconciliation. |
 | **Trigram** | A 3-byte substring of a normalized name, used as an index key. |

@@ -17,17 +17,17 @@ window.torchlight { background: transparent; }
 
 /* Results: the selection track draws one highlight beneath transparent rows. */
 .torchlight list { padding: 0 8px 8px; background: transparent; }
-.torchlight list > row { min-height: 58px; padding: 0; border-radius: 8px; background: transparent; color: @theme_fg_color; outline: none; box-shadow: none; transition: background-color 100ms ease-out; }
-.torchlight list > row:hover { background-color: alpha(@theme_fg_color, 0.05); }
+/* One-line rows. Only the gliding selection is highlighted: no second hover tint. */
+.torchlight list > row, .torchlight list > row:hover { min-height: 40px; padding: 0; border-radius: 8px; background: transparent; color: @theme_fg_color; outline: none; box-shadow: none; }
 .torchlight list > row:selected, .torchlight list > row:selected:hover { background-color: transparent; color: @theme_fg_color; }
-.torchlight .selection-highlight { border-radius: 8px; padding-right: 10px; background-color: alpha(@theme_selected_bg_color, 0.24); transition: background-color 90ms ease-out; }
+.torchlight .selection-highlight { border-radius: 8px; background-color: alpha(@theme_selected_bg_color, 0.24); transition: background-color 90ms ease-out; }
 .torchlight .selection-highlight.flash { background-color: alpha(@theme_selected_bg_color, 0.5); }
-.torchlight .result { padding: 0 64px 0 10px; }
+.torchlight .result { padding: 0 12px 0 10px; }
 .torchlight .result-name { color: @theme_fg_color; }
 .torchlight .result-detail { font-size: 0.9em; color: alpha(@theme_fg_color, 0.65); }
 /* An application's windows and actions: compact rows whose icons align with its name. */
-.torchlight list > row.child-row { min-height: 34px; }
-.torchlight .result.child { padding-left: 54px; }
+.torchlight list > row.child-row, .torchlight list > row.child-row:hover { min-height: 32px; }
+.torchlight .result.child { padding-left: 46px; }
 .torchlight .child-action { color: alpha(@theme_fg_color, 0.75); }
 
 /* Footer: status, then key hints drawn as keycaps. */
@@ -63,5 +63,4 @@ window.torchlight { background: transparent; }
 .torchlight .high-contrast { border-color: @theme_fg_color; }
 .torchlight .high-contrast .result-detail, .torchlight .high-contrast .child-action, .torchlight .high-contrast .status, .torchlight .high-contrast .hint-label, .torchlight .high-contrast .inline-status, .torchlight .high-contrast .search-icon { color: @theme_fg_color; }
 .torchlight .compact .search-area { padding: 10px; }
-.torchlight .compact .result { padding-right: 56px; }
-.torchlight .quiet-motion .search-field, .torchlight .quiet-motion .search-field.typing, .torchlight .quiet-motion list > row, .torchlight .quiet-motion .selection-highlight { transition: none; }
+.torchlight .quiet-motion .search-field, .torchlight .quiet-motion .search-field.typing, .torchlight .quiet-motion .selection-highlight { transition: none; }

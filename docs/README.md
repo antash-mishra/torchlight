@@ -9,7 +9,8 @@ The GTK popup follows the desktop theme (light or dark, accent and font) with
 short, bounded motion; see [ADR 0034](adr/0034-theme-following-popup-with-motion.md),
 the [design study](popup-directions.html) and [native captures](ui/native-results.png).
 Running applications list their open windows beneath their result, with a New
-window action ([ADR 0035](adr/0035-open-windows-under-applications.md)).
+window action ([ADR 0035](adr/0035-open-windows-under-applications.md)). Results
+take one line each, with a short folder ([ADR 0036](adr/0036-one-line-results.md)).
 
 Start here. Read in this order:
 
@@ -198,6 +199,9 @@ the root [README](../README.md) for commands, and
   lists every running application's open X11 windows beneath its result; Enter
   switches to the most recent window, and New window runs the entry's desktop
   action.
+- [0036: One-line results with short folders](adr/0036-one-line-results.md)
+  puts each result on one line with a short, right-aligned folder, drops app
+  subtitles and the hover tint, and slims the footer to its key hints.
 
 ## Keeping docs current
 

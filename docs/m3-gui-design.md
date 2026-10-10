@@ -20,10 +20,10 @@ activation and focus there first; document Wayland results separately during M3.
 | Placement | Horizontally centered on the active monitor, near its upper third. Placement is a window-system request, verified in the target session. |
 | Surface | Theme background and foreground (`@theme_bg_color`, `@theme_fg_color`), a faint foreground border and outer radius 10. The selected-background color is the accent. The desktop font applies; no text is smaller than 0.9em. |
 | Search | Empty popup 70 high: a 44-high field with 12px padding (10 on narrow screens). A symbolic search icon, then a plain input with placeholder `Search apps, settings, files and folders` and GTK's native caret. No clear icon. No-match/offline feedback and Retry sit at the field's end. |
-| Results | Request ten; show up to eight rows before scrolling, reduced by the monitor budget. Each row 58 high, with a 32px full-color icon and 12px text gap. |
-| Row text | Name in the body size; parent path at 0.9em in a dimmed foreground. Apps say Application or System settings. End-ellipsize names; path shortening keeps home/root, the folder that distinguishes same-named rows, and trailing folders. |
-| Selection | One accent-tinted highlight under the rows, carrying an `Enter` keycap, glides between rows. High contrast uses full-strength foreground for secondary text and the border. |
-| Footer | Visible only with results. Status left; keycap hints right (Select, Open, Show in Folder, Close). Select, then Show in Folder, hide when they would widen the popup; Show in Folder also hides on narrow screens. |
+| Results | Request ten; show up to eleven one-line rows before scrolling, reduced by the monitor budget. Each row 40 high, with a 24px full-color icon and 12px gaps. No hover tint: the selection is the only highlight. |
+| Row text | Name in the body size, end-ellipsized past 40 characters when space is short. Files and folders then show their short folder at 0.9em, dimmed and right-aligned: `~` for home and at most the last two folders, plus the folder that tells same-named rows apart when they would otherwise look identical. Apps and settings show their name alone. See [ADR 0036](adr/0036-one-line-results.md). |
+| Selection | One accent-tinted highlight under the rows glides between rows; the footer names Enter, so the row carries no keycap. High contrast uses full-strength foreground for secondary text and the border. |
+| Footer | Visible only with results. Status messages left (no result count, which is announced instead); keycap hints right (Open, Show in Folder, Close). Close, then Show in Folder, hide when they would widen the popup; Show in Folder also hides on narrow screens. |
 
 Use GTK4 widgets and the icon theme: `folder`, file-type icons guessed from the
 name alone (unplaced names keep `text-x-generic`), and desktop entries' own icons.
@@ -48,8 +48,8 @@ Motion never delays input, results or actions, and never loops:
 Disabled GTK animations remove all of these and make dismissal immediate.
 
 Result labels use the daemon's safe display representation. Escape control
-characters, including embedded newlines, into visible single-line text. Hover
-or keyboard inspection may show the complete safe display path in a tooltip.
+characters, including embedded newlines, into visible single-line text. Hovering
+a file or folder shows the complete safe display path in a tooltip.
 Opening always uses the exact bytes returned by resolve.
 
 ## Keyboard, mouse and focus
@@ -151,8 +151,8 @@ Related: [ui module](modules/ui/README.md), [IPC](modules/ipc/README.md),
 ## Implemented application/settings extension
 
 The search entry has an accessible name identifying applications, settings, files and folders.
-Desktop rows use localized names and application icons with Application/System settings
-subtitles. Enter resolves their session-scoped result id and activates the native
+Desktop rows use localized names and application icons, with no subtitle
+([ADR 0036](adr/0036-one-line-results.md)). Enter resolves their session-scoped result id and activates the native
 desktop entry; Ctrl+Enter reveals its desktop file through the same exact-byte
 action path. File/folder rows retain basename/parent labels and symbolic icons.
 Running applications list their open windows beneath them, as specified in

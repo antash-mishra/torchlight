@@ -4,8 +4,8 @@
 #include <gtk/gtk.h>
 #include <stdbool.h>
 /** Create a floating track around borrowed floating child, which it parents and
- * sizes. The highlight is a decorative "selection-highlight" box with an Enter
- * keycap, hidden from accessibility. Main thread only; GTK handles allocation
+ * sizes. The highlight is a decorative, empty "selection-highlight" box, hidden
+ * from accessibility. Main thread only; GTK handles allocation
  * failure. Caller parents/owns the returned widget. */
 GtkWidget *popup_selection_track_new(GtkWidget *child);
 /** Move the highlight to target, a descendant of the track's child, or hide it

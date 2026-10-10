@@ -190,11 +190,14 @@ static void render(struct popup *popup) {
     else if (popup_model_indexing(popup->model))
         set_status(popup, "Updating index…");
     else {
+        /* The list shows how many results there are; only screen readers hear it. */
+        set_status(popup, "");
         char message[64];
         int written =
             snprintf(message, sizeof(message), "%zu result%s", count, count == 1 ? "" : "s");
         if (written > 0 && (size_t)written < sizeof(message))
-            set_status(popup, message);
+            gtk_accessible_announce(GTK_ACCESSIBLE(popup->list), message,
+                                    GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_MEDIUM);
     }
     gtk_widget_set_visible(popup->retry, false);
 }

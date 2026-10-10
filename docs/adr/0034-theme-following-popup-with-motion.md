@@ -1,6 +1,6 @@
 # 0034. Theme-following popup with bounded motion
 
-- **Status:** Accepted
+- **Status:** Accepted; row text, path shortening and footer hints superseded by [0036](0036-one-line-results.md)
 - **Date:** 2026-10-09
 
 ## Context

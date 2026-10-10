@@ -12,7 +12,8 @@ whitespace-only input cancels pending query work, invalidates old responses and
 leaves no actionable selection. No empty-query IPC request or search-history
 entry is created by the popup. Escape and focus loss
 hide it. Arrow selection keeps entry focus; Enter opens; Ctrl+Enter reveals;
-clicks use the same resolve path. The scroller displays eight 58-pixel rows.
+clicks use the same resolve path. The scroller displays eleven 40-pixel one-line
+rows ([ADR 0036](../../adr/0036-one-line-results.md)).
 
 The native surface follows the desktop theme, as specified in
 [the GUI specification](../../m3-gui-design.md) and
@@ -27,14 +28,21 @@ sits at the end of the field only when it has text; `Searching…` is shown by t
 spinner instead, so the entry never shifts while typing. Results and footer appear
 only with matches. Entry position and X11 window top remain fixed. Chrome is
 measured before limiting scroll height against the work area, including
-scaled/small screens; the same measurement hides the Select and then Show in
-Folder hints when a large desktop font would otherwise widen the popup.
+scaled/small screens; the same measurement hides the Close and then Show in
+Folder hints when a large desktop font would otherwise widen the popup. The
+footer shows only Enter Open, Ctrl+Enter Show in Folder and Esc Close, plus real
+status messages; the result count is announced to screen readers, not shown.
 
-Rows use 32px full-color icons: desktop icons, `folder`, or a file type guessed
+Each row is one line: a 24px icon, the name (its natural width up to 40
+characters, end-ellipsized) and, for files and folders, the short folder,
+dimmed and right-aligned to the row's end. Applications and settings
+show their name alone, with no subtitle or tooltip; file rows keep the full
+path as their tooltip. Rows have no hover tint, so the gliding selection is the
+only highlight. Icons are full color: desktop icons, `folder`, or a file type guessed
 from the name only (`g_content_type_guess`, no I/O; unplaced names keep
 `text-x-generic`). The launcher remembers which ids are on screen, so first
 results cascade in and later renders fade in only new rows. `selection_track`
-wraps the list box and draws one highlight, with an Enter keycap, beneath
+wraps the list box and draws one plain highlight beneath
 transparent rows; it glides 130ms on a frame-clock tick callback, jumps when
 results first appear or relayout, and hides at once when cleared. The view's
 `set_searching` crossfades the icon to a spinner after the 120ms pending timer;
@@ -45,17 +53,19 @@ cancel it, and queries/actions are canceled before it starts. The typing glow ke
 its 700ms hold and 420ms fade; blur, dismissal and destruction cancel it. Disabled
 GTK animations turn every effect off and make dismissal immediate.
 
-`path_label` measures safe UTF-8 display paths using Pango when allocated.
-It substitutes `~` for the home directory, drops earlier ancestors while retaining
-the final folders, then shortens a giant final folder in the middle with bounded
-width probes. When `popup_model_distinct_prefix` reports that a same-kind,
-same-name row exists, it first keeps the path through the first folder where the
-two differ (an NDK version, say), then as many trailing folders as fit. Tooltips and accessible labels retain the full safe path; action
+`path_label` shows a short folder: `~` for the home directory and at most the
+last two folders (`POPUP_SHORT_FOLDERS`, e.g. `~/…/docs/modules`); folders at
+most two levels deep show whole. When `popup_model_distinct_prefix` reports a
+same-kind, same-name row whose last two folders are the same, it keeps the
+folder where the two first differ, then the last one
+(`~/…/27.0.12077973/…/include`). If the short form is still too wide, Pango
+measurements drop earlier folders, then shorten a giant final folder in the
+middle with bounded width probes. Tooltips and accessible labels retain the full safe path; action
 resolution still uses exact bytes. Font/width changes recalculate displayed paths.
 The native build contains no shader, PNG art or experimental browser renderer.
 
-Files and folders have symbolic icons, desktop entries use their application
-icons, and settings/application subtitles identify their action type. Labels
+Files and folders have file-type icons and desktop entries use their application
+icons. Labels
 escape controls and never become launch targets. Footer status and selection
 are announced through GTK accessibility. The search entry and its internal
 editable control have explicit accessible names. AT-SPI acceptance verifies
@@ -90,7 +100,7 @@ its own row is unchanged and shows no count. Left on a child collapses its appli
 selects it; Right, with the caret at the end of the query, lists them again or
 reveals the rest from "Show N more windows". Expansion choices last for
 one request id, and retained selection across phases and window refreshes is
-keyed by (result id, item kind, window handle). Children are 34px rows whose
+keyed by (result id, item kind, window handle). Children are 32px rows whose
 icons align with the application's name; windows use the application icon.
 Up/Down move through every item, and select/launch/flash work on child rows
 unchanged.

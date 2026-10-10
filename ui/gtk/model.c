@@ -465,6 +465,18 @@ static size_t first_difference(const char *a, size_t a_length, const char *b, si
     const char *slash = memchr(a + from, '/', a_length - from);
     return slash == NULL ? a_length : (size_t)(slash - a);
 }
+/* The last POPUP_SHORT_FOLDERS folders of a parent of length bytes: what its
+ * row shows. Sets tail_length; the whole parent when it has fewer folders. */
+static const char *short_tail(const char *display, size_t length, size_t *tail_length) {
+    size_t folders = 0, start = 0;
+    for (size_t i = length; i-- > 0;)
+        if (display[i] == '/' && ++folders == POPUP_SHORT_FOLDERS) {
+            start = i + 1;
+            break;
+        }
+    *tail_length = length - start;
+    return display + start;
+}
 size_t popup_model_distinct_prefix(const tl_popup_model *model, size_t index) {
     const tl_popup_row *row = popup_model_row(model, index);
     if (row == NULL || row->application)
@@ -476,8 +488,13 @@ size_t popup_model_distinct_prefix(const tl_popup_model *model, size_t index) {
         if (i == index || other->application || other->folder != row->folder ||
             strcmp(other->name, row->name) != 0)
             continue;
-        size_t end =
-            first_difference(row->display, length, other->display, parent_length(other->display));
+        size_t other_length = parent_length(other->display), tail_length, other_tail_length;
+        const char *tail = short_tail(row->display, length, &tail_length);
+        const char *other_tail = short_tail(other->display, other_length, &other_tail_length);
+        /* Rows whose shown folders already differ need nothing earlier. */
+        if (tail_length != other_tail_length || memcmp(tail, other_tail, tail_length) != 0)
+            continue;
+        size_t end = first_difference(row->display, length, other->display, other_length);
         keep = end > keep ? end : keep;
     }
     return keep;

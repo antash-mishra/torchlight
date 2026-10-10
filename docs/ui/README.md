@@ -1,9 +1,12 @@
 # Native popup captures
 
 These are actual GTK widget snapshots from `tests/gtk/test_view.c`, rendered
-through Cairo with animations disabled, on Cinnamon X11 with the Mint-Y-Dark theme
-and the desktop's Noto Mono 13 interface font (the light capture uses Mint-Y).
-The result row is fixture data; native IPC and actions are checked separately.
+through Cairo with animations disabled, with the Mint-Y-Dark theme (the light
+capture uses Mint-Y), Mint-Y icons and the desktop's Noto Mono 13 interface font.
+They show the one-line rows of [ADR 0036](../adr/0036-one-line-results.md) and were
+rendered on a private X display, with the font and icon theme set in a temporary
+`gtk-4.0/settings.ini`. The result row is fixture data; native IPC and actions are
+checked separately.
 
 - [Empty popup](native-empty.png)
 - [One selected result, dark](native-results.png)

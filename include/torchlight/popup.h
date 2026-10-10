@@ -6,6 +6,8 @@
 #define POPUP_RESULTS 10
 #define POPUP_PATH_BYTES 8192
 #define POPUP_TEXT_BYTES 4096
+/* Trailing parent folders a file or folder row shows; earlier ones become "…". */
+#define POPUP_SHORT_FOLDERS 2
 /* Open windows listed under an application before a "more windows" item; few
  * enough that several running applications still leave room for files. */
 #define POPUP_WINDOWS_SHOWN 3
@@ -93,9 +95,11 @@ bool popup_model_collapse(tl_popup_model *model);
 /** Borrow row at index until next mutation; NULL for absent index. */
 const tl_popup_row *popup_model_row(const tl_popup_model *model, size_t index);
 /** Return how many leading bytes of row index's display parent must stay visible
- * to tell it apart from other rows of the same kind (file or folder) and name:
- * through the first folder where their parents differ. Zero for applications,
- * absent rows, or when no such row exists. No errors or ownership changes. */
+ * to tell it apart from other rows of the same kind (file or folder) and name
+ * whose last POPUP_SHORT_FOLDERS parent folders are the same, so the short form
+ * alone would look identical: through the first folder where the parents
+ * differ. Zero for applications, absent rows, or when no such row exists. No
+ * errors or ownership changes. */
 size_t popup_model_distinct_prefix(const tl_popup_model *model, size_t index);
 /** Read result count, selected item index, status and search id; borrowed
  * search id expires on apply. NULL-safe getters have zero/false/empty
