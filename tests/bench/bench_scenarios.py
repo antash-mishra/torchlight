@@ -7,6 +7,11 @@ path list (--paths FILE, e.g. BENCH_PATHS) mirrored below the work directory.
 A path is a directory when another listed path lies below it; everything else
 becomes an empty file. Results append to --results as JSON lines.
 
+The daemon sees the host's installed applications (XDG_DATA_DIRS, unless
+--desktop empty) and keeps history (unless --no-history), as on a desktop;
+everything else (HOME, XDG_* homes, database, config, socket) is isolated.
+CPU is reported per thread name (tl-index, tl-persist, tl-desktop, ...).
+
 Phases (default all, in this order):
   cold         cold index into an empty database
   warm         restart on the saved database, then idle with the default
@@ -14,10 +19,16 @@ Phases (default all, in this order):
   quiet        idle with periodic rescans off (the resident floor)
   queries      query latency idle and during back-to-back forced full rescans
   lag          single-file create/delete lag in a small and the largest folder
-  events       on one daemon: 20k files in 2k new folders, rename and delete
-               that tree, one file appended and closed 20 times a second for
-               30 s, then RSS against the daemon's steady RSS before them and,
-               with the sampler, malloc_trim to show retained heap
+  events       on one daemon: steady RSS before and after the corpus queries
+               (cold and warm), 20k files in 2k new folders, rename and
+               delete that tree, one file appended and closed 20 times a
+               second for 30 s, then the memory gates (ADR 0044): free heap a
+               malloc_trim still returns (with the sampler), and RSS once a
+               catalog growth past the delta bound rebuilt the base engine,
+               against the warm steady RSS
+  mounts       in a private user and mount namespace (unshare, nsenter):
+               tmpfs mounted and unmounted outside the root, then inside it;
+               only the latter may cause full scans
 The daemon closes clients idle for five seconds (IPC_DEADLINE_MS), so the
 client reconnects when a call fails."""
 import argparse
@@ -41,6 +52,15 @@ BURST_FOLDERS, BURST_FILES_PER_FOLDER, BURST_FOLDERS_PER_PACKAGE = 2000, 10, 100
 CHURN_HZ, CHURN_SECONDS = 20, 30
 # Longer than the writer's one-second memory-release spacing.
 RELEASE_SETTLE_S = 2
+# Catalog growth, in batches, until the delta bound forces a full rebuild.
+COMPACT_BATCH, COMPACT_BATCHES = 1000, 64
+# Mount and unmount pairs outside the root in the mounts phase.
+MOUNT_CYCLES, MOUNT_PAUSE_S = 20, 0.2
+# Memory gates (ADR 0044): free heap a trim still returns, and RSS after a
+# rebuild against the warm steady RSS.
+RETAINED_FREE_GATE_MIB, REBUILT_GROWTH_GATE_PCT = 5, 10.0
+# Without XDG_DATA_DIRS the XDG specification's default applies.
+DEFAULT_DATA_DIRS = "/usr/local/share:/usr/share"
 LAG_ITERATIONS, LAG_PAUSE_S = 15, 0.3
 QUERY_COUNT = 900
 
@@ -129,8 +149,24 @@ class Corpus:
 
 # ---- daemon -------------------------------------------------------------------
 
+def data_dirs(options):
+    """XDG_DATA_DIRS for the daemon: the host's, or None for an empty directory."""
+    if options.desktop != "host":
+        return None
+    return os.environ.get("XDG_DATA_DIRS") or DEFAULT_DATA_DIRS
+
+
+def desktop_files(directories):
+    """Count .desktop files the daemon's catalog will read below directories."""
+    count = 0
+    for directory in directories.split(":"):
+        for _, _, names in os.walk(Path(directory) / "applications"):
+            count += sum(name.endswith(".desktop") for name in names)
+    return count
+
+
 class Daemon:
-    def __init__(self, options, name, tree, rescan_ms=None, fresh=False, extra=()):
+    def __init__(self, options, name, tree, rescan_ms=None, fresh=False, extra=(), namespace=False):
         self.base = options.work / "runs" / name
         if fresh:
             shutil.rmtree(self.base, ignore_errors=True)
@@ -144,15 +180,25 @@ class Daemon:
             os.mkfifo(self.fifo)
         command = [str(options.daemon), "--db", str(self.base / "catalog.db"),
                    "--config", str(self.base / "config"), "--socket", str(self.socket_path),
-                   "--no-history", "--max-entries", str(options.max_entries)]
+                   "--max-entries", str(options.max_entries)]
+        if options.no_history:
+            command.append("--no-history")
         if rescan_ms is not None:
             command += ["--rescan-ms", str(rescan_ms)]
         command += list(extra) + options.daemon_args
         env = dict(os.environ, HOME=str(self.base), XDG_CONFIG_HOME=str(self.base),
-                   XDG_DATA_HOME=str(self.base), XDG_DATA_DIRS=str(self.base / "apps"))
+                   XDG_DATA_HOME=str(self.base),
+                   XDG_DATA_DIRS=data_dirs(options) or str(self.base / "apps"))
         self.profile = options.sampler is not None
-        if self.profile:
-            env.update(LD_PRELOAD=str(options.sampler), SAMPLER_CTL=str(self.fifo))
+        preload = [f"LD_PRELOAD={options.sampler}", f"SAMPLER_CTL={self.fifo}"] if self.profile else []
+        # unshare (and env) exec in place, so the pid is the daemon's. The
+        # sampler is preloaded only after unshare: its control thread would
+        # make unshare's process multithreaded, which CLONE_NEWUSER refuses.
+        if namespace:
+            command = ["unshare", "--user", "--map-root-user", "--mount", "--propagation",
+                       "private", "--", "env", *preload] + command
+        elif preload:
+            env.update(dict(item.split("=", 1) for item in preload))
         self.results = options.profiles
         self.log = open(self.base / "daemon.log", "ab")
         self.started = time.perf_counter()
@@ -235,10 +281,22 @@ class Daemon:
                 status = (task / "status").read_text()
                 switches = sum(int(status.split(key)[1].split()[0])
                                for key in ("\nvoluntary_ctxt_switches:", "nonvoluntary_ctxt_switches:"))
-                out[int(task.name)] = dict(cpu=(int(fields[11]) + int(fields[12])) / HZ, wakeups=switches)
+                out[int(task.name)] = dict(cpu=(int(fields[11]) + int(fields[12])) / HZ, wakeups=switches,
+                                           name=(task / "comm").read_text().strip())
             except (FileNotFoundError, IndexError, ProcessLookupError):
                 pass
         return out
+
+    def mount(self, target):
+        """Mount an empty tmpfs on target inside the daemon's namespace."""
+        self._namespace("mount", "-t", "tmpfs", "none", str(target))
+
+    def umount(self, target):
+        self._namespace("umount", str(target))
+
+    def _namespace(self, *command):
+        subprocess.run(["nsenter", "--preserve-credentials", "--target", str(self.pid), "--user",
+                        "--mount", *command], check=True)
 
     def io(self):
         values = dict(line.split(": ") for line in Path(f"/proc/{self.pid}/io").read_text().splitlines())
@@ -280,6 +338,8 @@ class Daemon:
         self.process.wait(timeout=60)
         self.log.close()
         self.socket_path.unlink(missing_ok=True)
+        # The daemon's singleton lock beside the socket outlives it.
+        self.socket_path.with_name(self.socket_path.name + ".lock").unlink(missing_ok=True)
 
 
 class Meter:
@@ -304,10 +364,13 @@ class Meter:
     def result(self):
         wall = time.perf_counter() - self.start
         cpu = wakeups = 0.0
+        by_name = {}
         for tid, now in self.daemon.threads().items():
             before = self.threads.get(tid, dict(cpu=0, wakeups=0))
-            cpu += now["cpu"] - before["cpu"]
+            used = now["cpu"] - before["cpu"]
+            cpu += used
             wakeups += now["wakeups"] - before["wakeups"]
+            by_name[now["name"]] = by_name.get(now["name"], 0.0) + used
         io = self.daemon.io()
         out = dict(wall_s=round(wall, 2), cpu_s=round(cpu, 3), cpu_pct_core=round(100 * cpu / wall, 2),
                    wakeups_per_s=round(wakeups / wall, 1),
@@ -316,6 +379,8 @@ class Meter:
                    memory_mib=self.daemon.memory())
         if self.rss:
             out.update(rss_min_mib=min(self.rss), rss_max_mib=max(self.rss))
+        out["cpu_s_by_thread"] = {name: round(used, 3) for name, used in
+                                  sorted(by_name.items(), key=lambda item: -item[1]) if used > 0}
         return out
 
 
@@ -486,12 +551,43 @@ class Scenarios:
             time.sleep(0.01)
         return None
 
+    def warm_up(self, daemon):
+        """Run the corpus queries (the kinds the event probes run), so steady
+        RSS includes the query scratch pages every searched daemon touches."""
+        for query in self.corpus.queries:
+            daemon.call(query=query, limit=10)
+        time.sleep(RELEASE_SETTLE_S)
+
+    def rebuild(self, daemon):
+        """Grow the catalog in batches until the live delta passes its bound
+        and the base engine is rebuilt without the deleted entries, then
+        warm up. Returns (RSS in MiB, entries added)."""
+        builds = daemon.status()["full_builds"]
+        compact = self.corpus.inside("zzcompact")
+        shutil.rmtree(compact, ignore_errors=True)
+        added = 0
+        for batch in range(COMPACT_BATCHES):
+            folder = compact / f"batch{batch}"
+            folder.mkdir(parents=True)
+            for i in range(COMPACT_BATCH):
+                (folder / f"entry{i}_{batch}.txt").touch()
+            added += COMPACT_BATCH + 1
+            last = folder / f"entry{COMPACT_BATCH - 1}_{batch}.txt"
+            daemon.wait_present(last.name, last)
+            daemon.wait_idle()
+            if daemon.status()["full_builds"] > builds:
+                break
+        self.warm_up(daemon)
+        return daemon.memory(), added
+
     def events(self):
-        """Burst, rename, delete and churn on one daemon, then its RSS against
-        the steady RSS it had before them."""
+        """Burst, rename, delete and churn on one daemon, then the memory
+        gates against the warm steady RSS it had before them (ADR 0044)."""
         daemon = self.daemon()
         daemon.wait_idle()
         time.sleep(1)
+        steady_cold = daemon.memory()
+        self.warm_up(daemon)
         steady = daemon.memory()
         burst, moved = self.corpus.inside("zzburst"), self.corpus.inside("zzmoved")
         shutil.rmtree(burst, ignore_errors=True)
@@ -511,13 +607,60 @@ class Scenarios:
         self.churn(daemon)
         time.sleep(RELEASE_SETTLE_S)
         after = daemon.memory()
-        self.record("memory_after_events", steady_mib=steady, after_mib=after,
-                    growth_pct=round(100 * (after["VmRSS"] - steady["VmRSS"]) / steady["VmRSS"], 1),
-                    trim_rss_before_after_mib=self.trim(daemon))
+        trim = self.trim(daemon)
+        rebuilt, added = self.rebuild(daemon)
+        growth = lambda now, base: round(100 * (now["VmRSS"] - base["VmRSS"]) / base["VmRSS"], 1)
+        retained = None if trim is None else trim[0] - trim[1]
+        self.record("memory_after_events", steady_cold_mib=steady_cold, steady_mib=steady,
+                    after_mib=after, growth_pct=growth(after, steady),
+                    growth_vs_cold_pct=growth(after, steady_cold),
+                    trim_rss_before_after_mib=trim, retained_free_mib=retained,
+                    rebuilt_mib=rebuilt, rebuilt_added_entries=added,
+                    rebuilt_growth_pct=growth(rebuilt, steady),
+                    gates=dict(retained_free=None if retained is None else retained <= RETAINED_FREE_GATE_MIB,
+                               rebuilt_growth=growth(rebuilt, steady) <= REBUILT_GROWTH_GATE_PCT))
+        shutil.rmtree(self.corpus.inside("zzcompact"), ignore_errors=True)
+        daemon.wait_idle()
         daemon.stop()
 
+    def mounts(self):
+        """Mount-table changes in a private namespace: outside the root they
+        must cause no scan; inside it, one full scan each (reason "mount")."""
+        if shutil.which("unshare") is None or shutil.which("nsenter") is None:
+            self.record("mounts", skipped="unshare/nsenter unavailable")
+            return
+        daemon = Daemon(self.options, self.label, self.corpus.tree, rescan_ms=None, namespace=True)
+        daemon.wait_idle()
+        outside = daemon.base / "outside-mount"
+        outside.mkdir(exist_ok=True)
+        before, meter = counters(daemon), Meter(daemon)
+        for _ in range(MOUNT_CYCLES):
+            daemon.mount(outside)
+            time.sleep(MOUNT_PAUSE_S)
+            daemon.umount(outside)
+            time.sleep(MOUNT_PAUSE_S)
+        daemon.wait_idle()
+        after = counters(daemon)
+        self.record("mounts_outside_root", cycles=MOUNT_CYCLES,
+                    mount_changes=after.get("mount_changes", 0) - before.get("mount_changes", 0),
+                    **scan_counts(before, after), **meter.result())
+        inside = self.corpus.inside("zzmount")
+        inside.mkdir(exist_ok=True)
+        before, meter = after, Meter(daemon)
+        for change in (daemon.mount, daemon.umount):
+            change(inside)
+            time.sleep(MOUNT_PAUSE_S)
+            daemon.wait_idle(minimum_reconciliations=counters(daemon)["reconciliations"] + 1)
+        after = counters(daemon)
+        self.record("mounts_inside_root",
+                    mount_changes=after.get("mount_changes", 0) - before.get("mount_changes", 0),
+                    **scan_counts(before, after), **meter.result())
+        daemon.dump(f"{self.label}-mounts")
+        daemon.stop()
+        inside.rmdir()
 
-PHASES = ["cold", "warm", "quiet", "queries", "lag", "events"]
+
+PHASES = ["cold", "warm", "quiet", "queries", "lag", "events", "mounts"]
 
 
 def parse_arguments():
@@ -534,6 +677,10 @@ def parse_arguments():
     parser.add_argument("--max-entries", type=int, default=600000)
     parser.add_argument("--daemon-arg", dest="daemon_args", action="append", default=[],
                         help="extra torchlightd argument (repeatable)")
+    parser.add_argument("--desktop", choices=("host", "empty"), default="host",
+                        help="applications the daemon sees: the host's (default) or none")
+    parser.add_argument("--no-history", action="store_true",
+                        help="run the daemon without history (no retention prune, no usage)")
     parser.add_argument("phases", nargs="*", default=PHASES)
     options = parser.parse_args()
     if (options.fixture is None) == (options.paths is None):
@@ -563,10 +710,13 @@ def main():
                             str(options.work / f"{options.corpus_name}.queries")], check=True)
     tree = options.work / "trees" / options.corpus_name
     corpus = Corpus(tree, materialize(path_list, tree))
+    directories = data_dirs(options)
     header = dict(scenario="header", corpus=options.corpus_name, files=len(corpus.files),
                   directories=len(corpus.directories), daemon=str(options.daemon),
                   profiled=options.sampler is not None, kernel=os.uname().release,
-                  daemon_args=options.daemon_args, phases=options.phases)
+                  daemon_args=options.daemon_args, phases=options.phases,
+                  desktop=options.desktop, desktop_files=desktop_files(directories) if directories else 0,
+                  history=not options.no_history)
     with open(options.results, "a") as out:
         out.write(json.dumps(header) + "\n")
     print(json.dumps(header), flush=True)

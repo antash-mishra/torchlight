@@ -1,7 +1,8 @@
 # M7 plan: quiet indexing and lean memory
 
-**Status: Phase 1 repair and metadata fixes implemented; memory acceptance
-reopened after removing deletion compaction (2026-10-11). Phase 2 proposed.** This is
+**Status: Phase 1 complete (2026-10-11): every gate passes on a realistic
+desktop after the [real-desktop review](#real-desktop-review-2026-10-11).
+Phase 2 proposed.** This is
 the working plan for two phases of indexing work, based on a headless
 profile of the daemon taken on 2026-10-10. Raw data is in
 `tests/bench/results/2026-10-10-m7-baseline.jsonl` (scenario metrics) and
@@ -372,7 +373,10 @@ less, with steady RSS unchanged. Peak RSS during rebuilds is later work.
 - 10 minutes idle at 213k: at most 0.2% of a core, zero full scans while
   coverage is complete; `last_full_reason` shows startup only.
 - Churn scenario: at most 2% of a core, zero publications.
-- RSS after burst, rename and churn within 10% of steady RSS.
+- RSS after burst, rename and churn within 10% of steady RSS. Redefined by
+  ADR 0044 after the [real-desktop review](#real-desktop-review-2026-10-11):
+  against a warm steady state, a trim returns at most 5 MiB of free heap after
+  the events, and RSS once the base is rebuilt is within 10%.
 - Create/delete lag unchanged (small folder p50 ≤ 120 ms).
 - Repair still works: an unwatched-subtree change, an overflow and a
   remounted root are each picked up.
@@ -558,7 +562,7 @@ deferred compaction is not implemented by this removal.
    | Metadata persistence | Refreshed metadata commits once; no metadata-only snapshot publication; a subsequent name change publishes correctly. |
    | Healthy idle | 10 minutes at 213k, at most 0.2% of a core, no full or scoped passes after startup while coverage is complete. |
    | Churn | 20 Hz writes to an already indexed file, at most 2% of a core, zero passes and publications. |
-   | Memory | After burst, rename, delete and churn settle and leases drain, RSS is at most 1.10 times that run's steady RSS, without manual trimming. |
+   | Memory | After burst, rename, delete and churn settle and leases drain, RSS is at most 1.10 times that run's steady RSS, without manual trimming. Superseded by ADR 0044: retained free heap at most 5 MiB, and RSS after a rebuild within 10% of the warm steady RSS. |
    | Responsiveness | Small-folder create/delete p50 stays at most 120 ms; report query percentiles and compaction-related deletion latency against baseline. |
    | Repository checks | Tests and lint pass; allocation-free query checks and ranking checks remain intact; `CLAUDE.md` and `AGENTS.md` match. |
 
@@ -698,6 +702,115 @@ python3 tests/bench/bench_scenarios.py --daemon build/profile/torchlightd \
   --sampler build/profile/sampler.so --paths /tmp/torchlight-m7-review-corpus.paths \
   --work build/m7-fixed --label deletion-rollback \
   --results tests/bench/results/2026-10-11-m7-deletion-rollback.jsonl cold lag events
+```
+
+## Real-desktop review (2026-10-11)
+
+**Phase 1 complete on a realistic desktop.** An audit of the live daemon
+(the user's `-O0` build, two hours on the real home folder) found it idling at
+1.59% of a core while the benchmark reported 0.09%. The benchmark had hidden
+two costs: its daemons ran with an empty `XDG_DATA_DIRS` and `--no-history`,
+and its idle window never spanned the top of an hour.
+
+| Finding (live daemon, 213k entries) | Cost | Fix |
+|---|---|---|
+| The desktop catalog re-parsed all 171 `.desktop` files (about 1 MB of localized keys) every second | 1.39% of a core, 87% of the idle total; about 1.6 MiB/s of reads | Parse only when a stat change stamp moves ([ADR 0042](adr/0042-desktop-change-stamps.md)) |
+| Timeshift's hourly cron mounts its backup disk under `/run/timeshift/` at :00:01 and unmounts it at :00:18; each change caused a full scan | 2 full scans an hour: about 6 CPU-s and 95 MiB written per hour; the backstop never ran | Full scans only for mounts at, below or above a root ([ADR 0043](adr/0043-mount-changes-near-roots-and-watch-slot-reuse.md)) |
+| Dead watch slots counted against capacity until a full scan replaced the watcher | Latent: fewer full scans let directory churn exhaust the watcher | Reuse slots on `IN_IGNORED` (ADR 0043) |
+| The memory gate compared post-event RSS with RSS read before any query | 7 MiB of the 24 MiB gap was first-touched query scratch | Warm baseline and rebuild check ([ADR 0044](adr/0044-m7-memory-acceptance.md)) |
+
+What changed:
+
+- **Desktop change stamps.** Every second the desktop worker stats each
+  `.desktop` entry (dev, inode, mode, size, mtime, ctime) through the same walk
+  discovery uses, and parses only when that stamp differs from the stamp of
+  what its last parse read. It also parses on `reconcile`, 5 s after the last
+  change, and every 10 minutes (for `TryExec` binaries appearing on `PATH`).
+- **Mount relevance.** After each mount-table signal the writer compares
+  `mounts` snapshots and schedules a full scan only for a mount at, below or
+  above a root. Status counts every signal in `mount_changes`.
+- **Watch slot reuse.** Slots of dropped watches are freed and reused, and
+  their descriptors leave the lookup map (`hashmap_remove`).
+- **Thread names.** `tl-index`, `tl-persist`, `tl-search`, `tl-desktop`,
+  `tl-parallel` and `tl-semantic`, so profiles, `top -H` and the benchmark
+  attribute CPU per component.
+- **Realistic benchmark.** `bench_scenarios.py` now gives its daemons the
+  host's applications and history by default (`--desktop empty` and
+  `--no-history` restore the old setup), reports `cpu_s_by_thread`, warms up
+  before reading steady RSS, measures the memory gates of ADR 0044, and adds a
+  `mounts` phase that mounts tmpfs in a private user and mount namespace.
+
+### Results (213k mirror, `-O3`, host applications, history on)
+
+Same machine and the same 178,569-file, 34,452-directory mirror as the
+earlier M7 runs, with the host's 167 `.desktop` files
+([raw results](../tests/bench/results/2026-10-11-m7-real-desktop.jsonl)):
+
+| Gate | Measured | Acceptance |
+|---|---|---|
+| Idle, default settings, 600 s | 0.15% of a core (desktop checks 0.06%, indexing tick 0.05%, IPC tick 0.04%); zero scans, publications and writes; 41.3 wakeups/s | Pass: at most 0.2% |
+| 20 Hz writes to an indexed file, 30 s | 0.13%; zero passes and publications | Pass: at most 2% |
+| Small-folder create / delete p50 | 107.4 / 106.9 ms | Pass: at most 120 ms |
+| Free heap a trim returns after the events | 3 MiB | Pass: at most 5 MiB |
+| RSS after the rebuild against warm steady | 185 / 176 MiB (+5.1%, with 8,008 entries added to force the rebuild) | Pass: at most +10% |
+| 20 tmpfs mounts and unmounts outside the root | 40 changes seen, zero full scans | Pass |
+| One mount and unmount inside the root | two full scans, `last_full_reason: mount` | Pass |
+
+Measured along the way:
+
+- Query round trip idle p50/p95/p99 0.78/2.32/4.01 ms, during a full scan
+  0.78/2.65/4.24 ms: unchanged from the earlier runs.
+- Steady RSS 169 MiB cold and 176 MiB warm; 195 MiB after the events
+  (+10.8% against warm steady, +15.4% against cold). The rest of that gap is
+  the deleted tree's 22k entries in the base engine (deleted-entry retention,
+  ADR 0044), released by the rebuild.
+- Event costs are unchanged: the 20k burst became visible after 2.9 s with
+  two full builds, the rename after 2.1 s with one, the deletion after 203 ms
+  with none; rebuild peaks reach 371 to 381 MiB.
+- Each remaining full scan costs about 3.5 CPU-s and pushes about 150 MiB
+  through SQLite (the warm-start scan wrote 72 MiB; the two mount scans 297
+  MiB together). The hourly backstop alone adds about 0.09% of a core
+  averaged over an hour. Phase 2 targets exactly this.
+
+The same harness on the baseline binary (HEAD `f339518`, five-minute idle;
+[raw results](../tests/bench/results/2026-10-11-m7-real-desktop-baseline.jsonl))
+shows what the fixes changed:
+
+| Scenario | Baseline | Fixed |
+|---|---|---|
+| Idle, default settings | 1.58% of a core, 286 MiB read in 5 min | 0.15%, 1 MiB read in 10 min |
+| 20 tmpfs mount cycles outside the root | 4 full scans, 13.5 CPU-s, 288 MiB written | zero full scans, 0.03 CPU-s |
+| Memory gates (trim / after rebuild) | 3 MiB / +6.2% | 3 MiB / +5.1% |
+
+Memory is unchanged by these fixes; it passed ADR 0044's gates before them,
+which is what the decomposition predicted. `make bench` passes all nine
+ranking fixtures at 50k and 500k, with 500k typing p95 4.313 ms
+([output](../tests/bench/results/2026-10-11-m7-real-desktop-lexical.txt)).
+`make test` (ASan/UBSan, including the non-root desktop cases) and
+`make lint` pass; `CLAUDE.md` and `AGENTS.md` match.
+
+On the real home folder the two binaries ran side by side as isolated
+daemons (own databases and sockets, the live session's environment, history
+on) from 16:20 to 17:03, while repository work caused nine scoped passes in
+each, then crossed Timeshift's 17:00 check:
+
+| Real home folder (213k entries) | Baseline | Fixed |
+|---|---|---|
+| 38 minutes idle with ordinary file activity | 1.87% of a core (desktop thread 1.70%) | 0.25% (desktop checks 0.08%; most of the rest is the scoped passes) |
+| Timeshift mount at 17:00:01 and unmount at 17:00:18 | two full scans, 10.5 CPU-s, `last_full_reason: mount` | no full scan; `mount_changes` 0 to 2; 0.49 CPU-s over the same three minutes |
+
+The invocations were:
+
+```sh
+python3 tests/bench/bench_scenarios.py --daemon build/profile/torchlightd \
+  --sampler build/profile/sampler.so --paths /tmp/torchlight-m7-review-corpus.paths \
+  --work build/m7-fixed --label real-desktop --idle-s 600 \
+  --results tests/bench/results/2026-10-11-m7-real-desktop.jsonl
+python3 tests/bench/bench_scenarios.py --daemon <baseline>/build/profile/torchlightd \
+  --sampler build/profile/sampler.so --paths /tmp/torchlight-m7-review-corpus.paths \
+  --work build/m7-fixed --label real-desktop-baseline --idle-s 300 \
+  --results tests/bench/results/2026-10-11-m7-real-desktop-baseline.jsonl \
+  cold warm events mounts
 ```
 
 ## Phase 2: make the remaining full scans cheap
@@ -873,11 +986,17 @@ Taken for Phase 1 (the recommended options; each can still be revisited):
 6. **Tombstones and compaction:** the optimization in
    [ADR 0041](adr/0041-compaction-counts-retired-base-entries.md) was withdrawn
    after measuring its large-deletion cost. Compaction again bounds live delta
-   entries only; the 10% post-event RSS gate remains open.
+   entries only. Deleted-entry retention is a documented limit, and the memory
+   gate measures retained free heap and RSS after a rebuild against a warm
+   steady state ([ADR 0044](adr/0044-m7-memory-acceptance.md)).
+7. **Desktop refresh and mount signals:** parse `.desktop` files only when a
+   change stamp moves ([ADR 0042](adr/0042-desktop-change-stamps.md)); full
+   scans only for mounts near a root, with watch slots reused
+   ([ADR 0043](adr/0043-mount-changes-near-roots-and-watch-slot-reuse.md)).
 
 Still open:
 
-7. **Step 2.4:** adopt directory-stamp skipping or not, after 2.3.
+8. **Step 2.4:** adopt directory-stamp skipping or not, after 2.3.
 
 ## Out of scope (measured above, planned later)
 

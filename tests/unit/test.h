@@ -47,6 +47,8 @@ void test_json(void);
 void test_ipc(void);
 /** Run rename, relocated-watch, overflow and exhaustion checks. */
 void test_watch(void);
+/** Run mount-table parsing, escape decoding and root-relevance checks. */
+void test_mounts(void);
 /** Run writer publication recovery, history saturation and overflow acceptance. */
 void test_writer(void);
 /** Check remembered searches, once-per-event opens, boosts, adoption and clearing. */

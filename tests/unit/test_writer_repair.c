@@ -4,6 +4,7 @@
 #include "test.h"
 #include "torchlight/writer.h"
 #include <fcntl.h>
+#include <limits.h>
 #include <stdatomic.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -151,8 +152,9 @@ static void backstop(void) {
     CHECK(full_scans(&current) >= 2);
     finish(&fixture, NULL, 0);
 }
-/* A socket pair stands in for /proc/self/mountinfo: out-of-band data makes
- * the writer's end poll POLLPRI, as a mount-table change does. */
+/* A socket pair stands in for the mount table's poll: out-of-band data makes
+ * the writer's end poll POLLPRI, as a mount-table change does. The table the
+ * writer then reads is a file the test rewrites (mounts_path). */
 struct mount_signal {
     int writer_end, test_end;
 };
@@ -160,21 +162,60 @@ static int open_test_mounts(void *context) {
     const struct mount_signal *signal = context;
     return dup(signal->writer_end);
 }
+/* A table holding the root filesystem plus, optionally, one more mount. */
+static void write_table(const char *path, const char *mount_point) {
+    FILE *file = fopen(path, "w");
+    CHECK(file != NULL && fprintf(file, "1 0 252:1 / / rw - ext4 /dev/root rw\n") > 0);
+    if (mount_point != NULL)
+        CHECK(fprintf(file, "40 1 8:1 / %s rw - ext4 /dev/sdz1 rw\n", mount_point) > 0);
+    CHECK(fclose(file) == 0);
+}
+/* Signal a change and wait until the writer examined the table; the pending
+ * out-of-band byte keeps POLLPRI set until the test reads it back. */
+static void signal_mounts(const struct fixture *fixture, const struct mount_signal *signal,
+                          uint64_t seen) {
+    CHECK(send(signal->test_end, "m", 1, MSG_OOB) == 1);
+    for (size_t i = 0; i < WAIT_STEPS && stats(fixture).mount_changes <= seen; i++)
+        pause_ms(1);
+    CHECK(stats(fixture).mount_changes > seen);
+    char byte = 0;
+    CHECK(recv(signal->writer_end, &byte, 1, MSG_OOB) == 1 && byte == 'm');
+}
+/* M7: only a mount at, below or above a root causes a full scan. A backup
+ * disk mounted elsewhere (the hourly Timeshift check on a stock desktop) is
+ * seen and ignored, one mounted inside the root is scanned, and a table that
+ * cannot be read counts as relevant. Before, every change scanned. */
 static void mount_change(void) {
     struct fixture fixture;
     prepare(&fixture);
+    char table[160], root[PATH_MAX], inside[PATH_MAX + 8];
+    CHECK(snprintf(table, sizeof(table), "%s/mountinfo", fixture.base) > 0);
+    CHECK(realpath(fixture.root, root) != NULL);
+    CHECK(snprintf(inside, sizeof(inside), "%s/usb", root) > 0);
+    write_table(table, NULL);
     int ends[2];
     CHECK(socketpair(AF_UNIX, SOCK_STREAM, 0, ends) == 0);
     struct mount_signal signal = {ends[0], ends[1]};
     fixture.options.open_mounts = open_test_mounts;
     fixture.options.mounts_context = &signal;
+    fixture.options.mounts_path = table;
     fixture.options.rescan_ms = 3600000;
     start(&fixture);
-    wait_idle(&fixture, 1);
-    CHECK(send(signal.test_end, "m", 1, MSG_OOB) == 1);
+    tl_writer_stats started = wait_idle(&fixture, 1);
+    write_table(table, "/run/timeshift/1/backup");
+    signal_mounts(&fixture, &signal, started.mount_changes);
+    pause_ms(QUIET_WINDOW_MS);
+    tl_writer_stats ignored = stats(&fixture);
+    CHECK(full_scans(&ignored) == 1 && ignored.last_full_reason == WRITER_FULL_STARTUP);
+    write_table(table, inside);
+    signal_mounts(&fixture, &signal, ignored.mount_changes);
     wait_reason(&fixture, WRITER_FULL_MOUNT);
-    char byte = 0;
-    CHECK(recv(signal.writer_end, &byte, 1, MSG_OOB) == 1 && byte == 'm');
+    tl_writer_stats mounted = wait_idle(&fixture, ignored.reconciliations + 1);
+    CHECK(full_scans(&mounted) == 2);
+    CHECK(unlink(table) == 0);
+    signal_mounts(&fixture, &signal, mounted.mount_changes);
+    tl_writer_stats unreadable = wait_idle(&fixture, mounted.reconciliations + 1);
+    CHECK(full_scans(&unreadable) >= 3 && unreadable.last_full_reason == WRITER_FULL_MOUNT);
     CHECK(close(ends[0]) == 0 && close(ends[1]) == 0);
     finish(&fixture, NULL, 0);
 }

@@ -637,3 +637,53 @@ Raw data: [removal scenarios](../tests/bench/results/2026-10-11-m7-deletion-roll
 and [lexical benchmark](../tests/bench/results/2026-10-11-m7-deletion-rollback-lexical.txt).
 See the [removal record](m7-plan.md#deletion-compaction-removed-2026-10-11) for
 reproduction details. Deferred compaction remains separate future work.
+
+## M7 real-desktop review (2026-10-11)
+
+The live daemon idled at 1.59% of a core on the reference desktop while the
+M7 benchmark reported 0.09%: the benchmark's daemons had no applications
+(`XDG_DATA_DIRS` pointed at an empty directory), no history, and a ten-minute
+window that missed Timeshift's hourly backup mount. `bench_scenarios.py` now
+gives its daemons the host's applications (167 `.desktop` files here) and
+history by default, reports CPU per thread name, reads steady RSS after a
+query warm-up, measures the ADR 0044 memory gates and adds a `mounts` phase
+in a private user and mount namespace.
+
+Both binaries ran the same harness on the same 213k mirror at `-O3` (HEAD
+`f339518` as baseline, five-minute idle; the fixed build, ten-minute idle):
+
+| Scenario | Baseline | Fixed |
+|---|---|---|
+| Idle, default settings | 1.58% of a core; 286 MiB read in 5 min | 0.15%; 1 MiB read in 10 min; zero scans and writes |
+| 20 Hz writes, 30 s | 1.58% (the desktop poll); zero passes | 0.13%; zero passes |
+| 20 tmpfs mount cycles outside the root | 4 full scans, 13.5 CPU-s, 288 MiB written | 40 changes seen, zero full scans, 0.03 CPU-s |
+| One mount cycle inside the root | 2 full scans | 2 full scans (`mount`) |
+| Steady RSS cold / warm | 170 / 176 MiB | 169 / 176 MiB |
+| Free heap a trim returns after the events | 3 MiB | 3 MiB |
+| RSS after the rebuild against warm steady | +6.2% | +5.1% |
+
+The fixed build passes every Phase 1 gate: idle 0.15% (at most 0.2%), churn
+0.13% (at most 2%), small-folder create/delete p50 107.4/106.9 ms (at most
+120 ms), 3 MiB retained free heap (at most 5 MiB) and +5.1% after the rebuild
+(at most 10%). Query round trip idle p50/p95/p99 is 0.78/2.32/4.01 ms and
+0.78/2.65/4.24 ms during a full scan, unchanged. RSS right after the events
+is +10.8% against warm steady: the deleted tree's base entries until the
+rebuild (ADR 0044). Event timings vary with batching between single runs
+(20k burst visible after 1.9 s and 2.9 s, deletion after 28 and 203 ms).
+Each remaining full scan costs about 3.5 CPU-s and pushes about 150 MiB
+through SQLite.
+
+Side by side on the real home folder (isolated databases, the live
+session's environment) for 38 minutes with ordinary file activity, the
+baseline idled at 1.87% of a core and the fixed build at 0.25%. At Timeshift's
+17:00 check the baseline ran two full scans (10.5 CPU-s); the fixed build
+counted both mount changes and scanned nothing.
+
+`make bench` passes all nine ranking fixtures at 50k and 500k. Typing p95 is
+0.510/4.313 ms, whole-query p95 0.824/5.688 ms, and 500k typing with the full
+2048-item usage summary 4.583 ms; two extra daemons were running.
+
+Raw data: [fixed](../tests/bench/results/2026-10-11-m7-real-desktop.jsonl),
+[baseline](../tests/bench/results/2026-10-11-m7-real-desktop-baseline.jsonl)
+and [`make bench`](../tests/bench/results/2026-10-11-m7-real-desktop-lexical.txt).
+See the [M7 plan](m7-plan.md#real-desktop-review-2026-10-11).

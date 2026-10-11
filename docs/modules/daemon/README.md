@@ -120,6 +120,13 @@ the process allocator policy in `main`, the only process-wide state. See
 [ADR 0038](../../adr/0038-repair-scans-and-metadata-events.md) and
 [ADR 0039](../../adr/0039-returning-freed-memory.md).
 
+`indexing.mount_changes` counts mount-table changes the writer examined; only
+those at, below or above a root show up as `last_full_reason: mount`
+([ADR 0043](../../adr/0043-mount-changes-near-roots-and-watch-slot-reuse.md)).
+The search thread is named `tl-search`; with the writer's `tl-index` and
+`tl-persist`, the desktop catalog's `tl-desktop` and the scoring workers'
+`tl-parallel`, `top -H` and profiles attribute the daemon's CPU by component.
+
 ## Personal ranking (M5)
 
 With history enabled, the search thread owns [personal](../personal/README.md)

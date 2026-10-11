@@ -102,9 +102,61 @@ static void filesystem_types(void) {
     CHECK(watch_reliable("/torchlight-missing-path", &reliable) == TL_IO);
     CHECK(watch_reliable(NULL, &reliable) == TL_INVALID && watch_reliable("/", NULL) == TL_INVALID);
 }
+/* Directory create/delete cycles with room for the root plus one more. */
+#define SLOT_CYCLES 5
+struct slot_events {
+    bool file_seen;
+    const char *file;
+};
+static tl_status observe_slot(void *context, const tl_watch_event *event) {
+    struct slot_events *seen = context;
+    if (event->path != NULL && strcmp(event->path, seen->file) == 0)
+        seen->file_seen = true;
+    return TL_OK;
+}
+/* Drain until the watcher holds wanted live watches (bounded). */
+static void drain_until(tl_watch *watch, size_t wanted, struct slot_events *seen) {
+    struct pollfd fd = {watch_descriptor(watch), POLLIN, 0};
+    for (size_t i = 0; i < 100 && watch_stats(watch).directories != wanted; i++)
+        if (poll(&fd, 1, 100) > 0)
+            CHECK(watch_drain(watch, observe_slot, seen) == TL_OK);
+    CHECK(watch_stats(watch).directories == wanted);
+}
+/* M7: the kernel drops a deleted directory's watch (IN_IGNORED) and its slot
+ * is reused, so directory churn between full scans never exhausts capacity
+ * (each cycle after the first failed with TL_LIMIT before), and a reused
+ * slot reports events under its new path. */
+static void slot_reuse(void) {
+    char root[] = "/tmp/torchlight-slots-XXXXXX";
+    CHECK(mkdtemp(root) != NULL);
+    char directory[256], file[300];
+    struct slot_events seen = {false, file};
+    CHECK(snprintf(file, sizeof(file), "%s/none", root) > 0);
+    tl_watch *watch = NULL;
+    CHECK(watch_create(2, &watch) == TL_OK && watch_add(watch, root) == TL_OK);
+    for (int i = 0; i < SLOT_CYCLES; i++) {
+        CHECK(snprintf(directory, sizeof(directory), "%s/d%d", root, i) > 0);
+        CHECK(mkdir(directory, 0700) == 0 && watch_add(watch, directory) == TL_OK);
+        CHECK(rmdir(directory) == 0);
+        drain_until(watch, 1, &seen);
+    }
+    CHECK(snprintf(directory, sizeof(directory), "%s/last", root) > 0);
+    CHECK(snprintf(file, sizeof(file), "%s/file", directory) > 0);
+    CHECK(mkdir(directory, 0700) == 0 && watch_add(watch, directory) == TL_OK);
+    int fd = open(file, O_CREAT | O_WRONLY, 0600);
+    CHECK(fd >= 0 && close(fd) == 0);
+    struct pollfd ready = {watch_descriptor(watch), POLLIN, 0};
+    for (size_t i = 0; i < 100 && !seen.file_seen; i++)
+        if (poll(&ready, 1, 100) > 0)
+            CHECK(watch_drain(watch, observe_slot, &seen) == TL_OK);
+    CHECK(seen.file_seen && watch_stats(watch).unavailable == 0);
+    watch_destroy(watch);
+    CHECK(unlink(file) == 0 && rmdir(directory) == 0 && rmdir(root) == 0);
+}
 void test_watch(void) {
     metadata_events();
     filesystem_types();
+    slot_reuse();
     char root[] = "/tmp/torchlight-watch-XXXXXX";
     CHECK(mkdtemp(root) != NULL);
     char old[256], renamed[256], fresh[256];

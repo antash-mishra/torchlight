@@ -1,15 +1,28 @@
-/* XDG precedence, visibility and localized search with background snapshot swaps. */
+/* XDG precedence, visibility and localized search with background snapshot swaps.
+ * The refresh worker parses .desktop files only when a cheap change stamp of
+ * the applications trees differs from that of what the last parse read:
+ * parsing ~1 MB of localized entries every second costs about 1.5% of a core
+ * on a stock desktop. */
 #include "torchlight/desktop.h"
 #include "torchlight/hashmap.h"
 #include "torchlight/vec.h"
+#include <dirent.h>
 #include <gio/gdesktopappinfo.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/random.h>
 #include <sys/stat.h>
 #include <time.h>
-#define DESKTOP_REFRESH_SECONDS 1
+/* Defaults of tl_desktop_options, in milliseconds. */
+#define DESKTOP_CHECK_MS 1000
+#define DESKTOP_SETTLE_MS 5000
+#define DESKTOP_RESCAN_MS 600000
+/* Stat fields one .desktop file contributes to a change stamp. */
+#define DESKTOP_STAMP_FIELDS 8
+/* Stamp contribution of a directory that could not be listed. */
+#define DESKTOP_UNLISTED UINT64_C(0x756e6c6973746564)
 #define DESKTOP_FIELD_BYTES 4096
 #define DESKTOP_SCAN_DEPTH 16
 #define DESKTOP_FILE_BYTES (64 * 1024)
@@ -29,11 +42,17 @@ struct snapshot {
 };
 struct tl_desktop {
     pthread_mutex_t lock, wake_lock;
-    pthread_cond_t wake;
+    pthread_cond_t wake; /* CLOCK_MONOTONIC deadlines */
     pthread_t thread;
     bool started, stop, refresh;
     struct snapshot *active;
     uint64_t next_id, desktop_gen;
+    tl_desktop_options options;
+    /* Refresh worker only (desktop_create before it starts): the stamp of
+     * what the last parse read, and when the settle parse (zero for none)
+     * and the periodic parse are due, in monotonic milliseconds. */
+    uint64_t stamp, settle_due, rescan_due;
+    atomic_uint_least64_t parses;
 };
 static void snapshot_destroy(struct snapshot *snapshot) {
     if (snapshot == NULL)
@@ -223,56 +242,160 @@ static tl_status add_entry(struct snapshot *snapshot, const char *filename, cons
     }
     return status;
 }
-static tl_status scan_directory(struct snapshot *snapshot, const char *root, const char *relative,
+/* ---- applications trees ---------------------------------------------------- */
+/* One walk of the applications trees. Discovery and change stamps share it,
+ * so a stamp covers exactly the files a discovery reads. */
+struct walk {
+    /* A non-directory entry named *.desktop: its filename and its path below
+     * the applications directory (the desktop id before '/' becomes '-'). */
+    tl_status (*entry)(void *context, const char *filename, const char *relative);
+    /* A directory that could not be listed (missing or unreadable); optional. */
+    void (*unlisted)(void *context, const char *directory);
+    void *context;
+};
+/* Whether a listed name is a directory to enter: a real directory, never a
+ * symlink to one. d_type answers without a system call on most filesystems. */
+static bool enter_directory(const char *filename, unsigned char type) {
+    if (type != DT_UNKNOWN)
+        return type == DT_DIR;
+    struct stat info;
+    return lstat(filename, &info) == 0 && S_ISDIR(info.st_mode);
+}
+static tl_status walk_directory(const struct walk *walk, const char *root, const char *relative,
                                 unsigned depth) {
     if (depth > DESKTOP_SCAN_DEPTH)
         return TL_LIMIT;
     char *directory = g_build_filename(root, relative, NULL);
-    GDir *dir = g_dir_open(directory, 0, NULL);
+    DIR *dir = opendir(directory);
+    if (dir == NULL && walk->unlisted != NULL)
+        walk->unlisted(walk->context, directory);
     g_free(directory);
     if (dir == NULL)
         return TL_OK;
     tl_status status = TL_OK;
-    const char *name;
-    while (status == TL_OK && (name = g_dir_read_name(dir)) != NULL) {
-        char *child = g_build_filename(relative, name, NULL);
+    const struct dirent *item;
+    while (status == TL_OK && (item = readdir(dir)) != NULL) {
+        if (strcmp(item->d_name, ".") == 0 || strcmp(item->d_name, "..") == 0)
+            continue;
+        char *child = g_build_filename(relative, item->d_name, NULL);
         char *filename = g_build_filename(root, child, NULL);
-        if (g_file_test(filename, G_FILE_TEST_IS_DIR) &&
-            !g_file_test(filename, G_FILE_TEST_IS_SYMLINK))
-            status = scan_directory(snapshot, root, child, depth + 1);
-        else if (g_str_has_suffix(name, ".desktop")) {
-            char *id = g_strdup(child);
-            for (size_t i = 0; id[i] != 0; i++)
-                if (id[i] == '/')
-                    id[i] = '-';
-            status = add_entry(snapshot, filename, id);
-            g_free(id);
-        }
+        if (enter_directory(filename, item->d_type))
+            status = walk_directory(walk, root, child, depth + 1);
+        else if (g_str_has_suffix(item->d_name, ".desktop"))
+            status = walk->entry(walk->context, filename, child);
         g_free(filename);
         g_free(child);
     }
-    g_dir_close(dir);
+    int closed = closedir(dir);
+    (void)closed; /* a read-only directory stream has nothing left to lose */
     return status;
+}
+/* The user's applications tree, then each system one, in XDG precedence. */
+static tl_status walk_trees(const struct walk *walk) {
+    char *root = g_build_filename(g_get_user_data_dir(), "applications", NULL);
+    tl_status status = walk_directory(walk, root, "", 0);
+    g_free(root);
+    const char *const *system = g_get_system_data_dirs();
+    for (size_t i = 0; status == TL_OK && system[i] != NULL; i++) {
+        root = g_build_filename(system[i], "applications", NULL);
+        status = walk_directory(walk, root, "", 0);
+        g_free(root);
+    }
+    return status;
+}
+/* ---- change stamps ----------------------------------------------------------- */
+/* Fold one observation into a stamp. Adding per-item hashes keeps the stamp
+ * independent of the order directories list their entries in. */
+static void stamp_add(uint64_t *stamp, const char *path, const uint64_t *fields, size_t count) {
+    uint64_t hash = hashmap_hash(HASHMAP_HASH_SEED, path, strlen(path) + 1);
+    *stamp += hashmap_hash(hash, fields, count * sizeof(*fields));
+}
+/* What add_entry reads of a file. stat follows symlinks, as add_entry does,
+ * so a retargeted or rewritten target changes the stamp; ctime catches an
+ * edit that kept size and restored mtime. A missing target stamps as zeros. */
+static void stamp_file(uint64_t *stamp, const char *filename) {
+    uint64_t fields[DESKTOP_STAMP_FIELDS] = {0};
+    struct stat info;
+    if (stat(filename, &info) == 0) {
+        fields[0] = (uint64_t)info.st_dev;
+        fields[1] = (uint64_t)info.st_ino;
+        fields[2] = (uint64_t)info.st_mode;
+        fields[3] = (uint64_t)info.st_size;
+        fields[4] = (uint64_t)info.st_mtim.tv_sec;
+        fields[5] = (uint64_t)info.st_mtim.tv_nsec;
+        fields[6] = (uint64_t)info.st_ctim.tv_sec;
+        fields[7] = (uint64_t)info.st_ctim.tv_nsec;
+    }
+    stamp_add(stamp, filename, fields, DESKTOP_STAMP_FIELDS);
+}
+/* An unlistable directory stamps as such, so it changes the stamp once it
+ * can be listed (a missing user applications directory created later). */
+static void stamp_unlisted(uint64_t *stamp, const char *directory) {
+    const uint64_t marker = DESKTOP_UNLISTED;
+    stamp_add(stamp, directory, &marker, 1);
+}
+static tl_status stamp_entry(void *context, const char *filename, const char *relative) {
+    (void)relative;
+    stamp_file(context, filename);
+    return TL_OK;
+}
+static void stamp_directory(void *context, const char *directory) {
+    stamp_unlisted(context, directory);
+}
+/* A fingerprint of everything a discovery reads except PATH: which .desktop
+ * files exist where, the stat identity, size and change times of each, and
+ * which directories could not be listed. About one stat per entry. */
+static uint64_t applications_stamp(void) {
+    uint64_t stamp = 0;
+    struct walk walk = {.entry = stamp_entry, .unlisted = stamp_directory, .context = &stamp};
+    /* A walk that stops (a tree deeper than discovery accepts) still yields
+     * the same stamp until that tree changes; discovery fails on it anyway. */
+    tl_status status = walk_trees(&walk);
+    (void)status;
+    return stamp;
+}
+/* ---- discovery ------------------------------------------------------------- */
+/* A discovery stamps exactly what it reads, so a change it may have half
+ * seen (a directory unreadable for a moment, a file replaced mid-walk)
+ * differs from the next check's stamp even after a revert. */
+struct discovery {
+    struct snapshot *snapshot;
+    uint64_t stamp;
+};
+static tl_status discover_entry(void *context, const char *filename, const char *relative) {
+    struct discovery *discovery = context;
+    stamp_file(&discovery->stamp, filename);
+    char *id = g_strdup(relative);
+    for (size_t i = 0; id[i] != 0; i++)
+        if (id[i] == '/')
+            id[i] = '-';
+    tl_status status = add_entry(discovery->snapshot, filename, id);
+    g_free(id);
+    return status;
+}
+static void discover_unlisted(void *context, const char *directory) {
+    struct discovery *discovery = context;
+    stamp_unlisted(&discovery->stamp, directory);
 }
 static int entry_compare(const void *left, const void *right) {
     const struct entry *a = left, *b = right;
     return strcmp(a->public.desktop_id, b->public.desktop_id);
 }
-static tl_status discover(struct snapshot **out) {
+/* Read and parse every .desktop file into a new snapshot (not yet built).
+ * *stamp receives the stamp of what was read, only on success. */
+static tl_status discover(tl_desktop *desktop, struct snapshot **out, uint64_t *stamp) {
     tl_status status = snapshot_create(out);
-    char *root = g_build_filename(g_get_user_data_dir(), "applications", NULL);
+    struct discovery discovery = {*out, 0};
+    struct walk walk = {
+        .entry = discover_entry, .unlisted = discover_unlisted, .context = &discovery};
     if (status == TL_OK)
-        status = scan_directory(*out, root, "", 0);
-    g_free(root);
-    const char *const *system = g_get_system_data_dirs();
-    for (size_t i = 0; status == TL_OK && system[i] != NULL; i++) {
-        root = g_build_filename(system[i], "applications", NULL);
-        status = scan_directory(*out, root, "", 0);
-        g_free(root);
-    }
+        status = walk_trees(&walk);
     if (status == TL_OK && vec_count((*out)->entries) > 1)
         qsort(vec_data((*out)->entries), vec_count((*out)->entries), sizeof(struct entry),
               entry_compare);
+    if (status == TL_OK)
+        *stamp = discovery.stamp;
+    atomic_fetch_add(&desktop->parses, 1);
     return status;
 }
 static uint64_t previous_id(const struct snapshot *old, const struct entry *entry) {
@@ -320,43 +443,114 @@ static bool unchanged(const struct snapshot *old, const struct snapshot *next) {
             return false;
     return true;
 }
+/* ---- refresh worker ---------------------------------------------------------- */
+static uint64_t monotonic_ms(void) {
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+        return 0;
+    return (uint64_t)now.tv_sec * 1000 + (uint64_t)now.tv_nsec / 1000000;
+}
+/* Sleep until the next check, a refresh request or stop. Returns false on
+ * stop; *requested reports whether desktop_refresh asked for a parse. */
+static bool wait_check(tl_desktop *desktop, bool *requested) {
+    struct timespec deadline = {0};
+    if (clock_gettime(CLOCK_MONOTONIC, &deadline) == 0) {
+        deadline.tv_sec += (time_t)(desktop->options.check_ms / 1000);
+        deadline.tv_nsec += (long)(desktop->options.check_ms % 1000) * 1000000L;
+        if (deadline.tv_nsec >= 1000000000L) {
+            deadline.tv_sec++;
+            deadline.tv_nsec -= 1000000000L;
+        }
+    }
+    pthread_mutex_lock(&desktop->wake_lock);
+    while (!desktop->stop && !desktop->refresh)
+        if (pthread_cond_timedwait(&desktop->wake, &desktop->wake_lock, &deadline) != 0)
+            break;
+    bool stop = desktop->stop;
+    *requested = desktop->refresh;
+    desktop->refresh = false;
+    pthread_mutex_unlock(&desktop->wake_lock);
+    return !stop;
+}
+/* Whether this check parses: on request, when the trees differ from what the
+ * last parse read, once more settle_ms after the last change (an install may
+ * add a TryExec binary just after its entry) and every rescan_ms. *checked
+ * receives this check's stamp. */
+static bool parse_due(tl_desktop *desktop, bool requested, uint64_t *checked) {
+    uint64_t now = monotonic_ms();
+    *checked = applications_stamp();
+    bool changed = *checked != desktop->stamp;
+    bool settled = !changed && desktop->settle_due != 0 && now >= desktop->settle_due;
+    if (changed)
+        desktop->settle_due = now + desktop->options.settle_ms;
+    else if (settled)
+        desktop->settle_due = 0;
+    if (!requested && !changed && !settled && now < desktop->rescan_due)
+        return false;
+    desktop->rescan_due = now + desktop->options.rescan_ms;
+    return true;
+}
+/* Parse every entry and publish the result unless nothing changed. The
+ * stamp becomes that of what the parse read; a failed refresh keeps the
+ * active snapshot and records the check's stamp instead, so a tree discovery
+ * cannot read is not parsed again until it changes. */
+static void refresh_snapshot(tl_desktop *desktop, uint64_t checked) {
+    struct snapshot *next = NULL;
+    uint64_t read = checked;
+    tl_status status = discover(desktop, &next, &read);
+    desktop->stamp = status == TL_OK ? read : checked;
+    if (status == TL_OK && unchanged(desktop->active, next)) {
+        snapshot_destroy(next);
+        return;
+    }
+    if (status == TL_OK)
+        status = build(desktop, next);
+    if (status != TL_OK) {
+        snapshot_destroy(next);
+        return;
+    }
+    pthread_mutex_lock(&desktop->lock);
+    struct snapshot *old = desktop->active;
+    desktop->active = next;
+    desktop->desktop_gen++;
+    pthread_mutex_unlock(&desktop->lock);
+    snapshot_destroy(old);
+}
 static void *refresh_worker(void *context) {
     tl_desktop *desktop = context;
-    for (;;) {
-        pthread_mutex_lock(&desktop->wake_lock);
-        struct timespec deadline;
-        clock_gettime(CLOCK_REALTIME, &deadline);
-        deadline.tv_sec += DESKTOP_REFRESH_SECONDS;
-        while (!desktop->stop && !desktop->refresh) {
-            if (pthread_cond_timedwait(&desktop->wake, &desktop->wake_lock, &deadline) != 0)
-                break;
-        }
-        bool stop = desktop->stop;
-        desktop->refresh = false;
-        pthread_mutex_unlock(&desktop->wake_lock);
-        if (stop)
-            return NULL;
-        struct snapshot *next = NULL;
-        tl_status status = discover(&next);
-        if (status == TL_OK && unchanged(desktop->active, next)) {
-            snapshot_destroy(next);
-            continue;
-        }
-        if (status == TL_OK)
-            status = build(desktop, next);
-        if (status != TL_OK) {
-            snapshot_destroy(next);
-            continue;
-        }
-        pthread_mutex_lock(&desktop->lock);
-        struct snapshot *old = desktop->active;
-        desktop->active = next;
-        desktop->desktop_gen++;
-        pthread_mutex_unlock(&desktop->lock);
-        snapshot_destroy(old);
-    }
+    tl_thread_name("tl-desktop");
+    bool requested = false;
+    uint64_t checked = 0;
+    while (wait_check(desktop, &requested))
+        if (parse_due(desktop, requested, &checked))
+            refresh_snapshot(desktop, checked);
+    return NULL;
 }
-tl_status desktop_create(tl_desktop **out) {
+/* Options with defaults for zero fields. */
+static tl_desktop_options with_defaults(const tl_desktop_options *options) {
+    tl_desktop_options out = {0};
+    if (options != NULL)
+        out = *options;
+    if (out.check_ms == 0)
+        out.check_ms = DESKTOP_CHECK_MS;
+    if (out.settle_ms == 0)
+        out.settle_ms = DESKTOP_SETTLE_MS;
+    if (out.rescan_ms == 0)
+        out.rescan_ms = DESKTOP_RESCAN_MS;
+    return out;
+}
+/* A condition variable timed on CLOCK_MONOTONIC, immune to clock changes. */
+static tl_status init_wake(pthread_cond_t *wake) {
+    pthread_condattr_t attributes;
+    if (pthread_condattr_init(&attributes) != 0)
+        return TL_IO;
+    int code = pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC);
+    if (code == 0)
+        code = pthread_cond_init(wake, &attributes);
+    pthread_condattr_destroy(&attributes);
+    return code == 0 ? TL_OK : TL_IO;
+}
+tl_status desktop_create(const tl_desktop_options *options, tl_desktop **out) {
     if (out == NULL)
         return TL_INVALID;
     *out = NULL;
@@ -364,6 +558,8 @@ tl_status desktop_create(tl_desktop **out) {
     if (desktop == NULL)
         return TL_NOMEM;
     desktop->desktop_gen = 1;
+    desktop->options = with_defaults(options);
+    atomic_init(&desktop->parses, 0);
     if (pthread_mutex_init(&desktop->lock, NULL) != 0) {
         free(desktop);
         return TL_IO;
@@ -373,7 +569,7 @@ tl_status desktop_create(tl_desktop **out) {
         free(desktop);
         return TL_IO;
     }
-    if (pthread_cond_init(&desktop->wake, NULL) != 0) {
+    if (init_wake(&desktop->wake) != TL_OK) {
         pthread_mutex_destroy(&desktop->wake_lock);
         pthread_mutex_destroy(&desktop->lock);
         free(desktop);
@@ -383,8 +579,10 @@ tl_status desktop_create(tl_desktop **out) {
     tl_status status =
         getrandom(&nonce, sizeof(nonce), 0) == (ssize_t)sizeof(nonce) ? TL_OK : TL_IO;
     desktop->next_id = DESKTOP_ID_BASE | ((uint64_t)(nonce & 0x3fffffffU) << 32);
-    if (status == TL_OK)
-        status = discover(&desktop->active);
+    if (status == TL_OK) {
+        desktop->rescan_due = monotonic_ms() + desktop->options.rescan_ms;
+        status = discover(desktop, &desktop->active, &desktop->stamp);
+    }
     if (status == TL_OK)
         status = build(desktop, desktop->active);
     if (status == TL_OK && pthread_create(&desktop->thread, NULL, refresh_worker, desktop) != 0)
@@ -423,6 +621,9 @@ void desktop_refresh(tl_desktop *desktop) {
     desktop->refresh = true;
     pthread_cond_signal(&desktop->wake);
     pthread_mutex_unlock(&desktop->wake_lock);
+}
+uint64_t desktop_parses(tl_desktop *desktop) {
+    return desktop == NULL ? 0 : atomic_load(&desktop->parses);
 }
 tl_status desktop_query(tl_desktop *desktop, const char *query, tl_result *results, size_t capacity,
                         size_t *count) {

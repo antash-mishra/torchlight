@@ -1,10 +1,26 @@
-/* Isolated XDG precedence, visibility, metadata matching and live removal checks. */
+/* Isolated XDG precedence, visibility, metadata matching, live removal and
+ * change-stamp refresh checks. */
 #include "test.h"
 #include "torchlight/desktop.h"
+#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+/* Many checks of the fast test timing: long enough to see a parse if an
+ * unchanged tree still caused them. */
+#define QUIET_MS 150
+#define WAIT_STEPS 1000
+/* Filler entries a discovery parses before it reaches the system trees, so
+ * a forced parse lasts long enough for a directory to change under it. */
+#define FILLER_ENTRIES 3000
+/* After a forced parse starts: past its check walk (stats only), long before
+ * its discovery reaches the system trees behind the filler entries. */
+#define MID_PARSE_MS 40
+static void pause_ms(long milliseconds) {
+    const struct timespec delay = {milliseconds / 1000, (milliseconds % 1000) * 1000000L};
+    CHECK(nanosleep(&delay, NULL) == 0);
+}
 static void write_entry(const char *directory, const char *id, const char *fields) {
     char path[512];
     int length = snprintf(path, sizeof(path), "%s/%s", directory, id);
@@ -18,6 +34,106 @@ static size_t query(tl_desktop *desktop, const char *text, tl_result results[10]
     size_t count = 0;
     CHECK(desktop_query(desktop, text, results, 10, &count) == TL_OK);
     return count;
+}
+/* Write an entry beside its target and rename it into place, as package
+ * managers do, so a check sees either the old file or the new one. */
+static void replace_entry(const char *directory, const char *id, const char *fields) {
+    char staged[512], target[512];
+    CHECK(snprintf(staged, sizeof(staged), "%s/staged.tmp", directory) > 0);
+    CHECK(snprintf(target, sizeof(target), "%s/%s", directory, id) > 0);
+    write_entry(directory, "staged.tmp", fields);
+    CHECK(rename(staged, target) == 0);
+}
+/* Wait (bounded) until a query for text has exactly wanted results. */
+static void wait_query(tl_desktop *desktop, const char *text, size_t wanted) {
+    tl_result results[10];
+    size_t count = SIZE_MAX;
+    for (size_t i = 0; i < WAIT_STEPS && count != wanted; i++) {
+        desktop_acquire(desktop);
+        count = query(desktop, text, results);
+        desktop_release(desktop);
+        if (count != wanted)
+            pause_ms(5);
+    }
+    CHECK(count == wanted);
+}
+static uint64_t wait_parses(tl_desktop *desktop, uint64_t wanted) {
+    for (size_t i = 0; i < WAIT_STEPS && desktop_parses(desktop) < wanted; i++)
+        pause_ms(5);
+    return desktop_parses(desktop);
+}
+static void filler_name(char *name, size_t size, const char *user_apps, int index) {
+    CHECK(snprintf(name, size, "%s/filler%d.desktop", user_apps, index) > 0);
+}
+/* A directory unreadable only while a parse reads it reappears once it is
+ * readable again: the parse records the stamp of what it read (no vendor
+ * entries), which the next check's stamp differs from. Recording the stamp
+ * of the check that started the parse would match the restored tree and
+ * hide the entry until the ten-minute rescan. One-second checks leave no
+ * check between the parse and the restore to repair that by chance. */
+static void half_seen_directory(const char *user_apps, const char *vendor) {
+    char name[512];
+    for (int i = 0; i < FILLER_ENTRIES; i++) {
+        filler_name(name, sizeof(name), user_apps, i);
+        write_entry(user_apps, strrchr(name, '/') + 1, "Name=Filler\nNoDisplay=true\n");
+    }
+    const tl_desktop_options slow = {.check_ms = 1000, .settle_ms = 100, .rescan_ms = 3600000};
+    tl_desktop *desktop = NULL;
+    CHECK(desktop_create(&slow, &desktop) == TL_OK);
+    wait_query(desktop, "VendorTool", 1);
+    uint64_t parses = desktop_parses(desktop);
+    desktop_refresh(desktop);
+    pause_ms(MID_PARSE_MS);
+    CHECK(chmod(vendor, 0) == 0);
+    CHECK(wait_parses(desktop, parses + 1) == parses + 1);
+    CHECK(chmod(vendor, 0700) == 0);
+    wait_query(desktop, "VendorTool", 1);
+    desktop_destroy(desktop);
+    for (int i = 0; i < FILLER_ENTRIES; i++) {
+        filler_name(name, sizeof(name), user_apps, i);
+        CHECK(unlink(name) == 0);
+    }
+}
+/* M7: an unchanged catalog is never parsed again (it was every second), and
+ * neither are unrelated files or empty directories. A replaced entry parses
+ * once, plus the settle parse; entries in new directories, explicit refreshes
+ * and directories that stop or start being listable still parse. */
+static void change_stamps(const char *user_apps, const char *system_apps) {
+    const tl_desktop_options fast = {.check_ms = 10, .settle_ms = 100, .rescan_ms = 3600000};
+    tl_desktop *desktop = NULL;
+    CHECK(desktop_create(&fast, &desktop) == TL_OK && desktop_parses(desktop) == 1);
+    pause_ms(QUIET_MS);
+    CHECK(desktop_parses(desktop) == 1);
+    write_entry(system_apps, "mimeinfo.cache", "");
+    char vendor[512], removed[512];
+    CHECK(snprintf(vendor, sizeof(vendor), "%s/vendor", system_apps) > 0);
+    CHECK(mkdir(vendor, 0700) == 0);
+    pause_ms(QUIET_MS);
+    CHECK(desktop_parses(desktop) == 1);
+    replace_entry(user_apps, "sound.desktop", "Name=Mixer\n");
+    wait_query(desktop, "Mixer", 1);
+    CHECK(wait_parses(desktop, 3) == 3);
+    pause_ms(QUIET_MS);
+    CHECK(desktop_parses(desktop) == 3);
+    replace_entry(vendor, "tool.desktop", "Name=VendorTool\n");
+    wait_query(desktop, "VendorTool", 1);
+    uint64_t parses = wait_parses(desktop, 5);
+    desktop_refresh(desktop);
+    CHECK(wait_parses(desktop, parses + 1) == parses + 1);
+    /* Permissions bind root only through capabilities; skip the cases there. */
+    if (geteuid() != 0) {
+        CHECK(chmod(vendor, 0) == 0);
+        wait_query(desktop, "VendorTool", 0);
+        CHECK(chmod(vendor, 0700) == 0);
+        wait_query(desktop, "VendorTool", 1);
+    }
+    desktop_destroy(desktop);
+    if (geteuid() != 0)
+        half_seen_directory(user_apps, vendor);
+    CHECK(snprintf(removed, sizeof(removed), "%s/tool.desktop", vendor) > 0);
+    CHECK(unlink(removed) == 0 && rmdir(vendor) == 0);
+    CHECK(snprintf(removed, sizeof(removed), "%s/mimeinfo.cache", system_apps) > 0);
+    CHECK(unlink(removed) == 0);
 }
 void test_desktop(void) {
     char temporary[] = "/tmp/torchlight-desktop-XXXXXX";
@@ -57,7 +173,7 @@ void test_desktop(void) {
                    long_class) > 0);
     write_entry(user_apps, "long.desktop", long_fields);
     tl_desktop *desktop = NULL;
-    CHECK(desktop_create(&desktop) == TL_OK);
+    CHECK(desktop_create(NULL, &desktop) == TL_OK);
     desktop_acquire(desktop);
     tl_result results[10];
     size_t invalid_count = 99;
@@ -124,6 +240,7 @@ void test_desktop(void) {
     }
     CHECK(stale);
     desktop_destroy(desktop);
+    change_stamps(user_apps, system_apps);
     const char *user_ids[] = {"masked.desktop",  "duplicate.desktop", "private.desktop",
                               "other.desktop",   "excluded.desktop",  "missing.desktop",
                               "sound.desktop",   "keyboard.desktop",  "brand.desktop",

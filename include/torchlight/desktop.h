@@ -15,9 +15,19 @@ typedef struct {
     const char *wm_class;
     bool settings;
 } tl_desktop_entry;
-/** Create owned XDG catalog and refresh worker. Environment/locale must remain
- * stable during its lifetime. TL_INVALID/NOMEM/IO/LIMIT; out NULL on error. */
-tl_status desktop_create(tl_desktop **out);
+/* Refresh timing in milliseconds; zero selects the default. Every check_ms
+ * (default 1000) the worker compares a cheap change stamp of the applications
+ * trees (which .desktop files exist and the stat of each) and parses them only
+ * when it changed, once more settle_ms (default 5000) after the last change,
+ * and at least every rescan_ms (default 600000): a TryExec binary appearing on
+ * PATH changes no stamp. */
+typedef struct {
+    unsigned check_ms, settle_ms, rescan_ms;
+} tl_desktop_options;
+/** Create owned XDG catalog and refresh worker; options (NULL for defaults)
+ * are copied. Environment/locale must remain stable during its lifetime.
+ * TL_INVALID/NOMEM/IO/LIMIT; out NULL on error. */
+tl_status desktop_create(const tl_desktop_options *options, tl_desktop **out);
 /** Stop/join worker and free catalog. Release any lease first. NULL allowed. */
 void desktop_destroy(tl_desktop *desktop);
 /** Acquire a short exclusive query lease. Borrow entry strings until release;
@@ -41,8 +51,14 @@ tl_status desktop_query_boosted(tl_desktop *desktop, const char *query,
 /** Resolve session-scoped id in current snapshot; NULL when stale. Requires
  * lease; borrowed entry/strings valid until release. No I/O/allocation. */
 const tl_desktop_entry *desktop_resolve(const tl_desktop *desktop, uint64_t id);
-/** Request early refresh; thread-safe, no I/O. Changes also refresh every second. */
+/** Request a parse at the next check even without a changed stamp; thread-safe,
+ * no I/O. Changed files are noticed by the worker's checks without it. */
 void desktop_refresh(tl_desktop *desktop);
+/** Count of finished discoveries, successful or not (each reads and parses
+ * every .desktop file), including the one desktop_create runs. For tests and
+ * diagnostics: an idle catalog stops counting. Thread-safe; zero for NULL; no
+ * errors. */
+uint64_t desktop_parses(tl_desktop *desktop);
 /** Borrow current snapshot sequence/count while holding an exclusive query
  * lease. Zero for NULL; no allocation/I/O or errors. Sequence starts at one. */
 uint64_t desktop_gen(const tl_desktop *desktop);

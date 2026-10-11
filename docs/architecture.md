@@ -115,7 +115,8 @@ depends on the lower modules; filesystem and index modules never call storage.
 1. `watch` coalesces events into directory scopes (a changed entry's parent,
    or a created directory's subtree). Periodic repair walks only the scopes
    inotify cannot cover. Startup, overflow, requests, coverage failures, root
-   and mount changes, and the hourly backstop scan every root instead.
+   changes, mounts at, below or above a root (others are ignored) and the
+   hourly backstop scan every root instead.
 2. `crawl` walks those scopes (or roots) and emits path/stat data with
    device/inode and birth time (ctime fallback). `store` retires changed
    incarnations before upserting and prunes only listed scopes. Failed walks
@@ -213,8 +214,10 @@ is unsafe. Reclaim retired blocks in the background outside the lifecycle lock.
 
 ## M3 desktop flow
 
-The daemon owns an independent XDG desktop catalog and refresh worker. Localized
-names, independent generic names and keywords use the lexical engine; typed desktop
+The daemon owns an independent XDG desktop catalog and refresh worker, which
+re-parses `.desktop` files only when a stat change stamp of the applications
+trees moves (ADR 0042). Localized names, independent generic names and
+keywords use the lexical engine; typed desktop
 results merge with file results under short leases. catalog_gen remains the
 file-catalog version. Application IDs are session-scoped and retired on changes.
 The file engine carries immutable directory flags for UI icons.

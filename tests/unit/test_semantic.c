@@ -35,7 +35,7 @@ static void create_fixture(struct semantic_fixture *fixture) {
     CHECK(catalog_create(2, &fixture->catalog) == TL_OK);
     CHECK(catalog_snapshot_create(&engine, 1, 1, &snapshot) == TL_OK);
     CHECK(catalog_publish(fixture->catalog, &snapshot) == TL_OK);
-    CHECK(desktop_create(&fixture->desktop) == TL_OK);
+    CHECK(desktop_create(NULL, &fixture->desktop) == TL_OK);
     tl_semantic_options options = {.model_path = fixture->model,
                                    .database = fixture->database,
                                    .catalog = fixture->catalog,

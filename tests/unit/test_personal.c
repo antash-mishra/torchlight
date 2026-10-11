@@ -203,7 +203,8 @@ static void application_boosts(void) {
         write_app(applications, ids[i], names[i], "");
     tl_desktop *desktop = NULL;
     tl_personal *personal = NULL;
-    CHECK(desktop_create(&desktop) == TL_OK && personal_create(RETENTION, &personal) == TL_OK);
+    CHECK(desktop_create(NULL, &desktop) == TL_OK &&
+          personal_create(RETENTION, &personal) == TL_OK);
     tl_usage_target shell = {0, "shell.desktop"}, uninstalled = {0, "uninstalled.desktop"};
     CHECK(personal_record(personal, "launch", shell, "s", NOW) == TL_OK);
     CHECK(personal_record(personal, "gone", uninstalled, "s", NOW) == TL_OK);

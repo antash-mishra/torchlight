@@ -9,6 +9,7 @@
  * backstop full scan every repair_ms. */
 #include "torchlight/writer.h"
 #include "torchlight/delta.h"
+#include "torchlight/mounts.h"
 #include "torchlight/path.h"
 #include "torchlight/store.h"
 #include "torchlight/usage.h"
@@ -137,8 +138,11 @@ struct tl_writer {
     uint64_t counted_unavailable;
     uint64_t due;
     uint64_t shutdown_due;
-    /* Mount-table descriptor polled for POLLPRI, -1 without one. */
+    /* Mount-table descriptor polled for POLLPRI, -1 without one, and the
+     * table read after the last signal (NULL: unknown, so the next signal
+     * counts as relevant). Indexing thread only after start. */
     int mounts;
+    tl_mounts *mount_table;
     tl_status callback_status;
     bool dirty, reload, last_scoped, repair_overflow, coverage_lost, release_pending;
     size_t scan_entries, offline_roots, unreadable_scopes;
@@ -1215,20 +1219,42 @@ static void timers(tl_writer *writer, uint64_t now) {
         writer->backstop_due = now + writer->options.repair_ms;
     }
 }
+static const char *mount_table_path(const tl_writer *writer) {
+    return writer->options.mounts_path == NULL ? WRITER_MOUNT_TABLE : writer->options.mounts_path;
+}
+/* Indexing thread, after a mount-table signal. A mount at, below or above a
+ * root can hide or reveal a whole tree without any inotify event, so it gets
+ * a full scan; every other mount (hourly backup checks, snaps, containers,
+ * removable media elsewhere) changes nothing indexed. A table that cannot be
+ * read counts as relevant, and leaves the next signal relevant too. */
+static void mount_changed(tl_writer *writer) {
+    tl_mounts *table = NULL;
+    tl_status status = mounts_read(mount_table_path(writer), &table);
+    bool relevant = status != TL_OK ||
+                    mounts_affect(writer->mount_table, table,
+                                  (const char *const *)writer->roots.items, writer->roots.count);
+    mounts_destroy(writer->mount_table);
+    writer->mount_table = table;
+    lock_writer(writer);
+    writer->stats.mount_changes++;
+    unlock_writer(writer);
+    if (!relevant)
+        return;
+    request_full(writer, WRITER_FULL_MOUNT);
+    schedule(writer, WRITER_COALESCE_MS);
+}
 /* Sleep until an inotify event, a mount-table change or the next tick. */
 static void wait_events(tl_writer *writer) {
     struct pollfd fds[] = {{watch_descriptor(writer->watch), POLLIN, 0},
                            {writer->mounts, POLLPRI, 0}};
     if (poll(fds, sizeof(fds) / sizeof(fds[0]), WRITER_TICK_MS) <= 0)
         return;
-    /* A new mount can hide or reveal a whole tree without any inotify event. */
-    if ((fds[1].revents & (POLLPRI | POLLERR)) != 0) {
-        request_full(writer, WRITER_FULL_MOUNT);
-        schedule(writer, WRITER_COALESCE_MS);
-    }
+    if ((fds[1].revents & (POLLPRI | POLLERR)) != 0)
+        mount_changed(writer);
 }
 static void *worker(void *context) {
     tl_writer *writer = context;
+    tl_thread_name("tl-index");
     uint64_t start = milliseconds();
     request_full(writer, WRITER_FULL_STARTUP);
     schedule(writer, 0);
@@ -1301,6 +1327,7 @@ static void await_work(tl_writer *writer, uint64_t wait) {
  * always answered, even during shutdown, so the indexing thread can exit. */
 static void *persistence_worker(void *context) {
     tl_writer *writer = context;
+    tl_thread_name("tl-persist");
     uint64_t retention = 0;
     load_usage(writer);
     for (;;) {
@@ -1357,11 +1384,16 @@ static tl_status init_sync(tl_writer *writer) {
     return code == 0 ? TL_OK : TL_IO;
 }
 /* Without a mount table (no /proc), mount changes are found by the backstop
- * scan and by offline-root probes instead. */
+ * scan and by offline-root probes instead. The first table read is the one
+ * later signals compare against; a failed read leaves it unknown. */
 static void open_mounts(tl_writer *writer) {
     writer->mounts = writer->options.open_mounts != NULL
                          ? writer->options.open_mounts(writer->options.mounts_context)
                          : open(WRITER_MOUNT_TABLE, O_RDONLY | O_CLOEXEC);
+    if (writer->mounts < 0)
+        return;
+    tl_status status = mounts_read(mount_table_path(writer), &writer->mount_table);
+    (void)status; /* NULL table: the first signal is treated as relevant */
 }
 tl_status writer_create(const tl_writer_options *options, tl_writer **out) {
     if (out == NULL)
@@ -1448,6 +1480,7 @@ void writer_destroy(tl_writer *writer) {
     vec_destroy(writer->offline);
     if (writer->mounts >= 0)
         close(writer->mounts);
+    mounts_destroy(writer->mount_table);
     delta_destroy(writer->delta);
     watch_destroy(writer->watch);
     watch_destroy(writer->building_watch);

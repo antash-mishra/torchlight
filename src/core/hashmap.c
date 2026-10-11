@@ -105,6 +105,35 @@ tl_status hashmap_insert(tl_hashmap *map, uint64_t hash, uint32_t value) {
     map->count++;
     return TL_OK;
 }
+/* Backward-shift deletion: walk the probe run after the hole and move back
+ * every entry whose home bucket does not lie between the hole and its slot
+ * (cyclically), so each stays reachable from its home without tombstones. */
+static void close_hole(tl_hashmap *map, size_t hole) {
+    size_t mask = map->capacity - 1;
+    for (size_t slot = (hole + 1) & mask; map->values[slot] != HASHMAP_EMPTY;
+         slot = (slot + 1) & mask) {
+        size_t home = bucket(map->hashes[slot], map->capacity);
+        if (((slot - home) & mask) < ((slot - hole) & mask))
+            continue;
+        map->hashes[hole] = map->hashes[slot];
+        map->values[hole] = map->values[slot];
+        hole = slot;
+    }
+    map->values[hole] = HASHMAP_EMPTY;
+}
+bool hashmap_remove(tl_hashmap *map, uint64_t hash, tl_hashmap_equal equal, const void *context) {
+    if (map == NULL || equal == NULL)
+        return false;
+    for (size_t slot = bucket(hash, map->capacity); map->values[slot] != HASHMAP_EMPTY;
+         slot = (slot + 1) & (map->capacity - 1)) {
+        if (map->hashes[slot] == hash && equal(context, map->values[slot])) {
+            close_hole(map, slot);
+            map->count--;
+            return true;
+        }
+    }
+    return false;
+}
 size_t hashmap_count(const tl_hashmap *map) {
     return map == NULL ? 0 : map->count;
 }

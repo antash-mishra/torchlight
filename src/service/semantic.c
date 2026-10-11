@@ -1052,6 +1052,7 @@ static tl_status background(tl_semantic *service) {
 
 static void *worker(void *context) {
     tl_semantic *service = context;
+    tl_thread_name("tl-semantic");
     while (!stopped(service)) {
         struct job *job = next_job(service);
         if (job != NULL) {

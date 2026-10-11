@@ -70,6 +70,44 @@ static void hash_maps(void) {
     hashmap_destroy(map);
     hashmap_destroy(NULL);
 }
+static bool same_index(const void *context, uint32_t value) {
+    return value == *(const uint32_t *)context;
+}
+/* Every seventh value shares one hash, so removals happen inside one long
+ * probe run as well as in ordinary short ones. */
+static uint64_t removal_hash(uint32_t value) {
+    return value % 7 == 0 ? 99 : hashmap_hash(HASHMAP_HASH_SEED, &value, sizeof(value));
+}
+/* Removal (M7 watch slots) leaves every other value reachable, including
+ * values that probed past the removed one, and removed values can return. */
+static void hash_map_removal(void) {
+    enum { REMOVAL_VALUES = 3000, REMOVAL_STRIDE = 3 };
+    tl_hashmap *map = NULL;
+    CHECK(hashmap_create(&map) == TL_OK);
+    for (uint32_t i = 0; i < REMOVAL_VALUES; i++)
+        CHECK(hashmap_insert(map, removal_hash(i), i) == TL_OK);
+    for (uint32_t i = 0; i < REMOVAL_VALUES; i += REMOVAL_STRIDE) {
+        CHECK(hashmap_remove(map, removal_hash(i), same_index, &i));
+        CHECK(!hashmap_remove(map, removal_hash(i), same_index, &i));
+    }
+    size_t removed = (REMOVAL_VALUES + REMOVAL_STRIDE - 1) / REMOVAL_STRIDE;
+    CHECK(hashmap_count(map) == REMOVAL_VALUES - removed);
+    for (uint32_t i = 0; i < REMOVAL_VALUES; i++) {
+        uint32_t found = UINT32_MAX;
+        bool kept = i % REMOVAL_STRIDE != 0;
+        CHECK(hashmap_find(map, removal_hash(i), same_index, &i, &found) == kept);
+        CHECK(!kept || found == i);
+    }
+    for (uint32_t i = 0; i < REMOVAL_VALUES; i += REMOVAL_STRIDE)
+        CHECK(hashmap_insert(map, removal_hash(i), i) == TL_OK);
+    for (uint32_t i = 0; i < REMOVAL_VALUES; i++) {
+        uint32_t found = UINT32_MAX;
+        CHECK(hashmap_find(map, removal_hash(i), same_index, &i, &found) && found == i);
+    }
+    uint32_t any = 0;
+    CHECK(!hashmap_remove(NULL, 99, same_index, &any) && !hashmap_remove(map, 99, NULL, &any));
+    hashmap_destroy(map);
+}
 void test_core(void) {
     size_t bytes = 0;
     CHECK(tl_size_multiply(SIZE_MAX, 2, &bytes) == TL_LIMIT);
@@ -77,4 +115,5 @@ void test_core(void) {
     CHECK(tl_size_multiply(1, 1, NULL) == TL_INVALID);
     vectors();
     hash_maps();
+    hash_map_removal();
 }

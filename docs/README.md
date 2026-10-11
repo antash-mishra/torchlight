@@ -25,7 +25,13 @@ scopes and commit metadata refreshes without publication.
 The deletion-compaction optimization in
 [ADR 0041](adr/0041-compaction-counts-retired-base-entries.md) was
 [removed after reviewing its cost](m7-plan.md#deletion-compaction-removed-2026-10-11).
-The 10% post-event memory gate is open again. Phase 2 (cheaper full scans)
+A [real-desktop review](m7-plan.md#real-desktop-review-2026-10-11) completes
+Phase 1: the desktop catalog parses only when a change stamp moves
+([ADR 0042](adr/0042-desktop-change-stamps.md)), only mounts near a root cause
+full scans and dropped watch slots are reused
+([ADR 0043](adr/0043-mount-changes-near-roots-and-watch-slot-reuse.md)), and
+memory is measured against a warm steady state
+([ADR 0044](adr/0044-m7-memory-acceptance.md)). Phase 2 (cheaper full scans)
 remains proposed.
 
 Start here. Read in this order:
@@ -124,6 +130,7 @@ the root [README](../README.md) for commands, and
 | storage | SQLite store | [store](modules/store/README.md) |
 | fs | Crawler | [crawl](modules/crawl/README.md) |
 | fs | inotify watcher | [watch](modules/watch/README.md) |
+| fs | Mount-table snapshots | [mounts](modules/mounts/README.md) |
 | ipc | Socket protocol | [ipc](modules/ipc/README.md) |
 | service | Resident daemon | [daemon](modules/daemon/README.md) |
 | service | Background writer/history | [writer](modules/writer/README.md) |
@@ -229,7 +236,16 @@ the root [README](../README.md) for commands, and
   policy in `torchlightd`.
 - [0041: Count retired base entries toward compaction](adr/0041-compaction-counts-retired-base-entries.md)
   records the withdrawn deletion-compaction optimization, its measured cost
-  and the restored live-delta threshold. M7's memory acceptance remains open.
+  and the restored live-delta threshold.
+- [0042: Desktop catalog change stamps](adr/0042-desktop-change-stamps.md)
+  parses `.desktop` files only when a cheap stat stamp of the applications
+  trees changes, instead of every second.
+- [0043: Full scans only for mounts near a root; reuse dropped watch slots](adr/0043-mount-changes-near-roots-and-watch-slot-reuse.md)
+  ignores mount-table changes away from the indexed roots (hourly backup
+  checks, snaps) and frees the watch slots of deleted directories.
+- [0044: M7 memory acceptance against a warm steady state](adr/0044-m7-memory-acceptance.md)
+  measures retained free heap and RSS after a rebuild against warm steady RSS,
+  and records deleted-entry retention as a bounded limit.
 
 ## Keeping docs current
 

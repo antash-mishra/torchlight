@@ -508,11 +508,14 @@ M6 worker separation, Frizbee SIMD search and incremental indexing are
 implemented; semantic search is parked (ADR 0032) and M5 personal
 recommendations are implemented (ADR 0033). M7 phase 1 (quiet indexing:
 repair scans only where inotify can miss changes, no work for metadata-only
-writes, freed memory returned) is implemented (ADRs 0038 and 0039). Repair and
-metadata fixes are verified. The deletion-compaction optimization was
-[removed after review](docs/m7-plan.md#deletion-compaction-removed-2026-10-11),
-so the 10% memory acceptance gate is open again. Phase 2 (cheaper full scans)
-remains proposed.
+writes, freed memory returned) is complete (ADRs 0038, 0039, 0042 to 0044).
+A [real-desktop review](docs/m7-plan.md#real-desktop-review-2026-10-11) found
+the desktop catalog re-parsing every second and hourly backup mounts forcing
+full scans; both are fixed and every Phase 1 gate passes with a realistic
+application list and history. The deletion-compaction optimization stays
+[removed](docs/m7-plan.md#deletion-compaction-removed-2026-10-11): the memory
+gate is measured against a warm steady state and after a rebuild (ADR 0044).
+Phase 2 (cheaper full scans) remains proposed.
 Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
 tracked explicitly in the verification report.
 
@@ -727,8 +730,8 @@ tracked explicitly in the verification report.
    pairs Frizbee with candidate-volume reduction; step 3 splits into scoped
    reconcile, a base-plus-delta segmented engine, and incremental semantic
    snapshots. It records the baseline numbers each step must beat.
-8. **M7: Quiet indexing and lean memory.** Phase 1 repair and metadata fixes
-   verified; memory acceptance open (2026-10-11). Phase 2 proposed.
+8. **M7: Quiet indexing and lean memory.** Phase 1 complete (2026-10-11).
+   Phase 2 proposed.
    A headless profile ([M7 plan](docs/m7-plan.md)) showed that the 30-second
    full rescan cost 7 to 9% of a core at 213k entries and that a file written
    20 times a second cost 43%, while search reads only names.
@@ -744,11 +747,13 @@ tracked explicitly in the verification report.
      reuse of the live watcher, and an in-memory comparison so that only
      differences reach SQLite.
 
-   Acceptance for phase 1 at 213k: idle at most 0.2% of a core with no full
-   scan while coverage is complete, the 20 Hz churn at most 2% with no
-   publication, RSS after burst/rename/churn within 10% of steady, unchanged
-   create/delete lag, and repair still finding unwatched, overflowed and
-   remounted changes.
+   Acceptance for phase 1 at 213k, with the host's applications and history:
+   idle at most 0.2% of a core with no full scan while coverage is complete,
+   the 20 Hz churn at most 2% with no publication, after burst/rename/churn at
+   most 5 MiB of free heap a trim returns and RSS after a rebuild within 10%
+   of the warm steady RSS (ADR 0044), unchanged create/delete lag, mount
+   changes away from the roots ignored, and repair still finding unwatched,
+   overflowed and remounted changes.
 
    [Review fixes and acceptance](docs/m7-plan.md#phase-1-review-results-2026-10-11)
    verify failed-walk recovery and metadata commits without publication.
@@ -757,8 +762,23 @@ tracked explicitly in the verification report.
    The deletion-compaction experiment reduced post-event RSS by 9 MiB, but
    raised bulk deletion lag from 181 to 3052 ms and was removed at the user's
    request ([withdrawn ADR 0041](docs/adr/0041-compaction-counts-retired-base-entries.md)).
-   Deletions are incremental again; retained base memory and the original 10%
-   memory target remain open. See the [removal record](docs/m7-plan.md#deletion-compaction-removed-2026-10-11).
+   Deletions are incremental again. See the [removal record](docs/m7-plan.md#deletion-compaction-removed-2026-10-11).
+
+   A [real-desktop review](docs/m7-plan.md#real-desktop-review-2026-10-11) then
+   found the live daemon idling at 1.59% of a core: the desktop catalog
+   re-parsed every `.desktop` file each second (1.39%), and Timeshift's hourly
+   backup mount forced two full scans an hour. The benchmark had run with no
+   applications, no history and a ten-minute window. Now the desktop catalog
+   parses only when a stat change stamp moves (ADR 0042), only mounts at,
+   below or above a root cause full scans and dropped watch slots are reused
+   (ADR 0043), and the benchmark uses the host's applications and history.
+   The memory gate is measured against a warm steady state (ADR 0044): a
+   trim returns at most 5 MiB after the events, and RSS after a rebuild is
+   within 10%. At 213k: idle 0.15% of a core, churn 0.13%, small-folder
+   create/delete p50 107 ms, 3 MiB retained free heap, +5.1% after the
+   rebuild, and 40 mount changes outside the root with zero full scans. Each
+   remaining full scan still costs about 3.5 CPU-s and 150 MiB of SQLite
+   writes, which Phase 2 targets.
 
 ## Evaluation
 

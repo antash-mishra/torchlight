@@ -1,7 +1,8 @@
 # writer
 
 > **Status:** Implemented (M6 steps 1 and 3; M5 batched history and usage load; M7 phase 1 repair
-> set, metadata commits and memory release): indexing and persistence threads, private
+> set, metadata commits, memory release, and full scans only for mounts near a root):
+> indexing and persistence threads, private
 > scan batches, scoped rescans of event directories, delta publication with compaction;
 > M2/M3 reconciliation contracts retained
 > **Source:** `src/service/writer.c` · **Header:** `include/torchlight/writer.h`
@@ -148,7 +149,7 @@ Now a pass scans every root only for a reason, recorded as
 | `scopes` | more than 1024 scopes, a failed scope copy, or a scope above a root |
 | `failure` | retry after a failed pass |
 | `repair` | no watcher, a watcher that could not be replaced, a repair set too large (256), or an offline root that is a readable directory again |
-| `mount` | `/proc/self/mountinfo` polled `POLLPRI` (a mount appeared or went) |
+| `mount` | `/proc/self/mountinfo` polled `POLLPRI` and a mount at, below or above a root appeared or went, or the table could not be read |
 | `backstop` | `repair_ms` passed since the last successful full scan |
 
 The **repair set** holds recursive scopes inotify cannot keep current. Each
@@ -170,8 +171,18 @@ registers the root. A writer with no watcher keeps today's full scan every
 `rescan_ms`. `repair_scopes` reports the set's size.
 
 The mount table is polled in the worker's `poll` next to the inotify
-descriptor (`tl_writer_options.open_mounts` injects a descriptor for tests);
-a change asks for a full scan after the usual 100 ms coalescing.
+descriptor (`tl_writer_options.open_mounts` injects a descriptor for tests).
+After each signal the indexing thread reads the table (`mounts_path`, default
+`/proc/self/mountinfo`) into a [mounts](../mounts/README.md) snapshot and
+compares it with the previous one. Only a mount that appeared or went at,
+below or above a configured root asks for a full scan (after the usual
+100 ms coalescing): it can hide or reveal indexed entries without any inotify
+event. Everything else is counted in `mount_changes` and ignored. On a stock
+Linux Mint desktop, Timeshift's hourly check mounts its backup disk under
+`/run/timeshift/` and unmounts it 17 s later; each change used to cost a full
+scan (about 3 CPU-s and 48 MiB written at 213k entries). A table that cannot
+be read counts as relevant and leaves the next signal relevant too. See
+[ADR 0043](../../adr/0043-mount-changes-near-roots-and-watch-slot-reuse.md).
 
 **Metadata events.** `changed` drops watch events flagged `metadata` for files
 (attributes or writes; writes are not even subscribed) before scheduling
@@ -189,8 +200,10 @@ the next name change publishes normally across that gap.
 Tests: `test_writer_repair.c` checks that a healthy writer with
 `rescan_ms` 100 makes no pass after startup, that a file in a subtree left
 unwatched by a one-slot watcher is found by a scoped repair (one full scan
-in total), the backstop reason, and a mount signal through an out-of-band
-socket byte. `test_daemon.py` adds a short-interval daemon that stays idle,
+in total), and the backstop reason. Its mount test signals through an
+out-of-band socket byte and rewrites a fake table: a backup mount under
+`/run/timeshift/` is counted and causes no scan, a mount inside the root
+causes one, and an unreadable table causes another. `test_daemon.py` adds a short-interval daemon that stays idle,
 50 appends and a chmod that cause no pass or publication, a directory that is
 unreadable at startup and indexed as soon as it becomes readable, and the
 scoped repair under watch exhaustion. Review regressions cover repeated walks
@@ -202,11 +215,15 @@ id, embedding columns and published view; the next unchanged scan rolls back
 and the next creation publishes. See
 [ADR 0038](../../adr/0038-repair-scans-and-metadata-events.md).
 
-Known limit: the live watcher keeps the slots of deleted directories until
-the next full scan replaces it, now hourly instead of every 30 s. A watcher
-that fills up makes `watch_add` fail, which grows the repair set and, past
-its capacity, brings back full scans. Phase 2 reuses slots
-([M7 plan](../../m7-plan.md), step 2.2).
+The live watcher now lives an hour between full scans (longer with
+`--repair-ms 0`), so it reuses the slots of deleted directories: capacity
+bounds live watches only ([watch](../watch/README.md), ADR 0043). Before,
+directory churn between full scans could fill it, making `watch_add` fail,
+growing the repair set and, past its capacity, bringing back full scans.
+
+The indexing thread is named `tl-index` and the persistence thread
+`tl-persist` (`tl_thread_name`), so `top -H`, debuggers and the M7 sampler
+attribute CPU to them.
 
 ## Memory release (M7 phase 1)
 

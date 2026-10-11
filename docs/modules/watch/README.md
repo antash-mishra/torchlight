@@ -1,7 +1,7 @@
 # watch
 
-> **Status:** Implemented (M2; M6 created flag; M7 metadata flag and filesystem types): bounded inotify
-> collection and rename pairing
+> **Status:** Implemented (M2; M6 created flag; M7 metadata flag, filesystem types and slot
+> reuse): bounded inotify collection and rename pairing
 > **Source:** `src/fs/watch.c` · **Header:** `include/torchlight/watch.h`
 > **Tests:** `tests/unit/test_watch.c`, `tests/unit/test_writer.c`, `tests/test_daemon.py`
 
@@ -64,3 +64,23 @@ repairs unreliable mounts by periodic rescans. Tests cover a real file and
 directory chmod, an append that produces no event, a fed close-write, and the
 classification of local and remote magic numbers. See
 [ADR 0038](../../adr/0038-repair-scans-and-metadata-events.md).
+
+## Slot reuse (M7)
+
+Capacity bounds the directories watched at once, not the slots ever used.
+When the kernel drops a watch (`IN_IGNORED`: the directory was deleted, moved
+to another filesystem or unmounted), the watcher reports the directory as
+before, then frees its path, removes its descriptor from the lookup map
+(`hashmap_remove`) and lists the slot for the next `watch_add`. A watch that
+gets no slot or lookup entry is removed again with `inotify_rm_watch`, so the
+kernel never delivers events nobody can attribute.
+
+Before, dead slots stayed allocated and counted against capacity until a full
+scan replaced the watcher. That happened every 30 s before M7 phase 1; since
+then it happens at most hourly, and never with `--repair-ms 0`, so a day of
+creating and deleting build trees could exhaust the watcher and push the
+writer back to full scans. `slot_reuse` in `test_watch.c` creates and deletes a
+watched directory five times with room for the root plus one (each cycle after
+the first failed with `TL_LIMIT` before) and checks that a reused slot reports
+events under its new path. See
+[ADR 0043](../../adr/0043-mount-changes-near-roots-and-watch-slot-reuse.md).

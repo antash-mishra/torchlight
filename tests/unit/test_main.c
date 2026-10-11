@@ -34,6 +34,7 @@ int main(void) {
     test_identity();
     test_crawl();
     test_watch();
+    test_mounts();
     test_personal();
     test_writer();
     test_writer_fallback();

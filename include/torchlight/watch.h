@@ -19,13 +19,16 @@ typedef struct {
     size_t directories;
     uint64_t overflows, unavailable;
 } tl_watch_stats;
-/** Create owned nonblocking watcher with 1..1000000 directory slots. No other
- * thread may use it simultaneously. out NULL on TL_INVALID/NOMEM/IO. */
+/** Create owned nonblocking watcher for at most capacity (1..1000000) watched
+ * directories at once; slots of watches the kernel dropped (deleted or
+ * unmounted directories) are reused. No other thread may use it
+ * simultaneously. out NULL on TL_INVALID/NOMEM/IO. */
 tl_status watch_create(size_t capacity, tl_watch **out);
 /** Close watches and free paths/pending cookies; NULL allowed, no errors. */
 void watch_destroy(tl_watch *watch);
-/** Install a directory watch during crawling, copying path. TL_LIMIT for slot
- * exhaustion, TL_IO for unavailable/kernel limit, TL_NOMEM/INVALID. Failures
+/** Install a directory watch during crawling, copying path. TL_LIMIT when
+ * capacity directories are already watched, TL_IO for unavailable/kernel
+ * limit, TL_NOMEM/INVALID; a failed watch is removed again. Failures
  * increment unavailable; the caller must rescan that directory periodically.
  * Subscribes to entries created, deleted and moved, attribute changes and the
  * directory's own removal or move; writes are not subscribed, since they

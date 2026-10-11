@@ -23,6 +23,11 @@ bool hashmap_find(const tl_hashmap *map, uint64_t hash, tl_hashmap_equal equal, 
  * value must not be UINT32_MAX (reserved for empty slots): TL_INVALID. Growth
  * failures return TL_NOMEM/TL_LIMIT and leave the map unchanged. */
 tl_status hashmap_insert(tl_hashmap *map, uint64_t hash, uint32_t value);
+/** Remove the value found as hashmap_find would find it. Returns whether one
+ * was removed (false for NULL arguments or no match). Later lookups of other
+ * values keep working: entries after the hole shift back rather than leaving
+ * tombstones, so removal never degrades probing. No allocation. */
+bool hashmap_remove(tl_hashmap *map, uint64_t hash, tl_hashmap_equal equal, const void *context);
 /** Return the number of stored values; zero for NULL, no errors. */
 size_t hashmap_count(const tl_hashmap *map);
 /** Extend an FNV-1a hash state with length bytes. Hashing a then b equals

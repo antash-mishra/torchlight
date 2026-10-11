@@ -191,7 +191,7 @@ static tl_status create_services(tl_daemon *daemon, const tl_daemon_options *opt
                                         .release_context = options->release_context};
     tl_status status = writer_create(&writer_options, &daemon->writer);
     if (status == TL_OK)
-        status = desktop_create(&daemon->desktop);
+        status = desktop_create(NULL, &daemon->desktop);
     if (status == TL_OK && options->model_path != NULL) {
         tl_semantic_options semantic_options = {.model_path = options->model_path,
                                                 .database = config_database(options->config),
@@ -364,6 +364,8 @@ static void indexing_status(tl_json_buffer *b, const tl_writer_stats *stats,
     json_number(b, stats->unreadable_scopes);
     json_raw(b, ",\"repair_scopes\":");
     json_number(b, stats->repair_scopes);
+    json_raw(b, ",\"mount_changes\":");
+    json_number(b, stats->mount_changes);
     json_raw(b, ",\"last_full_reason\":");
     json_quote(b, writer_full_reason_name(stats->last_full_reason));
     json_raw(b, "},\"history\":{\"enabled\":");
@@ -821,6 +823,7 @@ static bool take_job(tl_daemon *daemon, struct client **out, struct pending *job
 }
 static void *search_worker(void *context) {
     tl_daemon *daemon = context;
+    tl_thread_name("tl-search");
     lock_daemon(daemon);
     while (!atomic_load(&daemon->stop)) {
         struct client *client = NULL;

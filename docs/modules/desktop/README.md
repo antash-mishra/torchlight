@@ -1,6 +1,7 @@
 # desktop
 
-> **Status:** Implemented (M3 Part 2), including independent name/generic/keyword fields; M5 personal boosts
+> **Status:** Implemented (M3 Part 2), including independent name/generic/keyword fields; M5 personal
+> boosts; M7 change-stamped refresh (parses only when an entry changed)
 > **Source:** `src/index/desktop.c` · **Header:** `include/torchlight/desktop.h`
 > **Tests:** `tests/unit/test_desktop.c`, `tests/test_desktop.py`
 
@@ -36,10 +37,11 @@ their separate lower field scores; exact filenames and paths retain their priori
 The daemon preserves the desktop engine's tie order across result limits.
 See [ADR 0018](../../adr/0018-application-name-ranking.md).
 
-The refresh worker scans every second, preserves unchanged ids, builds changed
-engines/workspaces privately and publishes under the query lease. Discovery and
-reclamation never execute in desktop_query. Acquire/query/resolve/release borrow
-metadata only during the lease; each workspace has one query coordinator.
+The refresh worker preserves unchanged ids, builds changed engines/workspaces
+privately and publishes under the query lease. Discovery and reclamation never
+execute in desktop_query. Acquire/query/resolve/release borrow metadata only
+during the lease; each workspace has one query coordinator. When it parses is
+described under "Change-stamped refresh (M7)" below.
 
 Ids use a random daemon-session namespace above 2^62; changes/removal retire the
 id rather than allowing old results to launch a replacement. Responses include
@@ -56,9 +58,9 @@ list the application's open windows ([ADR 0035](../../adr/0035-open-windows-unde
 Bounds: 8,192 encountered desktop ids (including hidden overrides), 16 nested
 directories, 4,096-byte fields/filenames and 64 KiB desktop files. Directory
 symlinks are not traversed. Failed snapshot builds retain the prior catalog.
-A complete scan is periodic rather than driven by inotify, avoiding extra watch
-pressure. Application install/remove lag is scan/build time plus at most one
-second. See [ADR 0015](../../adr/0015-m3-desktop-catalog-and-launcher.md) and
+Changes are found by polling stat data rather than inotify, avoiding extra
+watch pressure. Application install/remove lag is parse/build time plus at most
+one second. See [ADR 0015](../../adr/0015-m3-desktop-catalog-and-launcher.md) and
 [review fixes](../../adr/0017-m3-snapshot-cancellation-and-acceptance.md).
 
 ## M4 metadata integration
@@ -77,3 +79,46 @@ id. Each query replaces the previous boosts, so `desktop_query` stays
 unboosted. Editing a `.desktop` file gives its entry a new session id, which
 sorts last, so its position changes; tests in `test_personal.c` and
 `test_desktop.py` check that boosts follow it.
+
+## Change-stamped refresh (M7)
+
+Until M7 the worker re-read and re-parsed every `.desktop` file each second.
+On a stock Cinnamon desktop that is 171 files and about 1 MB of localized
+keys: 1.4% of a core around the clock, with about 1.6 MiB/s of reads, and 87%
+of the whole daemon's idle CPU. The M7 benchmark never saw it because its
+daemons ran with an empty `XDG_DATA_DIRS`.
+
+Now each check (`check_ms`, default one second) computes a **change stamp**:
+it walks the applications trees exactly as discovery does (one shared walker:
+real directories are entered, symlinked ones are not, names ending in
+`.desktop` are entries) and folds in, for every entry, its path and its `stat`
+dev, inode, mode, size, mtime and ctime (following symlinks, like the parse),
+plus a marker for each directory it cannot list. Per-item hashes are added, so
+listing order does not matter. That is about one `stat` per entry and no
+reads. A discovery computes the same stamp of what it actually read, and the
+worker keeps that one: a change the parse may have half seen (a directory
+unreadable for a moment, a file replaced mid-walk) differs from the next
+check's stamp even if it was reverted since. A failed parse records the
+check's stamp instead, so an unreadable tree is not parsed every second.
+
+The worker parses when the stamp differs, when asked (`desktop_refresh`, as
+`torchlight reconcile` does), once more `settle_ms` (default 5 s) after the
+last change, and at least every `rescan_ms` (default 10 min). The last two
+exist because one input has no stamp: GIO hides an entry whose `TryExec`
+binary is not on `PATH`, and that binary may appear after its `.desktop`
+file. Non-`.desktop` files (`mimeinfo.cache`) and empty directories do not
+change the stamp. `desktop_create(options, out)` takes `tl_desktop_options`
+(NULL for defaults); `desktop_parses` counts completed discoveries for tests.
+The condition variable waits on `CLOCK_MONOTONIC`. The worker thread is named
+`tl-desktop`.
+
+`change_stamps` in `test_desktop.c` uses 10 ms checks: no parse while nothing
+changes (there was one per check before), none for `mimeinfo.cache` or an
+empty new directory, exactly one plus the settle parse for an entry replaced by
+rename, entries in a new subdirectory, explicit refreshes, and a directory
+that becomes unlistable and listable again. `half_seen_directory` makes a
+forced parse long (3,000 filler entries ahead of the system trees, one-second
+checks) and makes a directory unreadable only while that parse runs: the entry
+must come back. Recording the check's stamp instead fails it in 6 of 8 runs.
+See [ADR 0042](../../adr/0042-desktop-change-stamps.md).
+

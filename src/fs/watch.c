@@ -37,10 +37,14 @@ struct move {
     uint32_t cookie;
     char *path;
 };
+/* directories holds one slot per watch; a slot whose watch the kernel dropped
+ * (wd -1, path NULL) is listed in free_slots and reused by the next watch_add,
+ * so deleted directories never use up capacity. */
 struct tl_watch {
     int fd;
     size_t capacity;
     tl_vec *directories;
+    tl_vec *free_slots; /* uint32_t */
     tl_hashmap *descriptors;
     struct move moves[WATCH_MOVE_SLOTS];
     tl_watch_stats stats;
@@ -75,6 +79,8 @@ tl_status watch_create(size_t capacity, tl_watch **out) {
     tl_status status =
         watch->fd < 0 ? TL_IO : vec_create(sizeof(struct directory), &watch->directories);
     if (status == TL_OK)
+        status = vec_create(sizeof(uint32_t), &watch->free_slots);
+    if (status == TL_OK)
         status = hashmap_create(&watch->descriptors);
     if (status != TL_OK) {
         watch_destroy(watch);
@@ -101,8 +107,56 @@ void watch_destroy(tl_watch *watch) {
         free(entries[i].path);
     watch_clear_moves(watch);
     vec_destroy(watch->directories);
+    vec_destroy(watch->free_slots);
     hashmap_destroy(watch->descriptors);
     free(watch);
+}
+/* Store wd and a copy of path in a free slot, or append one. */
+static tl_status claim_slot(tl_watch *watch, int wd, const char *path, uint32_t *index) {
+    struct directory entry = {wd, strdup(path)};
+    if (entry.path == NULL)
+        return TL_NOMEM;
+    size_t free_count = vec_count(watch->free_slots);
+    if (free_count != 0) {
+        *index = ((const uint32_t *)vec_const_data(watch->free_slots))[free_count - 1];
+        vec_truncate(watch->free_slots, free_count - 1);
+        ((struct directory *)vec_data(watch->directories))[*index] = entry;
+        return TL_OK;
+    }
+    *index = (uint32_t)vec_count(watch->directories);
+    tl_status status = vec_append(watch->directories, &entry);
+    if (status != TL_OK)
+        free(entry.path);
+    return status;
+}
+/* Empty a slot whose watch is gone and list it for reuse. A slot that cannot
+ * be listed (no memory) just stays unused; capacity counts live watches. */
+static void free_slot(tl_watch *watch, uint32_t index) {
+    struct directory *entries = vec_data(watch->directories);
+    free(entries[index].path);
+    entries[index] = (struct directory){-1, NULL};
+    tl_status listed = vec_append(watch->free_slots, &index);
+    (void)listed;
+}
+/* The kernel dropped a watch (its directory was deleted, moved to another
+ * filesystem or unmounted): report the directory, then free its slot and
+ * lookup entry, so directory churn between full scans (which replace the
+ * watcher at most hourly) cannot exhaust capacity or grow the lookup. */
+static tl_status forget(tl_watch *watch, int wd, tl_watch_callback callback, void *context) {
+    struct lookup key = {watch, wd};
+    uint32_t index = 0;
+    if (!hashmap_find(watch->descriptors, (uint64_t)(unsigned)wd, descriptor_equal, &key, &index))
+        return TL_OK;
+    tl_watch_event ignored = {
+        .path = ((const struct directory *)vec_const_data(watch->directories))[index].path};
+    tl_status status = callback(context, &ignored);
+    bool removed =
+        hashmap_remove(watch->descriptors, (uint64_t)(unsigned)wd, descriptor_equal, &key);
+    (void)removed; /* found above, and the slot still holds wd */
+    free_slot(watch, index);
+    if (watch->stats.directories != 0)
+        watch->stats.directories--;
+    return status;
 }
 tl_status watch_add(tl_watch *watch, const char *path) {
     if (watch == NULL || path == NULL || path[0] != '/')
@@ -115,24 +169,27 @@ tl_status watch_add(tl_watch *watch, const char *path) {
     struct directory *existing = find_directory(watch, wd);
     if (existing != NULL)
         return TL_OK;
-    if (vec_count(watch->directories) >= watch->capacity) {
-        int code = inotify_rm_watch(watch->fd, wd);
-        (void)code;
-        watch->stats.unavailable++;
-        return TL_LIMIT;
+    /* Capacity bounds live watches; slots of dropped ones are reused. */
+    tl_status status = watch->stats.directories >= watch->capacity ? TL_LIMIT : TL_OK;
+    uint32_t index = 0;
+    bool claimed = false;
+    if (status == TL_OK) {
+        status = claim_slot(watch, wd, path, &index);
+        claimed = status == TL_OK;
     }
-    struct directory entry = {wd, strdup(path)};
-    if (entry.path == NULL)
-        return TL_NOMEM;
-    uint32_t index = (uint32_t)vec_count(watch->directories);
-    tl_status status = vec_append(watch->directories, &entry);
-    if (status != TL_OK) {
-        free(entry.path);
-        return status;
-    }
-    status = hashmap_insert(watch->descriptors, (uint64_t)(unsigned)wd, index);
     if (status == TL_OK)
+        status = hashmap_insert(watch->descriptors, (uint64_t)(unsigned)wd, index);
+    if (status == TL_OK) {
         watch->stats.directories++;
+        return TL_OK;
+    }
+    /* Without a slot or a lookup entry its events could not be reported. */
+    int code = inotify_rm_watch(watch->fd, wd);
+    (void)code;
+    if (claimed)
+        free_slot(watch, index);
+    if (status == TL_LIMIT)
+        watch->stats.unavailable++;
     return status;
 }
 static tl_status loss(tl_watch *watch, tl_watch_callback callback, void *context) {
@@ -195,13 +252,8 @@ static tl_status dispatch(tl_watch *watch, const struct inotify_event *event,
     struct directory *directory = find_directory(watch, event->wd);
     if (directory == NULL)
         return TL_OK;
-    if ((event->mask & IN_IGNORED) != 0) {
-        directory->wd = -1;
-        if (watch->stats.directories != 0)
-            watch->stats.directories--;
-        tl_watch_event ignored = {.path = directory->path};
-        return callback(context, &ignored);
-    }
+    if ((event->mask & IN_IGNORED) != 0)
+        return forget(watch, event->wd, callback, context);
     char *path = NULL;
     tl_status status = event_path(directory, event, &path);
     if (status != TL_OK)

@@ -389,7 +389,7 @@
 
           <rect class="bx-bg" x="60" y="510" width="200" height="56" rx="10"/>
           <text class="t" x="160" y="534" text-anchor="middle">Desktop worker</text>
-          <text class="s" x="160" y="554" text-anchor="middle">refreshes the app list</text>
+          <text class="s" x="160" y="554" text-anchor="middle">reparses apps that changed</text>
 
           <rect class="bx-bg" x="400" y="510" width="200" height="56" rx="10"/>
           <text class="t" x="500" y="534" text-anchor="middle">Indexing thread</text>
@@ -863,7 +863,7 @@
 
           <!-- Full rescans -->
           <rect class="bx" x="20" y="326" width="400" height="52" rx="9"/>
-          <text class="t" x="38" y="348">Startup, a mount change or an inotify overflow</text>
+          <text class="t" x="38" y="348">Startup, a mount near a root, an overflow</text>
           <text class="s" x="38" y="366">or you run <tspan class="mono">torchlight reconcile</tspan></text>
           <line class="ln ln-bg" x1="420" y1="352" x2="597" y2="352" marker-end="url(#d7b)"/>
 
@@ -908,8 +908,9 @@
       </div>
       <div class="card">
         <span class="tag cool">something shifted</span>
-        <p>A mount appearing or going away, an inotify overflow, or <code>torchlight reconcile</code>
-          triggers a full rescan at once. A root that comes back online starts one at the next
+        <p>A mount appearing or going away at, inside or above an indexed folder, an inotify
+          overflow, or <code>torchlight reconcile</code> triggers a full rescan at once. Mounts
+          elsewhere, such as an hourly backup check, are ignored. A root that comes back online starts one at the next
           30-second check.</p>
       </div>
       <div class="card">

@@ -48,6 +48,7 @@ static tl_status work_range(tl_parallel *pool, size_t index) {
 static void *worker_loop(void *context) {
     struct worker *worker = context;
     tl_parallel *pool = worker->pool;
+    tl_thread_name("tl-parallel");
     uint64_t dispatch = 0;
     lock_pool(pool);
     for (;;) {

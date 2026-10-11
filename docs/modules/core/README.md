@@ -7,7 +7,11 @@
 ## Behavior and ownership
 
 `tl_status` describes invalid input, allocation, I/O, lifecycle and resource-limit
-errors. `tl_size_multiply` checks allocation arithmetic.
+errors. `tl_size_multiply` checks allocation arithmetic. `tl_thread_name`
+names the calling thread (15 bytes kept) so `top -H`, debuggers and the M7
+sampler can tell the daemon's threads apart: `tl-index`, `tl-persist`,
+`tl-search`, `tl-desktop`, `tl-parallel` (scoring workers) and `tl-semantic`.
+It is best effort and never fails.
 
 `tl_vec` is an opaque contiguous array with checked geometric growth. It
 supports single and bulk appends, `vec_reserve`, `vec_clear` and `vec_shrink`
@@ -18,12 +22,18 @@ pointers; failed growth leaves storage unchanged.
 `uint32_t` values (typically indexes into the caller's own arrays). Keys stay
 with the caller: lookups pass an equality callback, so one map type serves any
 key without copying it. Linear probing keeps the load at or below one half.
-`hashmap_hash` is FNV-1a with an extendable state (hashing pieces equals hashing
-their concatenation); buckets apply a final mix to its weak low bits.
+`hashmap_remove` (M7, for the watcher's reused slots) deletes by backward
+shift: entries after the hole move back unless their home bucket lies between
+the hole and their slot, so no tombstones accumulate and lookups of every
+other value keep working. `hashmap_hash` is FNV-1a with an extendable state
+(hashing pieces equals hashing their concatenation); buckets apply a final mix
+to its weak low bits.
 
 The [configuration](../config/README.md) resolver also lives in `src/core/`.
 Tests cover overflow, vector growth/bulk/clear/shrink, map growth, equal hashes
-with different keys, misses and piecewise hashing.
+with different keys, misses, piecewise hashing, and removal inside a long run
+of equal hashes and ordinary short runs (every other value stays reachable and
+removed values can be inserted again).
 
 `json.h` / `src/core/json.c` parse into caller-owned token buffers and encode into
 caller-owned output buffers without allocation. Strings validate UTF-8 with the

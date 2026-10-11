@@ -49,9 +49,14 @@ typedef struct {
     /* Optional mount-table signal for deterministic tests: return an owned
      * descriptor (the writer closes it) that polls POLLPRI or POLLERR after a
      * mount change, or -1 for none. NULL opens /proc/self/mountinfo, whose
-     * poll reports each change once. A change schedules a full scan. */
+     * poll reports each change once. After a signal the writer reads the
+     * table at mounts_path (borrowed for the writer's lifetime; NULL:
+     * /proc/self/mountinfo) and schedules a full
+     * scan only if a mount appeared or vanished at, below or above a root,
+     * or the table could not be read (see mounts_affect). */
     int (*open_mounts)(void *context);
     void *mounts_context;
+    const char *mounts_path;
     /* Optional: called on the indexing thread, at most once per second, after
      * a full scan's batch or a retired whole engine was freed, so the process
      * can hand freed heap back to the OS. The library assumes no allocator. */
@@ -65,6 +70,9 @@ typedef struct {
      * full_builds whole-engine rebuilds (startup, recovery, compaction). */
     uint64_t reconciliations, scoped_reconciliations, delta_publications, full_builds,
         watch_overflows, watch_unavailable, history_dropped, history_failures, history_written;
+    /* mount_changes counts mount-table signals examined, including the ones
+     * that touched no root and so caused no scan. */
+    uint64_t mount_changes;
     /* repair_scopes: directories rescanned every rescan_ms because inotify
      * cannot cover them (unwatched, unreadable, network/FUSE mounts). */
     size_t watches, history_pending, offline_roots, unreadable_scopes, repair_scopes;

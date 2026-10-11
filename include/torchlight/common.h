@@ -10,4 +10,7 @@ typedef enum { TL_OK, TL_INVALID, TL_NOMEM, TL_IO, TL_LIMIT, TL_STATE, TL_CANCEL
 const char *tl_status_string(tl_status status);
 /** Check count * size, returning TL_LIMIT on overflow, TL_INVALID for NULL out. */
 tl_status tl_size_multiply(size_t count, size_t size, size_t *out);
+/** Name the calling thread (the first 15 bytes) for top -H, debuggers and
+ * profiles. Best effort: a failure keeps the inherited name. No errors. */
+void tl_thread_name(const char *name);
 #endif
