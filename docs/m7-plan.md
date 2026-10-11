@@ -1,12 +1,16 @@
 # M7 plan: quiet indexing and lean memory
 
-**Status: Phase 1 implemented (2026-10-10); Phase 2 proposed.** This is
+**Status: Phase 1 implemented and acceptance verified (2026-10-11).
+Phase 2 proposed.** This is
 the working plan for two phases of indexing work, based on a headless
 profile of the daemon taken on 2026-10-10. Raw data is in
 `tests/bench/results/2026-10-10-m7-baseline.jsonl` (scenario metrics) and
 `tests/bench/results/2026-10-10-m7-baseline-profile.txt` (profiles, system
 calls, I/O, memory). Phase 1 results are in
 [Phase 1 results](#phase-1-results-2026-10-10) below, ADR 0038 and ADR 0039.
+The [Phase 1 review fixes](#phase-1-review-fixes) and
+[acceptance rerun](#phase-1-review-results-2026-10-11) below close the repair,
+metadata persistence and memory gaps found in the initial implementation.
 
 ## In simple words
 
@@ -415,8 +419,8 @@ Exit criteria:
   tombstones 22k of them, because removals do not count toward the delta's
   compaction bound (ADR 0030). The base keeps them until the next compaction.
   Counting tombstones toward that bound would release about 20 MB at the cost
-  of a full rebuild (about 2 CPU-s at 213k) after large deletions; that is a
-  compaction-policy decision left open below.
+  of a full rebuild (about 2 CPU-s at 213k) after large deletions. The review
+  below implements that policy and measures its cost separately.
 
 Measured along the way:
 
@@ -426,6 +430,261 @@ Measured along the way:
 - `malloc_trim(0)` costs about 8 ms per call at 213k.
 - The allocator policy chose a fixed 1 MiB `M_MMAP_THRESHOLD` and no arena
   cap (ADR 0039).
+
+## Phase 1 review fixes
+
+**Implemented and verified.** The review of `4701519` reproduced two gaps
+despite `make test` and `make lint` passing. The recorded RSS result also
+missed the existing acceptance gate. The implementation brief below is
+complete, with regressions for each fix and measured acceptance in the next
+section. Phase 2 remains separate.
+
+| Finding | Reproduced behavior | Required result |
+|---|---|---|
+| Repair coverage lost after a failed walk | With two watch slots, `root/parent/child` is a repair scope. Removing `parent`'s permissions drops `repair_scopes` from 1 to 0. Restoring permissions and creating a file under `child` leaves it undiscovered across ten repair intervals; explicit reconciliation finds it. | Keep retrying the failed scope and discover changes after access returns. |
+| Metadata transaction discarded | A file grows from 1 to 9 bytes; explicit reconciliation leaves its stored size at 1 and its old mtime unchanged. | Commit metadata changes without publishing a catalog snapshot. |
+| Deleted base entries retain memory | Recorded RSS after burst, rename, deletion and churn is 192 MiB versus 168 MiB steady (+14.3%); the target is at most +10%. | Compact after enough base entries are retired and meet the original RSS gate. |
+
+### Fix 1: preserve repair coverage across failed scans
+
+**Files:** `src/service/writer.c`, `tests/unit/test_writer_repair.c`,
+`tests/test_daemon.py`, and the writer module documentation.
+
+The reviewed `scan_scopes` called `settle_repairs` before crawling. If
+`crawl_scope` returned `TL_IO` before reporting any entries (for example,
+`realpath` could not traverse a parent), nothing put the repair scope back.
+
+- Keep the current rediscovery of repair scopes during a successful
+  recursive walk, but on `TL_IO` retain or re-add the attempted directory as
+  a recursive repair scope before releasing its path. Cover failed
+  children-only event scans as well: they also leave unverified contents.
+- Preserve the existing rule that a failed scan cannot prune stored rows.
+  Retry at `rescan_ms`; use the existing full-scan fallback when the repair
+  set overflows or allocation fails.
+- A failed walk is not evidence that a directory was deleted. Remove stale
+  repair paths only after a successful containing-scope scan confirms their
+  absence, or a successful full scan reconstructs coverage. Ensure restoring
+  access clears repairs once the directory is successfully watched; a scope
+  still exceeding watch capacity must remain in the repair set.
+- Keep status consistent with retained repair scopes. Attribute filtering
+  must not be the only way a failed scope can resume: periodic repair must
+  recover it even when its parent generates no useful event.
+
+**Regression:** reproduce the two-slot case with `rescan_ms=100` and
+`repair_ms=0`. Wait for a repair pass while the parent is unreadable, assert
+the repair remains and existing entries remain resolvable, restore access,
+then verify a new child file becomes searchable through scoped repair with
+only the startup full scan. Use bounded polling of counters and paths,
+rather than timing-only assertions. Run the permission case as a non-root
+user; a root-only test run cannot establish this acceptance result. Also
+cover repeated failed walks, successful recovery, and cleanup of a repair
+path that was actually deleted.
+
+**Done when:** access loss cannot silently empty the repair set; recovery
+works without explicit reconciliation or the backstop, and healthy idle
+still schedules no passes.
+
+### Fix 2: commit metadata without publishing
+
+**Files:** `src/service/writer.c`, `tests/test_daemon.py`, relevant store and
+writer tests, and their module documentation.
+
+- In `apply_batch`, read both `store_catalog_changed` and
+  `store_metadata_changed`, checking each status.
+- Commit if either flag is true; roll back only when neither is true.
+  Keep the output `changed` flag restricted to catalog changes so
+  `publish_changes` is never called for a metadata-only commit.
+- Preserve transaction rollback and retry on errors. Keep embedding columns
+  and file ids for unchanged identities. Allow the stored `catalog_gen` to
+  advance without changing the published one, as ADR 0038 specifies.
+
+**Regression:** index a file, change its size and mtime without changing its
+name or identity, and force reconciliation. Read the committed database
+from a separate connection and verify the new values persisted while the
+published `catalog_gen`, file id, `delta_publications` and `full_builds`
+remain unchanged. A second unchanged reconcile must not advance the stored
+`catalog_gen`. Then create a sibling and verify ordinary publication still
+works across that gap in stored and published `catalog_gen` values. Cover
+identity adoption for a legacy row and retain the existing embedding and
+replacement tests. Database assertions belong in the integration tests or
+through the store API; production SQL stays in `store.c`.
+
+**Done when:** metadata discovered by scans persists once, causes no
+publication, and does not interfere with later catalog changes. Ordinary
+writes and file attribute events must still schedule no scan.
+
+### Fix 3: compact retained deletions
+
+**Files:** `src/service/delta.c`, `include/torchlight/delta.h`,
+`src/index/catalog.c`, `include/torchlight/catalog.h`, and catalog/writer
+tests. The policy is recorded in accepted [ADR 0041](adr/0041-compaction-counts-retired-base-entries.md),
+which refines ADR 0030. ADR 0040 remains reserved by Phase 2 below.
+
+Use the existing compaction threshold, but count retained changes correctly:
+
+```
+bound = max(min_entries, base_entries / divisor)
+affected_entries = projected_unique_base_tombstones + live_delta_entries_absent_from_base
+compact when affected_entries > bound
+```
+
+The writer's defaults remain `min_entries=4096` and `divisor=32`. A changed
+base entry counts once even if it also lives in the delta. A deleted base
+entry counts once; repeated changes to that id do not increase the count.
+An entry created and deleted entirely within the delta no longer counts.
+The current batch's deletions must participate immediately.
+
+- Add a small, allocation-free catalog helper that reports the projected
+  tombstone count for a pinned source plus ascending, deduplicated changed
+  ids. Validate its inputs and document ownership, errors and the id-order
+  contract. The catalog keeps ownership of its bitmap and deduplication
+  logic; the delta module does not access snapshot internals.
+- In `delta_prepare`, count pending entries absent from the immutable base
+  with `lexical_slot`, combine the counts with overflow-safe arithmetic,
+  and check the bound before building the delta engine. Preserve existing
+  whole-snapshot entry and path-byte limits.
+- Return `TL_LIMIT` through the existing writer compaction path. Rebuild
+  from the committed catalog, publish, and reset delta bookkeeping only
+  after publication succeeds. Compaction itself needs no full filesystem
+  scan.
+- Reuse snapshot leases, `catalog_reclaim`, and the existing throttled
+  release hook. Readers must retain their old view until release; physical
+  reclamation follows the last reference. Keep all work on the indexing
+  thread and preserve failure recovery.
+
+**Regressions:** check below, exactly at, and above a small threshold;
+deletions crossing it in one batch and across several batches; mixed
+additions/deletions; repeated updates to the same base id; and creating then
+deleting a delta-only entry. Verify small deletions remain incremental,
+compaction removes tombstones, surviving paths/ids stay correct, and failed
+publication does not prematurely reset bookkeeping. Hold an old snapshot
+across compaction and verify it remains usable, then verify its base is
+reclaimed and the release hook runs after its last reference goes away.
+Use exact snapshot/counter assertions in unit tests; validate RSS with the
+scenario benchmark.
+
+**Tradeoff:** large deletions now incur full engine rebuilds (the earlier
+213k measurement was roughly 2 CPU-s per rebuild). Record deletion lag,
+rebuild count, CPU and peak RSS, including batches that cross the threshold
+more than once. Success requires measured memory recovery; the proposed
+accounting is not by itself proof of the RSS target.
+
+### Validation and completion
+
+1. Add the repair and metadata regressions first and confirm they fail on
+   the reviewed code. Add deletion-compaction regressions that expose the
+   current missing trigger, then implement the three fixes with their
+   header and module documentation updates.
+2. Run `make test` and `make lint`. Run `make bench` to check query latency
+   and ranking through the resulting snapshot layouts. Keep existing
+   allocation, rename/replacement, overflow, offline-root, watch-exhaustion,
+   publication-failure and semantic lifecycle checks passing.
+3. In `bench_scenarios.py`, create and index the churn file before starting
+   its counters and CPU measurement. This isolates writes from the file's
+   creation, so the zero-publication gate is literal. Retain the burst,
+   rename, delete and post-release RSS measurements; measure memory before
+   any diagnostic manual trim. Run the same harness against the baseline
+   and fixed binaries with separate run directories.
+4. Record a full `bench-scenarios` run on the same 213k home mirror, with
+   `--idle-s 600`, and a distinct results label. Compare idle, churn,
+   create/delete lag, query latency, steady/peak RSS and rebuild cost. Use
+   the 500k synthetic corpus as a scale check, not as a substitute for the
+   213k acceptance corpus. Missing corpus or machine access leaves the
+   corresponding measurement gate open.
+5. Require all of the following before marking Phase 1 complete:
+
+   | Gate | Required evidence |
+   |---|---|
+   | Repair correctness | Failed-scan recovery regression passes without a full scan; existing overflow, mount-signal and offline-root checks pass. |
+   | Metadata persistence | Refreshed metadata commits once; no metadata-only snapshot publication; a subsequent name change publishes correctly. |
+   | Healthy idle | 10 minutes at 213k, at most 0.2% of a core, no full or scoped passes after startup while coverage is complete. |
+   | Churn | 20 Hz writes to an already indexed file, at most 2% of a core, zero passes and publications. |
+   | Memory | After burst, rename, delete and churn settle and leases drain, RSS is at most 1.10 times that run's steady RSS, without manual trimming. |
+   | Responsiveness | Small-folder create/delete p50 stays at most 120 ms; report query percentiles and compaction-related deletion latency against baseline. |
+   | Repository checks | Tests and lint pass; allocation-free query checks and ranking checks remain intact; `CLAUDE.md` and `AGENTS.md` match. |
+
+6. Update this plan's results, `docs/evaluation.md`, the affected module
+   Status sections, ADRs 0038/0039 and the compaction ADR, `PLAN.md`,
+   `docs/README.md`, and `docs/milestone-status.md` with the actual outcome.
+   Align the system overview/design pages with the verified status. Keep
+   existing measurements as history and record new results separately.
+   If the RSS gate still fails, attribute the remaining live/retained memory
+   and continue the Phase 1 fix; do not silently relax the 10% target.
+
+## Phase 1 review results (2026-10-11)
+
+All three fixes are implemented. The repair, metadata and deletion-trigger
+regressions failed on the reviewed code before the fixes. `make test` now
+passes with ASan/UBSan, including non-root permission cases, allocation-free
+queries, publication failure recovery and semantic lifecycle checks.
+`make lint` passes, and `CLAUDE.md` and `AGENTS.md` match.
+`make bench` passes all nine ranking fixtures at both 50k and 500k. Typing
+p95 is 0.505/4.117 ms; at 500k it is 4.267 ms with the full 2048-item usage
+summary. Whole-query p95 is 0.812/5.274 ms. These lexical measurements ran
+after the scenario benchmarks and do not include IPC.
+
+The scenario harness was rerun against the saved `4701519` binary and the
+fixed `-O3` profile build in separate directories. Both use the same empty-file
+home mirror (178,569 files and 34,452 directories, including the same
+2,838-entry busy folder). The original NUL path list was reconstructed from
+the previous mirror's catalog; no file contents were copied. The churn file
+is now created and indexed before counters start. The reference desktop had
+background load; tests/lint and the synthetic scale run also ran during the
+ten-minute idle observation. Timings are single runs, not evidence of a query
+speedup. The normal installed daemon was left running.
+
+| Check at 213k | Reviewed `4701519` | Fixed | Acceptance |
+|---|---:|---:|---|
+| Idle, default settings, 600 s | Earlier run: 0.09% CPU | 0.09% CPU; zero full/scoped scans and publications; no measured I/O | Pass: at most 0.2% |
+| 20 Hz writes to an indexed file, 30 s | 0.07% CPU; zero passes/publications | 0.13% CPU; zero passes/publications | Pass: at most 2% |
+| Steady / post-event RSS, before trim | 166 / 190 MiB (+14.5%) | 167 / 181 MiB (+8.4%) | Pass: at most +10% |
+| Small-folder create / delete p50 | 107.6 / 106.8 ms | 107.5 / 107.2 ms | Pass: at most 120 ms |
+| Busy-folder create / delete p50 | 161.7 / 160.3 ms | 160.8 / 160.9 ms | Recorded; unchanged scale |
+| Idle query round trip p50 / p95 / p99 | 0.746 / 2.520 / 3.856 ms | 0.753 / 2.113 / 3.372 ms | 900 requests per run |
+| During full scan, query p50 / p95 / p99 | 0.815 / 2.698 / 4.274 ms | 0.753 / 2.673 / 4.389 ms | 900 requests per run |
+
+The memory gate is met before the optional diagnostic trim (181 → 179 MiB).
+It comes with a measured large-deletion cost:
+
+| 213k event | Reviewed full builds / CPU / visibility lag / peak RSS | Fixed full builds / CPU / visibility lag / peak RSS |
+|---|---|---|
+| Create 20k tree | 2 / 3.72 s / 3240 ms / 368 MiB | 2 / 3.56 s / 2938 ms / 368 MiB |
+| Rename tree | 1 / 1.96 s / 2047 ms / 370 MiB | 1 / 2.00 s / 2014 ms / 377 MiB |
+| Delete tree | 0 / 0.38 s / 181 ms / 189 MiB | 2 / 3.40 s / 3052 ms / 371 MiB |
+
+The deletion crosses the compaction bound twice across three scoped batches.
+No full filesystem scan runs for these events. Visibility lag starts after
+the filesystem action; the deletion itself takes 315 ms in the fixed run.
+Small changes remain incremental. The large-deletion cost is accepted as the
+tradeoff for releasing retired base entries under the original RSS target
+([ADR 0041](adr/0041-compaction-counts-retired-base-entries.md)).
+
+The 500k synthetic scale check ends at 326 MiB versus 319 MiB steady (+2.2%)
+before trim. Deletion causes one full build, takes 4.00 CPU-s and 3284 ms to
+become visible, with a 679 MiB deletion peak (685 MiB during rename).
+Small-folder create/delete p50 is 108.7/107.3 ms. Idle query round trip
+p50/p95/p99 is 1.467/6.455/11.876 ms; during a full scan it is
+1.379/6.536/12.557 ms. This scale check ran alongside repository validation;
+it supplements the 213k acceptance run and makes no isolated latency claim.
+
+Raw results (file dates reflect the start of this run):
+
+- [Reviewed binary, corrected harness](../tests/bench/results/2026-10-10-m7-review-baseline.jsonl)
+- [Fixed, all 213k phases including ten-minute idle](../tests/bench/results/2026-10-10-m7-review-fixed.jsonl)
+- [Fixed, 500k scale check](../tests/bench/results/2026-10-10-m7-review-fixed-500k.jsonl)
+- [`make bench` output](../tests/bench/results/2026-10-10-m7-review-lexical.txt)
+
+The fixed acceptance invocation was:
+
+```sh
+python3 tests/bench/bench_scenarios.py --daemon build/profile/torchlightd \
+  --sampler build/profile/sampler.so --paths /tmp/torchlight-m7-review-corpus.paths \
+  --work build/m7-fixed --label review-fixed --idle-s 600 \
+  --results tests/bench/results/2026-10-10-m7-review-fixed.jsonl
+```
+
+Phase 1 is complete. Phase 2 still covers full-scan cost and reuse of deleted
+watch slots; large rebuild peaks remain a documented limitation.
 
 ## Phase 2: make the remaining full scans cheap
 
@@ -597,13 +856,14 @@ Taken for Phase 1 (the recommended options; each can still be revisited):
 4. **Allocator settings:** `M_MMAP_THRESHOLD` fixed at 1 MiB; `M_ARENA_MAX`
    left at glibc's default (no measured gain).
 5. **Name:** M7 is in `PLAN.md` and `milestone-status.md`.
+6. **Tombstones and compaction:** [ADR 0041](adr/0041-compaction-counts-retired-base-entries.md)
+   counts unique retired base entries and live additions toward the bound.
+   The review implementation meets the original 10% RSS gate at +8.4%; its
+   extra large-deletion CPU and lag are recorded above.
 
 Still open:
 
-6. **Step 2.4:** adopt directory-stamp skipping or not, after 2.3.
-7. **Tombstones and compaction:** count removals toward the delta's
-   compaction bound, trading a full rebuild after large deletions for about
-   1 KB of RSS per deleted entry (see Phase 1 results).
+7. **Step 2.4:** adopt directory-stamp skipping or not, after 2.3.
 
 ## Out of scope (measured above, planned later)
 

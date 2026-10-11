@@ -57,6 +57,13 @@ tl_status catalog_snapshot_derive(tl_catalog_snapshot *source, tl_lexical **delt
 const tl_lexical *catalog_snapshot_base(const tl_catalog_snapshot *snapshot);
 /** Count of base entries a snapshot hides as changed or removed; zero for NULL. */
 size_t catalog_snapshot_tombstones(const tl_catalog_snapshot *snapshot);
+/** Project the number of unique base tombstones after retiring ids in a pinned
+ * or unpublished snapshot. ids is borrowed, ascending, unique and nonzero;
+ * NULL is allowed with count zero. Already-hidden and non-base ids add nothing.
+ * *out is unchanged on error. TL_INVALID for NULL snapshot/out or malformed ids;
+ * TL_OK otherwise. No allocation, I/O or ownership transfer. */
+tl_status catalog_snapshot_project_tombstones(const tl_catalog_snapshot *snapshot,
+                                              const uint64_t *ids, size_t count, size_t *out);
 /** catalog_gen at which a snapshot's base engine was built; snapshots sharing
  * a base share it, and published bases have distinct values. Zero for NULL. */
 uint64_t catalog_snapshot_base_gen(const tl_catalog_snapshot *snapshot);

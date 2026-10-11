@@ -897,6 +897,7 @@
       <div class="card">
         <span class="tag cool">every 30 seconds</span>
         <p>Folders the watcher cannot cover are rescanned, and roots that were offline are checked.
+          Failed walks stay in the repair set until a successful scan verifies recovery or deletion.
           With every folder watched there is nothing to do. Change the interval with
           <code>--rescan-ms</code>.</p>
       </div>
@@ -913,8 +914,10 @@
       </div>
       <div class="card">
         <span class="tag cool">big changes</span>
-        <p>When the delta grows past <code>max(4096, base/32)</code> entries, the indexing thread
-          rebuilds a fresh base index from SQLite (<em>compaction</em>), again on the side.</p>
+        <p>When retired base entries plus live additions exceed <code>max(4096, base/32)</code>,
+          the indexing thread rebuilds a fresh base from SQLite (<em>compaction</em>).
+          Changed base entries count once; deletions count immediately. Readers keep their
+          old view until release, then its memory can return to the OS.</p>
       </div>
       <div class="card">
         <span class="tag cool">watcher trouble</span>
@@ -926,6 +929,11 @@
       (<code>repair_scopes</code>) and why the last full rescan ran (<code>last_full_reason</code>:
       <code>startup</code>, <code>reconcile</code>, <code>overflow</code>, <code>mount</code>,
       <code>backstop</code> and a few rarer ones).</p>
+    <p>The <a href="m7-plan.md#phase-1-review-results-2026-10-11">Phase 1 acceptance run</a>
+      measured 0.09% idle CPU and post-event memory 8.4% above steady, within the 10% target.
+      Large deletions now trigger compaction: deleting a 20k-entry tree at 213k took about
+      3 seconds to appear in the index. Metadata found during a scan is saved without
+      publishing a new search view.</p>
   </section>
 
   <!-- 6 ─────────────────────────────────────────────────────────────── -->

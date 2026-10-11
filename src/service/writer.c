@@ -750,10 +750,45 @@ static bool resolve_scopes(tl_writer *writer, struct batch *batch) {
     batch->scope_count = kept;
     return true;
 }
+/* A successful children scan proves a repair's branch absent only if no
+ * reported directory (including unreadable entries) could contain it. This
+ * also settles a failed child scan queued alongside its parent's deletion. */
+static bool repair_branch_seen(const struct batch *batch, const char *directory,
+                               const char *repair) {
+    const struct batch_entry *entries = vec_const_data(batch->entries);
+    for (size_t i = 0; i < vec_count(batch->entries); i++) {
+        const tl_crawl_entry *entry = &entries[i].entry;
+        if (strcmp(entry->path, directory) != 0 && path_within(entry->path, directory) &&
+            path_within(repair, entry->path) &&
+            (entry->is_dir || entry->unreadable || !entry->has_stat))
+            return true;
+    }
+    return false;
+}
+/* Failed walks cannot prove deletion. Only successful containing listings
+ * may discard the retries they leave behind; run after every scope so their
+ * processing order cannot resurrect an already-deleted repair path. */
+static void settle_missing_repairs(tl_writer *writer, const struct batch *batch) {
+    size_t kept = 0;
+    for (size_t i = 0; i < writer->repair_count; i++) {
+        const char *repair = writer->repairs[i];
+        bool missing = false;
+        for (size_t j = 0; j < batch->scope_count && !missing; j++) {
+            const struct scope *scope = &batch->scopes[j];
+            if (!scope->recursive && strcmp(repair, scope->path) != 0 &&
+                path_within(repair, scope->path))
+                missing = !repair_branch_seen(batch, scope->path, repair);
+        }
+        if (missing)
+            free(writer->repairs[i]);
+        else
+            writer->repairs[kept++] = writer->repairs[i];
+    }
+    writer->repair_count = kept;
+}
 /* Indexing thread: rescan only the event scopes into the batch, installing
- * watches for new directories into the live watcher. A scope that cannot be
- * listed (deleted meanwhile, unreadable) is not pruned; its parent's own
- * event, or the next full scan, accounts for it. */
+ * watches into the live watcher. Unlistable scopes are not pruned and remain
+ * repair scopes until a successful scan verifies them or their removal. */
 static tl_status scan_scopes(tl_writer *writer, struct batch *batch) {
     writer->scan_entries = 0;
     writer->callback_status = TL_OK;
@@ -774,10 +809,15 @@ static tl_status scan_scopes(tl_writer *writer, struct batch *batch) {
             return scanned;
         if (scanned == TL_OK)
             batch->scopes[listed++] = scope;
-        else
+        else {
+            /* Failure before the first callback (e.g. an inaccessible parent)
+             * otherwise loses the repairs settled before this walk. */
+            add_repair(writer, scope.path);
             free(scope.path);
+        }
     }
     batch->scope_count = listed;
+    settle_missing_repairs(writer, batch);
     writer->unreadable_scopes = unreadable;
     tl_status status = drain_watch(writer);
     if (status == TL_OK)
@@ -830,20 +870,22 @@ static tl_status apply_entries(tl_writer *writer, const struct batch *batch) {
             status = store_prune(writer->store, writer->roots.items[i]);
     return status;
 }
-/* Persistence thread: one short write transaction per reconciliation.
- * Unchanged catalogs roll back their temporary bookkeeping. */
+/* Persistence thread: commit metadata too, but report only name changes for
+ * publication. A completely unchanged scan rolls back temporary bookkeeping. */
 static tl_status apply_batch(tl_writer *writer, const struct batch *batch, bool *changed) {
     *changed = false;
     tl_status status = store_begin(writer->store);
     if (status != TL_OK)
         return status;
     status = apply_entries(writer, batch);
+    bool metadata_changed = false;
     if (status == TL_OK)
         status = store_catalog_changed(writer->store, changed);
-    if (status == TL_OK && *changed)
-        status = store_commit(writer->store);
-    if (status == TL_OK && !*changed)
-        status = store_rollback(writer->store);
+    if (status == TL_OK)
+        status = store_metadata_changed(writer->store, &metadata_changed);
+    if (status == TL_OK)
+        status = *changed || metadata_changed ? store_commit(writer->store)
+                                              : store_rollback(writer->store);
     if (status != TL_OK) {
         tl_status rollback = store_rollback(writer->store);
         (void)rollback;

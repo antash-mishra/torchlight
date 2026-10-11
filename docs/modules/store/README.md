@@ -1,6 +1,6 @@
 # store
 
-> **Status:** Implemented (M4; M5 history batches; M7 metadata refreshes): schema v4, versioned embedding
+> **Status:** Implemented (M4; M5 history batches; M7 metadata refresh commits verified): schema v4, versioned embedding
 > cache plus catalog/history
 > **Source:** `src/storage/store.c` · **Header:** `include/torchlight/store.h`
 > **Tests:** `tests/unit/test_store.c`, `tests/unit/test_identity.c`, CLI/daemon integration
@@ -138,10 +138,14 @@ stays false and no change id is recorded. Inserts, replacements (retired and
 re-inserted), file/directory kind changes, moves, prunes and root changes are
 still catalog changes. The writer commits metadata-only transactions, so
 later scans stop rewriting the same rows, but publishes nothing for them.
-`store_commit` still advances `catalog_gen` for them, so the stored
-generation may run ahead of the published one until the next publication;
-publications only require it to increase. A regression test refreshes
-metadata, adopts an identity and checks every kind of name change. See
+`store_commit` still advances `catalog_gen` for them, so the stored value
+may run ahead of the published one until the next publication;
+publications only require it to increase. Unit tests refresh metadata, adopt
+an identity and check every kind of name change. The daemon regression reads
+from a separate connection after reconciliation to verify the commit, intact
+embedding columns, an unchanged published view and a later name publication
+across the stored/published `catalog_gen` gap. A second unchanged scan does not
+advance the stored `catalog_gen`. See
 [ADR 0038](../../adr/0038-repair-scans-and-metadata-events.md).
 
 ## History batches and retained opens (M5)

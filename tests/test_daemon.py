@@ -1,5 +1,5 @@
-"""M2 acceptance: live byte paths, moves, history, bounded clients and recovery;
-M5 personal ranking through opens, restarts and clearing."""
+"""M2 live catalogs and recovery, M5 personal ranking, and M7 repair coverage
+and metadata persistence through the resident daemon."""
 import base64
 from concurrent.futures import ThreadPoolExecutor
 import itertools
@@ -395,6 +395,124 @@ def idle_passes(service):
     return service.call("status")["indexing"]
 
 
+def reconcile_once(service):
+    """Wait for an explicitly requested pass, with periodic full scans disabled."""
+    before = idle_passes(service)["reconciliations"]
+    assert service.call("reconcile")["status"] == "ok"
+    wait_for(lambda: service.call("status")["indexing"]["reconciliations"] > before)
+    return idle_passes(service)
+
+
+def metadata_reconciles(service):
+    """Metadata commits without publishing; another unchanged scan rolls back.
+    Adoption of a legacy identity and a later name change preserve this split."""
+    target = service.root / "metadata.txt"
+    target.write_bytes(b"a")
+    service.start()
+    try:
+        file_id = service.indexed(target)
+        before = idle_passes(service)
+        published = service.call("status")["catalog_gen"]
+        with sqlite3.connect(service.database) as connection:
+            # A migrated row needs to adopt its identity even without new names.
+            connection.execute("UPDATE files SET identity=NULL,emb_version='fixture' WHERE path=?",
+                               (os.fsencode(target),))
+        target.write_bytes(b"123456789")
+        stamp = int(target.stat().st_mtime) + 10
+        os.utime(target, (stamp, stamp))
+        after = reconcile_once(service)
+        with sqlite3.connect(service.database) as connection:
+            row = connection.execute("SELECT size,mtime,identity,emb_version FROM files WHERE path=?",
+                                     (os.fsencode(target),)).fetchone()
+            saved_gen = connection.execute("SELECT value FROM meta WHERE key='catalog_gen'").fetchone()[0]
+        assert row[:2] == (9, stamp), row
+        assert row[2] is not None and row[3] == "fixture", row
+        assert service.indexed(target) == file_id
+        assert service.call("status")["catalog_gen"] == published
+        for counter in ("delta_publications", "full_builds"):
+            assert after[counter] == before[counter], (before, after)
+        reconcile_once(service)
+        with sqlite3.connect(service.database) as connection:
+            assert connection.execute("SELECT value FROM meta WHERE key='catalog_gen'").fetchone()[0] == saved_gen
+        sibling = service.root / "after-metadata.txt"
+        sibling.write_bytes(b"")
+        service.indexed(sibling)
+        assert int(service.call("status")["catalog_gen"]) > int(saved_gen)
+        assert service.indexed(target) == file_id
+    finally:
+        service.stop()
+
+
+def repair_after_unreadable_parent(service):
+    """A failed scoped walk must not forget an unwatched descendant. Also
+    settle a deleted repair after its parent successfully lists its absence."""
+    parent = service.root / "parent"
+    child = parent / "child"
+    child.mkdir(parents=True)
+    original = child / "original.txt"
+    original.write_bytes(b"")
+    service.start()
+    try:
+        file_id = service.indexed(original)
+        before = idle_passes(service)
+        assert before["repair_scopes"] == 1, before
+        parent.chmod(0)
+        wait_for(lambda: service.call("status")["indexing"]["reconciliations"] >= before["reconciliations"] + 3)
+        locked = idle_passes(service)
+        assert locked["repair_scopes"] == 1, locked
+        assert service.call("resolve", file_id=file_id)["status"] == "ok"
+        parent.chmod(0o700)
+        late = child / "after-permissions.txt"
+        late.write_bytes(b"")
+        service.indexed(late)
+        recovered = idle_passes(service)
+        assert recovered["repair_scopes"] == 1, recovered  # still no watch slot
+        assert recovered["reconciliations"] - recovered["scoped_reconciliations"] == 1
+        original.unlink()
+        late.unlink()
+        child.rmdir()
+        wait_for(lambda: service.call("status")["indexing"]["repair_scopes"] == 0)
+        wait_for(lambda: service.call("resolve", file_id=file_id)["reason"] == "stale_result")
+    finally:
+        parent.chmod(0o700)
+        service.stop()
+
+
+def repair_failed_event_scope(service):
+    """Even a children-only event scan that fails becomes a repair; once
+    readable and watched again it leaves the repair set and stays quiet."""
+    parent = service.root / "parent"
+    parent.mkdir()
+    original = parent / "original.txt"
+    original.write_bytes(b"")
+    service.start()
+    try:
+        file_id = service.indexed(original)
+        before = idle_passes(service)
+        assert before["repair_scopes"] == 0
+        # Queue the creation while the writer is stopped, so it cannot list
+        # the new entry before the directory becomes inaccessible.
+        service.process.send_signal(signal.SIGSTOP)
+        try:
+            late = parent / "during-permissions.txt"
+            late.write_bytes(b"")
+            parent.chmod(0)
+        finally:
+            service.process.send_signal(signal.SIGCONT)
+        wait_for(lambda: service.call("status")["indexing"]["repair_scopes"] == 1)
+        assert service.call("resolve", file_id=file_id)["status"] == "ok"
+        parent.chmod(0o700)
+        service.indexed(late)
+        wait_for(lambda: service.call("status")["indexing"]["repair_scopes"] == 0)
+        recovered = idle_passes(service)
+        assert recovered["reconciliations"] - recovered["scoped_reconciliations"] == 1
+        time.sleep(0.4)
+        assert idle_passes(service)["reconciliations"] == recovered["reconciliations"]
+    finally:
+        parent.chmod(0o700)
+        service.stop()
+
+
 def metadata_writes_publish_nothing(service):
     """Regression (M7): appending to a file rescanned its folder and published
     a snapshot every time. Writes and attribute changes of files change no
@@ -701,6 +819,17 @@ with tempfile.TemporaryDirectory(prefix="torchlight-daemon-") as temporary:
     quiet = Path(temporary) / "quiet"
     quiet.mkdir(mode=0o700)
     quiet_repair_ticks(Service(quiet, "--rescan-ms", "100"))
+    metadata = Path(temporary) / "metadata"
+    metadata.mkdir(mode=0o700)
+    metadata_reconciles(Service(metadata, "--rescan-ms", "3600000", "--repair-ms", "0"))
+    if os.geteuid() != 0:
+        repair = Path(temporary) / "repair"
+        repair.mkdir(mode=0o700)
+        repair_after_unreadable_parent(Service(repair, "--rescan-ms", "100", "--repair-ms", "0",
+                                              "--watch-capacity", "2"))
+        event_repair = Path(temporary) / "event-repair"
+        event_repair.mkdir(mode=0o700)
+        repair_failed_event_scope(Service(event_repair, "--rescan-ms", "100", "--repair-ms", "0"))
     fallback = Path(temporary) / "fallback"
     fallback.mkdir(mode=0o700)
     watch_exhaustion_and_disabled_history(Service(fallback, "--watch-capacity", "1", "--no-history"))

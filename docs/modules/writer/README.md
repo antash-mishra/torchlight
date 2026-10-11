@@ -1,7 +1,7 @@
 # writer
 
 > **Status:** Implemented (M6 steps 1 and 3; M5 batched history and usage load; M7 phase 1 repair
-> set, metadata events and memory release): indexing and persistence threads, private
+> set, metadata commits and deletion compaction verified): indexing and persistence threads, private
 > scan batches, scoped rescans of event directories, delta publication with compaction;
 > M2/M3 reconciliation contracts retained
 > **Source:** `src/service/writer.c` · **Header:** `include/torchlight/writer.h`
@@ -99,7 +99,8 @@ every scope must be indexed by some root (`crawl_covers`). `crawl_scope` fills
 the batch and installs watches for new directories into the live watcher; the
 persistence thread applies renames and upserts, then `store_prune_children` or
 `store_prune_tree` per scope that could be listed. A scope that cannot be
-listed (deleted meanwhile) is not pruned; its parent's event accounts for it.
+listed is not pruned and becomes a recursive repair scope. A successful
+containing scan must verify deletion before that retry can be discarded.
 
 A full scan of every root still runs at startup, for overflow, explicit
 requests, any failure, more than 1024 scopes, a missing watcher and any scope
@@ -119,14 +120,18 @@ for the indexing thread, which publishes through the [delta](../delta/README.md)
 module: it loads the committed rows, merges them into the kept delta entries,
 builds a small engine that references the base and derives the next snapshot,
 retiring the touched ids from the base. A full rebuild compacts instead when the
-delta would exceed max(4096, base/32) entries (`tl_writer_options.delta_entries`
-lowers the minimum for tests), when tracking overflowed, when registered roots
+unique retired base entries plus live delta entries absent from the base would
+exceed max(4096, base/32) (`tl_writer_options.delta_entries` lowers the minimum
+for tests), when tracking overflowed, when registered roots
 changed or when the active view is not the writer's last publication. Startup,
 reload after failed publication and compaction use full rebuilds.
 `delta_publications` and `full_builds` count both paths. At 500k entries, 100
 touched files publish in about 110 ms (12 ms of work after the 100 ms coalescing
 window) with RSS growing about 1%, against 4 s and a doubled engine before. See
-[ADR 0030](../../adr/0030-m6-incremental-indexing.md).
+[ADR 0030](../../adr/0030-m6-incremental-indexing.md). M7 includes deletions in
+this bound without double-counting changed base entries; a large deletion now
+compacts even with no live delta entries
+([ADR 0041](../../adr/0041-compaction-counts-retired-base-entries.md)).
 
 ## Repair set and backstop (M7 phase 1)
 
@@ -155,8 +160,13 @@ whose filesystem is not `watch_type_reliable` (NFS, SMB, FUSE, ...). Scopes
 inside a repair scope are not added again. Every `rescan_ms` the set's scopes
 join the event scopes of an ordinary scoped pass; a recursive rescan first
 drops the repair scopes inside it, and whatever still fails comes back as the
-scan reports it. Offline roots are not scopes: each tick probes whether one is
-a readable directory again and then asks for a full scan, which also
+scan reports it. A walk that fails before its first callback also restores
+the attempted scope, including a failed children-only event scan. Failed walks
+do not prove deletion: after scanning all scopes, a successful containing
+children listing can remove a repair only when no reported directory or
+unreadable entry protects its branch. Settling after the whole batch makes
+parent/child processing order irrelevant. Offline roots are not scopes: each
+tick probes whether one is a readable directory again and then asks for a full scan, which also
 registers the root. A writer with no watcher keeps today's full scan every
 `rescan_ms`. `repair_scopes` reports the set's size.
 
@@ -172,7 +182,10 @@ watched before (so its watched parent reports it) and may be listable now.
 Directories inside a network mount's repair scope do not qualify; the mount's
 own repair ticks cover them. The persistence thread commits
 metadata-only transactions (`store_metadata_changed`) without publishing, so
-scans that merely refresh mtime/size no longer publish empty deltas.
+scans that merely refresh mtime/size persist without publishing empty deltas.
+`apply_batch` checks both store change flags and rolls back only when neither
+changed. Stored `catalog_gen` may advance while the published value stays put;
+the next name change publishes normally across that gap.
 
 Tests: `test_writer_repair.c` checks that a healthy writer with
 `rescan_ms` 100 makes no pass after startup, that a file in a subtree left
@@ -181,7 +194,13 @@ in total), the backstop reason, and a mount signal through an out-of-band
 socket byte. `test_daemon.py` adds a short-interval daemon that stays idle,
 50 appends and a chmod that cause no pass or publication, a directory that is
 unreadable at startup and indexed as soon as it becomes readable, and the
-scoped repair under watch exhaustion. See
+scoped repair under watch exhaustion. Review regressions cover repeated walks
+through an unreadable parent, recovery with no backstop, deletion of the repair
+path, and a failed event scope returning to quiet operation once readable.
+Permission cases run only as a non-root user. A database check also verifies
+mtime/size persistence and legacy identity adoption while preserving the file
+id, embedding columns and published view; the next unchanged scan rolls back
+and the next creation publishes. See
 [ADR 0038](../../adr/0038-repair-scans-and-metadata-events.md).
 
 Known limit: the live watcher keeps the slots of deleted directories until
@@ -200,7 +219,12 @@ assumes no allocator; `torchlightd` passes a glibc `malloc_trim(0)` wrapper
 and sets its allocator policy in `main` ([ADR 0039](../../adr/0039-returning-freed-memory.md)).
 `test_writer_repair.c` counts one release when the startup rebuild retires
 the loaded base, one when compaction retires that base, none for a delta
-publication and one for a no-change full scan.
+publication and one for a no-change full scan. A deletion-only compaction test
+fails its first publication, retries from the committed catalog, and keeps an
+old snapshot pinned: no base release occurs until that pin is dropped, after
+which the hook runs without another filesystem change. The 213k scenario
+finishes at 181 MiB against 167 MiB steady (+8.4%, before manual trim); the
+large-deletion cost is reported in the [M7 results](../../m7-plan.md#phase-1-review-results-2026-10-11).
 
 ## Batched history and the startup usage load (M5)
 

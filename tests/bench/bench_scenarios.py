@@ -453,9 +453,11 @@ class Scenarios:
         daemon.dump(f"{self.label}-{name}")
 
     def churn(self, daemon):
+        target = self.corpus.inside(f"{self.corpus.big}/zqchurn.log")
+        target.touch()
+        daemon.wait_present(target.name, target)
         daemon.wait_idle()
         daemon.control("reset")
-        target = self.corpus.inside(f"{self.corpus.big}/zqchurn.log")
         before = counters(daemon)
         meter = Meter(daemon)
         writes, end = 0, time.monotonic() + CHURN_SECONDS

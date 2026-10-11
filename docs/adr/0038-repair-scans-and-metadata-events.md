@@ -39,6 +39,14 @@ settles the repair scopes inside it, and the ones that still fail return.
 Offline roots are probed instead and trigger a full scan once they are
 readable directories again.
 
+The Phase 1 review fixes retain the attempted repair scope when a walk fails
+before its first callback, including failed children-only event scans. A
+successful containing listing may clear an absent repair after all scopes
+have run; failed or unreadable listings never establish deletion. Periodic
+repair therefore recovers access without relying on another watch event or
+the backstop. Permission regressions run as a non-root user and cover repeated
+failures, recovery, continued watch exhaustion and actual deletion.
+
 **Mount changes.** The worker polls `/proc/self/mountinfo` for `POLLPRI`
 next to the inotify descriptor; a change schedules a full scan.
 
@@ -50,6 +58,10 @@ because only then can new permissions have made something listable.
 The store classifies an upsert that keeps a row's identity and kind as a
 metadata refresh: committed, but not a catalog change, so nothing is
 published, and the row keeps its embedding columns.
+The writer must check both catalog and metadata change flags before deciding
+to commit. The review regression reads refreshed size/mtime and an adopted
+legacy identity from another database connection while the published view
+stays unchanged, then checks an unchanged scan and a later name publication.
 
 ## Alternatives considered
 - **Keep the 30 s full scan and make it cheaper.** Phase 2 of the plan does
@@ -76,6 +88,10 @@ published, and the row keeps its embedding columns.
   SQLite temp-file I/O; the 20 Hz churn costs nothing and publishes nothing.
   Measurements are in the [M7 plan](../m7-plan.md) and
   `tests/bench/results/2026-10-10-m7-phase1.jsonl`.
+- The [review rerun](../m7-plan.md#phase-1-review-results-2026-10-11) measures
+  0.09% idle CPU over ten minutes with zero passes. Its corrected churn harness
+  indexes the file before measurement: 0.13% CPU, zero passes and zero
+  publications during 598 writes at 20 Hz.
 - Coverage gaps are visible: `repair_scopes` counts them and
   `last_full_reason` explains every full scan.
 - Changes that inotify never reports on a healthy local filesystem wait up to

@@ -2,7 +2,8 @@
  * copies of every entry changed since the base engine, ascending by id; each
  * batch replaces the touched ids with their committed rows (or drops deleted
  * ones) into a pending list, builds a small engine from it and derives the
- * next snapshot. Only an adopted publication replaces the kept list. */
+ * next snapshot. Retained base tombstones and live additions both count toward
+ * compaction. Only an adopted publication replaces the kept list. */
 #include "torchlight/delta.h"
 #include "torchlight/vec.h"
 #include <stdlib.h>
@@ -110,18 +111,39 @@ static tl_status merge_pending(tl_delta *delta, const uint64_t *ids, size_t coun
     }
     return status;
 }
-/* Conservative bounds: removals since the source are not credited, so a
- * prepared snapshot never exceeds what a full rebuild would accept. */
-static bool within_limits(const tl_delta *delta, const tl_catalog_snapshot *source,
-                          const tl_delta_limits *limits) {
+/* Retired base rows remain allocated even when no delta row replaces them.
+ * Count each once and add only live rows absent from the base. Whole-snapshot
+ * limits stay conservative: current-batch removals are not credited there. */
+static tl_status check_limits(const tl_delta *delta, const tl_catalog_snapshot *source,
+                              const uint64_t *ids, size_t count, const tl_delta_limits *limits) {
     size_t pending = vec_count(delta->pending);
     size_t bound = delta->base_entries / (limits->divisor == 0 ? 1 : limits->divisor);
     if (bound < limits->min_entries)
         bound = limits->min_entries;
+    size_t affected = 0;
+    tl_status status = catalog_snapshot_project_tombstones(source, ids, count, &affected);
+    if (status != TL_OK)
+        return status;
+    if (affected > bound)
+        return TL_LIMIT;
+    const struct delta_entry *entries = vec_const_data(delta->pending);
+    for (size_t i = 0; i < pending; i++) {
+        size_t position = 0;
+        status = lexical_slot(catalog_snapshot_base(source), entries[i].id, &position);
+        if (status == TL_STATE) {
+            if (affected == bound)
+                return TL_LIMIT;
+            affected++;
+        } else if (status != TL_OK) {
+            return status;
+        }
+    }
     size_t live = delta->base_entries - catalog_snapshot_tombstones(source);
-    return pending <= bound && live <= limits->max_entries &&
-           pending <= limits->max_entries - live && delta->base_bytes <= limits->max_path_bytes &&
-           delta->pending_bytes <= limits->max_path_bytes - delta->base_bytes;
+    return live <= limits->max_entries && pending <= limits->max_entries - live &&
+                   delta->base_bytes <= limits->max_path_bytes &&
+                   delta->pending_bytes <= limits->max_path_bytes - delta->base_bytes
+               ? TL_OK
+               : TL_LIMIT;
 }
 static tl_status build_engine(const tl_delta *delta, const tl_catalog_snapshot *source,
                               tl_lexical **out) {
@@ -163,8 +185,8 @@ tl_status delta_prepare(tl_delta *delta, tl_store *store, tl_catalog_snapshot *s
         store_load_ids(store, ids, count, collect_row, delta->rows, &delta->pending_gen);
     if (status == TL_OK)
         status = merge_pending(delta, ids, count);
-    if (status == TL_OK && !within_limits(delta, source, limits))
-        status = TL_LIMIT;
+    if (status == TL_OK)
+        status = check_limits(delta, source, ids, count, limits);
     tl_lexical *engine = NULL;
     if (status == TL_OK)
         status = build_engine(delta, source, &engine);

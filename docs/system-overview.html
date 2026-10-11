@@ -207,7 +207,7 @@
           </tbody>
         </table>
       </div>
-      <p class="caption">Recorded 3 October 2026. Roughly 6 ms p95 is accepted for starting M3. A small change rebuilds the complete engine, increasing update lag and peak memory. See <a href="evaluation.md">benchmark conditions and recorded results</a> and the <a href="m3-readiness.md">readiness report</a>.</p>
+      <p class="caption">Historical baseline, recorded 3 October 2026. Roughly 6 ms p95 was accepted for starting M3. At that stage, a small change rebuilt the complete engine. M6 added incremental updates; M7 Phase 1 reduced idle work and retained memory. See <a href="evaluation.md">benchmark conditions and current results</a> and the <a href="m3-readiness.md">readiness report</a>.</p>
     </section>
 
     <section aria-labelledby="roadmap-title">
@@ -217,14 +217,15 @@
         <article class="step"><span class="badge built">M2 · Built and reviewed</span><h3 style="margin-top: 12px">Stay ready</h3><p>Resident daemon, immutable snapshots, background updates, history and status. Replacement identity and inotify fallback now have regression coverage.</p></article>
         <article class="step"><span class="badge built">M3 · Built</span><h3 style="margin-top: 12px">Use the popup</h3><p>GTK4 window, keyboard shortcut, live results, open or reveal files, and start at login.</p></article>
         <article class="step"><span class="badge">M3 Part 2 · done</span><h3 style="margin-top: 12px">Improve search quality</h3><p>Better name ranking, unfinished typos and abbreviations, checked against real mixed application/file queries.</p></article>
-        <article class="step"><span class="badge open">M4 · Functional; acceptance open</span><h3 style="margin-top: 12px">Search by meaning</h3><p>Native Potion, cached embeddings and two-phase hybrid results are implemented. Large-catalog latency and broader relevance acceptance remain open.</p></article>
-        <article class="step next"><span class="badge planned">M6 · Next</span><h3 style="margin-top: 12px">Improve responsiveness and updates</h3><p>One milestone, in order: separate workers, integrate the selected Frizbee SIMD matcher, then update indexes incrementally.</p></article>
+        <article class="step"><span class="badge open">M4 · Opt-in; acceptance deferred</span><h3 style="margin-top: 12px">Search by meaning</h3><p>Native Potion, cached embeddings and two-phase hybrid results are implemented. Large-catalog latency and broader relevance acceptance are deferred while semantic search stays opt-in.</p></article>
+        <article class="step"><span class="badge built">M6 · Implemented</span><h3 style="margin-top: 12px">Improve responsiveness and updates</h3><p>Separate workers, Frizbee SIMD matching and incremental indexes keep queries responsive while files change.</p></article>
         <article class="step"><span class="badge built">M5 · Implemented</span><h3 style="margin-top: 12px">Fit your habits</h3><p>Results you open rise to the top. Usage stays in memory on the search thread, saving runs on a separate thread, and only opened items are re-scored, so typing stays fast.</p></article>
+        <article class="step next"><span class="badge built">M7 · Phase 1 verified</span><h3 style="margin-top: 12px">Index quietly</h3><p>Idle CPU is 0.09% at 213k; repeated writes cause no scans or publications. Failed repairs keep retrying, metadata commits without publishing, and memory after events stays within 10% of steady. <a href="m7-plan.md#phase-1-review-results-2026-10-11">Measured tradeoffs and Phase 2</a>.</p></article>
       </div>
     </section>
 
     <footer>
-      <span>Status: 7 October 2026 · M4 functional; M6 next → remaining M4 acceptance → M5</span>
+      <span>Status: 11 October 2026 · M5/M6 implemented · M7 Phase 1 verified; Phase 2 proposed</span>
       <nav aria-label="More details"><a href="../PLAN.md">Full plan</a><a href="architecture.md">Architecture</a><a href="m2-review.md">M2 review</a><a href="evaluation.md">Speed results</a></nav>
     </footer>
   </main>

@@ -11,9 +11,9 @@ results, with newer queries superseding or cancelling older ones (M6 step 1,
 [ADR 0028](adr/0028-m6-search-thread-and-persistence-owner.md)). With an
 explicitly configured model, a matching owned semantic metadata snapshot
 supports the asynchronous final phase. The writer's indexing thread owns inotify,
-crawling into private batches (only the directories watch events touched, or
-every root for startup and repair), publication of a delta snapshot over the
-shared base engine (or a full rebuild for startup, recovery and compaction);
+crawling into private batches (event directories and periodic repair scopes,
+or every root for startup and explicit recovery causes), publication of a delta
+snapshot over the shared base engine (or a full rebuild for startup, recovery and compaction);
 its persistence thread owns the SQLite write connection, applying batches,
 reporting each commit's changed rows, history and retention (M6 step 3,
 [ADR 0030](adr/0030-m6-incremental-indexing.md)). Fuzzy scoring uses the
@@ -113,19 +113,24 @@ depends on the lower modules; filesystem and index modules never call storage.
 ## Indexing flow
 
 1. `watch` coalesces events into directory scopes (a changed entry's parent,
-   or a created directory's subtree). Startup, overflow, requests, periodic
-   repair, failures and root changes scan every root instead.
+   or a created directory's subtree). Periodic repair walks only the scopes
+   inotify cannot cover. Startup, overflow, requests, coverage failures, root
+   and mount changes, and the hourly backstop scan every root instead.
 2. `crawl` walks those scopes (or roots) and emits path/stat data with
    device/inode and birth time (ctime fallback). `store` retires changed
-   incarnations before upserting and prunes only listed scopes.
+   incarnations before upserting and prunes only listed scopes. Failed walks
+   retain their repair scope until a successful scan verifies it or its absence.
 3. `store` commits the catalog batch in one short transaction and reports the
-   ids of the rows it touched.
+   ids of the catalog rows it touched. Metadata-only refreshes commit too,
+   but cause no publication; completely unchanged batches roll back.
 4. The writer loads those committed rows, merges them into the delta entries
    kept since the base, builds a small delta engine that references the base
    (`tokenize`, `prefix`, `trigram`, `subseq` masks and `typo` built privately)
    and publishes `catalog_gen` as base + delta + tombstones. Past
-   max(4096, base/32) delta entries, or for incomplete change sets, it rebuilds
-   a new base instead (compaction). Queries pin that `catalog_gen`; the shared
+   max(4096, base/32) unique retired base entries plus live additions absent
+   from the base, or for incomplete change sets, it rebuilds a new base instead
+   (compaction, ADR 0041). Changed base entries count once and deletions count
+   immediately. Queries pin that `catalog_gen`; the shared
    base lives until its last snapshot is released. Failed post-commit
    publication triggers reload/rebuild before later updates.
 5. The semantic worker stages the new metadata, copying the previous vector

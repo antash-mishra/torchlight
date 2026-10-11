@@ -555,3 +555,52 @@ Results: `tests/bench/results/2026-10-10-m7-harness-baseline.jsonl`,
 the [M7 plan](m7-plan.md#phase-1-results-2026-10-10),
 [ADR 0038](adr/0038-repair-scans-and-metadata-events.md) and
 [ADR 0039](adr/0039-returning-freed-memory.md).
+
+## M7 phase 1 review fixes (2026-10-11)
+
+The initial implementation above missed the 10% RSS gate and had two gaps:
+a scoped walk failing before its first callback could drop its repair scope,
+and the writer rolled back metadata-only refreshes. Both have regressions;
+the writer now keeps failed repairs and commits metadata without publishing.
+Compaction counts unique retired base entries plus live delta additions absent
+from the base ([ADR 0041](adr/0041-compaction-counts-retired-base-entries.md)).
+
+The same 213k empty-file mirror and corrected churn harness were run against
+`4701519` and the fixed `-O3` daemon, using separate run directories on the
+reference desktop. The churn file is indexed before measurement. These are
+single runs with background load, so timing differences do not establish a
+query speedup. The full fixed run includes ten minutes of default idle.
+
+| Measurement | Reviewed `4701519` | Fixed |
+|---|---|---|
+| Steady / post-event RSS before manual trim | 166 / 190 MiB (+14.5%) | 167 / 181 MiB (+8.4%; passes 10% gate) |
+| 20 Hz writes for 30 s | 0.07% of a core, zero passes/publications | 0.13%, zero passes/publications |
+| Default idle for 10 min | Earlier recording: 0.09% | 0.09%, zero passes/publications, no measured I/O |
+| Small-folder create / delete p50 | 107.6 / 106.8 ms | 107.5 / 107.2 ms |
+| Idle query round trip p50 / p95 / p99 | 0.746 / 2.520 / 3.856 ms | 0.753 / 2.113 / 3.372 ms |
+| Query during full scan p50 / p95 / p99 | 0.815 / 2.698 / 4.274 ms | 0.753 / 2.673 / 4.389 ms |
+| Delete 20k tree: rebuilds / CPU / visibility lag | 0 / 0.38 s / 181 ms | 2 / 3.40 s / 3052 ms |
+| Delete 20k tree: peak RSS | 189 MiB | 371 MiB |
+
+The deletion crosses the threshold in two of three scoped batches; no full
+crawl is required. Its added CPU and lag are the cost of releasing obsolete
+base rows. The optional final trim finds only another 2 MiB to free; the RSS
+gate passes before it. Rebuild peaks remain about twice steady.
+
+The 500k synthetic scale check ends at 326/319 MiB (+2.2%), with one deletion
+rebuild, 4.00 CPU-s, 3284 ms visibility lag and a 679 MiB deletion peak. Small
+create/delete p50 is 108.7/107.3 ms. Idle query p50/p95/p99 is
+1.467/6.455/11.876 ms; during a full scan, 1.379/6.536/12.557 ms. This run
+overlapped repository validation and supplements the 213k acceptance corpus.
+
+Raw results: [reviewed binary](../tests/bench/results/2026-10-10-m7-review-baseline.jsonl),
+[fixed 213k](../tests/bench/results/2026-10-10-m7-review-fixed.jsonl),
+[fixed 500k](../tests/bench/results/2026-10-10-m7-review-fixed-500k.jsonl), and
+[`make bench`](../tests/bench/results/2026-10-10-m7-review-lexical.txt).
+The [M7 plan](m7-plan.md#phase-1-review-results-2026-10-11) records regression
+coverage, acceptance and reproduction details. `make bench` passed all nine
+ranking fixtures at 50k and 500k, with typing p95 0.505/4.117 ms and
+whole-query p95 0.812/5.274 ms. The 500k typing result with the full 2048-item
+usage summary is 4.267 ms. Those measurements exclude IPC and ran after the
+scenario benchmarks. Phase 1 is complete; Phase 2 still covers cheaper full
+scans and watcher-slot reuse.

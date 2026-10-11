@@ -282,6 +282,25 @@ const tl_lexical *catalog_snapshot_base(const tl_catalog_snapshot *snapshot) {
 size_t catalog_snapshot_tombstones(const tl_catalog_snapshot *snapshot) {
     return snapshot == NULL ? 0 : snapshot->tombstone_count;
 }
+tl_status catalog_snapshot_project_tombstones(const tl_catalog_snapshot *snapshot,
+                                              const uint64_t *ids, size_t count, size_t *out) {
+    if (snapshot == NULL || out == NULL || (ids == NULL && count != 0))
+        return TL_INVALID;
+    size_t total = snapshot->tombstone_count;
+    for (size_t i = 0; i < count; i++) {
+        if (ids[i] == 0 || (i != 0 && ids[i] <= ids[i - 1]))
+            return TL_INVALID;
+        size_t position = 0;
+        tl_status status = lexical_slot(snapshot->base->engine, ids[i], &position);
+        if (status == TL_OK)
+            total += tombstoned(snapshot, position) ? 0 : 1;
+        else if (status != TL_STATE)
+            return status;
+    }
+    /* Unique ids add distinct live base positions, so total <= base size. */
+    *out = total;
+    return TL_OK;
+}
 uint64_t catalog_snapshot_base_gen(const tl_catalog_snapshot *snapshot) {
     return snapshot == NULL ? 0 : snapshot->base->catalog_gen;
 }

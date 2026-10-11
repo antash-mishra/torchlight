@@ -15,12 +15,16 @@ take one line each, with a short folder ([ADR 0036](adr/0036-one-line-results.md
 Machines without GTK can build and install just the daemon and command line
 with `make headless` and `make install-headless` ([ADR 0037](adr/0037-headless-build.md)).
 The [M7 plan](m7-plan.md) profiles indexing headlessly and plans two
-phases. Phase 1 is implemented: full scans only for a reason, with periodic
+phases. Phase 1 is implemented and verified: full scans only for a reason, with periodic
 rescans limited to the folders inotify cannot cover
 ([ADR 0038](adr/0038-repair-scans-and-metadata-events.md)), no work for
 metadata-only writes, and freed memory returned to the OS
-([ADR 0039](adr/0039-returning-freed-memory.md)). Phase 2 (cheaper full
-scans) is next.
+([ADR 0039](adr/0039-returning-freed-memory.md)). The
+[Phase 1 review fixes](m7-plan.md#phase-1-review-fixes) preserve failed repair
+scopes and commit metadata refreshes without publication.
+[ADR 0041](adr/0041-compaction-counts-retired-base-entries.md) counts deletions
+toward compaction: [post-event RSS is now 8.4% above steady](m7-plan.md#phase-1-review-results-2026-10-11),
+within the 10% gate. Phase 2 (cheaper full scans) remains proposed.
 
 Start here. Read in this order:
 
@@ -43,8 +47,8 @@ what is done and what remains in plain language. M3 Part 2 search quality is
 implemented. M4 implements opt-in native Potion, float/int8 retrieval, versioned background
 caching and coherent two-phase RRF. Large-catalog latency and broader model
 acceptance remain open. See [M4 implementation](m4-implementation.md)
-and [ADR 0022](adr/0022-m4-semantic-foundation.md). M6 executes next: worker
-separation, then the selected Frizbee SIMD matcher, then incremental indexing,
+and [ADR 0022](adr/0022-m4-semantic-foundation.md). M6 implemented worker
+separation, the selected Frizbee SIMD matcher and incremental indexing
 as three steps in one milestone. M5 recommendations are implemented, as
 [ADR 0033](adr/0033-m5-personal-ranking.md) describes; semantic
 search is parked as opt-in and its M4 acceptance is deferred
@@ -221,6 +225,9 @@ the root [README](../README.md) for commands, and
 - [0039: Returning freed memory](adr/0039-returning-freed-memory.md)
   trims the heap after a retired full build and sets the daemon's allocator
   policy in `torchlightd`.
+- [0041: Count retired base entries toward compaction](adr/0041-compaction-counts-retired-base-entries.md)
+  counts retained deletions toward the existing rebuild threshold and closes
+  M7 Phase 1's memory acceptance gap, with measured large-deletion cost.
 
 ## Keeping docs current
 
