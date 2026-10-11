@@ -1,6 +1,6 @@
 # catalog
 
-> **Status:** Implemented (M2/M3; M6 segmented snapshots; M5 personal boosts; M7 compaction projection): resident snapshot lifecycle,
+> **Status:** Implemented (M2/M3; M6 segmented snapshots; M5 personal boosts; M7 reclamation reporting): resident snapshot lifecycle,
 > directory metadata, shared bases with delta segments; integrated with the daemon/writer
 > **Source:** `src/index/catalog.c` · **Header:** `include/torchlight/catalog.h`
 > **Tests:** `tests/unit/test_catalog.c`
@@ -125,15 +125,10 @@ Tests cover shared bases, retirement of the base snapshot, merged order across
 segments at equal scores, capacity-limited leases, hidden and renamed entries
 and live enumeration. See [ADR 0030](../../adr/0030-m6-incremental-indexing.md).
 
-`catalog_snapshot_project_tombstones` counts the unique base positions hidden
-after a proposed batch, including existing tombstones. It borrows a pinned or
-unpublished snapshot and ascending, unique, nonzero ids; it does no allocation
-or I/O and leaves the source unchanged. Already-hidden and non-base ids add
-nothing. This lets the delta module bound retained deletions without accessing
-the bitmap ([ADR 0041](../../adr/0041-compaction-counts-retired-base-entries.md)).
-Tests cover overlapping retirements, absent ids, malformed input and unchanged
-output on error. Delta/writer regressions also hold old views across deletion
-compaction and confirm reclamation waits for the last reference.
+The M7 tombstone-projection helper was removed with the deletion-compaction
+optimization ([withdrawn ADR 0041](../../adr/0041-compaction-counts-retired-base-entries.md)).
+The snapshot tombstone bitmap and ordinary reclamation lifecycle remain in
+use: deletions hide base entries immediately without requiring a rebuild.
 
 ## Personal boosts (M5)
 

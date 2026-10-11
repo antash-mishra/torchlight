@@ -15,16 +15,18 @@ take one line each, with a short folder ([ADR 0036](adr/0036-one-line-results.md
 Machines without GTK can build and install just the daemon and command line
 with `make headless` and `make install-headless` ([ADR 0037](adr/0037-headless-build.md)).
 The [M7 plan](m7-plan.md) profiles indexing headlessly and plans two
-phases. Phase 1 is implemented and verified: full scans only for a reason, with periodic
+phases. Phase 1 implements full scans only for a reason, with periodic
 rescans limited to the folders inotify cannot cover
 ([ADR 0038](adr/0038-repair-scans-and-metadata-events.md)), no work for
 metadata-only writes, and freed memory returned to the OS
 ([ADR 0039](adr/0039-returning-freed-memory.md)). The
 [Phase 1 review fixes](m7-plan.md#phase-1-review-fixes) preserve failed repair
 scopes and commit metadata refreshes without publication.
-[ADR 0041](adr/0041-compaction-counts-retired-base-entries.md) counts deletions
-toward compaction: [post-event RSS is now 8.4% above steady](m7-plan.md#phase-1-review-results-2026-10-11),
-within the 10% gate. Phase 2 (cheaper full scans) remains proposed.
+The deletion-compaction optimization in
+[ADR 0041](adr/0041-compaction-counts-retired-base-entries.md) was
+[removed after reviewing its cost](m7-plan.md#deletion-compaction-removed-2026-10-11).
+The 10% post-event memory gate is open again. Phase 2 (cheaper full scans)
+remains proposed.
 
 Start here. Read in this order:
 
@@ -226,8 +228,8 @@ the root [README](../README.md) for commands, and
   trims the heap after a retired full build and sets the daemon's allocator
   policy in `torchlightd`.
 - [0041: Count retired base entries toward compaction](adr/0041-compaction-counts-retired-base-entries.md)
-  counts retained deletions toward the existing rebuild threshold and closes
-  M7 Phase 1's memory acceptance gap, with measured large-deletion cost.
+  records the withdrawn deletion-compaction optimization, its measured cost
+  and the restored live-delta threshold. M7's memory acceptance remains open.
 
 ## Keeping docs current
 

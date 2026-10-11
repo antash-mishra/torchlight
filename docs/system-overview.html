@@ -220,12 +220,12 @@
         <article class="step"><span class="badge open">M4 · Opt-in; acceptance deferred</span><h3 style="margin-top: 12px">Search by meaning</h3><p>Native Potion, cached embeddings and two-phase hybrid results are implemented. Large-catalog latency and broader relevance acceptance are deferred while semantic search stays opt-in.</p></article>
         <article class="step"><span class="badge built">M6 · Implemented</span><h3 style="margin-top: 12px">Improve responsiveness and updates</h3><p>Separate workers, Frizbee SIMD matching and incremental indexes keep queries responsive while files change.</p></article>
         <article class="step"><span class="badge built">M5 · Implemented</span><h3 style="margin-top: 12px">Fit your habits</h3><p>Results you open rise to the top. Usage stays in memory on the search thread, saving runs on a separate thread, and only opened items are re-scored, so typing stays fast.</p></article>
-        <article class="step next"><span class="badge built">M7 · Phase 1 verified</span><h3 style="margin-top: 12px">Index quietly</h3><p>Idle CPU is 0.09% at 213k; repeated writes cause no scans or publications. Failed repairs keep retrying, metadata commits without publishing, and memory after events stays within 10% of steady. <a href="m7-plan.md#phase-1-review-results-2026-10-11">Measured tradeoffs and Phase 2</a>.</p></article>
+        <article class="step next"><span class="badge open">M7 · Memory acceptance open</span><h3 style="margin-top: 12px">Index quietly</h3><p>Idle CPU is 0.09% at 213k; repeated writes cause no scans or publications. Failed repairs keep retrying and metadata commits without publishing. The costly deletion-compaction optimization was removed; the 10% memory target remains open. <a href="m7-plan.md#deletion-compaction-removed-2026-10-11">Removal and remaining work</a>.</p></article>
       </div>
     </section>
 
     <footer>
-      <span>Status: 11 October 2026 · M5/M6 implemented · M7 Phase 1 verified; Phase 2 proposed</span>
+      <span>Status: 11 October 2026 · M5/M6 implemented · M7 memory acceptance open; Phase 2 proposed</span>
       <nav aria-label="More details"><a href="../PLAN.md">Full plan</a><a href="architecture.md">Architecture</a><a href="m2-review.md">M2 review</a><a href="evaluation.md">Speed results</a></nav>
     </footer>
   </main>

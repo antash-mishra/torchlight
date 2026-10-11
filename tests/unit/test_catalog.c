@@ -355,32 +355,7 @@ static void boosted_snapshots(void) {
     catalog_release(reader);
     CHECK(catalog_destroy(catalog) == TL_OK);
 }
-/* The projected count includes this batch, skips already-hidden/non-base ids,
- * and validates sorted unique inputs without mutating the source or output. */
-static void projected_tombstones(void) {
-    tl_catalog_snapshot *base = snapshot(1, "/r/old", 1), *derived = NULL;
-    tl_lexical *delta = NULL;
-    const uint64_t retired[] = {3};
-    CHECK(catalog_snapshot_derive(base, &delta, retired, 1, 2, 1, &derived) == TL_OK);
-    const uint64_t changed[] = {1, 3, 99};
-    size_t count = 99;
-    CHECK(catalog_snapshot_project_tombstones(derived, changed, 3, &count) == TL_OK && count == 2);
-    CHECK(catalog_snapshot_tombstones(derived) == 1);
-    CHECK(catalog_snapshot_project_tombstones(derived, NULL, 0, &count) == TL_OK && count == 1);
-    const uint64_t duplicate[] = {1, 1}, reversed[] = {3, 1}, zero[] = {0};
-    count = 99;
-    CHECK(catalog_snapshot_project_tombstones(derived, duplicate, 2, &count) == TL_INVALID);
-    CHECK(catalog_snapshot_project_tombstones(derived, reversed, 2, &count) == TL_INVALID);
-    CHECK(catalog_snapshot_project_tombstones(derived, zero, 1, &count) == TL_INVALID);
-    CHECK(catalog_snapshot_project_tombstones(derived, NULL, 1, &count) == TL_INVALID);
-    CHECK(catalog_snapshot_project_tombstones(NULL, NULL, 0, &count) == TL_INVALID);
-    CHECK(catalog_snapshot_project_tombstones(derived, NULL, 0, NULL) == TL_INVALID);
-    CHECK(count == 99);
-    catalog_snapshot_destroy(derived);
-    catalog_snapshot_destroy(base);
-}
 void test_catalog(void) {
-    projected_tombstones();
     derived_snapshots();
     boosted_snapshots();
     tl_catalog *registry = NULL;

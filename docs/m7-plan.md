@@ -1,16 +1,17 @@
 # M7 plan: quiet indexing and lean memory
 
-**Status: Phase 1 implemented and acceptance verified (2026-10-11).
-Phase 2 proposed.** This is
+**Status: Phase 1 repair and metadata fixes implemented; memory acceptance
+reopened after removing deletion compaction (2026-10-11). Phase 2 proposed.** This is
 the working plan for two phases of indexing work, based on a headless
 profile of the daemon taken on 2026-10-10. Raw data is in
 `tests/bench/results/2026-10-10-m7-baseline.jsonl` (scenario metrics) and
 `tests/bench/results/2026-10-10-m7-baseline-profile.txt` (profiles, system
 calls, I/O, memory). Phase 1 results are in
 [Phase 1 results](#phase-1-results-2026-10-10) below, ADR 0038 and ADR 0039.
-The [Phase 1 review fixes](#phase-1-review-fixes) and
-[acceptance rerun](#phase-1-review-results-2026-10-11) below close the repair,
-metadata persistence and memory gaps found in the initial implementation.
+The [Phase 1 review fixes](#phase-1-review-fixes) close the repair and metadata
+persistence gaps. The [review rerun](#phase-1-review-results-2026-10-11) records
+the deletion-compaction experiment, which was then
+[removed at the user's request](#deletion-compaction-removed-2026-10-11).
 
 ## In simple words
 
@@ -420,7 +421,7 @@ Exit criteria:
   compaction bound (ADR 0030). The base keeps them until the next compaction.
   Counting tombstones toward that bound would release about 20 MB at the cost
   of a full rebuild (about 2 CPU-s at 213k) after large deletions. The review
-  below implements that policy and measures its cost separately.
+  below tried that policy and measured its cost; it was subsequently removed.
 
 Measured along the way:
 
@@ -433,17 +434,18 @@ Measured along the way:
 
 ## Phase 1 review fixes
 
-**Implemented and verified.** The review of `4701519` reproduced two gaps
+**Repair and metadata fixes retained; deletion optimization withdrawn.**
+The review of `4701519` reproduced two gaps
 despite `make test` and `make lint` passing. The recorded RSS result also
-missed the existing acceptance gate. The implementation brief below is
-complete, with regressions for each fix and measured acceptance in the next
-section. Phase 2 remains separate.
+missed the existing acceptance gate. The first two fixes remain implemented
+with regressions. The deletion optimization was removed after measuring its
+cost, so the original 10% memory gate remains open. Phase 2 remains separate.
 
 | Finding | Reproduced behavior | Required result |
 |---|---|---|
 | Repair coverage lost after a failed walk | With two watch slots, `root/parent/child` is a repair scope. Removing `parent`'s permissions drops `repair_scopes` from 1 to 0. Restoring permissions and creating a file under `child` leaves it undiscovered across ten repair intervals; explicit reconciliation finds it. | Keep retrying the failed scope and discover changes after access returns. |
 | Metadata transaction discarded | A file grows from 1 to 9 bytes; explicit reconciliation leaves its stored size at 1 and its old mtime unchanged. | Commit metadata changes without publishing a catalog snapshot. |
-| Deleted base entries retain memory | Recorded RSS after burst, rename, deletion and churn is 192 MiB versus 168 MiB steady (+14.3%); the target is at most +10%. | Compact after enough base entries are retired and meet the original RSS gate. |
+| Deleted base entries retain memory | Recorded RSS after burst, rename, deletion and churn is 192 MiB versus 168 MiB steady (+14.3%); the target is at most +10%. | Open: meet the original RSS gate without the withdrawn immediate deletion-compaction policy. |
 
 ### Fix 1: preserve repair coverage across failed scans
 
@@ -515,66 +517,23 @@ writes and file attribute events must still schedule no scan.
 
 ### Fix 3: compact retained deletions
 
-**Files:** `src/service/delta.c`, `include/torchlight/delta.h`,
-`src/index/catalog.c`, `include/torchlight/catalog.h`, and catalog/writer
-tests. The policy is recorded in accepted [ADR 0041](adr/0041-compaction-counts-retired-base-entries.md),
-which refines ADR 0030. ADR 0040 remains reserved by Phase 2 below.
+**Withdrawn.** Implemented in `33d0000`, then removed at the user's request
+because its bulk-deletion cost outweighed the measured memory saving.
+[ADR 0041](adr/0041-compaction-counts-retired-base-entries.md) retains the
+original decision and measurements as history. ADR 0040 remains reserved by
+Phase 2 below.
 
-Use the existing compaction threshold, but count retained changes correctly:
-
-```
-bound = max(min_entries, base_entries / divisor)
-affected_entries = projected_unique_base_tombstones + live_delta_entries_absent_from_base
-compact when affected_entries > bound
-```
-
-The writer's defaults remain `min_entries=4096` and `divisor=32`. A changed
-base entry counts once even if it also lives in the delta. A deleted base
-entry counts once; repeated changes to that id do not increase the count.
-An entry created and deleted entirely within the delta no longer counts.
-The current batch's deletions must participate immediately.
-
-- Add a small, allocation-free catalog helper that reports the projected
-  tombstone count for a pinned source plus ascending, deduplicated changed
-  ids. Validate its inputs and document ownership, errors and the id-order
-  contract. The catalog keeps ownership of its bitmap and deduplication
-  logic; the delta module does not access snapshot internals.
-- In `delta_prepare`, count pending entries absent from the immutable base
-  with `lexical_slot`, combine the counts with overflow-safe arithmetic,
-  and check the bound before building the delta engine. Preserve existing
-  whole-snapshot entry and path-byte limits.
-- Return `TL_LIMIT` through the existing writer compaction path. Rebuild
-  from the committed catalog, publish, and reset delta bookkeeping only
-  after publication succeeds. Compaction itself needs no full filesystem
-  scan.
-- Reuse snapshot leases, `catalog_reclaim`, and the existing throttled
-  release hook. Readers must retain their old view until release; physical
-  reclamation follows the last reference. Keep all work on the indexing
-  thread and preserve failure recovery.
-
-**Regressions:** check below, exactly at, and above a small threshold;
-deletions crossing it in one batch and across several batches; mixed
-additions/deletions; repeated updates to the same base id; and creating then
-deleting a delta-only entry. Verify small deletions remain incremental,
-compaction removes tombstones, surviving paths/ids stay correct, and failed
-publication does not prematurely reset bookkeeping. Hold an old snapshot
-across compaction and verify it remains usable, then verify its base is
-reclaimed and the release hook runs after its last reference goes away.
-Use exact snapshot/counter assertions in unit tests; validate RSS with the
-scenario benchmark.
-
-**Tradeoff:** large deletions now incur full engine rebuilds (the earlier
-213k measurement was roughly 2 CPU-s per rebuild). Record deletion lag,
-rebuild count, CPU and peak RSS, including batches that cross the threshold
-more than once. Success requires measured memory recovery; the proposed
-accounting is not by itself proof of the RSS target.
+The restored compaction threshold counts live delta entries only. Deletions
+still hide rows through tombstones, while their base memory remains until
+a later rebuild. A future memory fix needs separate design and measurement;
+deferred compaction is not implemented by this removal.
 
 ### Validation and completion
 
-1. Add the repair and metadata regressions first and confirm they fail on
-   the reviewed code. Add deletion-compaction regressions that expose the
-   current missing trigger, then implement the three fixes with their
-   header and module documentation updates.
+1. Keep the repair and metadata regressions, which failed on the reviewed
+   code before their fixes. After removing deletion compaction, require large
+   and accumulated deletions to remain incremental, live delta growth to
+   retain its bound, and old/new snapshot readers to stay consistent.
 2. Run `make test` and `make lint`. Run `make bench` to check query latency
    and ranking through the resulting snapshot layouts. Keep existing
    allocation, rename/replacement, overflow, offline-root, watch-exhaustion,
@@ -608,14 +567,17 @@ accounting is not by itself proof of the RSS target.
    `docs/README.md`, and `docs/milestone-status.md` with the actual outcome.
    Align the system overview/design pages with the verified status. Keep
    existing measurements as history and record new results separately.
-   If the RSS gate still fails, attribute the remaining live/retained memory
-   and continue the Phase 1 fix; do not silently relax the 10% target.
+   The RSS gate is open again after the requested removal. Keep it explicit
+   until a separate memory improvement meets it; do not relax the 10% target.
 
 ## Phase 1 review results (2026-10-11)
 
-All three fixes are implemented. The repair, metadata and deletion-trigger
-regressions failed on the reviewed code before the fixes. `make test` now
-passes with ASan/UBSan, including non-root permission cases, allocation-free
+**Historical results for `33d0000`, before the deletion optimization was
+removed.** These numbers describe that version, not current memory acceptance.
+
+All three fixes were implemented in that version. The repair, metadata and
+deletion-trigger regressions failed on the reviewed code before the fixes.
+`make test` passed with ASan/UBSan, including non-root permission cases, allocation-free
 queries, publication failure recovery and semantic lifecycle checks.
 `make lint` passes, and `CLAUDE.md` and `AGENTS.md` match.
 `make bench` passes all nine ranking fixtures at both 50k and 500k. Typing
@@ -655,7 +617,7 @@ It comes with a measured large-deletion cost:
 The deletion crosses the compaction bound twice across three scoped batches.
 No full filesystem scan runs for these events. Visibility lag starts after
 the filesystem action; the deletion itself takes 315 ms in the fixed run.
-Small changes remain incremental. The large-deletion cost is accepted as the
+Small changes remain incremental. The large-deletion cost was initially accepted as the
 tradeoff for releasing retired base entries under the original RSS target
 ([ADR 0041](adr/0041-compaction-counts-retired-base-entries.md)).
 
@@ -683,8 +645,60 @@ python3 tests/bench/bench_scenarios.py --daemon build/profile/torchlightd \
   --results tests/bench/results/2026-10-10-m7-review-fixed.jsonl
 ```
 
-Phase 1 is complete. Phase 2 still covers full-scan cost and reuse of deleted
-watch slots; large rebuild peaks remain a documented limitation.
+That version met the memory gate; the removal below reopens it. Phase 2 still
+covers full-scan cost and reuse of deleted watch slots, and large rebuild peaks
+remain a documented limitation.
+
+## Deletion compaction removed (2026-10-11)
+
+The user requested removal after reviewing the measured tradeoff: 9 MiB less
+post-event RSS at 213k cost 3052 ms deletion visibility lag instead of 181 ms,
+and two full builds instead of none. The extra tombstone accounting and its
+catalog projection API are removed. The previous live-delta compaction rule
+is restored, without adding a replacement optimization or timer.
+
+Repair retries, metadata-only commits, the existing allocator policy and the
+release hook remain implemented. Updated delta and writer regressions require
+deletion batches above the live-entry threshold to stay incremental and
+preserve old readers, while live delta growth still compacts when over its
+bound. The original 10% post-event RSS acceptance gate is open again.
+
+The removal was checked with `make test` (ASan/UBSan, including the non-root
+permission and metadata regressions) and `make lint`. `CLAUDE.md` and
+`AGENTS.md` still match. A fresh `-O3` scenario run reused the same 213k
+empty-file mirror and working directory after tests/lint finished; the cold
+phase reset its isolated database. It ran cold indexing, update lag and the
+event sequence. The earlier ten-minute idle and 500k scenario measurements
+were not repeated for this removal.
+
+| Check after removal | Measured result |
+|---|---|
+| Delete 20k tree | 4 delta publications, zero full builds or full scans; 85 ms visibility lag after the 330 ms filesystem deletion; 0.42 CPU-s; 189 MiB peak |
+| Small-folder create / delete p50 | 108.3 / 106.8 ms |
+| 20 Hz writes for 30 s | 0.10% of a core; zero passes and publications |
+| Steady / post-event RSS before manual trim | 167 / 191 MiB (+14.4%): misses the 10% gate |
+
+This is one run under normal desktop load; event batching and latency vary.
+The deterministic regressions establish that deleted base rows no longer
+force compaction, while the scenario confirms its practical cost is gone.
+The optional diagnostic trim reduced RSS to 187 MiB; acceptance uses the
+191 MiB measurement before it.
+
+`make bench` also passes all nine ranking fixtures at 50k and 500k. Typing
+p95 is 0.566/4.430 ms, whole-query p95 is 0.892/5.347 ms, and 500k typing
+with the full 2048-item usage summary is 4.590 ms. These engine measurements
+exclude IPC and ran after the scenario benchmark.
+
+Results: [removal scenarios](../tests/bench/results/2026-10-11-m7-deletion-rollback.jsonl)
+and [`make bench`](../tests/bench/results/2026-10-11-m7-deletion-rollback-lexical.txt).
+The scenario invocation was:
+
+```sh
+python3 tests/bench/bench_scenarios.py --daemon build/profile/torchlightd \
+  --sampler build/profile/sampler.so --paths /tmp/torchlight-m7-review-corpus.paths \
+  --work build/m7-fixed --label deletion-rollback \
+  --results tests/bench/results/2026-10-11-m7-deletion-rollback.jsonl cold lag events
+```
 
 ## Phase 2: make the remaining full scans cheap
 
@@ -856,10 +870,10 @@ Taken for Phase 1 (the recommended options; each can still be revisited):
 4. **Allocator settings:** `M_MMAP_THRESHOLD` fixed at 1 MiB; `M_ARENA_MAX`
    left at glibc's default (no measured gain).
 5. **Name:** M7 is in `PLAN.md` and `milestone-status.md`.
-6. **Tombstones and compaction:** [ADR 0041](adr/0041-compaction-counts-retired-base-entries.md)
-   counts unique retired base entries and live additions toward the bound.
-   The review implementation meets the original 10% RSS gate at +8.4%; its
-   extra large-deletion CPU and lag are recorded above.
+6. **Tombstones and compaction:** the optimization in
+   [ADR 0041](adr/0041-compaction-counts-retired-base-entries.md) was withdrawn
+   after measuring its large-deletion cost. Compaction again bounds live delta
+   entries only; the 10% post-event RSS gate remains open.
 
 Still open:
 

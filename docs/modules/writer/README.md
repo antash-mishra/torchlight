@@ -1,7 +1,7 @@
 # writer
 
 > **Status:** Implemented (M6 steps 1 and 3; M5 batched history and usage load; M7 phase 1 repair
-> set, metadata commits and deletion compaction verified): indexing and persistence threads, private
+> set, metadata commits and memory release): indexing and persistence threads, private
 > scan batches, scoped rescans of event directories, delta publication with compaction;
 > M2/M3 reconciliation contracts retained
 > **Source:** `src/service/writer.c` · **Header:** `include/torchlight/writer.h`
@@ -120,18 +120,17 @@ for the indexing thread, which publishes through the [delta](../delta/README.md)
 module: it loads the committed rows, merges them into the kept delta entries,
 builds a small engine that references the base and derives the next snapshot,
 retiring the touched ids from the base. A full rebuild compacts instead when the
-unique retired base entries plus live delta entries absent from the base would
-exceed max(4096, base/32) (`tl_writer_options.delta_entries` lowers the minimum
-for tests), when tracking overflowed, when registered roots
+live delta would exceed max(4096, base/32) entries (`tl_writer_options.delta_entries`
+lowers the minimum for tests), when tracking overflowed, when registered roots
 changed or when the active view is not the writer's last publication. Startup,
 reload after failed publication and compaction use full rebuilds.
 `delta_publications` and `full_builds` count both paths. At 500k entries, 100
 touched files publish in about 110 ms (12 ms of work after the 100 ms coalescing
 window) with RSS growing about 1%, against 4 s and a doubled engine before. See
-[ADR 0030](../../adr/0030-m6-incremental-indexing.md). M7 includes deletions in
-this bound without double-counting changed base entries; a large deletion now
-compacts even with no live delta entries
-([ADR 0041](../../adr/0041-compaction-counts-retired-base-entries.md)).
+[ADR 0030](../../adr/0030-m6-incremental-indexing.md). The M7 optimization that
+counted deleted base rows toward this bound was removed after its bulk-update
+cost was measured ([withdrawn ADR 0041](../../adr/0041-compaction-counts-retired-base-entries.md)).
+Deletion-only batches publish tombstones without forcing a full build.
 
 ## Repair set and backstop (M7 phase 1)
 
@@ -219,12 +218,12 @@ assumes no allocator; `torchlightd` passes a glibc `malloc_trim(0)` wrapper
 and sets its allocator policy in `main` ([ADR 0039](../../adr/0039-returning-freed-memory.md)).
 `test_writer_repair.c` counts one release when the startup rebuild retires
 the loaded base, one when compaction retires that base, none for a delta
-publication and one for a no-change full scan. A deletion-only compaction test
-fails its first publication, retries from the committed catalog, and keeps an
-old snapshot pinned: no base release occurs until that pin is dropped, after
-which the hook runs without another filesystem change. The 213k scenario
-finishes at 181 MiB against 167 MiB steady (+8.4%, before manual trim); the
-large-deletion cost is reported in the [M7 results](../../m7-plan.md#phase-1-review-results-2026-10-11).
+publication and one for a no-change full scan. A deletion regression removes
+more base entries than the live delta bound and verifies that the rows
+disappear through delta publication with no full rebuild or base-memory
+release. Deleted base data can therefore remain allocated until a later
+rebuild. M7's 10% post-event memory target remains open; the
+[removal record](../../m7-plan.md#deletion-compaction-removed-2026-10-11) explains why.
 
 ## Batched history and the startup usage load (M5)
 

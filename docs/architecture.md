@@ -127,10 +127,10 @@ depends on the lower modules; filesystem and index modules never call storage.
    kept since the base, builds a small delta engine that references the base
    (`tokenize`, `prefix`, `trigram`, `subseq` masks and `typo` built privately)
    and publishes `catalog_gen` as base + delta + tombstones. Past
-   max(4096, base/32) unique retired base entries plus live additions absent
-   from the base, or for incomplete change sets, it rebuilds a new base instead
-   (compaction, ADR 0041). Changed base entries count once and deletions count
-   immediately. Queries pin that `catalog_gen`; the shared
+   max(4096, base/32) live delta entries, or for incomplete change sets, it
+   rebuilds a new base instead (compaction). Deletions hide base rows without
+   counting them toward this threshold; their memory remains until a later
+   rebuild. Queries pin that `catalog_gen`; the shared
    base lives until its last snapshot is released. Failed post-commit
    publication triggers reload/rebuild before later updates.
 5. The semantic worker stages the new metadata, copying the previous vector

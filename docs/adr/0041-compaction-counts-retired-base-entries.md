@@ -1,6 +1,6 @@
 # 0041. Count retired base entries toward compaction
 
-- **Status:** Accepted; implemented and verified 2026-10-11
+- **Status:** Withdrawn 2026-10-11; implementation removed at the user's request
 - **Date:** 2026-10-10
 - **Refines:** 0030 (incremental indexing), 0039 (returning freed memory)
 
@@ -15,10 +15,11 @@ counts only live delta entries. Deletion-only workloads can retain a large
 obsolete base indefinitely.
 
 The [Phase 1 review fixes](../m7-plan.md#phase-1-review-fixes)
-close this gate before Phase 2. Number 0040 is reserved by the
-existing Phase 2 plan.
+initially closed this gate using the policy below. It was then withdrawn
+because of its bulk-deletion cost; memory acceptance is open again. Number
+0040 is reserved by the existing Phase 2 plan.
 
-## Decision
+## Original decision (withdrawn)
 
 Keep the existing threshold, max(`min_entries`, base entries /
 `divisor`), with writer defaults 4096 and 32, and compacting when the sum of
@@ -54,9 +55,9 @@ This policy introduces no new timer, dependency or filesystem scan.
 - **Relax the RSS target.** This leaves the retained-base problem unresolved.
   The fix preserves the original acceptance gate.
 
-## Consequences
+## Measurements before withdrawal
 
-Deletion-heavy workloads rebuild more often and have higher update
+With this policy, deletion-heavy workloads rebuild more often and have higher update
 CPU and latency at threshold crossings. Small updates continue to publish
 deltas. Query algorithms, immutable snapshot ownership and commit-before-
 publication remain unchanged.
@@ -70,10 +71,30 @@ peaks at 371 MiB; the run's largest event peak is 377 MiB during the rename.
 The 500k scale check needs one deletion rebuild, costs 4.00 CPU-s and ends
 at +2.2% RSS. These are whole-scenario costs, not per-build estimates.
 
-Catalog/delta tests cover input validation, exact boundaries, batched and
-accumulated deletions, mixed changes, repeated updates, abandonment and old
-reader survival. The writer test injects a failed compaction publication,
-recovers from committed storage, and verifies the release hook waits for an
-old snapshot pin. Tests and lint pass. See the
+Before withdrawal, catalog/delta tests covered input validation, exact
+boundaries and old-reader survival, and a writer test injected a failed
+compaction publication. Tests and lint passed. See the
 [review measurements](../m7-plan.md#phase-1-review-results-2026-10-11) for
 conditions, query latency, raw results and the remaining Phase 2 scope.
+
+## Withdrawal (2026-10-11)
+
+The user requested removal after reviewing the tradeoff. Restore the previous
+live-delta threshold and remove the tombstone-projection API and its callers.
+The measured 9 MiB reduction in post-event RSS did not justify raising bulk
+deletion visibility lag from 181 to 3052 ms, CPU from 0.38 to 3.40 s, and
+deletion peak RSS from 189 to 371 MiB in the 213k run.
+
+The repair-retry and metadata-persistence fixes stay in place, as do the
+existing allocator policy, release hook and ordinary live-delta compaction.
+Regressions now require large and accumulated deletions to stay incremental,
+and require live delta growth past the bound to compact normally.
+
+Deleted base entries can again retain memory until a later rebuild. The 10%
+RSS acceptance gate is reopened. Deferred compaction is a separate possible
+follow-up; this removal introduces no replacement optimization or timer.
+
+The [removal rerun](../m7-plan.md#deletion-compaction-removed-2026-10-11)
+confirms zero full builds during the 20k-tree deletion, 85 ms visibility lag,
+0.42 CPU-s and 189 MiB deletion peak RSS. Post-event RSS is 191 MiB versus
+167 MiB steady (+14.4%) before manual trim, so memory acceptance stays open.

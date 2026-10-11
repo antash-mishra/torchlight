@@ -6,10 +6,9 @@
 #include "torchlight/catalog.h"
 #include "torchlight/store.h"
 typedef struct tl_delta tl_delta;
-/* Bounds of one delta publication. Unique retired base entries plus live
- * delta entries absent from the base may total at most max(min_entries,
- * base entries / divisor) before compaction. A changed base entry counts once;
- * deletions count immediately. Whole-snapshot limits match full builds. */
+/* Bounds of one delta publication. The delta may hold at most
+ * max(min_entries, base entries / divisor) entries before the caller must
+ * compact with a full rebuild; whole-snapshot limits match full builds. */
 typedef struct {
     size_t max_entries, max_path_bytes, readers, min_entries, divisor;
 } tl_delta_limits;

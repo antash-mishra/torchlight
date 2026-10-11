@@ -1,4 +1,4 @@
-/* Delta compaction counts unique base retirements and live additions, with
+/* Delta publication keeps deletions incremental and bounds live entries, with
  * exact threshold, abandonment and snapshot-lifetime regressions. */
 #include "test.h"
 #include "torchlight/delta.h"
@@ -29,7 +29,8 @@ static void full_build(struct fixture *fixture) {
     CHECK(lexical_create(&build.engine) == TL_OK);
     CHECK(store_load_catalog(fixture->store, build_row, &build, &catalog_gen) == TL_OK);
     CHECK(lexical_finish(build.engine) == TL_OK);
-    CHECK(catalog_snapshot_create(&build.engine, catalog_gen, 1, &snapshot) == TL_OK);
+    CHECK(catalog_snapshot_create(&build.engine, catalog_gen, fixture->limits.readers, &snapshot) ==
+          TL_OK);
     CHECK(catalog_publish(fixture->catalog, &snapshot) == TL_OK);
     delta_reset(fixture->delta, catalog_gen, build.entries, build.bytes);
 }
@@ -40,7 +41,7 @@ static void put(tl_store *store, const char *path, bool root) {
 static void start(struct fixture *fixture) {
     *fixture = (struct fixture){.limits = {.max_entries = 100,
                                            .max_path_bytes = 4096,
-                                           .readers = 1,
+                                           .readers = 2,
                                            .min_entries = 2,
                                            .divisor = 32}};
     CHECK(snprintf(fixture->database, sizeof(fixture->database),
@@ -97,19 +98,17 @@ static void needs_compaction(struct fixture *fixture) {
     CHECK(prepare(fixture, &snapshot) == TL_LIMIT && snapshot == NULL);
     CHECK(delta_gen(fixture->delta) == previous);
 }
-/* Current-batch removals must trigger without waiting for a later change. */
+/* A deletion batch larger than the live delta bound still publishes a delta. */
 static void batch_deletions(void) {
     struct fixture fixture;
     start(&fixture);
     const char *keep[] = {"/d/keep"};
     keep_only(&fixture, keep, 1);
-    needs_compaction(&fixture);
-    full_build(&fixture);
-    CHECK(catalog_reclaim(fixture.catalog) == 1);
+    accept(&fixture, 3, 2);
     finish(&fixture);
 }
-/* Below and at the threshold remain deltas; the next removal compacts.
- * A lease keeps the original base alive until its final reader releases it. */
+/* Accumulated tombstones do not trigger compaction. Old readers retain their
+ * view while new readers see the deletions, even across later reclamation. */
 static void accumulated_deletions(void) {
     struct fixture fixture;
     start(&fixture);
@@ -121,9 +120,7 @@ static void accumulated_deletions(void) {
     keep_only(&fixture, keep + 1, 2);
     accept(&fixture, 2, 3);
     keep_only(&fixture, keep + 2, 1);
-    needs_compaction(&fixture);
-    full_build(&fixture);
-    CHECK(catalog_reclaim(fixture.catalog) == 0);
+    accept(&fixture, 3, 2);
     tl_result results[8];
     size_t count = 0;
     CHECK(catalog_query(old, "/d/a", results, 8, &count) == TL_OK && count != 0);
@@ -135,7 +132,7 @@ static void accumulated_deletions(void) {
     CHECK(catalog_query(current, "keep", results, 8, &count) == TL_OK && count == 1);
     catalog_release(current);
     catalog_release(old);
-    CHECK(catalog_reclaim(fixture.catalog) == 1);
+    CHECK(catalog_reclaim(fixture.catalog) == 0); /* active view still shares the base */
     finish(&fixture);
 }
 static void rename_entry(struct fixture *fixture, const char *old_path, const char *new_path) {
@@ -148,8 +145,8 @@ static void add_entry(struct fixture *fixture, const char *path) {
     put(fixture->store, path, false);
     CHECK(store_commit(fixture->store) == TL_OK);
 }
-/* Updates count once, including after abandonment; deleting a delta-only
- * addition stops counting it. Mixed retained deletions and additions add up. */
+/* Live updates and additions count once, including after abandonment. Removed
+ * rows do not count, and the next live entry over the bound still compacts. */
 static void mixed_changes(void) {
     struct fixture fixture;
     start(&fixture);
@@ -171,7 +168,11 @@ static void mixed_changes(void) {
     keep_only(&fixture, keep + 1, 3);
     accept(&fixture, 2, 4);
     add_entry(&fixture, "/d/another");
+    accept(&fixture, 2, 5);
+    add_entry(&fixture, "/d/over-limit");
     needs_compaction(&fixture);
+    full_build(&fixture);
+    CHECK(catalog_reclaim(fixture.catalog) == 1);
     finish(&fixture);
 }
 void test_delta(void) {

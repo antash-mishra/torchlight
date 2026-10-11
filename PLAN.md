@@ -508,9 +508,10 @@ M6 worker separation, Frizbee SIMD search and incremental indexing are
 implemented; semantic search is parked (ADR 0032) and M5 personal
 recommendations are implemented (ADR 0033). M7 phase 1 (quiet indexing:
 repair scans only where inotify can miss changes, no work for metadata-only
-writes, freed memory returned) is implemented and verified (ADRs 0038,
-0039 and 0041). [Review fixes and acceptance](docs/m7-plan.md#phase-1-review-results-2026-10-11)
-close the repair, metadata commit and memory gaps. Phase 2 (cheaper full scans)
+writes, freed memory returned) is implemented (ADRs 0038 and 0039). Repair and
+metadata fixes are verified. The deletion-compaction optimization was
+[removed after review](docs/m7-plan.md#deletion-compaction-removed-2026-10-11),
+so the 10% memory acceptance gate is open again. Phase 2 (cheaper full scans)
 remains proposed.
 Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
 tracked explicitly in the verification report.
@@ -726,8 +727,8 @@ tracked explicitly in the verification report.
    pairs Frizbee with candidate-volume reduction; step 3 splits into scoped
    reconcile, a base-plus-delta segmented engine, and incremental semantic
    snapshots. It records the baseline numbers each step must beat.
-8. **M7: Quiet indexing and lean memory.** Phase 1 implemented and verified
-   (2026-10-11); Phase 2 proposed.
+8. **M7: Quiet indexing and lean memory.** Phase 1 repair and metadata fixes
+   verified; memory acceptance open (2026-10-11). Phase 2 proposed.
    A headless profile ([M7 plan](docs/m7-plan.md)) showed that the 30-second
    full rescan cost 7 to 9% of a core at 213k entries and that a file written
    20 times a second cost 43%, while search reads only names.
@@ -738,8 +739,7 @@ tracked explicitly in the verification report.
      scopes inotify cannot cover rescanned every `rescan_ms`, an hourly
      backstop and a mount-table signal (ADR 0038); metadata-only events and
      refreshes neither rescan nor publish (ADR 0038); freed engines returned to
-     the OS after full rebuilds (ADR 0039); retained deletions count toward
-     compaction without double-counting changed base entries (ADR 0041).
+     the OS after full rebuilds (ADR 0039).
    - **Phase 2: make the remaining full scans cheap.** One stat per entry,
      reuse of the live watcher, and an in-memory comparison so that only
      differences reach SQLite.
@@ -751,13 +751,14 @@ tracked explicitly in the verification report.
    remounted changes.
 
    [Review fixes and acceptance](docs/m7-plan.md#phase-1-review-results-2026-10-11)
-   verify failed-walk recovery, metadata commits without publication and
-   deletion compaction ([ADR 0041](docs/adr/0041-compaction-counts-retired-base-entries.md)).
+   verify failed-walk recovery and metadata commits without publication.
    At 213k, ten-minute idle CPU is 0.09%, write churn is 0.13% with zero
-   passes/publications, and post-event RSS is 181 MiB versus 167 MiB steady
-   (+8.4%, within 10%). Small-folder create/delete p50 stays near 107 ms.
-   Large deletion now costs 3.40 CPU-s and 3052 ms visibility lag across two
-   compactions; tests, lint and benchmark evidence are recorded with the plan.
+   passes/publications. Small-folder create/delete p50 stays near 107 ms.
+   The deletion-compaction experiment reduced post-event RSS by 9 MiB, but
+   raised bulk deletion lag from 181 to 3052 ms and was removed at the user's
+   request ([withdrawn ADR 0041](docs/adr/0041-compaction-counts-retired-base-entries.md)).
+   Deletions are incremental again; retained base memory and the original 10%
+   memory target remain open. See the [removal record](docs/m7-plan.md#deletion-compaction-removed-2026-10-11).
 
 ## Evaluation
 

@@ -228,15 +228,9 @@ static void memory_release(void) {
     const char *created[] = {files[0], files[1], files[2], files[3]};
     finish(&fixture, created, 4);
 }
-static tl_status fail_one_publication(void *context, tl_catalog *catalog,
-                                      tl_catalog_snapshot **snapshot) {
-    if (atomic_exchange((atomic_bool *)context, false))
-        return TL_IO;
-    return catalog_publish(catalog, snapshot);
-}
-/* Deletion compacts a base even with an empty delta. The release hook must
- * wait for a pinned old view, then run without another filesystem change. */
-static void deletion_release(void) {
+/* Removing more base rows than the live delta bound publishes promptly as a
+ * delta, without a full build or a base-memory release. */
+static void incremental_deletion(void) {
     struct fixture fixture;
     prepare(&fixture);
     atomic_size_t releases;
@@ -245,10 +239,6 @@ static void deletion_release(void) {
     fixture.options.delta_entries = 2;
     fixture.options.release_memory = count_release;
     fixture.options.release_context = &releases;
-    atomic_bool fail;
-    atomic_init(&fail, false);
-    fixture.options.publish = fail_one_publication;
-    fixture.options.publish_context = &fail;
     char files[3][256];
     for (int i = 0; i < 3; i++) {
         CHECK(snprintf(files[i], sizeof(files[i]), "%s/remove-%d.txt", fixture.root, i) > 0);
@@ -257,24 +247,19 @@ static void deletion_release(void) {
     start(&fixture);
     tl_writer_stats started = wait_idle(&fixture, 1);
     wait_releases(&releases, 1);
-    tl_catalog_snapshot *old = NULL;
-    CHECK(catalog_pin(fixture.catalog, &old) == TL_OK);
-    CHECK(catalog_snapshot_count(old) == 5);
-    atomic_store(&fail, true);
     for (size_t i = 0; i < 3; i++)
         CHECK(unlink(files[i]) == 0);
-    for (size_t i = 0; i < WAIT_STEPS && !stats(&fixture).recovering; i++)
+    for (size_t i = 0; i < WAIT_STEPS && has_path(fixture.catalog, files[2]); i++)
         pause_ms(1);
-    CHECK(stats(&fixture).recovering && stats(&fixture).full_builds == started.full_builds);
-    for (size_t i = 0; i < WAIT_STEPS && stats(&fixture).full_builds == started.full_builds; i++)
-        pause_ms(1);
-    CHECK(stats(&fixture).full_builds == started.full_builds + 1);
+    for (size_t i = 0; i < 3; i++)
+        CHECK(!has_path(fixture.catalog, files[i]));
+    tl_writer_stats deleted = wait_idle(&fixture, started.reconciliations + 1);
+    CHECK(deleted.delta_publications > started.delta_publications);
+    CHECK(deleted.full_builds == started.full_builds && full_scans(&deleted) == 1);
     pause_ms(1200);
-    CHECK(catalog_snapshot_count(old) == 5 && atomic_load(&releases) == 1);
+    CHECK(atomic_load(&releases) == 1);
     tl_catalog_stats current;
     CHECK(catalog_stats(fixture.catalog, &current) == TL_OK && current.entries == 2);
-    catalog_unpin(old);
-    wait_releases(&releases, 2);
     finish(&fixture, NULL, 0);
 }
 void test_writer_repair(void) {
@@ -283,5 +268,5 @@ void test_writer_repair(void) {
     backstop();
     mount_change();
     memory_release();
-    deletion_release();
+    incremental_deletion();
 }

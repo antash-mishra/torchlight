@@ -91,7 +91,7 @@ void test_lexical(void);
 void test_lexical_boost(void);
 /** Run resident snapshot lifetime, capacity and concurrent-publication checks. */
 void test_catalog(void);
-/** Check deletion compaction thresholds, mixed changes and retained leases. */
+/** Check incremental deletions, live delta bounds and retained leases. */
 void test_delta(void);
 /** Run transactional catalog checks, aborting on failure. */
 void test_store(void);

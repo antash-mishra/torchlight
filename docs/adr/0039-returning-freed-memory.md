@@ -65,12 +65,14 @@ hook now also runs after full scans.
   instead of 215 MB, and RSS is 192 MB instead of 412 MB. What remains above
   the steady 168 MB is live index data: deleted entries stay tombstoned in
   the base engine until the next compaction (ADR 0030).
-- That initial result missed M7's 10% memory gate. The review adds deletion
+- That initial result missed M7's 10% memory gate. The review tried deletion
   compaction ([ADR 0041](0041-compaction-counts-retired-base-entries.md)):
-  the same event workload now ends at 181 MiB versus 167 MiB steady (+8.4%)
+  the same event workload ended at 181 MiB versus 167 MiB steady (+8.4%)
   before manual trim. Counting retired base entries frees the live memory
-  that this allocator policy alone cannot release; the existing release hook
-  still waits for the base's last reference. See the
+  that this allocator policy alone cannot release. This optimization was
+  subsequently removed at the user's request because of its bulk-deletion
+  cost; the memory gate is open again. The allocator policy and release hook
+  remain, with release waiting for the base's last reference. See the
   [review results](../m7-plan.md#phase-1-review-results-2026-10-11).
 - Steady RSS drops from 214 to 168 MB and cold-index and rebuild peaks by 15
   to 28%.

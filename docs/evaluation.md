@@ -558,12 +558,16 @@ the [M7 plan](m7-plan.md#phase-1-results-2026-10-10),
 
 ## M7 phase 1 review fixes (2026-10-11)
 
+**Historical results for `33d0000`.** The deletion-compaction optimization
+measured in this section was subsequently removed at the user's request;
+the current memory acceptance gate is open again.
+
 The initial implementation above missed the 10% RSS gate and had two gaps:
 a scoped walk failing before its first callback could drop its repair scope,
 and the writer rolled back metadata-only refreshes. Both have regressions;
-the writer now keeps failed repairs and commits metadata without publishing.
-Compaction counts unique retired base entries plus live delta additions absent
-from the base ([ADR 0041](adr/0041-compaction-counts-retired-base-entries.md)).
+the writer keeps failed repairs and commits metadata without publishing.
+The experiment also counted unique retired base entries toward compaction
+([withdrawn ADR 0041](adr/0041-compaction-counts-retired-base-entries.md)).
 
 The same 213k empty-file mirror and corrected churn harness were run against
 `4701519` and the fixed `-O3` daemon, using separate run directories on the
@@ -602,5 +606,34 @@ coverage, acceptance and reproduction details. `make bench` passed all nine
 ranking fixtures at 50k and 500k, with typing p95 0.505/4.117 ms and
 whole-query p95 0.812/5.274 ms. The 500k typing result with the full 2048-item
 usage summary is 4.267 ms. Those measurements exclude IPC and ran after the
-scenario benchmarks. Phase 1 is complete; Phase 2 still covers cheaper full
-scans and watcher-slot reuse.
+scenario benchmarks. These results apply to the experiment before withdrawal.
+See the [removal record](m7-plan.md#deletion-compaction-removed-2026-10-11):
+the 10% RSS gate is open again. Phase 2 still covers cheaper full scans and
+watcher-slot reuse.
+
+## M7 deletion-compaction removal (2026-10-11)
+
+The user requested removal of the deletion-triggered rebuilds. The live-delta
+compaction threshold is restored and the unused catalog projection API is
+removed. Repair retries, metadata persistence and the existing allocator
+release mechanism remain. Tests and lint pass; regressions require bulk and
+accumulated deletions to stay incremental and ordinary live delta growth to
+retain its compaction bound.
+
+The same 213k mirror was rerun at `-O3` after repository validation, starting
+with a fresh isolated database. Bulk deletion produced four delta publications
+and zero full builds, with 85 ms visibility lag after the 330 ms filesystem
+action, 0.42 CPU-s and 189 MiB deletion peak RSS. Small create/delete p50 was
+108.3/106.8 ms. The 20 Hz churn used 0.10% CPU with zero passes/publications.
+Post-event RSS was 191 MiB versus 167 MiB steady (+14.4%) before manual trim:
+the original 10% memory gate remains open. This is a single run with ordinary
+desktop load; batching and wall-clock times vary.
+
+`make bench` passes all nine ranking fixtures at both 50k and 500k. Typing
+p95 is 0.566/4.430 ms and whole-query p95 is 0.892/5.347 ms; the 500k typing
+result with the full usage summary is 4.590 ms. These measurements exclude IPC.
+
+Raw data: [removal scenarios](../tests/bench/results/2026-10-11-m7-deletion-rollback.jsonl)
+and [lexical benchmark](../tests/bench/results/2026-10-11-m7-deletion-rollback-lexical.txt).
+See the [removal record](m7-plan.md#deletion-compaction-removed-2026-10-11) for
+reproduction details. Deferred compaction remains separate future work.

@@ -914,10 +914,10 @@
       </div>
       <div class="card">
         <span class="tag cool">big changes</span>
-        <p>When retired base entries plus live additions exceed <code>max(4096, base/32)</code>,
+        <p>When live delta entries exceed <code>max(4096, base/32)</code>,
           the indexing thread rebuilds a fresh base from SQLite (<em>compaction</em>).
-          Changed base entries count once; deletions count immediately. Readers keep their
-          old view until release, then its memory can return to the OS.</p>
+          Deletions hide entries without forcing this rebuild. Readers keep their old view
+          until release; deleted base data stays allocated until a later rebuild.</p>
       </div>
       <div class="card">
         <span class="tag cool">watcher trouble</span>
@@ -929,11 +929,11 @@
       (<code>repair_scopes</code>) and why the last full rescan ran (<code>last_full_reason</code>:
       <code>startup</code>, <code>reconcile</code>, <code>overflow</code>, <code>mount</code>,
       <code>backstop</code> and a few rarer ones).</p>
-    <p>The <a href="m7-plan.md#phase-1-review-results-2026-10-11">Phase 1 acceptance run</a>
-      measured 0.09% idle CPU and post-event memory 8.4% above steady, within the 10% target.
-      Large deletions now trigger compaction: deleting a 20k-entry tree at 213k took about
-      3 seconds to appear in the index. Metadata found during a scan is saved without
-      publishing a new search view.</p>
+    <p>M7 measured 0.09% idle CPU. The optimization that rebuilt after large deletions was
+      <a href="m7-plan.md#deletion-compaction-removed-2026-10-11">removed after review</a>:
+      it saved 9 MiB in the measured event workload but delayed deletion updates to about
+      3 seconds. Deletions are incremental again, and the 10% post-event memory target is
+      open. Metadata found during a scan is saved without publishing a new search view.</p>
   </section>
 
   <!-- 6 ─────────────────────────────────────────────────────────────── -->
