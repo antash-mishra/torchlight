@@ -24,6 +24,10 @@
       --cool: #2f6aa8;
       --cool-soft: #e8f0f9;
       --code-bg: #f3f1ec;
+      --ok: #1f7a4d;
+      --ok-soft: #e4f4ea;
+      --bad: #b42318;
+      --bad-soft: #fde8e6;
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
@@ -42,6 +46,10 @@
         --cool: #7db1e8;
         --cool-soft: #16222f;
         --code-bg: #202227;
+        --ok: #5cc98e;
+        --ok-soft: #13271c;
+        --bad: #f2867c;
+        --bad-soft: #2e1715;
       }
     }
     :root[data-theme="dark"] {
@@ -49,6 +57,7 @@
       --bg: #121316; --surface: #1b1c20; --surface-2: #23252a; --ink: #ecebe6; --ink-2: #c6c4be;
       --muted: #9a9ea6; --line: #2f3137; --line-strong: #50545d; --hot: #f0a23b; --hot-soft: #2f2414;
       --hot-ink: #f6bd6a; --cool: #7db1e8; --cool-soft: #16222f; --code-bg: #202227;
+      --ok: #5cc98e; --ok-soft: #13271c; --bad: #f2867c; --bad-soft: #2e1715;
     }
 
     * { box-sizing: border-box; }
@@ -152,6 +161,50 @@
     .dia .mk-n { fill: var(--ink-2); }
     .dia .mk-h { fill: var(--hot); }
     .dia .mk-b { fill: var(--cool); }
+    .dia .bx-ok { fill: var(--ok-soft); stroke: var(--ok); stroke-width: 1.5; }
+    .dia .bx-warn { fill: var(--hot-soft); stroke: var(--hot); stroke-width: 1.5; }
+    .dia .bx-bad { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.5; }
+    .dia .dot-ok { fill: var(--ok); }
+    .dia .dot-warn { fill: var(--hot); }
+    .dia .dot-bad { fill: var(--bad); }
+    .dia .big { font-size: 26px; font-weight: 800; letter-spacing: -.02em; fill: var(--ink); }
+    .dia .big-new { fill: var(--cool); }
+    .dia .ign { fill: none; stroke: var(--line-strong); stroke-width: 1.4; }
+
+    /* Charts: bars and ticks drawn to scale from measured numbers, in the diagram vocabulary */
+    .fig svg.chart { min-width: 680px; }
+    .dia .grid { stroke: var(--line); stroke-width: 1; }
+    .dia .axis { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+    .dia .val { font-size: 12px; font-weight: 700; fill: var(--ink); font-variant-numeric: tabular-nums; }
+    .dia .val-old { font-size: 12px; font-weight: 600; fill: var(--muted); font-variant-numeric: tabular-nums; }
+    .dia .bar-new { fill: var(--cool); }
+    .dia .bar-old { fill: var(--line-strong); }
+    .dia .bar-soft { fill: var(--cool-soft); stroke: var(--cool); stroke-width: 1; }
+    .dia .bar-bad { fill: var(--bad); }
+    .dia .target { stroke: var(--hot); stroke-width: 1.5; stroke-dasharray: 5 4; }
+    .dia .mark { stroke: var(--ink); stroke-width: 2; }
+    .dia .seg-wait { fill: var(--hot-soft); stroke: var(--hot); stroke-width: 1.2; }
+    .dia .seg-bg { fill: var(--cool-soft); stroke: var(--cool); stroke-width: 1.2; }
+    .dia .seg-txt { font-size: 12px; font-weight: 600; fill: var(--ink); }
+
+    /* Vital signs */
+    .vitals { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px; margin: 22px 0; }
+    .vital { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 18px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+    .vital .what { color: var(--muted); font-size: 13px; font-weight: 650; }
+    .vital .value { font-size: 32px; font-weight: 800; line-height: 1.15; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .vital .value small { margin-left: 5px; color: var(--ink-2); font-size: 15px; font-weight: 650; letter-spacing: 0; }
+    .vital p { flex: 1; margin: 2px 0 8px; color: var(--ink-2); font-size: 14.5px; line-height: 1.5; }
+    .status { align-self: flex-start; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid transparent; }
+    .status.ok { background: var(--ok-soft); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
+    .status.watch { background: var(--hot-soft); color: var(--hot-ink); border-color: color-mix(in srgb, var(--hot) 35%, transparent); }
+    .status.bad { background: var(--bad-soft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+
+    /* Open items */
+    .flags { display: grid; gap: 12px; margin: 18px 0; }
+    .flag-item { padding: 14px 18px; background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--bad); border-radius: 0 12px 12px 0; }
+    .flag-item.watch { border-left-color: var(--hot); }
+    .flag-item h3 { margin: 0 0 4px; }
+    .flag-item p { margin: 0; color: var(--ink-2); font-size: 15px; }
 
     /* Steps */
     ol.steps { counter-reset: step; list-style: none; padding: 0; margin: 20px 0; display: grid; gap: 10px; }
@@ -234,18 +287,26 @@
     <h1>How Torchlight works</h1>
     <p class="lede">Torchlight is a Spotlight-style launcher for Linux. You press a shortcut, type a few
       letters, and open an app, a settings panel, a file or a folder. This page explains the pieces
-      behind that popup, how they talk to each other, and why typing stays fast.</p>
-    <p class="meta">Based on the code and docs at commit <code>dec4b59</code> plus M7 phase 1
-      (quiet indexing), October 2026.
-      The <a href="architecture.md">architecture doc</a> has the full technical detail.</p>
+      behind that popup, how they talk to each other, what they do over a day, and how fast and quiet
+      they are, with charts drawn from real measurements.</p>
+    <p class="meta">Based on the code at commit <code>ab377a0</code> plus M7 Phase 2 (cheap full
+      checks), 12 October 2026. Numbers come from the reference machine (a 6-core Intel i7-8700K with
+      32 GB of memory) and a 213,000-entry copy of a real home folder, unless a chart says otherwise.
+      The <a href="architecture.md">architecture doc</a> has the full technical detail, and the
+      <a href="reports/m7-phase2-health-report.html">Phase 2 health report</a> every measurement.</p>
     <nav class="toc" aria-label="On this page">
       <a href="#short">The short version</a>
+      <a href="#vitals">Vital signs</a>
       <a href="#big-picture">Big picture</a>
+      <a href="#day">A day in the life</a>
       <a href="#typing">When you type</a>
       <a href="#matching">Finding matches</a>
       <a href="#fresh">Staying up to date</a>
+      <a href="#full-check">Full checks</a>
+      <a href="#modes">Health modes</a>
       <a href="#snapshots">Snapshots</a>
       <a href="#data">Where data lives</a>
+      <a href="#performance">Performance</a>
       <a href="#threads">Threads</a>
       <a href="#extras">Extras</a>
       <a href="#code">Code map</a>
@@ -253,7 +314,7 @@
     </nav>
   </header>
 
-  <!-- 1 ─────────────────────────────────────────────────────────────── -->
+  <!-- The short version ───────────────────────────────────────────────── -->
   <section id="short">
     <h2><span class="num">1</span>The short version</h2>
     <p class="sub">Torchlight is three programs. Only one of them does the real work.</p>
@@ -287,16 +348,67 @@
     </div>
   </section>
 
-  <!-- 2 ─────────────────────────────────────────────────────────────── -->
+  <!-- Vital signs ─────────────────────────────────────────────────────── -->
+  <section id="vitals">
+    <h2><span class="num">2</span>Vital signs</h2>
+    <p class="sub">Six numbers describe how Torchlight feels to use, like the readings on a check-up.
+      Each card shows the goal it is measured against. The charts behind them are in
+      <a href="#performance">Performance</a>.</p>
+
+    <div class="vitals">
+      <div class="vital">
+        <span class="what">Typing response, 500,000 entries</span>
+        <span class="value">3.7<small>ms</small></span>
+        <p>95 of 100 keystrokes are answered within this time. For comparison, one screen refresh
+          takes 16.7 ms.</p>
+        <span class="status ok">On target: at most 5 ms</span>
+      </div>
+      <div class="vital">
+        <span class="what">A new or deleted file shows up</span>
+        <span class="value">0.11<small>s</small></span>
+        <p>Typical time from the change on disk until search shows it, most of it a deliberate
+          100 ms wait that groups bursts of changes.</p>
+        <span class="status ok">On target: at most 0.12 s</span>
+      </div>
+      <div class="vital">
+        <span class="what">Background processor use while idle</span>
+        <span class="value">0.14<small>% of one core</small></span>
+        <p>About 2 minutes of one processor core per day, plus about 25 seconds for that day's
+          full checks.</p>
+        <span class="status ok">On target: at most 0.2%</span>
+      </div>
+      <div class="vital">
+        <span class="what">Memory</span>
+        <span class="value">171<small>MB</small></span>
+        <p>Steady size, about 0.8 KB per indexed entry. After a rebuild it stays within 10% of
+          this instead of staying at its peak.</p>
+        <span class="status ok">On target, narrowly: +9.9%, limit +10%</span>
+      </div>
+      <div class="vital">
+        <span class="what">One full check of every folder</span>
+        <span class="value">0.98<small>s</small></span>
+        <p>It took 3.97 s before M7 Phase 2. It runs at start-up and about once an hour.</p>
+        <span class="status ok">On target, narrowly: at most 1.0 s</span>
+      </div>
+      <div class="vital">
+        <span class="what">Ready to search after a restart</span>
+        <span class="value">1.5<small>s</small></span>
+        <p>Time to load the saved list into memory. It is 0.2 s slower than before Phase 2.</p>
+        <span class="status watch">Open item: was 1.3 s</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Big picture ─────────────────────────────────────────────────────── -->
   <section id="big-picture">
-    <h2><span class="num">2</span>The big picture</h2>
+    <h2><span class="num">3</span>The big picture</h2>
     <p class="sub">Read the diagram from top to bottom: what you see on screen, the private connection
       in between, the daemon's moving parts, and the files on disk.</p>
 
     <figure class="fig">
       <div class="fig-scroll">
         <svg class="dia" viewBox="0 -28 1000 748" role="img"
-             aria-label="The popup and command line talk to the torchlightd daemon over a Unix socket. Inside the daemon, the IPC thread and the search thread answer queries from read-only in-memory snapshots, while the desktop worker, the indexing thread and the persistence thread keep those snapshots and the SQLite catalog up to date from files on disk.">
+             aria-label="The popup and command line talk to the torchlightd daemon over a Unix socket. Inside the daemon, the IPC thread and the search thread answer queries from read-only in-memory snapshots, while the desktop worker, the indexing thread and the persistence thread keep those snapshots and the SQLite catalog up to date from files on disk. Beside the indexing thread, an in-memory ledger lists what the database holds, so full checks can skip unchanged files.">
           <defs>
             <marker id="d1n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="mk-n" d="M0 0L10 5L0 10z"/></marker>
             <marker id="d1h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path class="mk-h" d="M0 0L10 5L0 10z"/></marker>
@@ -395,6 +507,11 @@
           <text class="t" x="500" y="534" text-anchor="middle">Indexing thread</text>
           <text class="s" x="500" y="554" text-anchor="middle">watches &amp; rescans folders</text>
 
+          <rect class="bx-mem" x="276" y="516" width="104" height="44" rx="9"/>
+          <text class="t-sm" x="328" y="535" text-anchor="middle">Ledger</text>
+          <text class="s" x="328" y="551" text-anchor="middle">saved rows</text>
+          <line class="dot" x1="380" y1="538" x2="400" y2="538"/>
+
           <line class="ln ln-bg" x1="600" y1="528" x2="737" y2="528" marker-end="url(#d1b)"/>
           <line class="ln ln-bg" x1="740" y1="548" x2="603" y2="548" marker-end="url(#d1b)"/>
           <text class="lbl" x="670" y="521" text-anchor="middle">changes</text>
@@ -451,15 +568,225 @@
       <li>In the background, the <strong>indexing thread</strong> notices file changes, the
         <strong>persistence thread</strong> saves them to a SQLite database, and the <strong>desktop
         worker</strong> keeps the list of installed apps current. Each publishes a fresh, read-only
-        version of the index when it's ready.</li>
+        version of the index when it's ready. The indexing thread also keeps a <strong>ledger</strong>,
+        a compact list of what the database holds, so a check of every folder can skip the files that
+        did not change (<a href="#full-check">Full checks</a>).</li>
       <li>When you press Enter, the popup itself opens the app, file or folder. The daemon only checks
         that the result is still valid and remembers what you opened.</li>
     </ol>
   </section>
 
-  <!-- 3 ─────────────────────────────────────────────────────────────── -->
+  <!-- A day in the life ───────────────────────────────────────────────── -->
+  <section id="day">
+    <h2><span class="num">4</span>A day in the life</h2>
+    <p class="sub">Most of the time Torchlight sleeps. It wakes up when you search, when a name changes
+      in one of your folders, and once an hour for a safety check.</p>
+
+    <figure class="fig">
+      <div class="fig-scroll">
+<svg class="dia chart" viewBox="0 0 1000 310" role="img" aria-label="One day of an always-on desktop. A start-up check at midnight, then one backstop full check every hour, 24 in all. Folder rescans and searches happen when you work. Hourly backup mounts outside your folders and saved files cause no work.">
+<rect class="lane-bg" x="0" y="34" width="1000" height="58"/>
+<text class="lane" x="14" y="60">Full checks</text>
+<text class="s" x="14" y="78">about 1 s each</text>
+<text class="lane" x="14" y="118">Folder rescans</text>
+<text class="s" x="14" y="136">about 0.1 s each</text>
+<rect class="lane-bg" x="0" y="150" width="1000" height="58"/>
+<text class="lane" x="14" y="176">Searches</text>
+<text class="s" x="14" y="194">a few ms each</text>
+<text class="lane" x="14" y="234">Ignored</text>
+<text class="s" x="14" y="252">no work at all</text>
+<line class="grid" x1="190.0" y1="28" x2="190.0" y2="266"/>
+<text class="axis" x="190.0" y="22" text-anchor="middle">00:00</text>
+<line class="grid" x1="287.5" y1="28" x2="287.5" y2="266"/>
+<text class="axis" x="287.5" y="22" text-anchor="middle">03:00</text>
+<line class="grid" x1="385.0" y1="28" x2="385.0" y2="266"/>
+<text class="axis" x="385.0" y="22" text-anchor="middle">06:00</text>
+<line class="grid" x1="482.5" y1="28" x2="482.5" y2="266"/>
+<text class="axis" x="482.5" y="22" text-anchor="middle">09:00</text>
+<line class="grid" x1="580.0" y1="28" x2="580.0" y2="266"/>
+<text class="axis" x="580.0" y="22" text-anchor="middle">12:00</text>
+<line class="grid" x1="677.5" y1="28" x2="677.5" y2="266"/>
+<text class="axis" x="677.5" y="22" text-anchor="middle">15:00</text>
+<line class="grid" x1="775.0" y1="28" x2="775.0" y2="266"/>
+<text class="axis" x="775.0" y="22" text-anchor="middle">18:00</text>
+<line class="grid" x1="872.5" y1="28" x2="872.5" y2="266"/>
+<text class="axis" x="872.5" y="22" text-anchor="middle">21:00</text>
+<line class="grid" x1="970.0" y1="28" x2="970.0" y2="266"/>
+<text class="axis" x="970.0" y="22" text-anchor="middle">24:00</text>
+<rect class="act-hot" x="190.0" y="48" width="5" height="30" rx="2"/>
+<rect class="act-bg" x="221.0" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="253.5" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="286.0" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="318.5" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="351.0" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="383.5" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="416.0" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="448.5" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="481.0" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="513.5" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="546.0" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="578.5" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="611.0" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="643.5" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="676.0" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="708.5" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="741.0" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="773.5" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="806.0" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="838.5" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="871.0" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="903.5" y="54" width="3" height="18" rx="1.5"/>
+<rect class="act-bg" x="936.0" y="54" width="3" height="18" rx="1.5"/>
+<circle class="act-bg" cx="459.8" cy="121" r="3.2"/>
+<circle class="act-bg" cx="469.5" cy="121" r="3.2"/>
+<circle class="act-bg" cx="485.8" cy="121" r="3.2"/>
+<circle class="act-bg" cx="495.5" cy="121" r="3.2"/>
+<circle class="act-bg" cx="521.5" cy="121" r="3.2"/>
+<circle class="act-bg" cx="523.1" cy="121" r="3.2"/>
+<circle class="act-bg" cx="544.2" cy="121" r="3.2"/>
+<circle class="act-bg" cx="567.0" cy="121" r="3.2"/>
+<circle class="act-bg" cx="583.2" cy="121" r="3.2"/>
+<circle class="act-bg" cx="625.5" cy="121" r="3.2"/>
+<circle class="act-bg" cx="638.5" cy="121" r="3.2"/>
+<circle class="act-bg" cx="651.5" cy="121" r="3.2"/>
+<circle class="act-bg" cx="654.8" cy="121" r="3.2"/>
+<circle class="act-bg" cx="677.5" cy="121" r="3.2"/>
+<circle class="act-bg" cx="700.2" cy="121" r="3.2"/>
+<circle class="act-bg" cx="713.3" cy="121" r="3.2"/>
+<circle class="act-bg" cx="729.5" cy="121" r="3.2"/>
+<circle class="act-bg" cx="749.0" cy="121" r="3.2"/>
+<circle class="act-bg" cx="771.7" cy="121" r="3.2"/>
+<circle class="act-bg" cx="788.0" cy="121" r="3.2"/>
+<circle class="act-bg" cx="856.2" cy="121" r="3.2"/>
+<circle class="act-bg" cx="875.8" cy="121" r="3.2"/>
+<circle class="act-bg" cx="918.0" cy="121" r="3.2"/>
+<rect class="act-hot" x="452.2" y="170" width="2.4" height="18" rx="1"/>
+<rect class="act-hot" x="478.2" y="170" width="2.4" height="18" rx="1"/>
+<rect class="act-hot" x="504.2" y="170" width="2.4" height="18" rx="1"/>
+<rect class="act-hot" x="530.2" y="170" width="2.4" height="18" rx="1"/>
+<rect class="act-hot" x="553.0" y="170" width="2.4" height="18" rx="1"/>
+<rect class="act-hot" x="598.5" y="170" width="2.4" height="18" rx="1"/>
+<rect class="act-hot" x="631.0" y="170" width="2.4" height="18" rx="1"/>
+<rect class="act-hot" x="657.0" y="170" width="2.4" height="18" rx="1"/>
+<rect class="act-hot" x="683.0" y="170" width="2.4" height="18" rx="1"/>
+<rect class="act-hot" x="722.0" y="170" width="2.4" height="18" rx="1"/>
+<rect class="act-hot" x="757.8" y="170" width="2.4" height="18" rx="1"/>
+<rect class="act-hot" x="881.2" y="170" width="2.4" height="18" rx="1"/>
+<circle class="ign" cx="190.7" cy="237" r="3.2"/>
+<circle class="ign" cx="223.2" cy="237" r="3.2"/>
+<circle class="ign" cx="255.6" cy="237" r="3.2"/>
+<circle class="ign" cx="288.1" cy="237" r="3.2"/>
+<circle class="ign" cx="320.6" cy="237" r="3.2"/>
+<circle class="ign" cx="353.1" cy="237" r="3.2"/>
+<circle class="ign" cx="385.6" cy="237" r="3.2"/>
+<circle class="ign" cx="418.1" cy="237" r="3.2"/>
+<circle class="ign" cx="450.6" cy="237" r="3.2"/>
+<circle class="ign" cx="483.1" cy="237" r="3.2"/>
+<circle class="ign" cx="515.6" cy="237" r="3.2"/>
+<circle class="ign" cx="548.2" cy="237" r="3.2"/>
+<circle class="ign" cx="580.7" cy="237" r="3.2"/>
+<circle class="ign" cx="613.2" cy="237" r="3.2"/>
+<circle class="ign" cx="645.7" cy="237" r="3.2"/>
+<circle class="ign" cx="678.2" cy="237" r="3.2"/>
+<circle class="ign" cx="710.6" cy="237" r="3.2"/>
+<circle class="ign" cx="743.1" cy="237" r="3.2"/>
+<circle class="ign" cx="775.6" cy="237" r="3.2"/>
+<circle class="ign" cx="808.1" cy="237" r="3.2"/>
+<circle class="ign" cx="840.6" cy="237" r="3.2"/>
+<circle class="ign" cx="873.1" cy="237" r="3.2"/>
+<circle class="ign" cx="905.6" cy="237" r="3.2"/>
+<circle class="ign" cx="938.1" cy="237" r="3.2"/>
+<rect class="act-hot" x="190" y="285" width="5" height="14" rx="2"/>
+<text class="lbl" x="202" y="296">start-up check</text>
+<rect class="act-bg" x="310" y="285" width="3" height="14" rx="1.5"/>
+<text class="lbl" x="320" y="296">hourly backstop check</text>
+<circle class="act-bg" cx="480" cy="292" r="3.2"/>
+<text class="lbl" x="490" y="296">a folder's names changed</text>
+<rect class="act-hot" x="660" y="285" width="2.4" height="14" rx="1"/>
+<text class="lbl" x="670" y="296">you search</text>
+<circle class="ign" cx="760" cy="292" r="3.2"/>
+<text class="lbl" x="770" y="296">backup disk mounted elsewhere</text>
+</svg>
+      </div>
+      <figcaption><strong>One day on a desktop that never sleeps.</strong> The top row follows the real
+        schedule: a full check at start-up, then the backstop check once an hour, about 25 a day. The
+        other rows are an example day. Folder rescans happen only when names change and searches only
+        when you type. A backup disk mounted outside your folders, or a file being saved, causes no work
+        at all (on this machine a backup tool mounts its disk every hour).</figcaption>
+    </figure>
+
+    <h3>When you log in</h3>
+    <p>The daemon first loads the saved list of names from its database into memory; searches wait
+      during this step. Then it starts answering searches, while a full check runs in the background
+      to catch anything that changed while it was off.</p>
+
+    <figure class="fig">
+      <div class="fig-scroll">
+<svg class="dia chart" viewBox="0 0 1000 194" role="img" aria-label="Start-up at 213,000 entries. Before Phase 2: 1.33 s loading, then a 3.25 s check, settled at 4.6 s. Today: 1.52 s loading, then a 1.13 s check, settled at 2.7 s.">
+<line class="grid" x1="200.0" y1="20" x2="200.0" y2="142"/>
+<text class="axis" x="200.0" y="160" text-anchor="middle">0 s</text>
+<line class="grid" x1="348.0" y1="20" x2="348.0" y2="142"/>
+<text class="axis" x="348.0" y="160" text-anchor="middle">1 s</text>
+<line class="grid" x1="496.0" y1="20" x2="496.0" y2="142"/>
+<text class="axis" x="496.0" y="160" text-anchor="middle">2 s</text>
+<line class="grid" x1="644.0" y1="20" x2="644.0" y2="142"/>
+<text class="axis" x="644.0" y="160" text-anchor="middle">3 s</text>
+<line class="grid" x1="792.0" y1="20" x2="792.0" y2="142"/>
+<text class="axis" x="792.0" y="160" text-anchor="middle">4 s</text>
+<line class="grid" x1="940.0" y1="20" x2="940.0" y2="142"/>
+<text class="axis" x="940.0" y="160" text-anchor="middle">5 s</text>
+<text class="t-sm" x="182" y="51.0" text-anchor="end">Before Phase 2</text>
+<rect class="seg-wait" x="200.0" y="30" width="196.1" height="34" rx="5"/>
+<text class="seg-txt" x="298.1" y="51" text-anchor="middle">loading · 1.33 s</text>
+<rect class="seg-bg" x="396.1" y="30" width="481.1" height="34" rx="5"/>
+<text class="seg-txt" x="636.7" y="51" text-anchor="middle">start-up check · 3.25 s</text>
+<text class="val" x="885.2" y="51">settled at 4.6 s</text>
+<text class="t-sm" x="182" y="117.0" text-anchor="end">Today</text>
+<rect class="seg-wait" x="200.0" y="96" width="225.6" height="34" rx="5"/>
+<text class="seg-txt" x="312.8" y="117" text-anchor="middle">loading · 1.52 s</text>
+<rect class="seg-bg" x="425.6" y="96" width="167.8" height="34" rx="5"/>
+<text class="seg-txt" x="509.5" y="117" text-anchor="middle">start-up check · 1.13 s</text>
+<text class="val" x="601.4" y="117">settled at 2.7 s</text>
+<rect class="seg-wait" x="200" y="169" width="18" height="12" rx="3"/>
+<text class="lbl" x="226" y="180">Loading the saved list into memory: searches wait</text>
+<rect class="seg-bg" x="560" y="169" width="18" height="12" rx="3"/>
+<text class="lbl" x="586" y="180">Start-up check in the background: searches are answered</text>
+</svg>
+      </div>
+      <figcaption><strong>Start-up, drawn to scale (213,000 entries).</strong> Phase 2 cut the start-up
+        check from 3.25 s to 1.13 s, so the daemon settles about 2 seconds sooner. Loading became 0.2 s
+        slower, because it now also fills the ledger (see <a href="#full-check">Full checks</a>); that
+        is an open item.</figcaption>
+    </figure>
+
+    <h3>How often a full check runs</h3>
+    <p>A <strong>full check</strong> walks every indexed folder and compares what is on disk with what
+      is saved. Normally Torchlight rescans only the one folder where a name changed, so full checks
+      are kept for moments when a change could have slipped past:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Reason</th><th>What happened</th><th>How often</th></tr></thead>
+        <tbody>
+          <tr><td>Start-up</td><td>The daemon started.</td><td>Once per login, boot or restart</td></tr>
+          <tr><td>Backstop</td><td>An hour passed since the last full check (<code>--repair-ms</code>).</td><td>At most once an hour</td></tr>
+          <tr><td>Overflow</td><td>Linux dropped change notices because too many arrived at once (more than 16,384 waiting).</td><td>Only during bulk changes: big checkouts, unpacking, syncing</td></tr>
+          <tr><td>Many folders</td><td>More than 1,024 folders changed in one go, or an indexed folder itself changed.</td><td>Bulk changes</td></tr>
+          <tr><td>Mount</td><td>A disk was mounted at, inside or above an indexed folder.</td><td>Rare: mounts elsewhere are ignored</td></tr>
+          <tr><td>You ask</td><td>You ran <code>torchlight reconcile</code>.</td><td>By hand</td></tr>
+          <tr><td>Fallback</td><td>Changes can't be watched reliably (see <a href="#modes">Health modes</a>).</td><td>Every 30 s while it lasts</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <p><strong>On a healthy desktop:</strong> one full check per start plus at most one an hour, so
+        about 25 a day on a machine that never sleeps. At about 1 processor-second each, that is
+        roughly 25 processor-seconds a day; before Phase 2 it was about 100.</p>
+    </div>
+  </section>
+
+  <!-- When you type ───────────────────────────────────────────────────── -->
   <section id="typing">
-    <h2><span class="num">3</span>What happens when you type</h2>
+    <h2><span class="num">5</span>What happens when you type</h2>
     <p class="sub">Here is one search and one launch, step by step. Time runs downward.</p>
 
     <figure class="fig">
@@ -600,9 +927,9 @@
     </details>
   </section>
 
-  <!-- 4 ─────────────────────────────────────────────────────────────── -->
+  <!-- Finding matches ─────────────────────────────────────────────────── -->
   <section id="matching">
-    <h2><span class="num">4</span>How a search finds matches</h2>
+    <h2><span class="num">6</span>How a search finds matches</h2>
     <p class="sub">Comparing your text with half a million names one by one would be too slow. So when
       the index is built, the engine also builds several lookup tables. A search uses them to find a
       short list of candidates, then scores only those.</p>
@@ -719,9 +1046,9 @@
     </div>
   </section>
 
-  <!-- 5 ─────────────────────────────────────────────────────────────── -->
+  <!-- Staying up to date ──────────────────────────────────────────────── -->
   <section id="fresh">
-    <h2><span class="num">5</span>How the index stays up to date</h2>
+    <h2><span class="num">7</span>How the index stays up to date</h2>
     <p class="sub">Your files change all the time. Torchlight follows those changes without rescanning
       everything, without making any search wait, and without doing anything at all for changes that
       leave every name as it was.</p>
@@ -875,24 +1202,331 @@
           <rect class="bx-bg" x="600" y="326" width="380" height="118" rx="9"/>
           <text class="t" x="618" y="364">Full rescan of every root</text>
           <text class="s" x="618" y="384">publishes only what changed</text>
-          <text class="s" x="618" y="402">a few CPU-seconds at 200k files</text>
+          <text class="s" x="618" y="402">about 1 CPU-second at 213k files</text>
           <text class="s" x="618" y="420">its cause is shown as <tspan class="mono">last_full_reason</tspan></text>
         </svg>
       </div>
       <figcaption><strong>Only name changes make work, and only where they happened.</strong> When every
         folder is watched, the repair set is empty and the only routine full rescan is the hourly
-        backstop, so an idle daemon uses under 0.1% of a CPU core (it used about 7% when it rescanned
-        everything every 30 seconds). Folders inotify can't cover are the <em>repair set</em>: ones it
+        backstop, so an idle daemon uses about 0.14% of one processor core (it used about 9% when it
+        rescanned everything every 30 seconds). Folders inotify can't cover are the <em>repair set</em>: ones it
         could not watch or read, and network or FUSE mounts, where other machines can change files
         without this kernel hearing of it.</figcaption>
+    </figure>
+
+  </section>
+
+  <!-- Full checks ─────────────────────────────────────────────────────── -->
+  <section id="full-check">
+    <h2><span class="num">8</span>Full checks, made cheap</h2>
+    <p class="sub">Some moments need a look at every file, not just one folder: start-up, the hourly
+      backstop, and anything that could have hidden a change. M7 Phase 2 (October 2026) did not make
+      these full checks rarer. It made each one about four times cheaper.</p>
+
+    <p>Think of a librarian checking the shelves against the card catalog. The old way read each
+      book's details twice, rewrote every catalog card even when nothing had moved, and then threw the
+      new cards away. The new way keeps a short checklist in memory, the <strong>ledger</strong>, with
+      one fingerprint per card. The librarian reads each book once, ticks it off, and touches the
+      catalog only for books that are new, changed or missing.</p>
+
+    <figure class="fig">
+      <div class="fig-scroll">
+        <svg class="dia" viewBox="0 0 1000 336" role="img"
+             aria-label="Before Phase 2, a full check walked every folder, inspected every file twice, sent every row to SQLite and rolled it all back, registered all 34,453 folder watches again and moved 788 MB of disk traffic: 3.97 seconds and 3.64 CPU-seconds. After Phase 2 it inspects each file once and compares it with the in-memory ledger: unchanged files are skipped, new or changed ones are written, rows never seen are deleted together, and the same watcher is kept: 0.98 seconds, 1.00 CPU-second and 1 MB.">
+          <defs>
+            <marker id="d8n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-n" d="M0 0L10 5L0 10z"/></marker>
+            <marker id="d8b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-b" d="M0 0L10 5L0 10z"/></marker>
+          </defs>
+
+          <!-- Before -->
+          <text class="cap" x="20" y="18">BEFORE PHASE 2</text>
+          <rect class="bx" x="20" y="28" width="160" height="56" rx="10"/>
+          <text class="t" x="100" y="52" text-anchor="middle">Walk every folder</text>
+          <text class="s" x="100" y="71" text-anchor="middle">34,452 folders</text>
+          <line class="ln" x1="180" y1="56" x2="193" y2="56" marker-end="url(#d8n)"/>
+          <rect class="bx" x="196" y="28" width="190" height="56" rx="10"/>
+          <text class="t" x="291" y="52" text-anchor="middle">Inspect every file twice</text>
+          <text class="s" x="291" y="71" text-anchor="middle">two stat calls each</text>
+          <line class="ln" x1="386" y1="56" x2="399" y2="56" marker-end="url(#d8n)"/>
+          <rect class="bx" x="402" y="28" width="200" height="56" rx="10"/>
+          <text class="t" x="502" y="52" text-anchor="middle">Send every row to SQLite</text>
+          <text class="s" x="502" y="71" text-anchor="middle">about 640,000 statements</text>
+          <line class="ln" x1="602" y1="56" x2="615" y2="56" marker-end="url(#d8n)"/>
+          <rect class="bx" x="618" y="28" width="182" height="56" rx="10"/>
+          <text class="t" x="709" y="52" text-anchor="middle">Undo it all</text>
+          <text class="s" x="709" y="71" text-anchor="middle">nothing changed: roll back</text>
+
+          <line class="ln" x1="100" y1="84" x2="100" y2="97" marker-end="url(#d8n)"/>
+          <rect class="ghost-n" x="20" y="100" width="366" height="44" rx="9"/>
+          <text class="t-sm" x="36" y="118">Registers all 34,453 folder watches again</text>
+          <text class="s" x="36" y="135">in a new watcher: twice as many until the swap</text>
+          <line class="ln" x1="502" y1="84" x2="502" y2="97" marker-end="url(#d8n)"/>
+          <rect class="bx-disk" x="402" y="100" width="398" height="44" rx="9"/>
+          <text class="t-sm" x="418" y="118">Database and scratch-file traffic</text>
+          <text class="s" x="418" y="135">788 MB read and written, though nothing changed</text>
+
+          <rect class="bx-mem" x="830" y="28" width="150" height="116" rx="12"/>
+          <text class="cap" x="845" y="50">COST PER CHECK</text>
+          <text class="big" x="845" y="84">3.97 s</text>
+          <text class="s" x="845" y="106">3.64 CPU-seconds</text>
+          <text class="s" x="845" y="124">788 MB moved</text>
+
+          <line class="sep" x1="20" y1="164" x2="980" y2="164"/>
+
+          <!-- After -->
+          <text class="cap" x="20" y="188">AFTER PHASE 2 · TODAY</text>
+          <rect class="bx" x="20" y="198" width="160" height="56" rx="10"/>
+          <text class="t" x="100" y="222" text-anchor="middle">Walk every folder</text>
+          <text class="s" x="100" y="241" text-anchor="middle">the same walk</text>
+          <line class="ln" x1="180" y1="226" x2="193" y2="226" marker-end="url(#d8n)"/>
+          <rect class="bx" x="196" y="198" width="190" height="56" rx="10"/>
+          <text class="t" x="291" y="222" text-anchor="middle">Inspect every file once</text>
+          <text class="s" x="291" y="241" text-anchor="middle">one stat call each</text>
+          <line class="ln" x1="386" y1="226" x2="399" y2="226" marker-end="url(#d8n)"/>
+          <rect class="bx-hot" x="402" y="198" width="200" height="56" rx="10"/>
+          <text class="t" x="502" y="222" text-anchor="middle">Compare with the ledger</text>
+          <text class="s" x="502" y="241" text-anchor="middle">in memory, no database</text>
+
+          <line class="ln" x1="602" y1="214" x2="627" y2="210" marker-end="url(#d8n)"/>
+          <rect class="ghost-n" x="630" y="198" width="170" height="24" rx="7"/>
+          <text class="t-sm" x="715" y="214" text-anchor="middle">Same as saved: skip</text>
+          <line class="ln ln-bg" x1="602" y1="238" x2="627" y2="242" marker-end="url(#d8b)"/>
+          <rect class="bx-bg" x="630" y="230" width="170" height="24" rx="7"/>
+          <text class="t-sm" x="715" y="246" text-anchor="middle">New or changed: write</text>
+
+          <line class="ln" x1="100" y1="254" x2="100" y2="271" marker-end="url(#d8n)"/>
+          <rect class="bx-bg" x="20" y="274" width="366" height="44" rx="9"/>
+          <text class="t-sm" x="36" y="292">Keeps the same watcher</text>
+          <text class="s" x="36" y="309">confirms its 34,453 watches; adds only new folders</text>
+          <line class="ln" x1="502" y1="274" x2="502" y2="257" marker-end="url(#d8n)"/>
+          <rect class="bx-mem" x="402" y="274" width="200" height="44" rx="9"/>
+          <text class="t-sm" x="502" y="292" text-anchor="middle">Ledger</text>
+          <text class="s" x="502" y="309" text-anchor="middle">one fingerprint per saved row</text>
+          <line class="ln ln-bg" x1="602" y1="296" x2="627" y2="296" marker-end="url(#d8b)"/>
+          <rect class="bx-bg" x="630" y="274" width="170" height="44" rx="9"/>
+          <text class="t-sm" x="715" y="292" text-anchor="middle">Never seen: gone</text>
+          <text class="s" x="715" y="309" text-anchor="middle">deleted together at the end</text>
+
+          <rect class="bx-mem" x="830" y="198" width="150" height="120" rx="12"/>
+          <text class="cap" x="845" y="220">COST PER CHECK</text>
+          <text class="big big-new" x="845" y="256">0.98 s</text>
+          <text class="s" x="845" y="278">1.00 CPU-second</text>
+          <text class="s" x="845" y="296">1 MB moved</text>
+        </svg>
+      </div>
+      <ul class="legend" aria-label="Legend">
+        <li><span class="sw hot"></span>The new step</li>
+        <li><span class="sw cool"></span>Work that only happens when something changed</li>
+        <li><span class="sw data"></span>In memory</li>
+        <li><span class="sw disk"></span>Disk traffic</li>
+      </ul>
+      <figcaption><strong>The same check, before and after Phase 2, at 213,000 entries with nothing
+        changed.</strong> The walk is the same; what changed is everything around it. Each file is
+        inspected once instead of twice, the database hears only about real changes, and the folder
+        watches set up at start-up are kept instead of being registered all over again.</figcaption>
+    </figure>
+
+    <h3>What one full check costs</h3>
+    <figure class="fig">
+      <div class="fig-scroll">
+<svg class="dia chart" viewBox="0 0 1000 298" role="img" aria-label="Time for one full check, before and after Phase 2. 213,000 entries with nothing changed: 3.97 s before, 0.98 s after. Right after start-up: 3.25 and 1.13 s. 494,000 entries: 7.78 and 1.86 s; right after start-up 6.85 and 1.94 s.">
+<line class="grid" x1="330.0" y1="10" x2="330.0" y2="238"/>
+<text class="axis" x="330.0" y="256" text-anchor="middle">0 s</text>
+<line class="grid" x1="461.0" y1="10" x2="461.0" y2="238"/>
+<text class="axis" x="461.0" y="256" text-anchor="middle">2 s</text>
+<line class="grid" x1="591.9" y1="10" x2="591.9" y2="238"/>
+<text class="axis" x="591.9" y="256" text-anchor="middle">4 s</text>
+<line class="grid" x1="722.9" y1="10" x2="722.9" y2="238"/>
+<text class="axis" x="722.9" y="256" text-anchor="middle">6 s</text>
+<line class="grid" x1="853.8" y1="10" x2="853.8" y2="238"/>
+<text class="axis" x="853.8" y="256" text-anchor="middle">8 s</text>
+<text class="t-sm" x="312" y="32.5" text-anchor="end">213,000 entries</text>
+<text class="s" x="312" y="48.5" text-anchor="end">nothing changed</text>
+<rect class="bar-old" x="330" y="18.0" width="259.9" height="15" rx="3"/>
+<text class="val-old" x="597.9" y="30.0">3.97 s</text>
+<rect class="bar-new" x="330" y="38.0" width="64.0" height="15" rx="3"/>
+<text class="val" x="402.0" y="50.0">0.98 s</text>
+<text class="t-sm" x="312" y="89.5" text-anchor="end">213,000 entries</text>
+<text class="s" x="312" y="105.5" text-anchor="end">right after start-up</text>
+<rect class="bar-old" x="330" y="75.0" width="212.9" height="15" rx="3"/>
+<text class="val-old" x="550.9" y="87.0">3.25 s</text>
+<rect class="bar-new" x="330" y="95.0" width="74.2" height="15" rx="3"/>
+<text class="val" x="412.2" y="107.0">1.13 s</text>
+<text class="t-sm" x="312" y="146.5" text-anchor="end">494,000 entries</text>
+<text class="s" x="312" y="162.5" text-anchor="end">nothing changed</text>
+<rect class="bar-old" x="330" y="132.0" width="509.7" height="15" rx="3"/>
+<text class="val-old" x="847.7" y="144.0">7.78 s</text>
+<rect class="bar-new" x="330" y="152.0" width="121.7" height="15" rx="3"/>
+<text class="val" x="459.7" y="164.0">1.86 s</text>
+<text class="t-sm" x="312" y="203.5" text-anchor="end">494,000 entries</text>
+<text class="s" x="312" y="219.5" text-anchor="end">right after start-up</text>
+<rect class="bar-old" x="330" y="189.0" width="448.2" height="15" rx="3"/>
+<text class="val-old" x="786.2" y="201.0">6.85 s</text>
+<rect class="bar-new" x="330" y="209.0" width="127.3" height="15" rx="3"/>
+<text class="val" x="465.3" y="221.0">1.94 s</text>
+<rect class="bar-old" x="330" y="274" width="18" height="12" rx="3"/>
+<text class="lbl" x="356" y="284">Before Phase 2</text>
+<rect class="bar-new" x="456.8" y="274" width="18" height="12" rx="3"/>
+<text class="lbl" x="482.8" y="284">After Phase 2</text>
+</svg>
+      </div>
+      <figcaption><strong>Time for one full check, nothing changed.</strong> Four times faster at
+        both sizes. The goal was at most 1.0 s at 213,000 entries; 0.98 s meets it narrowly (median of
+        5 runs; another run of the same code measured 1.03 s).</figcaption>
+    </figure>
+
+    <figure class="fig">
+      <div class="fig-scroll">
+<svg class="dia chart" viewBox="0 0 1000 384" role="img" aria-label="Processor time of one full check at 213,000 entries by kind of work, before and after Phase 2: database 2.00 to 0 CPU-seconds; inspecting files 1.00 to 0.56; folder watches 0.17 to 0; listing folders 0.16 to 0.15; opening and closing folders 0.13 to 0.11; comparing with the ledger 0.01 to 0.10; everything else 0.17 to 0.07. Total 3.64 to 1.00.">
+<line class="grid" x1="330.0" y1="10" x2="330.0" y2="324"/>
+<text class="axis" x="330.0" y="342" text-anchor="middle">0 CPU-s</text>
+<line class="grid" x1="455.0" y1="10" x2="455.0" y2="324"/>
+<text class="axis" x="455.0" y="342" text-anchor="middle">0.5 CPU-s</text>
+<line class="grid" x1="580.0" y1="10" x2="580.0" y2="324"/>
+<text class="axis" x="580.0" y="342" text-anchor="middle">1 CPU-s</text>
+<line class="grid" x1="705.0" y1="10" x2="705.0" y2="324"/>
+<text class="axis" x="705.0" y="342" text-anchor="middle">1.5 CPU-s</text>
+<line class="grid" x1="830.0" y1="10" x2="830.0" y2="324"/>
+<text class="axis" x="830.0" y="342" text-anchor="middle">2 CPU-s</text>
+<text class="t-sm" x="312" y="29.0" text-anchor="end">Database work</text>
+<text class="s" x="312" y="45.0" text-anchor="end">lookups, writes, then undo</text>
+<rect class="bar-old" x="330" y="18.0" width="500.0" height="12" rx="3"/>
+<text class="val-old" x="838.0" y="27.0">2.00</text>
+<text class="val" x="338.0" y="43.0">0</text>
+<text class="t-sm" x="312" y="73.0" text-anchor="end">Inspecting files</text>
+<text class="s" x="312" y="89.0" text-anchor="end">asking Linux for each file's details</text>
+<rect class="bar-old" x="330" y="62.0" width="250.0" height="12" rx="3"/>
+<text class="val-old" x="588.0" y="71.0">1.00</text>
+<rect class="bar-new" x="330" y="78.0" width="140.0" height="12" rx="3"/>
+<text class="val" x="478.0" y="87.0">0.56</text>
+<text class="t-sm" x="312" y="117.0" text-anchor="end">Folder watches</text>
+<text class="s" x="312" y="133.0" text-anchor="end">registering 34k watches again</text>
+<rect class="bar-old" x="330" y="106.0" width="42.5" height="12" rx="3"/>
+<text class="val-old" x="380.5" y="115.0">0.17</text>
+<text class="val" x="338.0" y="131.0">0</text>
+<text class="t-sm" x="312" y="161.0" text-anchor="end">Listing folders</text>
+<text class="s" x="312" y="177.0" text-anchor="end">reading each folder's names</text>
+<rect class="bar-old" x="330" y="150.0" width="40.0" height="12" rx="3"/>
+<text class="val-old" x="378.0" y="159.0">0.16</text>
+<rect class="bar-new" x="330" y="166.0" width="37.5" height="12" rx="3"/>
+<text class="val" x="375.5" y="175.0">0.15</text>
+<text class="t-sm" x="312" y="212.0" text-anchor="end">Opening and closing folders</text>
+<rect class="bar-old" x="330" y="194.0" width="32.5" height="12" rx="3"/>
+<text class="val-old" x="370.5" y="203.0">0.13</text>
+<rect class="bar-new" x="330" y="210.0" width="27.5" height="12" rx="3"/>
+<text class="val" x="365.5" y="219.0">0.11</text>
+<text class="t-sm" x="312" y="249.0" text-anchor="end">Comparing with the ledger</text>
+<text class="s" x="312" y="265.0" text-anchor="end">new in Phase 2</text>
+<rect class="bar-old" x="330" y="238.0" width="2.5" height="12" rx="3"/>
+<text class="val-old" x="340.5" y="247.0">0.01</text>
+<rect class="bar-new" x="330" y="254.0" width="25.0" height="12" rx="3"/>
+<text class="val" x="363.0" y="263.0">0.10</text>
+<text class="t-sm" x="312" y="300.0" text-anchor="end">Everything else</text>
+<rect class="bar-old" x="330" y="282.0" width="42.5" height="12" rx="3"/>
+<text class="val-old" x="380.5" y="291.0">0.17</text>
+<rect class="bar-new" x="330" y="298.0" width="17.5" height="12" rx="3"/>
+<text class="val" x="355.5" y="307.0">0.07</text>
+<rect class="bar-old" x="330" y="360" width="18" height="12" rx="3"/>
+<text class="lbl" x="356" y="370">Before Phase 2: 3.64 CPU-s in all</text>
+<rect class="bar-new" x="574.6" y="360" width="18" height="12" rx="3"/>
+<text class="lbl" x="600.6" y="370">After Phase 2: 1.00 CPU-s in all</text>
+</svg>
+      </div>
+      <figcaption><strong>Where the processor time of one check goes (213,000 entries).</strong> The
+        database work disappeared, and inspecting files almost halved. What remains is mostly Linux
+        reading each file's details, which any check of every file has to pay. Comparing with the
+        ledger is the only new cost: 0.10 s. Measured with the project's built-in profiler.</figcaption>
+    </figure>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Per full check, 213,000 entries</th><th>Before Phase 2</th><th>After</th></tr></thead>
+        <tbody>
+          <tr><td>Rows sent to the database when nothing changed</td><td>all 213,000</td><td>0</td></tr>
+          <tr><td>Disk traffic</td><td>788 MB</td><td>1 MB</td></tr>
+          <tr><td>Calls asking Linux about a file or folder</td><td>430,257</td><td>249,809</td></tr>
+          <tr><td>Folder watches registered again</td><td>34,453</td><td>0</td></tr>
+          <tr><td>Kernel watches at the busiest moment</td><td>68,914 (double)</td><td>34,461 (steady)</td></tr>
+          <tr><td>Extra memory for the ledger</td><td>none</td><td>12.6 MB (planned: 5 MB)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <p><strong>Safe by design.</strong> If the ledger is ever missing or out of date, for example
+        after a failed save, a check falls back to the old way of comparing everything in the
+        database. That costs speed, never files. A test makes random changes to a folder tree, runs both
+        ways, and requires identical results.</p>
+    </div>
+  </section>
+
+  <!-- Health modes ────────────────────────────────────────────────────── -->
+  <section id="modes">
+    <h2><span class="num">9</span>Health modes: healthy, repairing, fallback</h2>
+    <p class="sub">Torchlight relies on Linux telling it about changes. When that works for every folder,
+      there is almost nothing to do. When it can't, Torchlight covers the gap with rescans, and
+      <code>torchlight status</code> says so.</p>
+
+    <figure class="fig">
+      <div class="fig-scroll">
+        <svg class="dia" viewBox="0 0 1000 300" role="img"
+             aria-label="Three modes. Healthy: every folder is watched, only folders whose names change are rescanned, and full checks run at start-up and hourly. Repairing: a few folders can't be watched, such as network or FUSE mounts, unreadable folders, or when the watch limit is reached; just those are rescanned every 30 seconds. Fallback: there is no watcher, or more than 256 folders can't be watched, so a full check runs every 30 seconds, about 3% of a core at 213,000 entries. A folder that can't be watched moves Healthy to Repairing; a later scan that covers it moves back. More than 256 such folders moves Repairing to Fallback. When the watcher works again, Fallback returns to Healthy.">
+          <defs>
+            <marker id="d9n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-n" d="M0 0L10 5L0 10z"/></marker>
+          </defs>
+
+          <!-- Transitions -->
+          <path class="ln" d="M230 60C230 24 435 24 435 57" marker-end="url(#d9n)"/>
+          <text class="lbl" x="332" y="20" text-anchor="middle">a folder can't be watched</text>
+          <path class="ln" d="M565 60C565 24 770 24 770 57" marker-end="url(#d9n)"/>
+          <text class="lbl" x="667" y="20" text-anchor="middle">more than 256 such folders</text>
+          <path class="ln" d="M435 196C435 232 230 232 230 199" marker-end="url(#d9n)"/>
+          <text class="lbl" x="332" y="244" text-anchor="middle">a later scan covers them</text>
+          <path class="ln" d="M835 196C835 290 150 290 150 199" marker-end="url(#d9n)"/>
+          <text class="lbl" x="492" y="292" text-anchor="middle">the watcher works again (retried every 30 s)</text>
+
+          <!-- Healthy -->
+          <rect class="bx-ok" x="20" y="60" width="290" height="136" rx="12"/>
+          <circle class="dot-ok" cx="42" cy="85" r="6"/>
+          <text class="t" x="56" y="90">Healthy</text>
+          <text class="s" x="40" y="114">Every folder is watched.</text>
+          <text class="s" x="40" y="134">Work: only folders whose names change.</text>
+          <text class="s" x="40" y="154">Full check: at start-up and hourly.</text>
+          <text class="s" x="40" y="174">This machine, almost always.</text>
+
+          <!-- Repairing -->
+          <rect class="bx-warn" x="355" y="60" width="290" height="136" rx="12"/>
+          <circle class="dot-warn" cx="377" cy="85" r="6"/>
+          <text class="t" x="391" y="90">Repairing</text>
+          <text class="s" x="375" y="114">A few folders can't be watched: network</text>
+          <text class="s" x="375" y="134">or FUSE mounts, unreadable folders, or</text>
+          <text class="s" x="375" y="154">Linux's watch limit was reached.</text>
+          <text class="s" x="375" y="174">Work: rescan just those every 30 s.</text>
+
+          <!-- Fallback -->
+          <rect class="bx-bad" x="690" y="60" width="290" height="136" rx="12"/>
+          <circle class="dot-bad" cx="712" cy="85" r="6"/>
+          <text class="t" x="726" y="90">Fallback</text>
+          <text class="s" x="710" y="114">No watcher, or more than 256 folders</text>
+          <text class="s" x="710" y="134">that can't be watched.</text>
+          <text class="s" x="710" y="154">Work: a full check every 30 s.</text>
+          <text class="s" x="710" y="174">About 3% of a core at 213k (was 13%).</text>
+        </svg>
+      </div>
+      <figcaption><strong>The three modes and what moves Torchlight between them.</strong> Network and
+        FUSE mounts always stay in the repair set, because other machines can change their files
+        without this computer hearing about it. Phase 2 made the fallback mode four times cheaper,
+        since each of its full checks now costs about 1 processor-second. It also made fallback less
+        likely: full checks no longer double the number of watches, which could hit Linux's per-user
+        watch limit on a big home folder.</figcaption>
     </figure>
 
     <h3>Safety nets</h3>
     <div class="cards">
       <div class="card">
-        <span class="tag cool">startup</span>
+        <span class="tag cool">start-up</span>
         <p>The daemon loads the saved catalog from SQLite and starts answering right away. A full
-          rescan then runs in the background to catch anything that changed while it was off.</p>
+          check then runs in the background to catch anything that changed while it was off.</p>
       </div>
       <div class="card">
         <span class="tag cool">every 30 seconds</span>
@@ -903,15 +1537,15 @@
       </div>
       <div class="card">
         <span class="tag cool">every hour</span>
-        <p>A backstop full rescan catches anything the watcher might have missed. Change it with
+        <p>A backstop full check catches anything the watcher might have missed. Change it with
           <code>--repair-ms</code>; <code>0</code> turns it off.</p>
       </div>
       <div class="card">
         <span class="tag cool">something shifted</span>
         <p>A mount appearing or going away at, inside or above an indexed folder, an inotify
-          overflow, or <code>torchlight reconcile</code> triggers a full rescan at once. Mounts
-          elsewhere, such as an hourly backup check, are ignored. A root that comes back online starts one at the next
-          30-second check.</p>
+          overflow, or <code>torchlight reconcile</code> triggers a full check at once. Mounts
+          elsewhere, such as an hourly backup check, are ignored. A root that comes back online starts
+          one at the next 30-second check.</p>
       </div>
       <div class="card">
         <span class="tag cool">big changes</span>
@@ -922,24 +1556,21 @@
       </div>
       <div class="card">
         <span class="tag cool">watcher trouble</span>
-        <p>If inotify cannot be set up, Torchlight falls back to a full rescan every 30 seconds, and
-          <code>torchlight status</code> reports the reduced coverage.</p>
+        <p>If inotify cannot be set up, Torchlight falls back to a full check every 30 seconds, and
+          <code>torchlight status</code> reports the reduced coverage. Setting it up is retried on
+          the same schedule.</p>
       </div>
     </div>
     <p><code>torchlight status</code> shows how many folders are in the repair set
-      (<code>repair_scopes</code>) and why the last full rescan ran (<code>last_full_reason</code>:
-      <code>startup</code>, <code>reconcile</code>, <code>overflow</code>, <code>mount</code>,
-      <code>backstop</code> and a few rarer ones).</p>
-    <p>M7 measured 0.09% idle CPU. The optimization that rebuilt after large deletions was
-      <a href="m7-plan.md#deletion-compaction-removed-2026-10-11">removed after review</a>:
-      it saved 9 MiB in the measured event workload but delayed deletion updates to about
-      3 seconds. Deletions are incremental again, and the 10% post-event memory target is
-      open. Metadata found during a scan is saved without publishing a new search view.</p>
+      (<code>repair_scopes</code>), whether coverage is reduced (<code>degraded</code>), and why the
+      last full check ran (<code>last_full_reason</code>: <code>startup</code>,
+      <code>reconcile</code>, <code>overflow</code>, <code>mount</code>, <code>backstop</code> and a
+      few rarer ones).</p>
   </section>
 
-  <!-- 6 ─────────────────────────────────────────────────────────────── -->
+  <!-- Snapshots ───────────────────────────────────────────────────────── -->
   <section id="snapshots">
-    <h2><span class="num">6</span>Snapshots: why searches never wait</h2>
+    <h2><span class="num">10</span>Snapshots: why searches never wait</h2>
     <p class="sub">The search side and the indexing side share data without blocking each other. The
       trick is that the index is never changed in place.</p>
 
@@ -989,8 +1620,9 @@
       work the same way, with their own snapshots from the desktop worker.</p>
     <p>When an old base is finally freed, or a full rescan is done with its list of every path, the
       daemon also hands that memory back to the system. Without this, the C library keeps freed memory
-      for later and the daemon stays at its peak size: at 213k files it used to sit at about 410 MB
-      after a big burst of changes, and now settles back near its steady 170 MB.</p>
+      for later and the daemon stays at its peak size: at 213k files it used to sit at about 434 MB
+      after a burst of changes, and now settles at about 193 MB, close to its steady 171 MB (see the
+      memory chart in <a href="#performance">Performance</a>).</p>
 
     <figure class="fig">
       <div class="fig-scroll">
@@ -1034,9 +1666,9 @@
     </figure>
   </section>
 
-  <!-- 7 ─────────────────────────────────────────────────────────────── -->
+  <!-- Where data lives ────────────────────────────────────────────────── -->
   <section id="data">
-    <h2><span class="num">7</span>Where data lives</h2>
+    <h2><span class="num">11</span>Where data lives</h2>
     <p class="sub">SQLite is the lasting copy. The in-memory index is rebuilt from it when the daemon
       starts, and searches only ever read memory.</p>
 
@@ -1050,6 +1682,9 @@
             <code>.desktop</code> entries.</li>
           <li><strong>Usage summary:</strong> how often and how recently you opened things, and which
             typed query led to which open. Capped in size.</li>
+          <li><strong>Ledger:</strong> a fingerprint of every saved row, about 60 bytes each
+            (12.6 MB at 213,000 entries). Full checks compare against it instead of the database.</li>
+          <li><strong>Folder watches:</strong> one per indexed folder, 34,453 here, about 4 to 5 MB.</li>
           <li><strong>Client queues:</strong> a small, bounded queue per connected client.</li>
         </ul>
       </div>
@@ -1067,6 +1702,19 @@
       </div>
     </div>
 
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>The reference home folder</th><th>Size</th></tr></thead>
+        <tbody>
+          <tr><td>Indexed entries</td><td>about 213,000: 179,000 files and 34,000 folders</td></tr>
+          <tr><td>Installed apps and settings panels</td><td>167 <code>.desktop</code> entries</td></tr>
+          <tr><td>Folder watches</td><td>34,453 (Linux allows this user 249,237, shared with other programs)</td></tr>
+          <tr><td>Database on disk</td><td>about 123 MB</td></tr>
+          <tr><td>Daemon memory</td><td>171 MB steady, of which the ledger is 12.6 MB</td></tr>
+        </tbody>
+      </table>
+    </div>
+
     <div class="note">
       <p><strong>Privacy:</strong> only names and paths are stored, never file contents. History stays
         on your machine, is kept for 30 days by default (<code>--history-days</code>), and can be turned
@@ -1076,9 +1724,239 @@
     </div>
   </section>
 
-  <!-- 8 ─────────────────────────────────────────────────────────────── -->
+  <!-- Performance ─────────────────────────────────────────────────────── -->
+  <section id="performance">
+    <h2><span class="num">12</span>How well it performs</h2>
+    <p class="sub">These charts come from the project's benchmarks on the reference machine. Bars are
+      drawn to scale, and every number is a measurement, not an estimate.</p>
+
+    <h3>Typing stays fast as the library grows</h3>
+    <figure class="fig">
+      <div class="fig-scroll">
+<svg class="dia chart" viewBox="0 0 1000 263" role="img" aria-label="Time to answer one keystroke. 50,000 entries: half within 0.05 ms, 95 of 100 within 0.46 ms. 213,000 entries through the real daemon and socket: 0.74 and 2.80 ms. 500,000 entries: 0.72 and 3.74 ms. The goal is 5 ms for 95 of 100 keystrokes; one screen refresh takes 16.7 ms.">
+<line class="grid" x1="330.0" y1="32" x2="330.0" y2="203"/>
+<text class="axis" x="330.0" y="221" text-anchor="middle">0 ms</text>
+<line class="grid" x1="452.2" y1="32" x2="452.2" y2="203"/>
+<text class="axis" x="452.2" y="221" text-anchor="middle">4 ms</text>
+<line class="grid" x1="574.4" y1="32" x2="574.4" y2="203"/>
+<text class="axis" x="574.4" y="221" text-anchor="middle">8 ms</text>
+<line class="grid" x1="696.7" y1="32" x2="696.7" y2="203"/>
+<text class="axis" x="696.7" y="221" text-anchor="middle">12 ms</text>
+<line class="grid" x1="818.9" y1="32" x2="818.9" y2="203"/>
+<text class="axis" x="818.9" y="221" text-anchor="middle">16 ms</text>
+<line class="target" x1="482.8" y1="26" x2="482.8" y2="203"/>
+<text class="lbl-hot" x="488.8" y="22" text-anchor="start">goal: 5 ms</text>
+<line class="target" x1="840.3" y1="26" x2="840.3" y2="203"/>
+<text class="lbl-hot" x="834.3" y="22" text-anchor="end">one screen refresh: 16.7 ms</text>
+<text class="t-sm" x="312" y="54.5" text-anchor="end">50,000 entries</text>
+<text class="s" x="312" y="70.5" text-anchor="end">search engine alone</text>
+<rect class="bar-soft" x="330" y="40.0" width="2.0" height="15" rx="3"/>
+<text class="val" x="340.0" y="52.0">0.05 ms</text>
+<rect class="bar-new" x="330" y="60.0" width="14.1" height="15" rx="3"/>
+<text class="val" x="352.1" y="72.0">0.46 ms</text>
+<text class="t-sm" x="312" y="111.5" text-anchor="end">213,000 entries</text>
+<text class="s" x="312" y="127.5" text-anchor="end">real daemon, with the socket trip</text>
+<rect class="bar-soft" x="330" y="97.0" width="22.7" height="15" rx="3"/>
+<text class="val" x="360.7" y="109.0">0.74 ms</text>
+<rect class="bar-new" x="330" y="117.0" width="85.5" height="15" rx="3"/>
+<text class="val" x="423.5" y="129.0">2.80 ms</text>
+<text class="t-sm" x="312" y="168.5" text-anchor="end">500,000 entries</text>
+<text class="s" x="312" y="184.5" text-anchor="end">search engine alone</text>
+<rect class="bar-soft" x="330" y="154.0" width="21.9" height="15" rx="3"/>
+<text class="val" x="359.9" y="166.0">0.72 ms</text>
+<rect class="bar-new" x="330" y="174.0" width="114.3" height="15" rx="3"/>
+<text class="val" x="452.3" y="186.0">3.74 ms</text>
+<rect class="bar-soft" x="330" y="239" width="18" height="12" rx="3"/>
+<text class="lbl" x="356" y="249">Typical keystroke (half are faster)</text>
+<rect class="bar-new" x="587.0" y="239" width="18" height="12" rx="3"/>
+<text class="lbl" x="613.0" y="249">95 of 100 keystrokes are faster</text>
+</svg>
+      </div>
+      <figcaption><strong>Time to answer one keystroke.</strong> From about 12,000 simulated keystrokes
+        per size (900 real round trips at 213,000 entries). Even at half a million entries, 95 of 100
+        keystrokes are answered in under 4 ms, a quarter of one screen refresh; 99 of 100 in under
+        6.5 ms. Ten times more entries costs about eight times more time, which is why the 5 ms goal
+        is checked at half a million.</figcaption>
+    </figure>
+
+    <h3>Changes show up quickly</h3>
+    <figure class="fig">
+      <div class="fig-scroll">
+<svg class="dia chart" viewBox="0 0 1000 263" role="img" aria-label="Time from a change on disk until search shows it, 213,000 entries: creating or deleting a file 0.11 s in a small folder and 0.14 s in a 2,838-entry folder; deleting a 22,000-entry tree 0.25 s; renaming it 2.2 s; 20,000 new files 3.0 s, against 1.7 s before Phase 2.">
+<line class="grid" x1="330.0" y1="32" x2="330.0" y2="233"/>
+<text class="axis" x="330.0" y="251" text-anchor="middle">0 s</text>
+<line class="grid" x1="408.6" y1="32" x2="408.6" y2="233"/>
+<text class="axis" x="408.6" y="251" text-anchor="middle">0.5 s</text>
+<line class="grid" x1="487.1" y1="32" x2="487.1" y2="233"/>
+<text class="axis" x="487.1" y="251" text-anchor="middle">1 s</text>
+<line class="grid" x1="565.7" y1="32" x2="565.7" y2="233"/>
+<text class="axis" x="565.7" y="251" text-anchor="middle">1.5 s</text>
+<line class="grid" x1="644.3" y1="32" x2="644.3" y2="233"/>
+<text class="axis" x="644.3" y="251" text-anchor="middle">2 s</text>
+<line class="grid" x1="722.9" y1="32" x2="722.9" y2="233"/>
+<text class="axis" x="722.9" y="251" text-anchor="middle">2.5 s</text>
+<line class="grid" x1="801.4" y1="32" x2="801.4" y2="233"/>
+<text class="axis" x="801.4" y="251" text-anchor="middle">3 s</text>
+<line class="grid" x1="880.0" y1="32" x2="880.0" y2="233"/>
+<text class="axis" x="880.0" y="251" text-anchor="middle">3.5 s</text>
+<line class="target" x1="345.7" y1="26" x2="345.7" y2="233"/>
+<text class="lbl-hot" x="351.7" y="22" text-anchor="start">0.1 s feels instant</text>
+<text class="t-sm" x="312" y="44.5" text-anchor="end">Create or delete a file</text>
+<text class="s" x="312" y="60.5" text-anchor="end">in a folder with 3 entries</text>
+<rect class="bar-new" x="330" y="40.0" width="17.0" height="15" rx="3"/>
+<text class="val" x="355.0" y="52.0">0.11 s</text>
+<text class="t-sm" x="312" y="85.5" text-anchor="end">Create or delete a file</text>
+<text class="s" x="312" y="101.5" text-anchor="end">in a folder with 2,838 entries</text>
+<rect class="bar-new" x="330" y="81.0" width="21.8" height="15" rx="3"/>
+<text class="val" x="359.8" y="93.0">0.14 s</text>
+<text class="t-sm" x="312" y="126.5" text-anchor="end">Delete a folder tree</text>
+<text class="s" x="312" y="142.5" text-anchor="end">22,000 entries at once</text>
+<rect class="bar-new" x="330" y="122.0" width="38.7" height="15" rx="3"/>
+<text class="val" x="376.7" y="134.0">0.25 s</text>
+<text class="t-sm" x="312" y="167.5" text-anchor="end">Rename that folder tree</text>
+<text class="s" x="312" y="183.5" text-anchor="end">every path inside it changes</text>
+<rect class="bar-new" x="330" y="163.0" width="340.4" height="15" rx="3"/>
+<text class="val" x="678.4" y="175.0">2.2 s</text>
+<text class="t-sm" x="312" y="208.5" text-anchor="end">20,000 new files</text>
+<text class="s" x="312" y="224.5" text-anchor="end">written in 0.7 s · open red flag</text>
+<rect class="bar-bad" x="330" y="204.0" width="471.7" height="15" rx="3"/>
+<text class="val" x="809.7" y="216.0">3.0 s</text>
+<line class="mark" x1="592.7" y1="199.0" x2="592.7" y2="224.0"/>
+<text class="s" x="592.7" y="237.0" text-anchor="middle">before Phase 2: 1.7 s</text>
+</svg>
+      </div>
+      <figcaption><strong>From a change on disk to a search result (typical times, 213,000
+        entries).</strong> Small changes take about a tenth of a second, most of it the deliberate
+        100 ms wait that groups bursts. Renaming a big tree changes every path inside it, so the index
+        is rebuilt. The 20,000-file burst became 1.3 s slower in Phase 2 and is an open item: the
+        faster check now catches the burst halfway through, and the second half needs a second full
+        rebuild.</figcaption>
+    </figure>
+
+    <h3>The daemon stays quiet</h3>
+    <figure class="fig">
+      <div class="fig-scroll">
+<svg class="dia chart" viewBox="0 0 1000 210" role="img" aria-label="Background processor use while nothing happens, as a share of one core: 8.7% before M7, 1.58% after Phase 1 on a real desktop before the app-list fix, 0.15% when Phase 1 was complete, 0.14% after Phase 2. The goal is at most 0.2%.">
+<line class="grid" x1="330.0" y1="32" x2="330.0" y2="180"/>
+<text class="axis" x="330.0" y="198" text-anchor="middle">0%</text>
+<line class="grid" x1="440.0" y1="32" x2="440.0" y2="180"/>
+<text class="axis" x="440.0" y="198" text-anchor="middle">2%</text>
+<line class="grid" x1="550.0" y1="32" x2="550.0" y2="180"/>
+<text class="axis" x="550.0" y="198" text-anchor="middle">4%</text>
+<line class="grid" x1="660.0" y1="32" x2="660.0" y2="180"/>
+<text class="axis" x="660.0" y="198" text-anchor="middle">6%</text>
+<line class="grid" x1="770.0" y1="32" x2="770.0" y2="180"/>
+<text class="axis" x="770.0" y="198" text-anchor="middle">8%</text>
+<line class="grid" x1="880.0" y1="32" x2="880.0" y2="180"/>
+<text class="axis" x="880.0" y="198" text-anchor="middle">10%</text>
+<line class="target" x1="341.0" y1="26" x2="341.0" y2="180"/>
+<text class="lbl-hot" x="347.0" y="22" text-anchor="start">goal: at most 0.2%</text>
+<text class="t-sm" x="312" y="44.5" text-anchor="end">Before M7 (10 Oct)</text>
+<text class="s" x="312" y="60.5" text-anchor="end">full check every 30 seconds</text>
+<rect class="bar-old" x="330" y="40.0" width="478.5" height="15" rx="3"/>
+<text class="val-old" x="816.5" y="52.0">8.7%</text>
+<text class="t-sm" x="312" y="81.5" text-anchor="end">Phase 1, real desktop</text>
+<text class="s" x="312" y="97.5" text-anchor="end">app list re-read every second</text>
+<rect class="bar-old" x="330" y="77.0" width="86.9" height="15" rx="3"/>
+<text class="val-old" x="424.9" y="89.0">1.58%</text>
+<text class="t-sm" x="312" y="125.5" text-anchor="end">Phase 1 complete (11 Oct)</text>
+<rect class="bar-new" x="330" y="114.0" width="8.2" height="15" rx="3"/>
+<text class="val" x="346.2" y="126.0">0.15%</text>
+<text class="t-sm" x="312" y="162.5" text-anchor="end">Phase 2, today</text>
+<rect class="bar-new" x="330" y="151.0" width="7.7" height="15" rx="3"/>
+<text class="val" x="345.7" y="163.0">0.14%</text>
+</svg>
+      </div>
+      <figcaption><strong>Background processor use while nothing happens, as a share of one
+        core.</strong> Before M7, a full check every 30 seconds cost 8.7%; that benchmark did not yet
+        include the installed apps, while the later bars do. Phase 1 made checks happen only for a
+        reason, and a review on a real desktop found the app list being re-read every second (1.58%)
+        and fixed it. On the live desktop, where real files keep changing, the figure is 0.25 to
+        0.34%; see the open items below.</figcaption>
+    </figure>
+
+    <h3>Memory comes back after big changes</h3>
+    <figure class="fig">
+      <div class="fig-scroll">
+<svg class="dia chart" viewBox="0 0 1000 241" role="img" aria-label="Daemon memory at 213,000 entries, before M7 and today. Steady: 232 MB before, 171 MB today. Peak while rebuilding after big changes: 584 and 385 MB. After the changes settle: 434 and 193 MB.">
+<line class="grid" x1="330.0" y1="10" x2="330.0" y2="181"/>
+<text class="axis" x="330.0" y="199" text-anchor="middle">0 MB</text>
+<line class="grid" x1="415.9" y1="10" x2="415.9" y2="181"/>
+<text class="axis" x="415.9" y="199" text-anchor="middle">100 MB</text>
+<line class="grid" x1="501.9" y1="10" x2="501.9" y2="181"/>
+<text class="axis" x="501.9" y="199" text-anchor="middle">200 MB</text>
+<line class="grid" x1="587.8" y1="10" x2="587.8" y2="181"/>
+<text class="axis" x="587.8" y="199" text-anchor="middle">300 MB</text>
+<line class="grid" x1="673.8" y1="10" x2="673.8" y2="181"/>
+<text class="axis" x="673.8" y="199" text-anchor="middle">400 MB</text>
+<line class="grid" x1="759.7" y1="10" x2="759.7" y2="181"/>
+<text class="axis" x="759.7" y="199" text-anchor="middle">500 MB</text>
+<line class="grid" x1="845.6" y1="10" x2="845.6" y2="181"/>
+<text class="axis" x="845.6" y="199" text-anchor="middle">600 MB</text>
+<text class="t-sm" x="312" y="32.5" text-anchor="end">Steady</text>
+<text class="s" x="312" y="48.5" text-anchor="end">nothing happening</text>
+<rect class="bar-old" x="330" y="18.0" width="199.4" height="15" rx="3"/>
+<text class="val-old" x="537.4" y="30.0">232 MB</text>
+<rect class="bar-new" x="330" y="38.0" width="147.0" height="15" rx="3"/>
+<text class="val" x="485.0" y="50.0">171 MB</text>
+<text class="t-sm" x="312" y="89.5" text-anchor="end">Peak</text>
+<text class="s" x="312" y="105.5" text-anchor="end">while rebuilding after big changes</text>
+<rect class="bar-old" x="330" y="75.0" width="501.9" height="15" rx="3"/>
+<text class="val-old" x="839.9" y="87.0">584 MB</text>
+<rect class="bar-new" x="330" y="95.0" width="330.9" height="15" rx="3"/>
+<text class="val" x="668.9" y="107.0">385 MB</text>
+<text class="t-sm" x="312" y="146.5" text-anchor="end">Afterwards</text>
+<text class="s" x="312" y="162.5" text-anchor="end">once the changes settle</text>
+<rect class="bar-old" x="330" y="132.0" width="373.0" height="15" rx="3"/>
+<text class="val-old" x="711.0" y="144.0">434 MB</text>
+<rect class="bar-new" x="330" y="152.0" width="165.9" height="15" rx="3"/>
+<text class="val" x="503.9" y="164.0">193 MB</text>
+<rect class="bar-old" x="330" y="217" width="18" height="12" rx="3"/>
+<text class="lbl" x="356" y="227">Before M7 (10 Oct)</text>
+<rect class="bar-new" x="481.6" y="217" width="18" height="12" rx="3"/>
+<text class="lbl" x="507.6" y="227">Today (M7 Phase 2)</text>
+</svg>
+      </div>
+      <figcaption><strong>Daemon memory at 213,000 entries.</strong> Big changes need a temporary
+        rebuild of the index, so memory peaks for a few seconds. Before M7 the C library kept that
+        freed memory, and the daemon stayed at 434 MB. Now Torchlight hands it back, and memory
+        settles at 193 MB. The rest of the gap to steady is the deleted entries a later rebuild
+        removes. Before M7 was measured without the installed apps or history, today with
+        both.</figcaption>
+    </figure>
+
+    <h3>Open items</h3>
+    <p>The <a href="reports/m7-phase2-health-report.html">Phase 2 health report</a> lists every
+      measurement with its reference range. Three results are outside their range, and three sit at
+      the edge:</p>
+    <div class="flags">
+      <div class="flag-item">
+        <h3>A burst of 20,000 new files shows up 1.3 s later</h3>
+        <p>3.0 s instead of 1.7 s (median of 7 runs). Likely fix: wait for a burst of changes to
+          settle before rescanning.</p>
+      </div>
+      <div class="flag-item">
+        <h3>Search is ready 0.2 s later after a restart</h3>
+        <p>1.52 s instead of 1.33 s, because loading now also fills the ledger. Likely fix: start
+          answering before the load finishes, or fill the ledger in the background.</p>
+      </div>
+      <div class="flag-item">
+        <h3>The live desktop uses 0.34% of a core, above the 0.2% goal</h3>
+        <p>Every rescan of the home folder itself costs about 0.1 s of database work. This cost is
+          older than Phase 2; the benchmark copy has no such activity, so it reads 0.14%.</p>
+      </div>
+      <div class="flag-item watch">
+        <h3>At the edge: the 1 s target and two memory limits</h3>
+        <p>A full check takes 0.98 s against 1.0 s; memory after a rebuild is +9.9% against 10%;
+          freed memory still held after big changes is 5 MB against a 5 MB limit. The ledger is
+          12.6 MB, against the 5 MB the plan expected.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Threads ─────────────────────────────────────────────────────────── -->
   <section id="threads">
-    <h2><span class="num">8</span>Who does what: the threads</h2>
+    <h2><span class="num">13</span>Who does what: the threads</h2>
     <p class="sub">Each slow job has its own thread, so nothing slow sits in front of a keystroke.</p>
 
     <div class="table-wrap">
@@ -1101,10 +1979,10 @@
             <td>Help the search thread score very large batches in parallel on big catalogs.</td>
             <td>Anything else</td></tr>
           <tr><td>Indexing thread</td><td><code>torchlightd</code></td>
-            <td>Watches folders (inotify) and the mount table, rescans only folders whose names changed (plus the repair set), builds and publishes new file snapshots, hands freed memory back.</td>
+            <td>Watches folders (inotify) and the mount table, rescans only folders whose names changed (plus the repair set), runs full checks against the ledger, builds and publishes new file snapshots, hands freed memory back.</td>
             <td>Hold the database write lock</td></tr>
           <tr><td>Persistence thread</td><td><code>torchlightd</code></td>
-            <td>The only SQLite writer: catalog batches, history, retention, and the usage load at startup.</td>
+            <td>The only SQLite writer: catalog batches (only real changes), history, retention, and the usage load at startup.</td>
             <td>Scan or build indexes</td></tr>
           <tr><td>Desktop worker</td><td><code>torchlightd</code></td>
             <td>Reads installed <code>.desktop</code> entries and publishes the apps &amp; settings snapshot.</td>
@@ -1117,9 +1995,9 @@
     </div>
   </section>
 
-  <!-- 9 ─────────────────────────────────────────────────────────────── -->
+  <!-- Extras ──────────────────────────────────────────────────────────── -->
   <section id="extras">
-    <h2><span class="num">9</span>Extras around the core</h2>
+    <h2><span class="num">14</span>Extras around the core</h2>
     <div class="cards">
       <div class="card">
         <span class="tag hot">X11 only</span>
@@ -1145,9 +2023,9 @@
     </div>
   </section>
 
-  <!-- 10 ────────────────────────────────────────────────────────────── -->
+  <!-- Code map ────────────────────────────────────────────────────────── -->
   <section id="code">
-    <h2><span class="num">10</span>Code map</h2>
+    <h2><span class="num">15</span>Code map</h2>
     <p class="sub">The C code is split into layers. A layer may only use the layers below it, which
       keeps every module testable on its own.</p>
 
@@ -1176,6 +2054,7 @@
           <span class="chip key">daemon <span class="desc">· IPC + search threads</span></span>
           <span class="chip key">writer <span class="desc">· indexing + persistence</span></span>
           <span class="chip">delta <span class="desc">· changed entries</span></span>
+          <span class="chip">ledger <span class="desc">· saved-row fingerprints</span></span>
           <span class="chip">personal <span class="desc">· usage boosts</span></span>
           <span class="chip">semantic <span class="desc">· optional model</span></span>
         </div>
@@ -1191,7 +2070,7 @@
           <div class="group"><span class="group-name">index (search engine)</span>
             <div class="chips"><span class="chip">tokenize</span><span class="chip">dirtree</span><span class="chip">prefix</span><span class="chip">subseq</span><span class="chip">trigram</span><span class="chip">typo</span><span class="chip">fuzzy</span><span class="chip key">lexical</span><span class="chip key">catalog</span><span class="chip">desktop</span><span class="chip">usage</span><span class="chip">rank</span><span class="chip">embed</span><span class="chip">vector</span><span class="chip">potion</span></div></div>
           <div class="group"><span class="group-name">fs</span>
-            <div class="chips"><span class="chip">crawl</span><span class="chip">watch</span></div></div>
+            <div class="chips"><span class="chip">crawl</span><span class="chip">watch</span><span class="chip">mounts</span></div></div>
           <div class="group"><span class="group-name">storage</span>
             <div class="chips"><span class="chip key">store <span class="desc">· the only SQL</span></span></div></div>
           <div class="group"><span class="group-name">ipc</span>
@@ -1212,9 +2091,9 @@
       offline by <code>make</code> and called through its C interface.</p>
   </section>
 
-  <!-- 11 ────────────────────────────────────────────────────────────── -->
+  <!-- Words ───────────────────────────────────────────────────────────── -->
   <section id="words">
-    <h2><span class="num">11</span>Words you'll see</h2>
+    <h2><span class="num">16</span>Words you'll see</h2>
     <dl class="gloss">
       <dt>Daemon</dt><dd>A program that runs in the background without a window. Here, <code>torchlightd</code>.</dd>
       <dt>Unix socket</dt><dd>A private connection between programs on the same computer, opened like a file.</dd>
@@ -1228,7 +2107,18 @@
       <dt>Trigram</dt><dd>A three-letter piece of a name, like <code>rep</code>, <code>epo</code>, <code>por</code> in <code>report</code>.</dd>
       <dt>inotify</dt><dd>The Linux feature that tells a program when files in a watched folder change.</dd>
       <dt>Repair set</dt><dd>Folders inotify can't keep track of (not watchable, not readable, or on a network or FUSE mount). They are rescanned every 30 seconds.</dd>
-      <dt>Backstop</dt><dd>The hourly full rescan of every root that catches anything the watcher missed.</dd>
+      <dt>Backstop</dt><dd>The hourly full check of every root that catches anything the watcher missed.</dd>
+      <dt>Full check</dt><dd>Walking every indexed folder and comparing what is on disk with what is saved. Also called a full scan or full rescan.</dd>
+      <dt>Folder rescan</dt><dd>Re-reading just the one folder where a name changed. Most updates are this cheap kind.</dd>
+      <dt>Ledger</dt><dd>Torchlight's in-memory checklist of what the database holds: one fingerprint per saved row. It lets a full check skip unchanged files without asking the database.</dd>
+      <dt>Signature</dt><dd>A short number computed from a row's saved details (folder or file, size, modification time, identity). Equal signatures mean nothing changed.</dd>
+      <dt>Watch</dt><dd>A request to inotify to report changes in one folder. Torchlight holds one per indexed folder.</dd>
+      <dt>Overflow</dt><dd>inotify dropped change notices because too many arrived at once. Torchlight answers with a full check.</dd>
+      <dt>Fallback</dt><dd>The mode where changes can't be watched reliably, so a full check runs every 30 seconds. Status calls it degraded coverage.</dd>
+      <dt>CPU-second</dt><dd>One second of work by one processor core. “0.14% of a core” means 0.0014 CPU-seconds of work every second.</dd>
+      <dt>p50, p95, p99</dt><dd>Sort 100 measurements from fast to slow: p50 is the 50th (the typical one), p95 the 95th and p99 the 99th. “p95 is 3.7 ms” means 95 of 100 were that fast or faster.</dd>
+      <dt>MB</dt><dd>Megabyte. Memory and disk figures are measured in MiB (1,048,576 bytes) and written as MB, as in the project's other docs.</dd>
+      <dt>Steady and peak memory</dt><dd>Steady is what the daemon occupies while nothing happens; peak is the most it reaches, usually during a rebuild.</dd>
       <dt>Frecency</dt><dd>A score that mixes how <em>fre</em>quently and how re<em>cently</em> you opened something.</dd>
       <dt>Resolve</dt><dd>Checking a result's id against the current index right before opening it.</dd>
     </dl>
