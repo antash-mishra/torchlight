@@ -120,6 +120,11 @@ the process allocator policy in `main`, the only process-wide state. See
 [ADR 0038](../../adr/0038-repair-scans-and-metadata-events.md) and
 [ADR 0039](../../adr/0039-returning-freed-memory.md).
 
+`indexing.compaction_pending` is true while a delta published past its bound
+waits for its deferred full rebuild, and `indexing.deferred_compactions` counts
+those rebuilds (also counted in `full_builds`); `active` is true while one runs
+([ADR 0045](../../adr/0045-settled-bursts-and-deferred-compaction.md)).
+
 `indexing.mount_changes` counts mount-table changes the writer examined; only
 those at, below or above a root show up as `last_full_reason: mount`
 ([ADR 0043](../../adr/0043-mount-changes-near-roots-and-watch-slot-reuse.md)).

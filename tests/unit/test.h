@@ -101,6 +101,8 @@ void test_catalog(void);
 void test_delta(void);
 /** Run transactional catalog checks, aborting on failure. */
 void test_store(void);
+/** Compare children prunes with a brute-force model over random trees. */
+void test_store_prune(void);
 /** Run filesystem incarnation, descendant retirement and fallback identity checks. */
 void test_identity(void);
 /** Run physical crawler checks, aborting on failure. */

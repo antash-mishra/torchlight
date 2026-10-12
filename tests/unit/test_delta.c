@@ -175,8 +175,29 @@ static void mixed_changes(void) {
     CHECK(catalog_reclaim(fixture.catalog) == 1);
     finish(&fixture);
 }
+/* M7 Phase 3: with slack, a delta grows past its bound (reported as
+ * oversized, so the writer schedules a compaction) up to slack times the
+ * bound; beyond that only a full rebuild can publish, which clears it. */
+static void slack_defers_compaction(void) {
+    struct fixture fixture;
+    start(&fixture);
+    fixture.limits.slack = 2;
+    const char *added[] = {"/d/one", "/d/two", "/d/three", "/d/four"};
+    for (size_t i = 0; i < sizeof(added) / sizeof(added[0]); i++) {
+        add_entry(&fixture, added[i]);
+        accept(&fixture, 0, 6 + i);
+        CHECK(delta_oversized(fixture.delta, &fixture.limits) == (i + 1 > 2));
+    }
+    add_entry(&fixture, "/d/five");
+    needs_compaction(&fixture);
+    full_build(&fixture);
+    CHECK(!delta_oversized(fixture.delta, &fixture.limits));
+    CHECK(!delta_oversized(NULL, &fixture.limits) && !delta_oversized(fixture.delta, NULL));
+    finish(&fixture);
+}
 void test_delta(void) {
     batch_deletions();
     accumulated_deletions();
     mixed_changes();
+    slack_defers_compaction();
 }

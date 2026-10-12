@@ -51,6 +51,22 @@
 #define WRITER_DELTA_MIN 4096
 #define WRITER_DELTA_DIVISOR 32
 #define WRITER_TRACKED_CHANGES 131072
+/* A filesystem event schedules its pass WRITER_COALESCE_MS after the latest
+ * event, so a burst is scanned once it pauses instead of halfway through, but
+ * never later than WRITER_SETTLE_MS after the first event since the last pass
+ * began. */
+#define WRITER_SETTLE_MS 1000
+/* Settling stops once this many scopes are pending: past WRITER_SCOPE_CAPACITY
+ * a pass would scan every root, so a mass deletion (one scope per removed
+ * directory) is rescanned in scoped passes as it arrives. */
+#define WRITER_SETTLE_SCOPES (WRITER_SCOPE_CAPACITY / 2)
+/* When a pass would push the delta past its bound, it may grow to
+ * WRITER_DELTA_SLACK times the bound and be published at once (a 20k-file
+ * burst then builds a delta in a tenth of a second instead of the whole
+ * engine); the full rebuild that compacts it runs once no event is pending,
+ * or WRITER_COMPACT_DEFER_MS after it became due if events keep coming. */
+#define WRITER_DELTA_SLACK 4
+#define WRITER_COMPACT_DEFER_MS 2000
 struct history {
     tl_ipc_request request;
     char search_id[IPC_HISTORY_ID_BYTES + 1];
@@ -153,7 +169,18 @@ struct tl_writer {
      * freed; release_memory runs at release_due. */
     uint64_t release_due;
     uint64_t counted_unavailable;
-    uint64_t due;
+    /* Pass scheduling: dirty asks for a pass at due, the earlier of
+     * request_due (reconcile, overflow, timers and retries keep the earliest
+     * time asked for) and event_due (slid by each filesystem event, within
+     * WRITER_SETTLE_MS of settle_start, the first event since the last pass
+     * began). Both are unset (UINT64_MAX) while nothing is pending. */
+    uint64_t due, request_due, event_due, settle_start;
+    bool settling;
+    /* Deferred compaction: the published delta is past its bound. The full
+     * rebuild runs once no pass is pending (not before compact_after, which
+     * spaces retries), or at compact_due regardless. */
+    bool compact_pending;
+    uint64_t compact_after, compact_due;
     uint64_t shutdown_due;
     /* Mount-table descriptor polled for POLLPRI, -1 without one, and the
      * table read after the last signal (NULL: unknown, so the next signal
@@ -332,8 +359,12 @@ static void reclaim(tl_writer *writer) {
     if (catalog_reclaim(writer->options.catalog) != 0)
         writer->release_pending = true;
 }
-static tl_status publish(tl_writer *writer, tl_catalog_snapshot **snapshot) {
+/* compacted: the snapshot rebuilds the active view's committed catalog (a
+ * deferred compaction), so its catalog_gen may equal the active one. */
+static tl_status publish(tl_writer *writer, tl_catalog_snapshot **snapshot, bool compacted) {
     reclaim(writer);
+    if (compacted)
+        return catalog_publish_compacted(writer->options.catalog, snapshot);
     if (writer->options.publish != NULL)
         return writer->options.publish(writer->options.publish_context, writer->options.catalog,
                                        snapshot);
@@ -341,24 +372,49 @@ static tl_status publish(tl_writer *writer, tl_catalog_snapshot **snapshot) {
 }
 /* Indexing thread: rebuild the whole engine from the committed catalog and
  * publish it as a new base (startup, recovery and delta compaction). */
-static tl_status publish_full(tl_writer *writer) {
+static tl_status publish_full(tl_writer *writer, bool compacted) {
     tl_catalog_snapshot *snapshot = NULL;
     struct builder builder;
     uint64_t catalog_gen = 0;
     tl_status status = make_snapshot(writer, &snapshot, &builder, &catalog_gen);
     if (status == TL_OK)
-        status = publish(writer, &snapshot);
+        status = publish(writer, &snapshot, compacted);
     if (status == TL_OK) {
         delta_reset(writer->delta, catalog_gen, builder.entries, builder.bytes);
+        writer->compact_pending = false;
         lock_writer(writer);
         writer->stats.full_builds++;
+        writer->stats.compaction_pending = false;
         unlock_writer(writer);
     }
     catalog_snapshot_destroy(snapshot);
     return status;
 }
 static tl_status load_saved(tl_writer *writer) {
-    return publish_full(writer);
+    return publish_full(writer, false);
+}
+static tl_delta_limits delta_limits(const tl_writer *writer) {
+    return (tl_delta_limits){.max_entries = writer->options.max_entries,
+                             .max_path_bytes = writer->options.max_path_bytes,
+                             .readers = writer->options.readers,
+                             .min_entries = writer->options.delta_entries == 0
+                                                ? WRITER_DELTA_MIN
+                                                : writer->options.delta_entries,
+                             .divisor = WRITER_DELTA_DIVISOR,
+                             .slack = WRITER_DELTA_SLACK};
+}
+/* Indexing thread: the published delta is past its bound, so a full rebuild
+ * should follow once the writer is idle (see compaction_due). */
+static void defer_compaction(tl_writer *writer) {
+    if (writer->compact_pending)
+        return;
+    uint64_t now = milliseconds();
+    writer->compact_pending = true;
+    writer->compact_after = now;
+    writer->compact_due = now + WRITER_COMPACT_DEFER_MS;
+    lock_writer(writer);
+    writer->stats.compaction_pending = true;
+    unlock_writer(writer);
 }
 /* Indexing thread: build the delta snapshot for the committed batch over the
  * active view. TL_LIMIT or TL_STATE mean only a full rebuild can follow. */
@@ -367,13 +423,7 @@ static tl_status prepare_changes(tl_writer *writer, tl_catalog_snapshot **out) {
         return TL_LIMIT;
     tl_catalog_snapshot *source = NULL;
     tl_status status = catalog_pin(writer->options.catalog, &source);
-    tl_delta_limits limits = {.max_entries = writer->options.max_entries,
-                              .max_path_bytes = writer->options.max_path_bytes,
-                              .readers = writer->options.readers,
-                              .min_entries = writer->options.delta_entries == 0
-                                                 ? WRITER_DELTA_MIN
-                                                 : writer->options.delta_entries,
-                              .divisor = WRITER_DELTA_DIVISOR};
+    tl_delta_limits limits = delta_limits(writer);
     if (status == TL_OK)
         status =
             delta_prepare(writer->delta, writer->reader, source, vec_const_data(writer->job_ids),
@@ -382,17 +432,21 @@ static tl_status prepare_changes(tl_writer *writer, tl_catalog_snapshot **out) {
     return status;
 }
 /* Indexing thread: publish a committed batch as a delta over the current base
- * when its change set is complete, else (or when the delta outgrew its bound,
- * i.e. compaction) rebuild the whole engine. */
+ * when its change set is complete, else (or when the delta outgrew its slack,
+ * i.e. compaction) rebuild the whole engine. A delta past its bound but
+ * within its slack is published and its compaction deferred. */
 static tl_status publish_changes(tl_writer *writer) {
     tl_catalog_snapshot *snapshot = NULL;
     tl_status status = prepare_changes(writer, &snapshot);
     if (status == TL_LIMIT || status == TL_STATE)
-        return publish_full(writer);
+        return publish_full(writer, false);
     if (status == TL_OK)
-        status = publish(writer, &snapshot);
+        status = publish(writer, &snapshot, false);
     if (status == TL_OK) {
         delta_commit(writer->delta);
+        tl_delta_limits limits = delta_limits(writer);
+        if (delta_oversized(writer->delta, &limits))
+            defer_compaction(writer);
         lock_writer(writer);
         writer->stats.delta_publications++;
         unlock_writer(writer);
@@ -420,13 +474,51 @@ static void request_full(tl_writer *writer, tl_writer_full_reason reason) {
     if (writer->full == WRITER_FULL_NONE)
         writer->full = reason;
 }
+/* Nothing is pending until the first request or event after a pass began. */
+static void pending_from_scratch(tl_writer *writer) {
+    if (writer->dirty)
+        return;
+    writer->request_due = writer->event_due = UINT64_MAX;
+    writer->settling = false;
+}
+static void update_due(tl_writer *writer) {
+    writer->due = writer->request_due < writer->event_due ? writer->request_due : writer->event_due;
+    writer->dirty = true;
+}
 /* Indexing thread: run a pass delay milliseconds from now, or sooner if one
  * is already due earlier. */
 static void schedule(tl_writer *writer, uint64_t delay) {
+    pending_from_scratch(writer);
     uint64_t due = milliseconds() + delay;
-    if (!writer->dirty || writer->due > due)
-        writer->due = due;
-    writer->dirty = true;
+    if (writer->request_due > due)
+        writer->request_due = due;
+    update_due(writer);
+}
+/* Indexing thread, for a filesystem event: run the pass WRITER_COALESCE_MS
+ * after the latest event, at most WRITER_SETTLE_MS after the first one since
+ * the last pass began, so a burst is scanned in one pass once it pauses; at
+ * once when WRITER_SETTLE_SCOPES scopes are pending. */
+static void settle(tl_writer *writer) {
+    pending_from_scratch(writer);
+    uint64_t now = milliseconds();
+    if (!writer->settling) {
+        writer->settling = true;
+        writer->settle_start = now;
+    }
+    uint64_t due = now + WRITER_COALESCE_MS, cap = writer->settle_start + WRITER_SETTLE_MS;
+    if (writer->scope_count >= WRITER_SETTLE_SCOPES)
+        cap = now;
+    writer->event_due = due < cap ? due : cap;
+    update_due(writer);
+}
+/* Indexing thread, after a failed pass: try again delay milliseconds from
+ * now. Scopes of events received meanwhile wait for that retry too; later
+ * events schedule as usual. */
+static void retry(tl_writer *writer, uint64_t delay) {
+    writer->request_due = milliseconds() + delay;
+    writer->event_due = UINT64_MAX;
+    writer->settling = false;
+    update_due(writer);
 }
 /* Record directory (taking ownership of the copy) as a scope to rescan,
  * merging repeats. A full set or a failed copy asks for a full scan. */
@@ -475,8 +567,8 @@ static tl_status changed(void *context, const tl_watch_event *event) {
     bool listable = event->metadata && event->is_dir && repairing(writer, event->path, true);
     if (event->metadata && !listable)
         return TL_OK;
-    schedule(writer, WRITER_COALESCE_MS);
     if (event->overflow) {
+        schedule(writer, WRITER_COALESCE_MS);
         clear_renames(writer);
         request_full(writer, WRITER_FULL_OVERFLOW);
         lock_writer(writer);
@@ -484,6 +576,7 @@ static tl_status changed(void *context, const tl_watch_event *event) {
         unlock_writer(writer);
         return TL_OK;
     }
+    settle(writer);
     if (event->path == NULL)
         return TL_OK;
     if (listable) {
@@ -1370,10 +1463,8 @@ static void scan_cycle(tl_writer *writer) {
         writer->backstop_due = milliseconds() + writer->options.repair_ms;
     if (status == TL_OK)
         writer->reload = false;
-    else {
-        writer->dirty = true;
-        writer->due = milliseconds() + (status == TL_LIMIT ? WRITER_COALESCE_MS : WRITER_RETRY_MS);
-    }
+    else
+        retry(writer, status == TL_LIMIT ? WRITER_COALESCE_MS : WRITER_RETRY_MS);
     lock_writer(writer);
     writer->stats.indexing = false;
     writer->stats.offline_roots = writer->offline_roots;
@@ -1390,6 +1481,53 @@ static void scan_cycle(tl_writer *writer) {
     if (status == TL_OK && writer->last_scoped)
         writer->stats.scoped_reconciliations++;
     unlock_writer(writer);
+}
+/* Whether a deferred compaction may run now: the writer is idle (no pass
+ * pending, no reload) or the deferral expired, and no retry is waiting. */
+static bool compaction_due(const tl_writer *writer, uint64_t now) {
+    return writer->compact_pending && !writer->reload && now >= writer->compact_after &&
+           (!writer->dirty || now >= writer->compact_due);
+}
+static void set_indexing(tl_writer *writer, bool indexing) {
+    lock_writer(writer);
+    writer->stats.indexing = indexing;
+    unlock_writer(writer);
+}
+/* Indexing thread: the deferred full rebuild of a delta published past its
+ * bound. Search keeps the published delta meanwhile, so a failure only
+ * postpones it; while a reader still holds the previous view (two
+ * snapshots), it waits like a pass would. */
+static void compact(tl_writer *writer) {
+    tl_catalog_stats catalog;
+    reclaim(writer);
+    tl_status status = catalog_stats(writer->options.catalog, &catalog);
+    if (status == TL_OK && catalog.snapshots >= 2)
+        status = TL_LIMIT;
+    if (status == TL_OK) {
+        set_indexing(writer, true);
+        status = publish_full(writer, true);
+        set_indexing(writer, false);
+    }
+    if (status != TL_OK)
+        writer->compact_after =
+            milliseconds() + (status == TL_LIMIT ? WRITER_COALESCE_MS : WRITER_RETRY_MS);
+    lock_writer(writer);
+    if (status == TL_OK)
+        writer->stats.deferred_compactions++;
+    writer->stats.compaction_pending = writer->compact_pending;
+    unlock_writer(writer);
+}
+/* Indexing thread, between passes: run a due compaction, unless events that
+ * arrived since the last drain ask for a pass first. */
+static void maybe_compact(tl_writer *writer) {
+    if (!compaction_due(writer, milliseconds()))
+        return;
+    if (writer->watch != NULL && drain_watch(writer) != TL_OK) {
+        request_full(writer, WRITER_FULL_OVERFLOW);
+        schedule(writer, 0);
+    }
+    if (compaction_due(writer, milliseconds()))
+        compact(writer);
 }
 /* Indexing thread: hand freed heap back at most once per WRITER_RELEASE_MS. */
 static void release_memory(tl_writer *writer, uint64_t now) {
@@ -1473,6 +1611,7 @@ static void *worker(void *context) {
         timers(writer, now);
         if ((writer->dirty || writer->reload) && now >= writer->due)
             scan_cycle(writer);
+        maybe_compact(writer);
         reclaim(writer);
         release_memory(writer, milliseconds());
         wait_events(writer);

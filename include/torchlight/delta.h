@@ -6,11 +6,14 @@
 #include "torchlight/catalog.h"
 #include "torchlight/store.h"
 typedef struct tl_delta tl_delta;
-/* Bounds of one delta publication. The delta may hold at most
- * max(min_entries, base entries / divisor) entries before the caller must
- * compact with a full rebuild; whole-snapshot limits match full builds. */
+/* Bounds of one delta publication. The delta's bound is max(min_entries,
+ * base entries / divisor) entries; past it the caller compacts with a full
+ * rebuild. slack (at least 1; 0 counts as 1) lets a delta grow to slack times
+ * its bound when the caller defers that compaction (delta_oversized tells it
+ * when to run one); beyond that, preparation fails. Whole-snapshot limits
+ * match full builds. */
 typedef struct {
-    size_t max_entries, max_path_bytes, readers, min_entries, divisor;
+    size_t max_entries, max_path_bytes, readers, min_entries, divisor, slack;
 } tl_delta_limits;
 /** Create owned, empty bookkeeping. TL_INVALID for NULL out, TL_NOMEM; out
  * NULL on error. */
@@ -41,4 +44,8 @@ tl_status delta_prepare(tl_delta *delta, tl_store *store, tl_catalog_snapshot *s
 void delta_commit(tl_delta *delta);
 /** Drop the entries of the last delta_prepare (publication failed). */
 void delta_abandon(tl_delta *delta);
+/** Whether the adopted delta holds more entries than its bound, so the caller
+ * should compact it with a full rebuild soon. false for NULL arguments. No
+ * allocation/errors. */
+bool delta_oversized(const tl_delta *delta, const tl_delta_limits *limits);
 #endif

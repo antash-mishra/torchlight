@@ -1,6 +1,6 @@
 # catalog
 
-> **Status:** Implemented (M2/M3; M6 segmented snapshots; M5 personal boosts; M7 reclamation reporting): resident snapshot lifecycle,
+> **Status:** Implemented (M2/M3; M6 segmented snapshots; M5 personal boosts; M7 reclamation reporting; M7 Phase 3 compacted publication): resident snapshot lifecycle,
 > directory metadata, shared bases with delta segments; integrated with the daemon/writer
 > **Source:** `src/index/catalog.c` · **Header:** `include/torchlight/catalog.h`
 > **Tests:** `tests/unit/test_catalog.c`
@@ -17,6 +17,13 @@ transfers engine ownership only on success. `catalog_publish` transfers snapshot
 ownership only on success and rejects equal/older `catalog_gen`s. Unpublished
 views remain caller-owned and can be destroyed or retried. A fresh database's
 empty `catalog_gen = 0` is valid for first publication.
+`catalog_publish_compacted` (M7 Phase 3,
+[ADR 0045](../../adr/0045-settled-bursts-and-deferred-compaction.md)) also
+accepts the active `catalog_gen`: the writer's deferred compaction rebuilds
+the committed catalog that a base-plus-delta view already shows, as one base.
+A `catalog_gen` names one committed catalog, so both views answer the same;
+older generations stay refused. Unit tests publish such a rebuild over a
+delta and compare query results.
 
 Large-engine workspaces also own fixed lexical scoring workers, started during
 snapshot preparation. Thread startup failure returns `TL_IO` without transferring

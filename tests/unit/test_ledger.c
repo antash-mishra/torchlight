@@ -100,8 +100,39 @@ static void compaction_keeps_survivors(void) {
     CHECK(ledger_find(ledger, "/tree/after", &id, &signature) && id == LEDGER_TEST_ROWS + 1);
     ledger_destroy(ledger);
 }
+/* M7 Phase 3: a refill only appends records and ledger_seal indexes them at
+ * once; replacements and removals before the seal, and lookups before it
+ * (which index what is there so far), see the same rows. */
+static void refill_indexes_at_seal(void) {
+    tl_ledger *ledger = NULL;
+    CHECK(ledger_create(&ledger) == TL_OK);
+    char path[64];
+    for (uint64_t id = 1; id <= LEDGER_TEST_ROWS; id++) {
+        CHECK(snprintf(path, sizeof(path), "/refill/%llu", (unsigned long long)id) > 0);
+        CHECK(ledger_put(ledger, id, path, id) == TL_OK);
+    }
+    CHECK(ledger_put(ledger, 7, "/refill/seven", 70) == TL_OK);
+    ledger_remove(ledger, 8);
+    ledger_seal(ledger);
+    CHECK(ledger_complete(ledger) && ledger_count(ledger) == LEDGER_TEST_ROWS - 1);
+    uint64_t id = 0, signature = 0;
+    CHECK(!ledger_find(ledger, "/refill/7", &id, &signature));
+    CHECK(ledger_find(ledger, "/refill/seven", &id, &signature) && id == 7 && signature == 70);
+    CHECK(!ledger_find(ledger, "/refill/8", &id, &signature));
+    CHECK(ledger_find(ledger, "/refill/9", &id, &signature) && id == 9 && signature == 9);
+    ledger_reset(ledger);
+    CHECK(ledger_put(ledger, 1, "/a", 1) == TL_OK && ledger_put(ledger, 2, "/b", 2) == TL_OK);
+    CHECK(ledger_find(ledger, "/b", &id, &signature) && id == 2);
+    CHECK(ledger_put(ledger, 3, "/c", 3) == TL_OK);
+    CHECK(ledger_find(ledger, "/c", &id, &signature) && id == 3);
+    ledger_seal(ledger);
+    CHECK(ledger_complete(ledger) && ledger_count(ledger) == 3);
+    CHECK(ledger_find(ledger, "/a", &id, &signature) && id == 1);
+    ledger_destroy(ledger);
+}
 void test_ledger(void) {
     lookups_and_seen_marks();
     misuse_makes_it_incomplete();
     compaction_keeps_survivors();
+    refill_indexes_at_seal();
 }

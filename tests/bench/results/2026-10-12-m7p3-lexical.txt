@@ -1,0 +1,63 @@
+cc -I/usr/include/gio-unix-2.0 -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include -pthread -I/usr/include/libmount -I/usr/include/blkid  -Iinclude -D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=700 -D_DEFAULT_SOURCE -D_GNU_SOURCE -I/tmp/torchlight-deps/usr/include -isystem third_party/frizbee/bindings/frizbee-c/include -std=c17 -O3 -DNDEBUG -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Werror src/core/common.c src/core/vec.c src/core/hashmap.c src/core/config.c src/core/json.c src/core/path.c src/core/sort.c src/core/mask.c src/core/parallel.c src/index/tokenize.c src/index/prefix.c src/index/subseq.c src/index/fuzzy.c src/index/trigram.c src/index/typo.c src/index/dirtree.c src/index/lexical.c src/index/embed.c src/index/potion.c src/index/vector.c src/index/rank.c src/index/usage.c src/index/desktop.c src/index/lexical_query.c src/index/catalog.c src/fs/crawl.c src/fs/watch.c src/fs/mounts.c src/storage/store.c src/ipc/ipc.c src/ipc/async.c src/ipc/client.c src/service/delta.c src/service/ledger.c src/service/personal.c src/service/writer.c src/service/semantic.c src/service/daemon.c tests/bench/bench_lexical.c tests/bench/corpus.c tests/bench/queries.c tests/bench/stats.c tests/bench/personal.c -L/tmp/torchlight-deps/usr/lib/x86_64-linux-gnu -Wl,-rpath,/tmp/torchlight-deps/usr/lib/x86_64-linux-gnu -lgio-2.0 -lgobject-2.0 -lglib-2.0  -pthread -lm -lsqlite3 -lutf8proc build/frizbee/release/libfrizbee.a -lgcc_s -lutil -lrt -ldl -o build/bench_lexical
+./build/bench_lexical --synthetic 50000
+paths=50000 mean_path_bytes=71.4 build_s=0.256 engine_rss_kib=31000
+typing_ms n=12406 p50=0.050 p95=0.521 p99=1.227 max=3.706
+whole_query_ms n=1200 p50=0.090 p95=0.797 p99=1.308 max=2.282
+cold_workspace_query_ms n=60 p50=0.120 p95=1.066 p99=1.628 max=1.628
+quality tuning/exact n=200 recall@1=0.980 recall@10=1.000 mrr@10=0.987 candidate_recall@1000=1.000
+quality tuning/prefix n=200 recall@1=0.260 recall@10=0.545 mrr@10=0.371 candidate_recall@1000=1.000
+quality tuning/abbreviation n=200 recall@1=0.545 recall@10=0.795 mrr@10=0.626 candidate_recall@1000=0.940
+quality tuning/typo n=200 recall@1=0.755 recall@10=0.865 mrr@10=0.802 candidate_recall@1000=0.965
+quality tuning/partial_typo n=200 recall@1=0.055 recall@10=0.105 mrr@10=0.072 candidate_recall@1000=0.960
+quality tuning/parent n=200 recall@1=0.295 recall@10=0.615 mrr@10=0.398 candidate_recall@1000=1.000
+quality tuning/all n=1200 recall@1=0.482 recall@10=0.654 mrr@10=0.543 candidate_recall@1000=0.978
+quality held_out/exact n=200 recall@1=0.970 recall@10=1.000 mrr@10=0.980 candidate_recall@1000=1.000
+quality held_out/prefix n=200 recall@1=0.245 recall@10=0.430 mrr@10=0.309 candidate_recall@1000=1.000
+quality held_out/abbreviation n=200 recall@1=0.465 recall@10=0.715 mrr@10=0.544 candidate_recall@1000=0.920
+quality held_out/typo n=200 recall@1=0.755 recall@10=0.850 mrr@10=0.791 candidate_recall@1000=0.990
+quality held_out/partial_typo n=200 recall@1=0.050 recall@10=0.075 mrr@10=0.060 candidate_recall@1000=0.960
+quality held_out/parent n=200 recall@1=0.280 recall@10=0.560 mrr@10=0.360 candidate_recall@1000=0.995
+quality held_out/all n=1200 recall@1=0.461 recall@10=0.605 mrr@10=0.507 candidate_recall@1000=0.978
+fixtures=9/9
+personal_typing_boosted_1000_ms n=12406 p50=0.096 p95=0.622 p99=1.375 max=4.855
+personal_typing_boosted_2048_ms n=12406 p50=0.120 p95=0.704 p99=1.445 max=4.276
+personal_typing_boosted_4000_ms n=12406 p50=0.155 p95=0.837 p99=1.618 max=7.114
+usage_items=2048
+usage_boosts_ms n=12406 p50=0.000 p95=0.007 p99=0.015 max=0.046
+usage_rebuild opens=20000 targets=4096 ms=117.1
+personal_scenario habitual n=300 keystrokes_to_first plain=15.32 personal=4.26 mrr@10_after_3 plain=0.022 personal=0.791
+personal_scenario never_opened n=300 keystrokes_to_first plain=10.52 personal=10.54 mrr@10_after_3 plain=0.064 personal=0.077
+steady_rss_kib=41272
+catalog_query_ms n=1200 p50=0.096 p95=0.867 p99=1.680 max=7.955
+peak_rss_kib=45912
+./build/bench_lexical --synthetic 500000
+paths=500000 mean_path_bytes=79.6 build_s=3.129 engine_rss_kib=256948
+typing_ms n=12477 p50=0.900 p95=4.898 p99=8.672 max=21.935
+whole_query_ms n=1200 p50=1.141 p95=6.296 p99=10.223 max=16.749
+cold_workspace_query_ms n=60 p50=1.217 p95=6.709 p99=20.663 max=20.663
+quality tuning/exact n=200 recall@1=0.990 recall@10=1.000 mrr@10=0.995 candidate_recall@1000=1.000
+quality tuning/prefix n=200 recall@1=0.140 recall@10=0.395 mrr@10=0.217 candidate_recall@1000=0.940
+quality tuning/abbreviation n=200 recall@1=0.235 recall@10=0.500 mrr@10=0.304 candidate_recall@1000=0.895
+quality tuning/typo n=200 recall@1=0.585 recall@10=0.795 mrr@10=0.663 candidate_recall@1000=0.985
+quality tuning/partial_typo n=200 recall@1=0.080 recall@10=0.090 mrr@10=0.085 candidate_recall@1000=0.400
+quality tuning/parent n=200 recall@1=0.255 recall@10=0.395 mrr@10=0.302 candidate_recall@1000=0.925
+quality tuning/all n=1200 recall@1=0.381 recall@10=0.529 mrr@10=0.428 candidate_recall@1000=0.858
+quality held_out/exact n=200 recall@1=0.980 recall@10=1.000 mrr@10=0.987 candidate_recall@1000=1.000
+quality held_out/prefix n=200 recall@1=0.145 recall@10=0.395 mrr@10=0.210 candidate_recall@1000=0.925
+quality held_out/abbreviation n=200 recall@1=0.260 recall@10=0.570 mrr@10=0.350 candidate_recall@1000=0.910
+quality held_out/typo n=200 recall@1=0.585 recall@10=0.830 mrr@10=0.673 candidate_recall@1000=0.995
+quality held_out/partial_typo n=200 recall@1=0.040 recall@10=0.055 mrr@10=0.048 candidate_recall@1000=0.335
+quality held_out/parent n=200 recall@1=0.220 recall@10=0.385 mrr@10=0.270 candidate_recall@1000=0.945
+quality held_out/all n=1200 recall@1=0.372 recall@10=0.539 mrr@10=0.423 candidate_recall@1000=0.852
+fixtures=9/9
+personal_typing_boosted_1000_ms n=12477 p50=0.981 p95=5.063 p99=8.507 max=21.790
+personal_typing_boosted_2048_ms n=12477 p50=1.047 p95=5.074 p99=8.629 max=20.972
+personal_typing_boosted_4000_ms n=12477 p50=1.229 p95=5.338 p99=9.478 max=21.023
+usage_items=2048
+usage_boosts_ms n=12477 p50=0.000 p95=0.007 p99=0.015 max=0.056
+usage_rebuild opens=20000 targets=4096 ms=109.1
+personal_scenario habitual n=300 keystrokes_to_first plain=9.94 personal=3.47 mrr@10_after_3 plain=0.018 personal=0.773
+personal_scenario never_opened n=300 keystrokes_to_first plain=11.67 personal=11.54 mrr@10_after_3 plain=0.074 personal=0.106
+steady_rss_kib=336096
+catalog_query_ms n=1200 p50=1.146 p95=5.971 p99=11.213 max=16.030
+peak_rss_kib=398676

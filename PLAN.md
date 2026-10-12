@@ -519,7 +519,11 @@ Phase 2 (cheaper full scans) is implemented (ADR 0040): one stat per entry,
 one long-lived watcher, and an in-memory persisted-state map, so a full scan
 that finds nothing changed costs 0.98 s and 1.0 CPU-s at 213k instead of 4.0 s
 and 4.0 CPU-s ([results](docs/m7-plan.md#phase-2-results-2026-10-11),
-[health report](docs/reports/m7-phase2-health-report.html)).
+[health report](docs/reports/m7-phase2-health-report.html)). Phase 3 closes
+its open items (ADRs 0045 and 0046): bursts settle and publish before their
+compaction, children prunes walk the path index, and the ledger is leaner
+([results](docs/m7-plan.md#phase-3-results-2026-10-12),
+[health report](docs/reports/m7-phase3-health-report.html)).
 Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
 tracked explicitly in the verification report.
 
@@ -735,7 +739,7 @@ tracked explicitly in the verification report.
    reconcile, a base-plus-delta segmented engine, and incremental semantic
    snapshots. It records the baseline numbers each step must beat.
 8. **M7: Quiet indexing and lean memory.** Phase 1 complete (2026-10-11).
-   Phase 2 implemented (2026-10-11).
+   Phase 2 implemented (2026-10-11). Phase 3 implemented (2026-10-12).
    A headless profile ([M7 plan](docs/m7-plan.md)) showed that the 30-second
    full rescan cost 7 to 9% of a core at 213k entries and that a file written
    20 times a second cost 43%, while search reads only names.
@@ -757,6 +761,17 @@ tracked explicitly in the verification report.
      pass needs a full rebuild), search is ready 0.2 s later after a restart,
      and rescans of the home folder itself cost 0.1 s of persistence CPU (an
      existing cost). See the [health report](docs/reports/m7-phase2-health-report.html).
+   - **Phase 3: close the Phase 2 open items.** Event passes settle (100 ms
+     after the latest event, at most 1 s after the first), and a delta past
+     its bound publishes at once while its compaction waits for an idle
+     writer (ADR 0045): the 20k burst is searchable 0.44 s after it is
+     written instead of 3.0 s, and renaming its tree 0.43 s instead of 2.1 s.
+     Children prunes walk the path index, so a change directly in the home
+     folder costs no measurable database CPU instead of 0.24 s, and the
+     ledger hashes each path once into 4-byte index slots (ADR 0046): search
+     is ready after a restart in 1.42 s (1.53 s before, 1.39 s before Phase
+     2), and the ledger is 8.5 MiB instead of 12.6. See the
+     [health report](docs/reports/m7-phase3-health-report.html).
 
    Acceptance for phase 1 at 213k, with the host's applications and history:
    idle at most 0.2% of a core with no full scan while coverage is complete,

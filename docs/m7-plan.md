@@ -4,7 +4,10 @@
 desktop after the [real-desktop review](#real-desktop-review-2026-10-11).
 Phase 2 implemented (2026-10-11): every exit criterion passes, with three
 open red flags; see [Phase 2 results](#phase-2-results-2026-10-11) and the
-[health report](reports/m7-phase2-health-report.html).** This is
+[health report](reports/m7-phase2-health-report.html). Phase 3 implemented
+(2026-10-12): the three red flags are fixed; see
+[Phase 3 results](#phase-3-results-2026-10-12) and its
+[health report](reports/m7-phase3-health-report.html).** This is
 the working plan for two phases of indexing work, based on a headless
 profile of the daemon taken on 2026-10-10. Raw data is in
 `tests/bench/results/2026-10-10-m7-baseline.jsonl` (scenario metrics) and
@@ -1211,6 +1214,238 @@ python3 tests/bench/bench_scenarios.py --daemon build/m7p2-$BUILD/torchlightd \
   --idle-s 30 --results tests/bench/results/2026-10-11-m7p2-494k-$BUILD.jsonl cold warm rescan
 make bench > tests/bench/results/2026-10-11-m7p2-lexical.txt
 ```
+
+## Phase 3: close the Phase 2 open items (2026-10-12)
+
+The [health report](reports/m7-phase2-health-report.html) left three
+results out of range and four at the edge. Phase 3 fixes them without
+slowing anything that is fast today.
+
+### Phase 3 in simple words
+
+- **A change directly in the home folder costs 0.1 s of database work.**
+  Every rescan of a folder ends with a cleanup query that deletes the rows of
+  children that are gone. For the root folder, that query walks every row of
+  the catalog. Phase 3 asks the database only about the folder's direct
+  children and jumps over their subtrees.
+- **A big burst of new files is indexed twice.** The faster scan of Phase 2
+  catches a burst halfway, and each half then needs a full rebuild of the
+  search index. Phase 3 waits for a burst to settle before rescanning, and
+  publishes a large change as a quick update first, rebuilding the index
+  afterwards, when nothing else is waiting.
+- **Startup got 0.2 s slower** because it fills the ledger. Phase 3 makes
+  the ledger cheaper to fill, to look up and to hold.
+
+### Baseline (2026-10-12, HEAD `97deb1d`, 213k mirror, `-O3`)
+
+| Open item | Measured | Reference |
+|---|---|---|
+| 20k-file burst visible (median of 7) | 3,002 ms | 1,672 ms before Phase 2 |
+| Search ready after a restart (median of 6) | 1,524 ms | 1,325 ms before Phase 2 |
+| Live desktop background CPU | 0.34% of a core | 0.25% (Phase 1 review) |
+| Create or delete one file in the root folder | visible after 230 ms; 250 ms of indexing and database CPU per create/delete pair | 108 ms in a small folder |
+| No-change full check | 978 ms | at most 1,000 ms |
+| RSS after a rebuild / retained free heap | +9.9% / 5 MiB | at most +10% / 5 MiB |
+| Ledger at 213k | 12.6 MiB (about 62 B per row) | about 5 MiB planned |
+
+The root-folder numbers come from a new experiment (files created and
+deleted directly in the mirror's root, nine times). Its profile puts
+2.43 of 2.51 CPU-s on the persistence thread in `prune_range`, the
+`PRUNE_CHILDREN_SQL` statement.
+
+### Step 3.1: prune a folder's children without walking its subtree
+
+`PRUNE_CHILDREN_SQL` deletes every row in the folder's path range whose
+first component below the folder was not seen. The range of a root holds
+the whole catalog, and the expression runs for every row.
+
+- Walk the range in path order with one prepared statement and step through
+  rows while they are direct children. At the first row below a child,
+  re-seek past that child's subtree (`child/` up to `child0`). The cost is
+  one step per child plus one seek per child that has a subtree, not one
+  step per row below the folder.
+- Collect the unseen children (including a child known only from rows below
+  it), then delete each one and its subtree with the same rules that spare
+  kept paths and nested roots. The deleted set is exactly the one the old
+  statement deleted.
+- Tests: a randomized unit test compares the new prune with a brute-force
+  model of the old statement over random trees with tricky names (`a`,
+  `a.txt`, `a-b`, `a/x`, orphans below a missing child, kept paths, nested
+  roots, the `/` root). A `rootlag` case in the bench harness records lag
+  and CPU for changes directly in the root.
+- Target: a root-folder create/delete visible within 120 ms, under 10 ms of
+  CPU per pass; live idle CPU at or below 0.25%.
+
+### Step 3.2: a lean ledger
+
+- **One-pass fingerprint.** Path key and check come from the two halves of
+  one 128-bit hash (MurmurHash3 x64_128, eight bytes at a time) instead of
+  two byte-by-byte FNV-1a passes. The store signature hashes its packed
+  columns once the same way. Both are in-memory only, never persisted.
+- **4-byte index slots.** `hashmap` gains an external-hash mode: slots hold
+  only the value (the record index), and the map asks the caller for a
+  value's hash when it rehashes or closes a hole. The ledger index drops from
+  12 to 4 bytes per slot, and a lookup touches the slot and the record, not
+  three arrays.
+- **Bulk load.** While a ledger is being refilled (startup, recovery), puts
+  only append records; `ledger_seal` builds the index once at its final size
+  instead of growing it 13 times.
+- Targets: ledger at most 9 MiB at 213k; search ready within 10% of the
+  pre-Phase 2 build, measured alternately; no-change full check median at
+  most 950 ms.
+
+### Step 3.3: index a burst in one rebuild
+
+- **Settle.** A filesystem event moves the next pass to 100 ms after the
+  latest event, but never more than 1 s after the first event since the last
+  pass started. A single change is still rescanned 100 ms later; a burst is
+  rescanned once it pauses. Requests (`reconcile`, overflow, repair ticks,
+  mounts, retries) keep their immediate schedule.
+- **Deferred compaction.** A delta may grow past its bound (max(4096,
+  base/32)) up to four times that bound when the writer would otherwise
+  rebuild in the middle of a burst. The large delta is published at once,
+  and the full rebuild (compaction) runs as soon as no event is pending, or
+  2 s after the delta first exceeded its bound. Past four times the bound,
+  publication rebuilds immediately, as now. Compaction counts as indexing
+  in `status`.
+- Tests: writer tests for the settle window and its cap, for a delta past
+  its bound being published and then compacted, and for compaction waiting
+  for pending events.
+- Targets: 20k burst visible within 20% of the pre-Phase 2 build (aim:
+  about 1.5 s) with one full rebuild; renaming or deleting the 22k tree no
+  slower than today.
+
+### What must not regress
+
+Measured on HEAD and on the Phase 3 build back to back, alternating:
+
+- Query round trip p50 and p95 idle and during full scans: within 10%;
+  `make bench` 9/9 fixtures at 50k and 500k and typing p95 at most 5 ms.
+- Small-folder create and delete p50 at most 120 ms; busiest folder at most
+  170 ms; 20 Hz churn at most 2% of a core; idle at most 0.20%.
+- Full check at 213k at most 1.0 s and 1.2 CPU-s, at 494k at most 3 s; no
+  SQLite temp-file I/O; kernel watches never above steady.
+- Cold index within 10%; warm-start scan at most 1.5 s.
+- Steady RSS at most HEAD + 2 MiB; peak during the burst at most HEAD;
+  retained free heap at most 5 MiB; RSS after a rebuild at most +10%.
+- Equivalence test (9 seeds), all unit and integration tests, sanitizers,
+  `make lint`.
+
+### Order of work
+
+1. Step 3.1, with its tests and the `rootlag` case; measure.
+2. Step 3.2; measure readiness, full check and ledger size.
+3. Step 3.3; measure bursts, renames, deletions, lag and queries.
+4. Full validation: `make test`, `make lint`, `make bench`, the scenario
+   matrix at 213k and 494k for the pre-Phase 2, HEAD and Phase 3 builds,
+   profiles, `strace -c`, the sanitized daemon, and the live service.
+5. ADR, module docs, glossary, this plan's results, the system design
+   page's open items and a Phase 3 health report.
+
+### Phase 3 results (2026-10-12)
+
+**Phase 3 implemented** ([ADR 0045](adr/0045-settled-bursts-and-deferred-compaction.md),
+[ADR 0046](adr/0046-children-walks-and-a-lean-ledger.md)). The
+[health report](reports/m7-phase3-health-report.html) presents every
+measurement with reference ranges and flags in plain language. HEAD
+(`97deb1d`, Phase 2) and Phase 3 optimized builds (`-O3`, frame pointers) ran
+on the same machine and trees, alternating where a number is a median of
+repeats. The pre-Phase 2 build (`ab377a0`) ran for the readiness and burst
+references.
+
+| Open item | Phase 3 | HEAD (Phase 2) | Result |
+|---|---|---|---|
+| 20k-file burst searchable (median of 7) | 435 ms, 1 rebuild, 1.94 CPU-s | 2,974 ms, 2 rebuilds, 3.63 CPU-s | Fixed (pre-Phase 2 today: 2,805 ms, median of 8) |
+| Search ready after restart (median of 6) | 1,418 ms | 1,527 ms | Fixed: pre-Phase 2 1,386 ms, so +2.3% (gate +10%) |
+| File created or deleted in the root folder | visible after 107 ms, 0 to 10 ms CPU per pair | 236 to 243 ms, 250 to 260 ms CPU | Fixed |
+| Live home folder: database CPU per create/delete pair | 0.00 s | 0.24 s | Fixed |
+| No-change full check, 213k (median of 5, three rounds) | 943 to 969 ms, 0.97 CPU-s | 993 to 1,021 ms, 1.03 CPU-s | Better, 3 to 6% under the 1 s limit |
+| Ledger at 213k / 494k | 8.5 / 19.2 MiB | 12.6 / 27.2 MiB | Better |
+| Retained free heap after the events (3 runs) | 5, 5, 5 MiB | 4, 5, 5 MiB | Pass, at the 5 MiB limit |
+| RSS after a rebuild vs warm steady (3 runs) | +10.2, +10.8, +10.2% (184 to 185 MiB) | +9.3% (188 MiB) | **Out of range by definition**; see below |
+
+Everything else stayed within noise or improved:
+- Queries, three alternating runs at 213k: p50 0.71 to 0.72 ms against 0.72 ms
+  idle, p95 2.11 to 2.29 ms against 2.18 to 2.32 ms. During full scans, p95
+  is 2.09 to 2.23 ms against 2.07 to 2.10 ms.
+- `make bench`: 9/9 fixtures at 50k and 500k. Typing p95 at 500k measured
+  4.54 to 4.77 ms against 4.63 to 5.14 ms for HEAD alternately on the same
+  loaded machine (Phase 2 recorded 3.74 ms on a quieter one).
+- Lag: small folder 107 ms and busiest folder 139 to 140 ms, both unchanged.
+  Deleting the 22k tree takes 1 to 159 ms in four scoped passes and 0.25 to
+  0.27 CPU-s (was 33 to 222 ms and 0.41 CPU-s). Renaming it takes 434 ms
+  (median of 7, was 2,051 ms).
+- Queries in the window after a burst while its compaction runs (four bursts):
+  p50 0.91 ms, p95 2.69 ms.
+- Idle 0.14% of a core (unchanged); 20 Hz churn 0.20 to 0.26% (HEAD 0.23 to
+  0.30%); mounts outside the root cause 0 full scans, inside 2.
+- Cold index 5.6 s against 6.3 s. Warm start (harness, sampler attached):
+  ready 1,544 against 1,639 ms, startup scan 1,093 against 1,159 ms. Steady
+  RSS 167 against 172 MiB.
+- System calls per full scan are identical. Kernel watches peak at the steady
+  34,461. Scans write nothing and use no temp files.
+- 494k: full check 1,905 against 1,967 ms; ready 3,303 against 3,493 ms; RSS
+  283 against 291 MiB; cold index 12.5 against 12.7 s.
+- `make test` (ASan, UBSan, LeakSanitizer, integration suites) and `make lint`
+  pass. The sanitized daemon on the 213k mirror (cold index, forced scans,
+  burst, rename, delete, root-folder changes, queries) exited cleanly with no
+  report.
+
+Profiles (sampler, 213k): in the burst, full rebuilds fall from 3.16 to 1.64
+CPU-s (two to one) while delta builds rise from 0.05 to 0.16 CPU-s; the
+persistence thread's `prune_range` share (0.18 CPU-s) is gone. At startup the
+catalog load takes 0.37 instead of 0.47 CPU-s, and path hashing in the startup
+scan falls below 20 ms (was 80 ms).
+
+**The rebuild gate.** ADR 0044 measures RSS after a rebuild against the warm
+steady RSS. Phase 3 lowers both: steady by 5 MiB (the smaller ledger) and
+after the rebuild by 3 to 4 MiB, so the ratio rises above 10% while the
+daemon uses less memory in every state. In a rebuild without the preceding
+events, both builds grow about 8% (HEAD 7.7 and 8.3%, Phase 3 8.5 and 7.9%), and
+`malloc_trim` afterwards returns at most 1 MiB in either. The extra is
+therefore not retained free heap. The gate is left as it is; whether to
+restate it in absolute terms (for example, at most the previous build's RSS)
+is an open decision.
+
+**Live service** (the user's `-O0` unit, restarted on the Phase 3 build):
+- Startup scan 1.10 s.
+- Forced full checks 961 to 1,073 ms and 0.98 to 1.07 CPU-s, reading 1 MiB
+  and writing nothing.
+- RSS 148 to 151 MiB.
+- A hidden file created and deleted in the home folder five times costs no
+  measurable database CPU (0.24 s per pair before the restart).
+- Idle CPU over 10 minutes was 0.16% of a core before the restart and 0.27%
+  after it, each window with one scoped pass; a second sample after it read
+  0.25% over 15 minutes with six scoped passes. In that sample the desktop
+  worker used 0.09% of a core, the main loop 0.06%, the indexing thread 0.06%
+  and the persistence thread 0.04%. The first three run no Phase 3 code at
+  idle. The persistence thread's share is not explained by the rescans, which
+  cost nothing measurable in the probe; its once-a-minute history retention
+  is the likely source (the live service cannot be profiled here). This stays an open item (the health
+  report flags it): the next step is the desktop worker's once-a-second
+  change check and the 41 wakeups per second.
+
+The invocations were:
+
+```sh
+python3 tests/bench/bench_scenarios.py --daemon build/m7p3-$BUILD/torchlightd \
+  --sampler build/m7p3-$BUILD/sampler.so --paths /tmp/torchlight-m7-review-corpus.paths \
+  --work build/m7p3-w$BUILD --label m7p3-$BUILD --idle-s 180 \
+  --results tests/bench/results/2026-10-12-m7p3-213k-$BUILD.jsonl \
+  cold warm quiet queries lag events mounts rescan syscalls
+python3 tests/bench/bench_scenarios.py --daemon build/m7p3-$BUILD/torchlightd \
+  --sampler build/m7p3-$BUILD/sampler.so --fixture build/bench_fixture --size 500000 \
+  --work build/m7p3-x$BUILD --label m7p3-$BUILD --idle-s 30 \
+  --results tests/bench/results/2026-10-12-m7p3-494k-$BUILD.jsonl cold warm rescan
+make bench > tests/bench/results/2026-10-12-m7p3-lexical.txt
+```
+
+The events phase ran three more times per build
+(`2026-10-12-m7p3-213k-events-*.jsonl`) and the queries phase twice
+(`2026-10-12-m7p3-213k-queries-*.jsonl`). Medians of 7 bursts and renames,
+restart readiness and the root-folder lag came from repeated single-purpose
+runs on the same mirror; they are recorded in
+`tests/bench/results/2026-10-12-m7p3-repeats.jsonl`.
 
 ## Storage alternatives considered: SQLite tuning and mmap
 

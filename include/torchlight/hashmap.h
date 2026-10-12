@@ -10,8 +10,25 @@
 typedef struct tl_hashmap tl_hashmap;
 /** Return whether the caller key in context equals the key stored for value. */
 typedef bool (*tl_hashmap_equal)(const void *context, uint32_t value);
+/** Return the hash value was inserted under (maps from hashmap_create_external). */
+typedef uint64_t (*tl_hashmap_hash_of)(const void *context, uint32_t value);
+/* Two 64-bit halves of one 128-bit hash (hashmap_hash_pair). */
+typedef struct {
+    uint64_t first, second;
+} tl_hash_pair;
 /** Create an owned empty map; out is NULL on TL_INVALID/TL_NOMEM. */
 tl_status hashmap_create(tl_hashmap **out);
+/** Create an owned empty map that stores only values, 4 bytes per slot
+ * instead of 12, for callers that keep each value's hash themselves. Whenever
+ * the map needs a stored value's hash (lookups, growth, removal) it calls
+ * hash_of(context, value), which must return the hash the value was inserted
+ * under for as long as the value is stored. context is borrowed and must
+ * outlive the map. Same API and errors as hashmap_create otherwise. */
+tl_status hashmap_create_external(tl_hashmap_hash_of hash_of, const void *context,
+                                  tl_hashmap **out);
+/** Grow the table so it holds count values without growing again. TL_INVALID
+ * for NULL; TL_NOMEM/TL_LIMIT leave the map unchanged. */
+tl_status hashmap_reserve(tl_hashmap *map, size_t count);
 /** Free the map; caller keys are untouched. NULL is allowed. */
 void hashmap_destroy(tl_hashmap *map);
 /** Find the value whose stored hash equals hash and for which equal(context,
@@ -33,4 +50,9 @@ size_t hashmap_count(const tl_hashmap *map);
 /** Extend an FNV-1a hash state with length bytes. Hashing a then b equals
  * hashing their concatenation, so callers can hash keys in pieces. */
 uint64_t hashmap_hash(uint64_t state, const void *bytes, size_t length);
+/** Hash length bytes in one pass, eight at a time, into the two halves of a
+ * 128-bit hash (MurmurHash3 x64_128, seed 0): several times faster than two
+ * hashmap_hash passes over a path. Words are read in native byte order, so
+ * values are for in-memory use only, never persisted. No errors. */
+tl_hash_pair hashmap_hash_pair(const void *bytes, size_t length);
 #endif

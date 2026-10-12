@@ -18,7 +18,9 @@ Phases (default all, in this order):
                periodic settings for --idle-s seconds (full scans, CPU, I/O)
   quiet        idle with periodic rescans off (the resident floor)
   queries      query latency idle and during back-to-back forced full rescans
-  lag          single-file create/delete lag in a small and the largest folder
+  lag          single-file create/delete lag in a small folder, the largest
+               folder and the root itself (whose children rescan used to walk
+               the whole catalog), with CPU per thread
   events       on one daemon: steady RSS before and after the corpus queries
                (cold and warm), 20k files in 2k new folders, rename and
                delete that tree, one file appended and closed 20 times a
@@ -459,6 +461,7 @@ def scan_counts(before, after):
                scoped_scans=after["scoped_reconciliations"] - before["scoped_reconciliations"],
                delta_publications=after["delta_publications"] - before["delta_publications"],
                full_builds=after["full_builds"] - before["full_builds"],
+               deferred_compactions=after.get("deferred_compactions", 0) - before.get("deferred_compactions", 0),
                overflows=after["watch_overflows"] - before["watch_overflows"], watches=after["watches"])
     for key in ("repair_scopes", "last_full_reason"):
         if key in after:
@@ -544,7 +547,7 @@ class Scenarios:
         create, delete = [], []
         for i in range(LAG_ITERATIONS):
             name = f"zqprobe{tag}{i}x.txt"
-            path = self.corpus.inside(f"{directory}/{name}")
+            path = self.corpus.inside(f"{directory}/{name}" if directory else name)
             time.sleep(LAG_PAUSE_S)
             path.touch()
             create.append(daemon.wait_present(name, path))
@@ -558,12 +561,13 @@ class Scenarios:
         daemon.wait_idle()
         daemon.control("reset")
         small = self.corpus.random.choice(self.corpus.small)
-        before = counters(daemon)
-        self.record("lag_small_dir", dir_entries=self.corpus.children.get(small, 0),
-                    **self.lag_series(daemon, small, "s"), **scan_counts(before, counters(daemon)))
-        before = counters(daemon)
-        self.record("lag_big_dir", dir_entries=self.corpus.children.get(self.corpus.big, 0),
-                    **self.lag_series(daemon, self.corpus.big, "b"), **scan_counts(before, counters(daemon)))
+        for name, directory, tag in (("lag_small_dir", small, "s"), ("lag_big_dir", self.corpus.big, "b"),
+                                     ("lag_root_dir", "", "r")):
+            before, meter = counters(daemon), Meter(daemon)
+            series = self.lag_series(daemon, directory, tag)
+            daemon.wait_idle()
+            self.record(name, dir_entries=self.corpus.children.get(directory, 0), **series,
+                        **scan_counts(before, counters(daemon)), cpu_s_by_thread=meter.result()["cpu_s_by_thread"])
         daemon.dump(f"{self.label}-lag")
         daemon.stop()
 

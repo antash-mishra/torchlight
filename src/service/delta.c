@@ -5,6 +5,7 @@
  * next snapshot. Only an adopted publication replaces the kept list. */
 #include "torchlight/delta.h"
 #include "torchlight/vec.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 struct delta_entry {
@@ -110,16 +111,19 @@ static tl_status merge_pending(tl_delta *delta, const uint64_t *ids, size_t coun
     }
     return status;
 }
+static size_t entry_bound(const tl_delta *delta, const tl_delta_limits *limits) {
+    size_t bound = delta->base_entries / (limits->divisor == 0 ? 1 : limits->divisor);
+    return bound < limits->min_entries ? limits->min_entries : bound;
+}
 /* Conservative bounds: removals since the source are not credited, so a
  * prepared snapshot never exceeds what a full rebuild would accept. */
 static bool within_limits(const tl_delta *delta, const tl_catalog_snapshot *source,
                           const tl_delta_limits *limits) {
     size_t pending = vec_count(delta->pending);
-    size_t bound = delta->base_entries / (limits->divisor == 0 ? 1 : limits->divisor);
-    if (bound < limits->min_entries)
-        bound = limits->min_entries;
+    size_t bound = entry_bound(delta, limits), slack = limits->slack == 0 ? 1 : limits->slack;
+    size_t allowed = bound > SIZE_MAX / slack ? SIZE_MAX : bound * slack;
     size_t live = delta->base_entries - catalog_snapshot_tombstones(source);
-    return pending <= bound && live <= limits->max_entries &&
+    return pending <= allowed && live <= limits->max_entries &&
            pending <= limits->max_entries - live && delta->base_bytes <= limits->max_path_bytes &&
            delta->pending_bytes <= limits->max_path_bytes - delta->base_bytes;
 }
@@ -190,4 +194,7 @@ void delta_commit(tl_delta *delta) {
 void delta_abandon(tl_delta *delta) {
     if (delta != NULL)
         clear_entries(delta->pending);
+}
+bool delta_oversized(const tl_delta *delta, const tl_delta_limits *limits) {
+    return delta != NULL && limits != NULL && vec_count(delta->kept) > entry_bound(delta, limits);
 }

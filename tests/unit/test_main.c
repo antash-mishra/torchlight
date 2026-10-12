@@ -31,6 +31,7 @@ int main(void) {
     test_catalog();
     test_delta();
     test_store();
+    test_store_prune();
     test_identity();
     test_ledger();
     test_crawl();

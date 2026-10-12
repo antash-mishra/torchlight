@@ -1,9 +1,10 @@
 # store
 
 > **Status:** Implemented (M4; M5 history batches; M7 metadata refresh commits verified; M7 Phase 2
-> signatures, mark-seen and exact prunes): schema v4, versioned embedding cache plus catalog/history
+> signatures, mark-seen and exact prunes; M7 Phase 3 children walks and one-pass signatures):
+> schema v4, versioned embedding cache plus catalog/history
 > **Source:** `src/storage/store.c` · **Header:** `include/torchlight/store.h`
-> **Tests:** `tests/unit/test_store.c`, `tests/unit/test_identity.c`, CLI/daemon integration
+> **Tests:** `tests/unit/test_store.c`, `tests/unit/test_store_prune.c`, `tests/unit/test_identity.c`, CLI/daemon integration
 
 ## Behavior and ownership
 
@@ -115,7 +116,29 @@ atomically. Cache changes do not advance catalog_gen or alter history.
 direct children (with subtrees) the transaction did not see;
 `store_prune_tree(directory)` deletes unseen descendants after a recursive
 rescan. Both spare kept scopes and registered roots nested in the directory and
-use a path-index range (`dir/` up to `dir0`), never a whole-catalog scan.
+work in the directory's path-index range (`dir/` up to `dir0`), never a
+whole-catalog scan.
+
+A children prune used to be one `DELETE` that computed every row's direct-child
+component. For a root, the range holds the whole catalog: about 0.13 s per
+pass at 213k rows, the main cost of the live desktop's idle CPU (apps saving
+files in the home folder). Since M7 Phase 3
+([ADR 0046](../../adr/0046-children-walks-and-a-lean-ledger.md)) it walks the
+range instead:
+- One prepared statement steps through the rows in path order while they are
+  direct children, reading whether each was seen.
+- At the first row below a child, it checks whether that child was seen and
+  re-seeks past the child's subtree (`child/` up to `child0`).
+- Each unseen child is then deleted with its subtree, under the same rules
+  that spare kept paths and nested roots.
+
+The cost is one step per child plus one seek per child that has rows below
+it. A file created in a 213k-row root now costs no measurable CPU (before:
+about 125 ms per pass) and is searchable after 107 ms instead of 236 ms. Names
+that sort between a child and its subtree (`a.txt` and `a-b` lie between `a`
+and `a/x`) and children known only from rows below them (orphans) are handled
+the same way as before. The randomized `test_store_prune.c` checks this
+against a brute-force model of the old statement.
 
 `store_track_changes(limit)` makes the connection record the ids of files rows
 that catalog transactions insert, update or delete, through the existing SQLite
@@ -155,9 +178,12 @@ Full scans no longer send every crawled entry through SQL
 writer's persisted-state map needs, and keeps deciding what may be deleted:
 
 - **Signatures.** Every loaded row (`store_load`, `store_load_catalog`,
-  `store_load_ids`) carries `signature`, an FNV-1a hash over exactly the
-  columns `store_put` compares: `is_dir`, `mtime`, `size` and the identity
-  bytes, each tagged present or absent. `store_signature(entry)` hashes a
+  `store_load_ids`) carries `signature`, a hash over exactly the columns
+  `store_put` compares: `is_dir`, `mtime`, `size` and the identity bytes, each
+  tagged present or absent. Since Phase 3 the tagged columns are packed into
+  one buffer and hashed in one pass (`hashmap_hash_pair`); signatures live in
+  memory only, so the hash may change between versions. An identity of another
+  length than the 29 bytes `store_put` writes counts as absent. `store_signature(entry)` hashes a
   crawl entry the same way (false for entries without stat or identity, or
   unreadable, which must always reach `store_put`). Equal signatures at a
   path mean the upsert would change nothing. Values of an unexpected type

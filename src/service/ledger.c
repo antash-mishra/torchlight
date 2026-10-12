@@ -5,10 +5,6 @@
 #include "torchlight/hashmap.h"
 #include <stdlib.h>
 #include <string.h>
-/* Offset basis of the second, independent path hash; any value other than
- * HASHMAP_HASH_SEED works. Two 64-bit hashes make an accidental collision
- * between two paths of one catalog practically impossible. */
-#define LEDGER_CHECK_SEED UINT64_C(0x9e3779b97f4a7c15)
 #define LEDGER_WORD_BITS 64U
 /* Compaction rewrites every record and the index, so it waits until removed
  * records are both numerous and at least half of the storage. */
@@ -18,13 +14,17 @@ struct record {
     uint64_t id, key, check, signature;
 };
 /* records ascend by id. dead and seen hold one bit per record: removed rows
- * stay in place (so ids stay sorted) until compaction drops them. */
+ * stay in place (so ids stay sorted) until compaction drops them. paths is an
+ * external-hash map (4 bytes per slot) whose hashes are the records' keys.
+ * indexed: paths lists every live record. A refill (ledger_reset until
+ * ledger_seal) only appends records, and the seal indexes them all at once at
+ * their final size instead of growing the index row by row. */
 struct tl_ledger {
     tl_vec *records;     /* struct record */
     tl_vec *dead, *seen; /* uint64_t words */
     tl_hashmap *paths;
     size_t live, dead_count;
-    bool complete, failed;
+    bool complete, failed, indexed;
 };
 struct path_key {
     const tl_ledger *ledger;
@@ -33,6 +33,9 @@ struct path_key {
 };
 static const struct record *record_at(const tl_ledger *ledger, size_t index) {
     return (const struct record *)vec_const_data(ledger->records) + index;
+}
+static uint64_t record_key(const void *context, uint32_t value) {
+    return record_at(context, value)->key;
 }
 static bool check_equal(const void *context, uint32_t value) {
     const struct path_key *key = context;
@@ -61,10 +64,12 @@ static tl_status cover_bits(tl_ledger *ledger, size_t count) {
         status = vec_append(ledger->seen, &zero);
     return status;
 }
+/* One pass over the path yields both halves of a 128-bit hash: the index key
+ * and an independent check. A collision would need both to match. */
 static void fingerprint(const char *path, uint64_t *key, uint64_t *check) {
-    size_t length = strlen(path);
-    *key = hashmap_hash(HASHMAP_HASH_SEED, path, length);
-    *check = hashmap_hash(LEDGER_CHECK_SEED, path, length);
+    tl_hash_pair pair = hashmap_hash_pair(path, strlen(path));
+    *key = pair.first;
+    *check = pair.second;
 }
 /* Binary search for id among records; true and *index on a hit. */
 static bool find_id(const tl_ledger *ledger, uint64_t id, size_t *index) {
@@ -81,6 +86,9 @@ static bool find_id(const tl_ledger *ledger, uint64_t id, size_t *index) {
     *index = low;
     return true;
 }
+static tl_status new_index(const tl_ledger *ledger, tl_hashmap **out) {
+    return hashmap_create_external(record_key, ledger, out);
+}
 tl_status ledger_create(tl_ledger **out) {
     if (out == NULL)
         return TL_INVALID;
@@ -94,7 +102,7 @@ tl_status ledger_create(tl_ledger **out) {
     if (status == TL_OK)
         status = vec_create(sizeof(uint64_t), &ledger->seen);
     if (status == TL_OK)
-        status = hashmap_create(&ledger->paths);
+        status = new_index(ledger, &ledger->paths);
     if (status != TL_OK) {
         ledger_destroy(ledger);
         return status;
@@ -117,11 +125,30 @@ static tl_status fail(tl_ledger *ledger, tl_status status) {
     ledger->complete = false;
     return status;
 }
+/* Replace the index with one listing every live record, sized for all of
+ * them. On failure the old index and the indexed flag stay as they were. */
+static tl_status index_records(tl_ledger *ledger) {
+    tl_hashmap *paths = NULL;
+    tl_status status = new_index(ledger, &paths);
+    if (status == TL_OK)
+        status = hashmap_reserve(paths, ledger->live);
+    for (size_t i = 0; i < vec_count(ledger->records) && status == TL_OK; i++)
+        if (!bit(ledger->dead, i))
+            status = hashmap_insert(paths, record_at(ledger, i)->key, (uint32_t)i);
+    if (status != TL_OK) {
+        hashmap_destroy(paths);
+        return status;
+    }
+    hashmap_destroy(ledger->paths);
+    ledger->paths = paths;
+    ledger->indexed = true;
+    return TL_OK;
+}
 void ledger_reset(tl_ledger *ledger) {
     if (ledger == NULL)
         return;
     tl_hashmap *empty = NULL;
-    if (hashmap_create(&empty) != TL_OK) {
+    if (new_index(ledger, &empty) != TL_OK) {
         /* Records and index stay consistent with each other, but no longer
          * describe the catalog the caller is about to load. */
         fail(ledger, TL_NOMEM);
@@ -133,13 +160,20 @@ void ledger_reset(tl_ledger *ledger) {
     vec_clear(ledger->dead);
     vec_clear(ledger->seen);
     ledger->live = ledger->dead_count = 0;
-    ledger->complete = ledger->failed = false;
+    ledger->complete = ledger->failed = ledger->indexed = false;
 }
 static void unlist(tl_ledger *ledger, size_t index) {
+    if (!ledger->indexed)
+        return;
     struct path_key match = {ledger, 0, (uint32_t)index};
     bool removed =
         hashmap_remove(ledger->paths, record_at(ledger, index)->key, index_equal, &match);
     (void)removed; /* every live record is indexed */
+}
+static tl_status list(tl_ledger *ledger, size_t index) {
+    return ledger->indexed
+               ? hashmap_insert(ledger->paths, record_at(ledger, index)->key, (uint32_t)index)
+               : TL_OK;
 }
 /* Point an existing record (live or dead) at a new path and signature. */
 static tl_status replace(tl_ledger *ledger, size_t index, uint64_t key, uint64_t check,
@@ -155,7 +189,7 @@ static tl_status replace(tl_ledger *ledger, size_t index, uint64_t key, uint64_t
     record->key = key;
     record->check = check;
     record->signature = signature;
-    return hashmap_insert(ledger->paths, key, (uint32_t)index);
+    return list(ledger, index);
 }
 static tl_status append(tl_ledger *ledger, uint64_t id, uint64_t key, uint64_t check,
                         uint64_t signature) {
@@ -167,7 +201,7 @@ static tl_status append(tl_ledger *ledger, uint64_t id, uint64_t key, uint64_t c
     if (status == TL_OK)
         status = vec_append(ledger->records, &record);
     if (status == TL_OK)
-        status = hashmap_insert(ledger->paths, key, (uint32_t)index);
+        status = list(ledger, index);
     if (status == TL_OK)
         ledger->live++;
     else if (vec_count(ledger->records) > index)
@@ -181,41 +215,34 @@ tl_status ledger_put(tl_ledger *ledger, uint64_t id, const char *path, uint64_t 
     fingerprint(path, &key, &check);
     size_t index = 0, count = vec_count(ledger->records);
     tl_status status = TL_OK;
-    if (find_id(ledger, id, &index))
+    if (count != 0 && record_at(ledger, count - 1)->id < id)
+        status = append(ledger, id, key, check, signature); /* the common case: a load */
+    else if (find_id(ledger, id, &index))
         status = replace(ledger, index, key, check, signature);
-    else if (count == 0 || record_at(ledger, count - 1)->id < id)
+    else if (count == 0)
         status = append(ledger, id, key, check, signature);
     else
         status = TL_STATE; /* would break id order: ids only grow */
     return status == TL_OK ? TL_OK : fail(ledger, status);
 }
-/* Drop removed records and rebuild the index over the survivors. */
+/* Drop removed records, then index the survivors again. */
 static void compact(tl_ledger *ledger) {
-    tl_hashmap *paths = NULL;
-    if (hashmap_create(&paths) != TL_OK) {
-        fail(ledger, TL_NOMEM);
-        return;
-    }
     struct record *records = vec_data(ledger->records);
     size_t kept = 0;
-    tl_status status = TL_OK;
-    for (size_t i = 0; i < vec_count(ledger->records) && status == TL_OK; i++) {
-        if (bit(ledger->dead, i))
-            continue;
-        records[kept] = records[i];
-        status = hashmap_insert(paths, records[kept].key, (uint32_t)kept);
-        kept++;
-    }
-    hashmap_destroy(ledger->paths);
-    ledger->paths = paths;
+    for (size_t i = 0; i < vec_count(ledger->records); i++)
+        if (!bit(ledger->dead, i))
+            records[kept++] = records[i];
     vec_truncate(ledger->records, kept);
     vec_clear(ledger->dead);
     vec_clear(ledger->seen);
     ledger->dead_count = 0;
-    if (status == TL_OK)
-        status = cover_bits(ledger, kept);
-    if (status != TL_OK)
+    tl_status status = cover_bits(ledger, kept);
+    if (status == TL_OK && ledger->indexed)
+        status = index_records(ledger);
+    if (status != TL_OK) {
+        ledger->indexed = false; /* the old index points at moved records */
         fail(ledger, status);
+    }
 }
 void ledger_remove(tl_ledger *ledger, uint64_t id) {
     size_t index = 0;
@@ -233,6 +260,8 @@ void ledger_seal(tl_ledger *ledger) {
     if (ledger == NULL)
         return;
     vec_shrink(ledger->records);
+    if (!ledger->failed && !ledger->indexed && index_records(ledger) != TL_OK)
+        fail(ledger, TL_NOMEM);
     ledger->complete = !ledger->failed;
 }
 void ledger_invalidate(tl_ledger *ledger) {
@@ -254,6 +283,9 @@ tl_status ledger_begin(tl_ledger *ledger) {
 }
 bool ledger_find(tl_ledger *ledger, const char *path, uint64_t *id, uint64_t *signature) {
     if (ledger == NULL || path == NULL || id == NULL || signature == NULL)
+        return false;
+    /* Lookups before the seal of a refill index what was appended so far. */
+    if (!ledger->indexed && index_records(ledger) != TL_OK)
         return false;
     struct path_key key = {ledger, 0, 0};
     uint64_t hash = 0;

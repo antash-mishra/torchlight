@@ -76,8 +76,10 @@ static bool has_path(tl_catalog *catalog, const char *path) {
     catalog_release(reader);
     return found;
 }
-/* Watch events publish deltas until the delta outgrows its bound, then a full
- * rebuild compacts it; every file stays queryable and removals hide entries. */
+/* Watch events publish deltas; past the delta's bound they keep publishing
+ * within its slack, and the full rebuild that compacts the delta runs once
+ * the writer is idle (M7 Phase 3). Every file stays queryable and removals
+ * hide entries. */
 static void delta_compaction(void) {
     char directory[] = "/tmp/torchlight-delta-XXXXXX";
     CHECK(mkdtemp(directory) != NULL);
@@ -116,7 +118,14 @@ static void delta_compaction(void) {
         CHECK(has_path(catalog, files[i]));
     }
     tl_writer_stats stats = current_stats(writer);
-    CHECK(stats.delta_publications >= 2 && stats.full_builds > builds);
+    CHECK(stats.delta_publications >= 2);
+    for (size_t wait = 0; wait < 10000 && (stats.compaction_pending || stats.full_builds == builds);
+         wait++) {
+        pause_briefly();
+        stats = current_stats(writer);
+    }
+    CHECK(stats.full_builds > builds && stats.deferred_compactions >= 1 &&
+          !stats.compaction_pending);
     for (int i = 0; i < 6; i++)
         CHECK(has_path(catalog, files[i])); /* compaction kept earlier deltas */
     CHECK(unlink(files[5]) == 0);
@@ -131,8 +140,147 @@ static void delta_compaction(void) {
     CHECK(unlink(config_path) == 0 && unlink(database) == 0 && rmdir(root) == 0 &&
           rmdir(directory) == 0);
 }
+static uint64_t elapsed_ms(const struct timespec *start) {
+    struct timespec now;
+    CHECK(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
+    return (uint64_t)(now.tv_sec - start->tv_sec) * 1000U +
+           (uint64_t)((now.tv_nsec - start->tv_nsec) / 1000000);
+}
+enum { SETTLE_STREAM_MS = 1500, SETTLE_STEP_NS = 20000000, SETTLE_EARLIEST_MS = 400 };
+/* M7 Phase 3: a stream of events postpones its pass until the events pause,
+ * but at most a second after the first one. Files created every 20 ms for
+ * 1.5 s: the first is not searchable within 0.4 s (each event slid
+ * the pass), yet becomes searchable before the stream ends (the cap), and a
+ * handful of passes cover the whole stream instead of one per 100 ms. */
+static void bursts_settle(void) {
+    char directory[] = "/tmp/torchlight-settle-XXXXXX";
+    CHECK(mkdtemp(directory) != NULL);
+    char root[256], database[256], config_path[256], path[300], first[300];
+    CHECK(snprintf(root, sizeof(root), "%s/root", directory) > 0 && mkdir(root, 0700) == 0);
+    CHECK(snprintf(database, sizeof(database), "%s/catalog.db", directory) > 0);
+    CHECK(snprintf(config_path, sizeof(config_path), "%s/config", directory) > 0);
+    FILE *config_file = fopen(config_path, "w");
+    CHECK(config_file != NULL && fprintf(config_file, "root = %s\n", root) > 0 &&
+          fclose(config_file) == 0);
+    tl_config *config = NULL;
+    CHECK(config_create("torchlight", database, config_path, NULL, &config) == TL_OK);
+    tl_catalog *catalog = NULL;
+    CHECK(catalog_create(2, &catalog) == TL_OK);
+    tl_writer_options options = {.config = config,
+                                 .catalog = catalog,
+                                 .socket_path = "/tmp/unused-settle.sock",
+                                 .watch_capacity = 16,
+                                 .max_entries = 1000,
+                                 .max_path_bytes = 65536,
+                                 .readers = 1,
+                                 .rescan_ms = 3600000,
+                                 .history_days = 30};
+    tl_writer *writer = NULL;
+    CHECK(writer_create(&options, &writer) == TL_OK);
+    for (size_t i = 0; i < 10000 && current_stats(writer).reconciliations == 0; i++)
+        pause_briefly();
+    uint64_t passes = current_stats(writer).reconciliations, first_seen = 0;
+    struct timespec start;
+    CHECK(clock_gettime(CLOCK_MONOTONIC, &start) == 0);
+    int created = 0;
+    for (; elapsed_ms(&start) < SETTLE_STREAM_MS; created++) {
+        CHECK(snprintf(path, sizeof(path), "%s/stream-%d.txt", root, created) > 0);
+        create_file(path);
+        if (created == 0)
+            memcpy(first, path, sizeof(first));
+        if (first_seen == 0 && has_path(catalog, first))
+            first_seen = elapsed_ms(&start);
+        const struct timespec step = {0, SETTLE_STEP_NS};
+        CHECK(nanosleep(&step, NULL) == 0);
+    }
+    for (size_t wait = 0; wait < 10000 && !has_path(catalog, path); wait++)
+        pause_briefly();
+    CHECK(has_path(catalog, path) && has_path(catalog, first));
+    CHECK(first_seen >= SETTLE_EARLIEST_MS && first_seen != 0);
+    CHECK(current_stats(writer).reconciliations - passes <= 4);
+    writer_destroy(writer);
+    CHECK(catalog_destroy(catalog) == TL_OK);
+    config_destroy(config);
+    for (int i = 0; i < created; i++) {
+        CHECK(snprintf(path, sizeof(path), "%s/stream-%d.txt", root, i) > 0);
+        CHECK(unlink(path) == 0);
+    }
+    CHECK(unlink(config_path) == 0 && unlink(database) == 0 && rmdir(root) == 0 &&
+          rmdir(directory) == 0);
+}
+enum { MASS_DIRECTORIES = 1100, MASS_BATCH = 100, MASS_STEP_NS = 20000000 };
+static void mass_path(char *out, size_t size, const char *root, int i, bool file) {
+    CHECK(snprintf(out, size, file ? "%s/mass-%d/inner.txt" : "%s/mass-%d", root, i) > 0);
+}
+/* M7 Phase 3 regression: settling must not let a mass deletion pile up more
+ * scopes than one pass holds (1,024), which would turn it into a full scan of
+ * every root. 1,100 directories removed in batches over about 0.2 s, faster
+ * than the settle window: the passes stay scoped. */
+static void mass_deletion_stays_scoped(void) {
+    char directory[] = "/tmp/torchlight-mass-XXXXXX";
+    CHECK(mkdtemp(directory) != NULL);
+    char root[256], database[256], config_path[256], path[320];
+    CHECK(snprintf(root, sizeof(root), "%s/root", directory) > 0 && mkdir(root, 0700) == 0);
+    CHECK(snprintf(database, sizeof(database), "%s/catalog.db", directory) > 0);
+    CHECK(snprintf(config_path, sizeof(config_path), "%s/config", directory) > 0);
+    for (int i = 0; i < MASS_DIRECTORIES; i++) {
+        mass_path(path, sizeof(path), root, i, false);
+        CHECK(mkdir(path, 0700) == 0);
+        mass_path(path, sizeof(path), root, i, true);
+        create_file(path);
+    }
+    FILE *config_file = fopen(config_path, "w");
+    CHECK(config_file != NULL && fprintf(config_file, "root = %s\n", root) > 0 &&
+          fclose(config_file) == 0);
+    tl_config *config = NULL;
+    CHECK(config_create("torchlight", database, config_path, NULL, &config) == TL_OK);
+    tl_catalog *catalog = NULL;
+    CHECK(catalog_create(2, &catalog) == TL_OK);
+    tl_writer_options options = {.config = config,
+                                 .catalog = catalog,
+                                 .socket_path = "/tmp/unused-mass.sock",
+                                 .watch_capacity = 4096,
+                                 .max_entries = 10000,
+                                 .max_path_bytes = 1 << 20,
+                                 .readers = 1,
+                                 .rescan_ms = 3600000,
+                                 .history_days = 30};
+    tl_writer *writer = NULL;
+    CHECK(writer_create(&options, &writer) == TL_OK);
+    mass_path(path, sizeof(path), root, MASS_DIRECTORIES - 1, true);
+    for (size_t i = 0; i < 20000 && !has_path(catalog, path); i++)
+        pause_briefly();
+    CHECK(has_path(catalog, path));
+    tl_writer_stats before = current_stats(writer);
+    for (int i = 0; i < MASS_DIRECTORIES; i++) {
+        mass_path(path, sizeof(path), root, i, true);
+        CHECK(unlink(path) == 0);
+        mass_path(path, sizeof(path), root, i, false);
+        CHECK(rmdir(path) == 0);
+        const struct timespec step = {0, MASS_STEP_NS};
+        if (i % MASS_BATCH == MASS_BATCH - 1)
+            CHECK(nanosleep(&step, NULL) == 0);
+    }
+    mass_path(path, sizeof(path), root, 0, true);
+    for (size_t i = 0; i < 20000 && has_path(catalog, path); i++)
+        pause_briefly();
+    mass_path(path, sizeof(path), root, MASS_DIRECTORIES - 1, true);
+    for (size_t i = 0; i < 20000 && has_path(catalog, path); i++)
+        pause_briefly();
+    tl_writer_stats after = current_stats(writer);
+    CHECK(!has_path(catalog, path) && after.scoped_reconciliations > before.scoped_reconciliations);
+    CHECK(after.reconciliations - after.scoped_reconciliations ==
+          before.reconciliations - before.scoped_reconciliations);
+    writer_destroy(writer);
+    CHECK(catalog_destroy(catalog) == TL_OK);
+    config_destroy(config);
+    CHECK(unlink(config_path) == 0 && unlink(database) == 0 && rmdir(root) == 0 &&
+          rmdir(directory) == 0);
+}
 void test_writer(void) {
     delta_compaction();
+    bursts_settle();
+    mass_deletion_stays_scoped();
     char directory[] = "/tmp/torchlight-writer-XXXXXX";
     CHECK(mkdtemp(directory) != NULL);
     char root[256], sub[256], first[256], second[256], overflow_path[256], database[256],

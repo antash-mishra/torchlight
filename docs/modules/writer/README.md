@@ -2,7 +2,8 @@
 
 > **Status:** Implemented (M6 steps 1 and 3; M5 batched history and usage load; M7 phase 1 repair
 > set, metadata commits, memory release, and full scans only for mounts near a root; M7 Phase 2
-> exact passes against the persisted-state map and one long-lived watcher):
+> exact passes against the persisted-state map and one long-lived watcher; M7 Phase 3 settled
+> event passes and deferred compaction):
 > indexing and persistence threads, private
 > scan batches, scoped rescans of event directories, delta publication with compaction;
 > M2/M3 reconciliation contracts retained
@@ -24,7 +25,9 @@ two views. The mutex protects status, the history ring and the batch handoff,
 never I/O or builds. See
 [ADR 0028](../../adr/0028-m6-search-thread-and-persistence-owner.md).
 
-An event burst schedules one reconciliation, coalesced for 100 ms. The worker
+An event burst schedules one reconciliation, coalesced for 100 ms after its
+latest event (at most 1 s after its first; see
+[Settled bursts](#settled-bursts-and-deferred-compaction-m7-phase-3)). The worker
 resolves/deduplicates configured roots each time, confirms watches in the one
 live watcher while crawling (sweeping the unconfirmed ones after a full scan),
 applies paired renames, and prunes only successfully scanned scopes.
@@ -133,6 +136,39 @@ window) with RSS growing about 1%, against 4 s and a doubled engine before. See
 counted deleted base rows toward this bound was removed after its bulk-update
 cost was measured ([withdrawn ADR 0041](../../adr/0041-compaction-counts-retired-base-entries.md)).
 Deletion-only batches publish tombstones without forcing a full build.
+
+## Settled bursts and deferred compaction (M7 Phase 3)
+
+Phase 2's faster scans caught a 20k-file burst halfway through, and each half
+then exceeded the delta bound: two full rebuilds, and the last file searchable
+about 3 s after the burst ended
+([ADR 0045](../../adr/0045-settled-bursts-and-deferred-compaction.md)).
+
+- **Settle.** A filesystem event sets the pass `WRITER_COALESCE_MS` (100 ms)
+  after the latest event, but never later than `WRITER_SETTLE_MS` (1 s) after
+  the first event since the last pass began, so a burst is scanned once it
+  pauses. A single change is still rescanned 100 ms later. Requests keep the
+  earliest time asked for (`schedule`: `reconcile`, overflow, repair and
+  backstop timers, mounts, replaced directories); a failed pass retries at its
+  delay (`retry`). Once `WRITER_SETTLE_SCOPES` (512) scopes are pending the
+  pass runs at once: past 1,024 scopes it would scan every root, and a mass
+  deletion adds one scope per removed directory.
+- **Deferred compaction.** Deltas may grow to `WRITER_DELTA_SLACK` (4) times
+  their bound. A delta past its bound is published immediately and marked
+  `compaction_pending`. The full rebuild that compacts it runs between passes
+  as soon as no pass is pending (events that arrived since the last drain go
+  first), or `WRITER_COMPACT_DEFER_MS` (2 s) after it became due if events keep
+  coming. It publishes through `catalog_publish_compacted`, because it
+  rebuilds the same committed `catalog_gen` as the delta it replaces. Search
+  keeps the delta meanwhile, so a failed compaction only retries. Past the
+  slack, publication rebuilds immediately, as before. `status` reports
+  `compaction_pending` and `deferred_compactions`; `active` is true while a
+  compaction runs.
+
+Measured at 213k (medians, `-O3`): the burst is searchable 0.5 s after it
+ends (was 3.0 s), with one rebuild and 2.0 CPU-s (was 3.6); renaming the 22k
+tree 0.47 s (was 2.1 s); deleting it 2 to 150 ms in scoped passes. Queries
+during the compaction window: p50 0.91 ms, p95 2.7 ms.
 
 ## Repair set and backstop (M7 phase 1)
 

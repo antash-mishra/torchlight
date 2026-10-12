@@ -3,6 +3,7 @@
 #include "torchlight/hashmap.h"
 #include "torchlight/json.h"
 #include "torchlight/path.h"
+#include "torchlight/vec.h"
 #include <limits.h>
 #include <math.h>
 #include <sqlite3.h>
@@ -14,6 +15,9 @@
 #define IDENTITY_OBJECT_BYTES 16
 #define IDENTITY_RENAMED 2
 #define NANOSECONDS_PER_SECOND 1000000000U
+/* Statements of a children prune: walk the directory's rows in path order,
+ * test one child path for membership in seen, delete one child's rows. */
+enum { CHILDREN_WALK, CHILDREN_SEEN, CHILDREN_DELETE, CHILDREN_STATEMENTS };
 /* History statements, prepared on first use and reused for every event. */
 enum { HISTORY_SEARCH, HISTORY_OPEN, HISTORY_DESKTOP_OPEN, HISTORY_STATEMENTS };
 static const char *const HISTORY_SQL[HISTORY_STATEMENTS] = {
@@ -32,6 +36,8 @@ struct tl_store {
     sqlite3 *db;
     /* Per-entry statements are prepared once; a scan runs them for every entry. */
     sqlite3_stmt *put, *mark_seen, *keep, *identity, *unseen;
+    /* Children prunes (store_prune_children), prepared on first use. */
+    sqlite3_stmt *children[CHILDREN_STATEMENTS];
     sqlite3_stmt *embedding_get, *embedding_put, *embedding_touch;
     sqlite3_stmt *history[HISTORY_STATEMENTS];
     /* history_batch: a store_history_begin transaction is open. changed: the
@@ -300,6 +306,8 @@ void store_destroy(tl_store *store) {
     sqlite3_finalize(store->embedding_get);
     sqlite3_finalize(store->embedding_put);
     sqlite3_finalize(store->embedding_touch);
+    for (size_t i = 0; i < CHILDREN_STATEMENTS; i++)
+        sqlite3_finalize(store->children[i]);
     for (size_t i = 0; i < HISTORY_STATEMENTS; i++)
         sqlite3_finalize(store->history[i]);
     free(store->change_ids);
@@ -376,22 +384,36 @@ static void encode_identity(const tl_crawl_entry *entry, unsigned char out[IDENT
 }
 /* Signatures hash exactly the columns store_put compares (is_dir, mtime,
  * size, identity bytes), each tagged present or absent, so a saved row and a
- * crawl entry hash alike exactly when the upsert would change nothing. */
+ * crawl entry hash alike exactly when the upsert would change nothing. The
+ * columns are packed into one buffer and hashed in one pass; signatures live
+ * in memory only (ADR 0040), so the hash may change between versions. */
 enum { SIGNATURE_ABSENT, SIGNATURE_PRESENT };
-static uint64_t signature_number(uint64_t state, bool present, uint64_t value) {
-    unsigned char bytes[9] = {present ? SIGNATURE_PRESENT : SIGNATURE_ABSENT};
-    if (present)
-        identity_number(bytes + 1, 8, value);
-    return hashmap_hash(state, bytes, present ? sizeof(bytes) : 1);
+#define SIGNATURE_NUMBER_BYTES 9U
+#define SIGNATURE_BYTES (1U + 3U * SIGNATURE_NUMBER_BYTES + IDENTITY_BYTES)
+static size_t signature_number(unsigned char *out, bool present, uint64_t value) {
+    out[0] = present ? SIGNATURE_PRESENT : SIGNATURE_ABSENT;
+    if (!present)
+        return 1;
+    identity_number(out + 1, 8, value);
+    return SIGNATURE_NUMBER_BYTES;
 }
 static uint64_t signature_of(bool is_dir, bool has_mtime, int64_t mtime, bool has_size,
                              int64_t size, const unsigned char *identity, size_t identity_length) {
-    unsigned char kind = is_dir ? 1 : 0;
-    uint64_t state = hashmap_hash(HASHMAP_HASH_SEED, &kind, 1);
-    state = signature_number(state, has_mtime, (uint64_t)mtime);
-    state = signature_number(state, has_size, (uint64_t)size);
-    state = signature_number(state, identity != NULL, identity_length);
-    return identity == NULL ? state : hashmap_hash(state, identity, identity_length);
+    /* An identity of another length than store_put writes never matches a
+     * crawl entry; marking it absent keeps that and bounds the buffer. */
+    if (identity_length != IDENTITY_BYTES)
+        identity = NULL;
+    unsigned char bytes[SIGNATURE_BYTES];
+    size_t length = 0;
+    bytes[length++] = is_dir ? 1 : 0;
+    length += signature_number(bytes + length, has_mtime, (uint64_t)mtime);
+    length += signature_number(bytes + length, has_size, (uint64_t)size);
+    length += signature_number(bytes + length, identity != NULL, IDENTITY_BYTES);
+    if (identity != NULL) {
+        memcpy(bytes + length, identity, IDENTITY_BYTES);
+        length += IDENTITY_BYTES;
+    }
+    return hashmap_hash_pair(bytes, length).first;
 }
 bool store_signature(const tl_crawl_entry *entry, uint64_t *out) {
     if (entry == NULL || out == NULL || !entry->has_stat || !entry->has_identity ||
@@ -664,51 +686,263 @@ tl_status store_keep(tl_store *store, const char *path) {
 static const char PRUNE_TREE_SQL[] =
     "DELETE FROM files WHERE path>=?2 AND path<?3 AND "
     "path NOT IN(SELECT path FROM seen)" SPARE_KEPT_AND_NESTED_ROOTS;
-/* A row survives a children rescan when its direct-child component was seen. */
-static const char PRUNE_CHILDREN_SQL[] =
-    "DELETE FROM files WHERE path>=?2 AND path<?3 AND "
-    "(CASE WHEN instr(substr(path,length(?2)+1),X'2F')=0 THEN path "
-    "ELSE substr(path,1,length(?2)+instr(substr(path,length(?2)+1),X'2F')-1) END) "
-    "NOT IN(SELECT path FROM seen)" SPARE_KEPT_AND_NESTED_ROOTS;
+/* A row survives a children rescan when its direct-child component was seen.
+ * Evaluating that for every row below the directory costs the whole catalog
+ * for a root (about 0.1 s at 213k rows), so store_prune_children walks the
+ * rows in path order instead (CHILDREN_WALK), jumping over each child's
+ * subtree, and deletes the unseen children one at a time (CHILDREN_DELETE:
+ * ?1 the child, ?4 and ?5 its subtree's range). */
+static const char *const CHILDREN_SQL[CHILDREN_STATEMENTS] = {
+    "SELECT path,path IN(SELECT path FROM seen) FROM files WHERE path>=?1 AND path<?2 "
+    "ORDER BY path",
+    "SELECT 1 FROM seen WHERE path=?1",
+    "DELETE FROM files WHERE (path=?1 OR (path>=?4 AND path<?5))" SPARE_KEPT_AND_NESTED_ROOTS};
+/* The rows strictly below path lie in [prefix, limit): "path/" < every
+ * "path/..." < "path0". A directory scope of "/" uses "/" itself as prefix
+ * (slash false), "/" < every absolute path < "0". */
+struct range {
+    char *prefix, *limit;
+    size_t length;
+};
+static void range_free(struct range *range) {
+    free(range->prefix);
+    free(range->limit);
+    *range = (struct range){0};
+}
+static tl_status make_range(const char *path, size_t length, bool slash, struct range *out) {
+    *out = (struct range){0};
+    if (length > INT_MAX - 2)
+        return TL_LIMIT;
+    out->prefix = malloc(length + 2);
+    out->limit = malloc(length + 2);
+    if (out->prefix == NULL || out->limit == NULL) {
+        range_free(out);
+        return TL_NOMEM;
+    }
+    memcpy(out->prefix, path, length);
+    if (slash)
+        out->prefix[length++] = '/';
+    memcpy(out->limit, out->prefix, length);
+    out->limit[length - 1] = (char)('/' + 1);
+    out->prefix[length] = out->limit[length] = 0;
+    out->length = length;
+    return TL_OK;
+}
+static tl_status range_of(const char *directory, struct range *out) {
+    size_t length = strlen(directory);
+    return make_range(directory, length, length != 1, out);
+}
 static tl_status prune_range(tl_store *store, const char *sql, const char *directory) {
     if (store == NULL || directory == NULL || directory[0] != '/')
         return TL_INVALID;
     if (!store->transaction)
         return TL_STATE;
-    size_t length = strlen(directory);
-    if (length > INT_MAX - 2)
-        return TL_LIMIT;
-    char *prefix = malloc(length + 2), *limit = malloc(length + 2);
-    tl_status status = prefix == NULL || limit == NULL ? TL_NOMEM : TL_OK;
-    if (status == TL_OK) {
-        memcpy(prefix, directory, length);
-        if (length != 1)
-            prefix[length++] = '/';
-        memcpy(limit, prefix, length);
-        limit[length - 1] = (char)('/' + 1); /* "dir/" < every "dir/..." < "dir0" */
-    }
+    struct range range;
+    tl_status status = range_of(directory, &range);
     sqlite3_stmt *statement = NULL;
     if (status == TL_OK && sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
         status = TL_IO;
     if (status == TL_OK)
         status = bind_blob(statement, 1, directory, strlen(directory));
     if (status == TL_OK)
-        status = bind_blob(statement, 2, prefix, length);
+        status = bind_blob(statement, 2, range.prefix, range.length);
     if (status == TL_OK)
-        status = bind_blob(statement, 3, limit, length);
+        status = bind_blob(statement, 3, range.limit, range.length);
     if (status == TL_OK && sqlite3_step(statement) != SQLITE_DONE)
         status = TL_IO;
     if (statement != NULL && sqlite3_finalize(statement) != SQLITE_OK)
         status = TL_IO;
-    free(prefix);
-    free(limit);
+    range_free(&range);
     return status;
-}
-tl_status store_prune_children(tl_store *store, const char *directory) {
-    return prune_range(store, PRUNE_CHILDREN_SQL, directory);
 }
 tl_status store_prune_tree(tl_store *store, const char *directory) {
     return prune_range(store, PRUNE_TREE_SQL, directory);
+}
+static tl_status children_statement(tl_store *store, size_t which, sqlite3_stmt **out) {
+    if (store->children[which] == NULL &&
+        sqlite3_prepare_v3(store->db, CHILDREN_SQL[which], -1, SQLITE_PREPARE_PERSISTENT,
+                           &store->children[which], NULL) != SQLITE_OK)
+        return TL_IO;
+    *out = store->children[which];
+    return TL_OK;
+}
+static void reset_statement(sqlite3_stmt *statement) {
+    int code = sqlite3_reset(statement);
+    (void)code; /* a failed step already reported its error */
+    sqlite3_clear_bindings(statement);
+}
+/* Append an owned copy of the length-byte child path, unless it repeats the
+ * last one (a child's own row usually precedes the rows below it). */
+static tl_status doom_child(tl_vec *doomed, const unsigned char *path, size_t length) {
+    char *const *items = vec_const_data(doomed);
+    size_t count = vec_count(doomed);
+    if (count != 0 && strlen(items[count - 1]) == length &&
+        memcmp(items[count - 1], path, length) == 0)
+        return TL_OK;
+    char *copy = malloc(length + 1);
+    if (copy == NULL)
+        return TL_NOMEM;
+    memcpy(copy, path, length);
+    copy[length] = 0;
+    tl_status status = vec_append(doomed, &copy);
+    if (status != TL_OK)
+        free(copy);
+    return status;
+}
+/* Whether this transaction saw the length-byte child path. */
+static tl_status child_seen(tl_store *store, const unsigned char *path, size_t length, bool *seen) {
+    *seen = false;
+    sqlite3_stmt *statement = NULL;
+    tl_status status = children_statement(store, CHILDREN_SEEN, &statement);
+    if (status != TL_OK)
+        return status;
+    status = bind_blob(statement, 1, (const char *)path, length);
+    int code = status == TL_OK ? sqlite3_step(statement) : SQLITE_DONE;
+    if (status == TL_OK && code != SQLITE_ROW && code != SQLITE_DONE)
+        status = TL_IO;
+    *seen = code == SQLITE_ROW;
+    reset_statement(statement);
+    return status;
+}
+/* Where a children walk restarts: start holds the key the next segment
+ * seeks to, next the key a row below a child asks for ("child0"). Both
+ * buffers hold capacity bytes. */
+struct walk {
+    char *start, *next;
+    size_t start_length, next_length, capacity;
+};
+static tl_status walk_reserve(struct walk *walk, size_t bytes) {
+    if (bytes <= walk->capacity)
+        return TL_OK;
+    char *start = realloc(walk->start, bytes);
+    if (start == NULL)
+        return TL_NOMEM;
+    walk->start = start;
+    char *next = realloc(walk->next, bytes);
+    if (next == NULL)
+        return TL_NOMEM;
+    walk->next = next;
+    walk->capacity = bytes;
+    return TL_OK;
+}
+/* One row of a children walk below a prefix of prefix bytes. A direct child
+ * is doomed when unseen. A row further below belongs to the child named by
+ * its next component, whose own row (if any) came earlier: that child is
+ * doomed when unseen, and the walk re-seeks past its subtree. */
+static tl_status walk_row(tl_store *store, sqlite3_stmt *statement, size_t prefix, tl_vec *doomed,
+                          struct walk *walk) {
+    const unsigned char *path = sqlite3_column_blob(statement, 0);
+    int bytes = sqlite3_column_bytes(statement, 0);
+    if (path == NULL || bytes < 0 || (size_t)bytes < prefix)
+        return TL_IO;
+    size_t length = (size_t)bytes;
+    const unsigned char *slash = memchr(path + prefix, '/', length - prefix);
+    if (slash == NULL)
+        return sqlite3_column_int(statement, 1) != 0 ? TL_OK : doom_child(doomed, path, length);
+    size_t child = (size_t)(slash - path);
+    bool seen = false;
+    tl_status status = child_seen(store, path, child, &seen);
+    if (status == TL_OK && !seen)
+        status = doom_child(doomed, path, child);
+    memcpy(walk->next, path, child);
+    walk->next[child] = (char)('/' + 1);
+    walk->next_length = child + 1;
+    return status;
+}
+/* Step from walk->start until the range ends (next_length stays 0) or a row
+ * below a child asks to re-seek. */
+static tl_status walk_segment(tl_store *store, sqlite3_stmt *statement, const struct range *range,
+                              tl_vec *doomed, struct walk *walk) {
+    walk->next_length = 0;
+    tl_status status = bind_blob(statement, 1, walk->start, walk->start_length);
+    if (status == TL_OK)
+        status = bind_blob(statement, 2, range->limit, range->length);
+    int code = SQLITE_DONE;
+    while (status == TL_OK && walk->next_length == 0 &&
+           (code = sqlite3_step(statement)) == SQLITE_ROW) {
+        status = walk_reserve(walk, (size_t)sqlite3_column_bytes(statement, 0) + 1);
+        if (status == TL_OK)
+            status = walk_row(store, statement, range->length, doomed, walk);
+    }
+    if (status == TL_OK && walk->next_length == 0 && code != SQLITE_DONE)
+        status = TL_IO;
+    reset_statement(statement);
+    return status;
+}
+/* Collect the unseen direct children in range (owned copies) in one pass over
+ * the path index: one step per child, one seek per child with rows below it. */
+static tl_status walk_children(tl_store *store, const struct range *range, tl_vec *doomed) {
+    sqlite3_stmt *statement = NULL;
+    struct walk walk = {0};
+    tl_status status = children_statement(store, CHILDREN_WALK, &statement);
+    if (status == TL_OK)
+        status = walk_reserve(&walk, range->length + 1);
+    if (status == TL_OK) {
+        memcpy(walk.start, range->prefix, range->length);
+        walk.start_length = range->length;
+    }
+    bool more = status == TL_OK;
+    while (more) {
+        status = walk_segment(store, statement, range, doomed, &walk);
+        more = status == TL_OK && walk.next_length != 0;
+        if (more) {
+            char *swap = walk.start;
+            walk.start = walk.next;
+            walk.next = swap;
+            walk.start_length = walk.next_length;
+        }
+    }
+    free(walk.start);
+    free(walk.next);
+    return status;
+}
+/* Delete each doomed child with every row below it ("child/..."), sparing
+ * kept paths and the registered roots nested in range. */
+static tl_status delete_children(tl_store *store, const struct range *range, const tl_vec *doomed) {
+    sqlite3_stmt *statement = NULL;
+    tl_status status = children_statement(store, CHILDREN_DELETE, &statement);
+    char *const *children = vec_const_data(doomed);
+    for (size_t i = 0; i < vec_count(doomed) && status == TL_OK; i++) {
+        size_t length = strlen(children[i]);
+        struct range below;
+        status = make_range(children[i], length, true, &below);
+        if (status == TL_OK)
+            status = bind_blob(statement, 1, children[i], length);
+        if (status == TL_OK)
+            status = bind_blob(statement, 2, range->prefix, range->length);
+        if (status == TL_OK)
+            status = bind_blob(statement, 3, range->limit, range->length);
+        if (status == TL_OK)
+            status = bind_blob(statement, 4, below.prefix, below.length);
+        if (status == TL_OK)
+            status = bind_blob(statement, 5, below.limit, below.length);
+        if (status == TL_OK && sqlite3_step(statement) != SQLITE_DONE)
+            status = TL_IO;
+        reset_statement(statement);
+        range_free(&below);
+    }
+    return status;
+}
+tl_status store_prune_children(tl_store *store, const char *directory) {
+    if (store == NULL || directory == NULL || directory[0] != '/')
+        return TL_INVALID;
+    if (!store->transaction)
+        return TL_STATE;
+    struct range range;
+    tl_vec *doomed = NULL;
+    tl_status status = range_of(directory, &range);
+    if (status == TL_OK)
+        status = vec_create(sizeof(char *), &doomed);
+    if (status == TL_OK)
+        status = walk_children(store, &range, doomed);
+    if (status == TL_OK)
+        status = delete_children(store, &range, doomed);
+    char **children = vec_data(doomed);
+    for (size_t i = 0; i < vec_count(doomed); i++)
+        free(children[i]);
+    vec_destroy(doomed);
+    range_free(&range);
+    return status;
 }
 tl_status store_track_changes(tl_store *store, size_t limit) {
     if (store == NULL)

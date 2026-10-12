@@ -35,7 +35,12 @@ memory is measured against a warm steady state
 full scans cheap: one stat per entry, one long-lived watcher and an in-memory
 persisted-state map ([ADR 0040](adr/0040-cheap-full-scans.md)). Its
 [health report](reports/m7-phase2-health-report.html) lists every measurement
-with reference ranges, red flags and definitions in plain language.
+with reference ranges, red flags and definitions in plain language. Phase 3
+closes its open items: event passes settle and a large delta publishes before
+its compaction ([ADR 0045](adr/0045-settled-bursts-and-deferred-compaction.md)),
+and children prunes walk the path index while the ledger is leaner
+([ADR 0046](adr/0046-children-walks-and-a-lean-ledger.md)); see the
+[Phase 3 health report](reports/m7-phase3-health-report.html).
 
 Start here. Read in this order:
 
@@ -251,6 +256,12 @@ the root [README](../README.md) for commands, and
 - [0044: M7 memory acceptance against a warm steady state](adr/0044-m7-memory-acceptance.md)
   measures retained free heap and RSS after a rebuild against warm steady RSS,
   and records deleted-entry retention as a bounded limit.
+- [0045: Settled event passes and deferred compaction](adr/0045-settled-bursts-and-deferred-compaction.md)
+  rescans a burst once it pauses (at most 1 s later) and publishes a delta up
+  to four times its bound at once, compacting it when the writer is idle.
+- [0046: Children prunes by index walk, and a lean ledger](adr/0046-children-walks-and-a-lean-ledger.md)
+  prunes a folder's children with one step per child instead of one per row
+  below it, and fingerprints paths in one pass with 4-byte index slots.
 
 ## Keeping docs current
 

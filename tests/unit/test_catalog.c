@@ -60,6 +60,7 @@ static void ownership_and_limits(void) {
     catalog_snapshot_destroy(view);
     view = snapshot(0, "/r/obsolete.md", 1);
     CHECK(catalog_publish(catalog, &view) == TL_STATE);
+    CHECK(catalog_publish_compacted(catalog, &view) == TL_STATE); /* older stays refused */
     catalog_snapshot_destroy(view);
     view = snapshot(2, "/r/new.md", 1);
     CHECK(catalog_publish(catalog, &view) == TL_LIMIT && view != NULL);
@@ -284,6 +285,25 @@ static void derived_snapshots(void) {
     CHECK(catalog_stats(catalog, &stats) == TL_OK && stats.snapshots == 1);
     CHECK(catalog_acquire(catalog, &reader) == TL_OK);
     CHECK(catalog_query(reader, "alpha", results, 8, &count) == TL_OK && count == 4);
+    catalog_release(reader);
+    /* M7 Phase 3: the deferred compaction of that delta rebuilds the same
+     * catalog_gen as one base; only catalog_publish_compacted accepts it, and
+     * it answers exactly as base plus delta did. */
+    const char *compacted_paths[] = {"/r", "/r/alpha.md", "/r/alpha2.md", "/r/alpha.mdz",
+                                     "/r/alpha.mdx"};
+    const uint64_t compacted_ids[] = {1, 2, 3, 5, 6};
+    tl_catalog_snapshot *compacted = NULL;
+    CHECK(lexical_create(&engine) == TL_OK);
+    for (size_t i = 0; i < 5; i++)
+        CHECK(lexical_add(engine, compacted_ids[i], compacted_paths[i], i == 0) == TL_OK);
+    CHECK(lexical_finish(engine) == TL_OK);
+    CHECK(catalog_snapshot_create(&engine, 2, 1, &compacted) == TL_OK);
+    CHECK(catalog_publish(catalog, &compacted) == TL_STATE && compacted != NULL);
+    CHECK(catalog_publish_compacted(catalog, &compacted) == TL_OK && compacted == NULL);
+    catalog_reclaim(catalog);
+    CHECK(catalog_acquire(catalog, &reader) == TL_OK && catalog_reader_gen(reader) == 2);
+    CHECK(catalog_query(reader, "alpha", results, 8, &count) == TL_OK && count == 4);
+    CHECK(results[0].id == 2 && results[1].id == 6 && results[2].id == 5 && results[3].id == 3);
     catalog_release(reader);
     tl_lexical *unused = NULL;
     CHECK(catalog_snapshot_derive(NULL, &unused, NULL, 0, 3, 1, &derived) == TL_INVALID);

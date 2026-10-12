@@ -89,8 +89,9 @@ tl_status store_prune(tl_store *store, const char *root);
 /** After a children-only crawl_scope of directory in this transaction, delete
  * its direct children (with their subtrees) that the transaction did not see.
  * Entries at or below kept paths and registered roots nested in directory are
- * spared; directory itself is never deleted. Uses a path-index range, never a
- * whole-catalog scan. TL_STATE outside a transaction, TL_INVALID for NULL or
+ * spared; directory itself is never deleted. Costs one path-index step per
+ * direct child plus one seek per child with rows below it, never a step per
+ * row below directory. TL_STATE outside a transaction, TL_INVALID for NULL or
  * relative paths, TL_LIMIT/NOMEM/IO. directory is borrowed for the call. */
 tl_status store_prune_children(tl_store *store, const char *directory);
 /** After a recursive crawl_scope of directory, delete entries strictly below

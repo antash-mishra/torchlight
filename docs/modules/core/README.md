@@ -29,11 +29,24 @@ other value keep working. `hashmap_hash` is FNV-1a with an extendable state
 (hashing pieces equals hashing their concatenation); buckets apply a final mix
 to its weak low bits.
 
+M7 Phase 3 ([ADR 0046](../../adr/0046-children-walks-and-a-lean-ledger.md))
+adds two pieces for the [ledger](../ledger/README.md):
+- `hashmap_create_external(hash_of, context)` makes a map whose slots hold
+  only the 4-byte value. Whenever it needs a stored value's hash (lookups,
+  growth, backward-shift removal) it calls `hash_of(context, value)`, so a
+  caller that already stores each key's hash saves 8 bytes per slot.
+  `hashmap_reserve(count)` sizes either kind of map once.
+- `hashmap_hash_pair(bytes, length)` is MurmurHash3 x64_128 with seed 0: one
+  pass, eight bytes at a time, returning both 64-bit halves. It reads words
+  in native byte order, so it is for in-memory use only.
+
 The [configuration](../config/README.md) resolver also lives in `src/core/`.
 Tests cover overflow, vector growth/bulk/clear/shrink, map growth, equal hashes
 with different keys, misses, piecewise hashing, and removal inside a long run
 of equal hashes and ordinary short runs (every other value stays reachable and
-removed values can be inserted again).
+removed values can be inserted again). External-hash maps repeat the removal
+checks across growth and a reservation; `hashmap_hash_pair` is checked against
+MurmurHash3's reference vectors and for every tail length.
 
 `json.h` / `src/core/json.c` parse into caller-owned token buffers and encode into
 caller-owned output buffers without allocation. Strings validate UTF-8 with the

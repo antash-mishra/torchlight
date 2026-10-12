@@ -350,6 +350,10 @@ static void indexing_status(tl_json_buffer *b, const tl_writer_stats *stats,
     json_number(b, stats->delta_publications);
     json_raw(b, ",\"full_builds\":");
     json_number(b, stats->full_builds);
+    json_raw(b, ",\"compaction_pending\":");
+    boolean(b, stats->compaction_pending);
+    json_raw(b, ",\"deferred_compactions\":");
+    json_number(b, stats->deferred_compactions);
     json_raw(b, ",\"watches\":");
     json_number(b, stats->watches);
     json_raw(b, ",\"watch_overflows\":");

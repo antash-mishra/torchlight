@@ -2,6 +2,9 @@
 
 - **Status:** Accepted; implemented
 - **Date:** 2026-10-07
+- **Amended by:** [0045](0045-settled-bursts-and-deferred-compaction.md) (event
+  passes settle; a delta past its bound publishes and its compaction waits
+  for an idle writer, up to four times the bound)
 
 ## Context
 

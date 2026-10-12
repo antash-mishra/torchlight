@@ -80,6 +80,11 @@ void catalog_snapshot_destroy(tl_catalog_snapshot *snapshot);
  * for NULL; TL_STATE for non-increasing catalog_gen, TL_LIMIT when full.
  * Failures leave active view and caller ownership unchanged. Thread-safe. */
 tl_status catalog_publish(tl_catalog *catalog, tl_catalog_snapshot **snapshot);
+/** catalog_publish for a rebuilt view (a compaction): also accepts a snapshot
+ * of the active catalog_gen, the same committed catalog as the active view
+ * built as one base instead of base plus delta. TL_STATE only for an older
+ * catalog_gen; otherwise the same ownership, errors and thread safety. */
+tl_status catalog_publish_compacted(tl_catalog *catalog, tl_catalog_snapshot **snapshot);
 /** Lease an exclusive preallocated workspace and pin the active snapshot.
  * Snapshots sharing a base share its workspaces, so a lease also needs one of
  * the base's free workspaces (its reader capacity bounds concurrent leases

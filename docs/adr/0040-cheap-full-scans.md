@@ -4,6 +4,8 @@
 - **Date:** 2026-10-11
 - **Supersedes:** 0012's watcher rule "replace it only after successfully
   building a new one" (build-then-swap on every full scan)
+- **Amended by:** [0046](0046-children-walks-and-a-lean-ledger.md) (one 128-bit
+  fingerprint instead of two FNV-1a hashes, 4-byte index slots, bulk refills)
 
 ## Context
 After M7 Phase 1 a full scan of every root still runs at startup, after

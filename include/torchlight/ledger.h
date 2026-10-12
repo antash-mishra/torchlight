@@ -1,8 +1,9 @@
 /* Persisted-state map (the ledger, M7 Phase 2, ADR 0040): for every committed
  * catalog row, a fingerprint of its path and the store signature of its
  * columns, so a scan can tell unchanged entries and vanished rows apart
- * without asking SQLite. Paths are not stored: two independent 64-bit hashes
- * identify a path, about 60 bytes per row in all. */
+ * without asking SQLite. Paths are not stored: the two 64-bit halves of one
+ * 128-bit hash identify a path. About 42 bytes per row in all: a 32-byte
+ * record, a 4-byte index slot kept at most half full, and two bits. */
 #ifndef TORCHLIGHT_LEDGER_H
 #define TORCHLIGHT_LEDGER_H
 #include "torchlight/common.h"
@@ -27,8 +28,10 @@ tl_status ledger_put(tl_ledger *ledger, uint64_t id, const char *path, uint64_t 
  * absent. May compact storage. NULL allowed; no errors. */
 void ledger_remove(tl_ledger *ledger, uint64_t id);
 /** Declare the ledger complete (it holds every committed row) and release
- * spare capacity. A failed ledger_put since ledger_reset keeps it incomplete.
- * NULL allowed; no errors. */
+ * spare capacity. Rows put since ledger_reset are indexed here, at once, so a
+ * refill costs one sized index build instead of a growing one. A failed
+ * ledger_put since ledger_reset, or a failed index build, keeps it
+ * incomplete. NULL allowed; no errors. */
 void ledger_seal(tl_ledger *ledger);
 /** Mark the ledger incomplete: rows may be missing or stale, so scans must not
  * rely on it until it is rebuilt. NULL allowed; no errors. */

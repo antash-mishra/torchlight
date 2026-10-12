@@ -379,22 +379,24 @@
       </div>
       <div class="vital">
         <span class="what">Memory</span>
-        <span class="value">171<small>MB</small></span>
-        <p>Steady size, about 0.8 KB per indexed entry. After a rebuild it stays within 10% of
-          this instead of staying at its peak.</p>
-        <span class="status ok">On target, narrowly: +9.9%, limit +10%</span>
+        <span class="value">167<small>MB</small></span>
+        <p>Steady size, about 0.8 KB per indexed entry. After a rebuild it settles about 10% above
+          this (184 MB, 4 MB less than before Phase 3) instead of staying at its peak.</p>
+        <span class="status watch">Open item: +10.2%, limit +10%</span>
       </div>
       <div class="vital">
         <span class="what">One full check of every folder</span>
-        <span class="value">0.98<small>s</small></span>
-        <p>It took 3.97 s before M7 Phase 2. It runs at start-up and about once an hour.</p>
+        <span class="value">0.95<small>s</small></span>
+        <p>It took 3.97 s before M7 Phase 2 and 0.98 s after it. It runs at start-up and about once
+          an hour.</p>
         <span class="status ok">On target, narrowly: at most 1.0 s</span>
       </div>
       <div class="vital">
         <span class="what">Ready to search after a restart</span>
-        <span class="value">1.5<small>s</small></span>
-        <p>Time to load the saved list into memory. It is 0.2 s slower than before Phase 2.</p>
-        <span class="status watch">Open item: was 1.3 s</span>
+        <span class="value">1.4<small>s</small></span>
+        <p>Time to load the saved list into memory. Phase 2 made it 0.2 s slower; Phase 3 won most
+          of that back (1.42 s against 1.39 s before Phase 2).</p>
+        <span class="status ok">On target: within 10% of before Phase 2</span>
       </div>
     </div>
   </section>
@@ -722,7 +724,7 @@
 
     <figure class="fig">
       <div class="fig-scroll">
-<svg class="dia chart" viewBox="0 0 1000 194" role="img" aria-label="Start-up at 213,000 entries. Before Phase 2: 1.33 s loading, then a 3.25 s check, settled at 4.6 s. Today: 1.52 s loading, then a 1.13 s check, settled at 2.7 s.">
+<svg class="dia chart" viewBox="0 0 1000 194" role="img" aria-label="Start-up at 213,000 entries. Before Phase 2: 1.33 s loading, then a 3.25 s check, settled at 4.6 s. Today: 1.42 s loading, then a 1.04 s check, settled at 2.5 s.">
 <line class="grid" x1="200.0" y1="20" x2="200.0" y2="142"/>
 <text class="axis" x="200.0" y="160" text-anchor="middle">0 s</text>
 <line class="grid" x1="348.0" y1="20" x2="348.0" y2="142"/>
@@ -742,11 +744,11 @@
 <text class="seg-txt" x="636.7" y="51" text-anchor="middle">start-up check · 3.25 s</text>
 <text class="val" x="885.2" y="51">settled at 4.6 s</text>
 <text class="t-sm" x="182" y="117.0" text-anchor="end">Today</text>
-<rect class="seg-wait" x="200.0" y="96" width="225.6" height="34" rx="5"/>
-<text class="seg-txt" x="312.8" y="117" text-anchor="middle">loading · 1.52 s</text>
-<rect class="seg-bg" x="425.6" y="96" width="167.8" height="34" rx="5"/>
-<text class="seg-txt" x="509.5" y="117" text-anchor="middle">start-up check · 1.13 s</text>
-<text class="val" x="601.4" y="117">settled at 2.7 s</text>
+<rect class="seg-wait" x="200.0" y="96" width="210.2" height="34" rx="5"/>
+<text class="seg-txt" x="305.1" y="117" text-anchor="middle">loading · 1.42 s</text>
+<rect class="seg-bg" x="410.2" y="96" width="153.9" height="34" rx="5"/>
+<text class="seg-txt" x="487.2" y="117" text-anchor="middle">start-up check · 1.04 s</text>
+<text class="val" x="572.1" y="117">settled at 2.5 s</text>
 <rect class="seg-wait" x="200" y="169" width="18" height="12" rx="3"/>
 <text class="lbl" x="226" y="180">Loading the saved list into memory: searches wait</text>
 <rect class="seg-bg" x="560" y="169" width="18" height="12" rx="3"/>
@@ -754,9 +756,10 @@
 </svg>
       </div>
       <figcaption><strong>Start-up, drawn to scale (213,000 entries).</strong> Phase 2 cut the start-up
-        check from 3.25 s to 1.13 s, so the daemon settles about 2 seconds sooner. Loading became 0.2 s
-        slower, because it now also fills the ledger (see <a href="#full-check">Full checks</a>); that
-        is an open item.</figcaption>
+        check from 3.25 s to 1.13 s, and Phase 3 to 1.04 s, so the daemon settles about 2 seconds
+        sooner. Phase 2 made loading 0.2 s slower, because it also fills the ledger (see
+        <a href="#full-check">Full checks</a>); Phase 3 made the ledger cheaper to fill, and loading
+        now takes 1.42 s against 1.39 s before Phase 2.</figcaption>
     </figure>
 
     <h3>How often a full check runs</h3>
@@ -1371,8 +1374,9 @@
 </svg>
       </div>
       <figcaption><strong>Time for one full check, nothing changed.</strong> Four times faster at
-        both sizes. The goal was at most 1.0 s at 213,000 entries; 0.98 s meets it narrowly (median of
-        5 runs; another run of the same code measured 1.03 s).</figcaption>
+        both sizes. The goal was at most 1.0 s at 213,000 entries; 0.98 s met it narrowly (median of
+        5 runs; another run of the same code measured 1.03 s). Phase 3 hashes each path once instead
+        of twice: 0.95 s (three rounds of 5: 943 to 969 ms).</figcaption>
     </figure>
 
     <figure class="fig">
@@ -1447,7 +1451,7 @@
           <tr><td>Calls asking Linux about a file or folder</td><td>430,257</td><td>249,809</td></tr>
           <tr><td>Folder watches registered again</td><td>34,453</td><td>0</td></tr>
           <tr><td>Kernel watches at the busiest moment</td><td>68,914 (double)</td><td>34,461 (steady)</td></tr>
-          <tr><td>Extra memory for the ledger</td><td>none</td><td>12.6 MB (planned: 5 MB)</td></tr>
+          <tr><td>Extra memory for the ledger</td><td>none</td><td>12.6 MB (planned: 5 MB); 8.5 MB since Phase 3</td></tr>
         </tbody>
       </table>
     </div>
@@ -1621,7 +1625,7 @@
     <p>When an old base is finally freed, or a full rescan is done with its list of every path, the
       daemon also hands that memory back to the system. Without this, the C library keeps freed memory
       for later and the daemon stays at its peak size: at 213k files it used to sit at about 434 MB
-      after a burst of changes, and now settles at about 193 MB, close to its steady 171 MB (see the
+      after a burst of changes, and now settles at about 191 MB, close to its steady 167 MB (see the
       memory chart in <a href="#performance">Performance</a>).</p>
 
     <figure class="fig">
@@ -1682,8 +1686,8 @@
             <code>.desktop</code> entries.</li>
           <li><strong>Usage summary:</strong> how often and how recently you opened things, and which
             typed query led to which open. Capped in size.</li>
-          <li><strong>Ledger:</strong> a fingerprint of every saved row, about 60 bytes each
-            (12.6 MB at 213,000 entries). Full checks compare against it instead of the database.</li>
+          <li><strong>Ledger:</strong> a fingerprint of every saved row, about 42 bytes each
+            (8.5 MB at 213,000 entries). Full checks compare against it instead of the database.</li>
           <li><strong>Folder watches:</strong> one per indexed folder, 34,453 here, about 4 to 5 MB.</li>
           <li><strong>Client queues:</strong> a small, bounded queue per connected client.</li>
         </ul>
@@ -1710,7 +1714,7 @@
           <tr><td>Installed apps and settings panels</td><td>167 <code>.desktop</code> entries</td></tr>
           <tr><td>Folder watches</td><td>34,453 (Linux allows this user 249,237, shared with other programs)</td></tr>
           <tr><td>Database on disk</td><td>about 123 MB</td></tr>
-          <tr><td>Daemon memory</td><td>171 MB steady, of which the ledger is 12.6 MB</td></tr>
+          <tr><td>Daemon memory</td><td>167 MB steady, of which the ledger is 8.5 MB</td></tr>
         </tbody>
       </table>
     </div>
@@ -1782,7 +1786,7 @@
     <h3>Changes show up quickly</h3>
     <figure class="fig">
       <div class="fig-scroll">
-<svg class="dia chart" viewBox="0 0 1000 263" role="img" aria-label="Time from a change on disk until search shows it, 213,000 entries: creating or deleting a file 0.11 s in a small folder and 0.14 s in a 2,838-entry folder; deleting a 22,000-entry tree 0.25 s; renaming it 2.2 s; 20,000 new files 3.0 s, against 1.7 s before Phase 2.">
+<svg class="dia chart" viewBox="0 0 1000 263" role="img" aria-label="Time from a change on disk until search shows it, 213,000 entries: creating or deleting a file 0.11 s in a small folder and 0.14 s in a 2,838-entry folder; deleting a 22,000-entry tree at most 0.16 s; renaming it 0.43 s, against 2.1 s before Phase 3; 20,000 new files 0.44 s, against 3.0 s before Phase 3.">
 <line class="grid" x1="330.0" y1="32" x2="330.0" y2="233"/>
 <text class="axis" x="330.0" y="251" text-anchor="middle">0 s</text>
 <line class="grid" x1="408.6" y1="32" x2="408.6" y2="233"/>
@@ -1811,26 +1815,29 @@
 <text class="val" x="359.8" y="93.0">0.14 s</text>
 <text class="t-sm" x="312" y="126.5" text-anchor="end">Delete a folder tree</text>
 <text class="s" x="312" y="142.5" text-anchor="end">22,000 entries at once</text>
-<rect class="bar-new" x="330" y="122.0" width="38.7" height="15" rx="3"/>
-<text class="val" x="376.7" y="134.0">0.25 s</text>
+<rect class="bar-new" x="330" y="122.0" width="25.1" height="15" rx="3"/>
+<text class="val" x="363.1" y="134.0">0.16 s at most</text>
 <text class="t-sm" x="312" y="167.5" text-anchor="end">Rename that folder tree</text>
 <text class="s" x="312" y="183.5" text-anchor="end">every path inside it changes</text>
-<rect class="bar-new" x="330" y="163.0" width="340.4" height="15" rx="3"/>
-<text class="val" x="678.4" y="175.0">2.2 s</text>
+<rect class="bar-new" x="330" y="163.0" width="68.2" height="15" rx="3"/>
+<text class="val" x="406.2" y="175.0">0.43 s</text>
+<line class="mark" x1="652.2" y1="158.0" x2="652.2" y2="183.0"/>
+<text class="s" x="652.2" y="196.0" text-anchor="middle">before Phase 3: 2.1 s</text>
 <text class="t-sm" x="312" y="208.5" text-anchor="end">20,000 new files</text>
-<text class="s" x="312" y="224.5" text-anchor="end">written in 0.7 s · open red flag</text>
-<rect class="bar-bad" x="330" y="204.0" width="471.7" height="15" rx="3"/>
-<text class="val" x="809.7" y="216.0">3.0 s</text>
-<line class="mark" x1="592.7" y1="199.0" x2="592.7" y2="224.0"/>
-<text class="s" x="592.7" y="237.0" text-anchor="middle">before Phase 2: 1.7 s</text>
+<text class="s" x="312" y="224.5" text-anchor="end">written in 0.7 s, in 2,000 new folders</text>
+<rect class="bar-new" x="330" y="204.0" width="68.4" height="15" rx="3"/>
+<text class="val" x="406.4" y="216.0">0.44 s</text>
+<line class="mark" x1="797.3" y1="199.0" x2="797.3" y2="224.0"/>
+<text class="s" x="797.3" y="237.0" text-anchor="middle">before Phase 3: 3.0 s</text>
 </svg>
       </div>
       <figcaption><strong>From a change on disk to a search result (typical times, 213,000
         entries).</strong> Small changes take about a tenth of a second, most of it the deliberate
-        100 ms wait that groups bursts. Renaming a big tree changes every path inside it, so the index
-        is rebuilt. The 20,000-file burst became 1.3 s slower in Phase 2 and is an open item: the
-        faster check now catches the burst halfway through, and the second half needs a second full
-        rebuild.</figcaption>
+        100 ms wait that groups bursts. Renaming a big tree changes every path inside it. Since
+        Phase 3 such a large change is published at once as a quick update, and the full rebuild of
+        the index follows when nothing else is waiting. A burst is rescanned once it pauses (at most
+        1 s after it starts), so the 20,000 new files need one full rebuild instead of two and show up
+        0.44 s after the last one is written (3.0 s after Phase 2).</figcaption>
     </figure>
 
     <h3>The daemon stays quiet</h3>
@@ -1862,7 +1869,7 @@
 <text class="t-sm" x="312" y="125.5" text-anchor="end">Phase 1 complete (11 Oct)</text>
 <rect class="bar-new" x="330" y="114.0" width="8.2" height="15" rx="3"/>
 <text class="val" x="346.2" y="126.0">0.15%</text>
-<text class="t-sm" x="312" y="162.5" text-anchor="end">Phase 2, today</text>
+<text class="t-sm" x="312" y="162.5" text-anchor="end">Phase 2 and Phase 3</text>
 <rect class="bar-new" x="330" y="151.0" width="7.7" height="15" rx="3"/>
 <text class="val" x="345.7" y="163.0">0.14%</text>
 </svg>
@@ -1871,14 +1878,16 @@
         core.</strong> Before M7, a full check every 30 seconds cost 8.7%; that benchmark did not yet
         include the installed apps, while the later bars do. Phase 1 made checks happen only for a
         reason, and a review on a real desktop found the app list being re-read every second (1.58%)
-        and fixed it. On the live desktop, where real files keep changing, the figure is 0.25 to
-        0.34%; see the open items below.</figcaption>
+        and fixed it. On the live desktop, where real files keep changing, it was 0.25 to 0.34% after
+        Phase 2. Phase 3 removed the 0.24 s of database work each change directly in the home folder
+        cost; the live desktop now reads about 0.25%, from other parts (see the open items
+        below).</figcaption>
     </figure>
 
     <h3>Memory comes back after big changes</h3>
     <figure class="fig">
       <div class="fig-scroll">
-<svg class="dia chart" viewBox="0 0 1000 241" role="img" aria-label="Daemon memory at 213,000 entries, before M7 and today. Steady: 232 MB before, 171 MB today. Peak while rebuilding after big changes: 584 and 385 MB. After the changes settle: 434 and 193 MB.">
+<svg class="dia chart" viewBox="0 0 1000 241" role="img" aria-label="Daemon memory at 213,000 entries, before M7 and today. Steady: 232 MB before, 167 MB today. Peak while rebuilding after big changes: 584 and 391 MB. After the changes settle: 434 and 191 MB.">
 <line class="grid" x1="330.0" y1="10" x2="330.0" y2="181"/>
 <text class="axis" x="330.0" y="199" text-anchor="middle">0 MB</text>
 <line class="grid" x1="415.9" y1="10" x2="415.9" y2="181"/>
@@ -1897,59 +1906,65 @@
 <text class="s" x="312" y="48.5" text-anchor="end">nothing happening</text>
 <rect class="bar-old" x="330" y="18.0" width="199.4" height="15" rx="3"/>
 <text class="val-old" x="537.4" y="30.0">232 MB</text>
-<rect class="bar-new" x="330" y="38.0" width="147.0" height="15" rx="3"/>
-<text class="val" x="485.0" y="50.0">171 MB</text>
+<rect class="bar-new" x="330" y="38.0" width="143.5" height="15" rx="3"/>
+<text class="val" x="481.5" y="50.0">167 MB</text>
 <text class="t-sm" x="312" y="89.5" text-anchor="end">Peak</text>
 <text class="s" x="312" y="105.5" text-anchor="end">while rebuilding after big changes</text>
 <rect class="bar-old" x="330" y="75.0" width="501.9" height="15" rx="3"/>
 <text class="val-old" x="839.9" y="87.0">584 MB</text>
-<rect class="bar-new" x="330" y="95.0" width="330.9" height="15" rx="3"/>
-<text class="val" x="668.9" y="107.0">385 MB</text>
+<rect class="bar-new" x="330" y="95.0" width="336.0" height="15" rx="3"/>
+<text class="val" x="674.0" y="107.0">391 MB</text>
 <text class="t-sm" x="312" y="146.5" text-anchor="end">Afterwards</text>
 <text class="s" x="312" y="162.5" text-anchor="end">once the changes settle</text>
 <rect class="bar-old" x="330" y="132.0" width="373.0" height="15" rx="3"/>
 <text class="val-old" x="711.0" y="144.0">434 MB</text>
-<rect class="bar-new" x="330" y="152.0" width="165.9" height="15" rx="3"/>
-<text class="val" x="503.9" y="164.0">193 MB</text>
+<rect class="bar-new" x="330" y="152.0" width="164.1" height="15" rx="3"/>
+<text class="val" x="502.1" y="164.0">191 MB</text>
 <rect class="bar-old" x="330" y="217" width="18" height="12" rx="3"/>
 <text class="lbl" x="356" y="227">Before M7 (10 Oct)</text>
 <rect class="bar-new" x="481.6" y="217" width="18" height="12" rx="3"/>
-<text class="lbl" x="507.6" y="227">Today (M7 Phase 2)</text>
+<text class="lbl" x="507.6" y="227">Today (M7 Phase 3)</text>
 </svg>
       </div>
       <figcaption><strong>Daemon memory at 213,000 entries.</strong> Big changes need a temporary
         rebuild of the index, so memory peaks for a few seconds. Before M7 the C library kept that
         freed memory, and the daemon stayed at 434 MB. Now Torchlight hands it back, and memory
-        settles at 193 MB. The rest of the gap to steady is the deleted entries a later rebuild
-        removes. Before M7 was measured without the installed apps or history, today with
+        settles at 191 MB. The rest of the gap to steady is the deleted entries a later rebuild
+        removes. Since Phase 3 a big change is published before its rebuild, so the peak is a few MB
+        higher (391 MB, the 22k-entry rename) and lasts about 1.6 s. Before M7 was measured without the installed apps or history, today with
         both.</figcaption>
     </figure>
 
     <h3>Open items</h3>
-    <p>The <a href="reports/m7-phase2-health-report.html">Phase 2 health report</a> lists every
-      measurement with its reference range. Three results are outside their range, and three sit at
-      the edge:</p>
+    <p>The <a href="reports/m7-phase2-health-report.html">Phase 2 health report</a> left three results
+      out of range. Phase 3 fixed all three: a 20,000-file burst shows up 0.44 s after it is written
+      (was 3.0 s), search is ready 0.1 s sooner after a restart, and a change directly in the home
+      folder no longer costs database work. The
+      <a href="reports/m7-phase3-health-report.html">Phase 3 health report</a> measures everything
+      again and leaves these items:</p>
     <div class="flags">
       <div class="flag-item">
-        <h3>A burst of 20,000 new files shows up 1.3 s later</h3>
-        <p>3.0 s instead of 1.7 s (median of 7 runs). Likely fix: wait for a burst of changes to
-          settle before rescanning.</p>
+        <h3>Memory after a rebuild reads +10.2%, against a 10% limit</h3>
+        <p>Everyday memory fell 5 MB (the smaller ledger) and memory after a rebuild 3 to 4 MB, so
+          their ratio rose. The daemon uses less memory than before at every moment measured. Decision
+          needed: keep the limit, or measure it against the previous build's absolute memory.</p>
       </div>
       <div class="flag-item">
-        <h3>Search is ready 0.2 s later after a restart</h3>
-        <p>1.52 s instead of 1.33 s, because loading now also fills the ledger. Likely fix: start
-          answering before the load finishes, or fill the ledger in the background.</p>
+        <h3>Big changes peak 4 to 6 MB higher, for about 1.6 s</h3>
+        <p>The quick update stays in memory while the full rebuild that follows it runs. This is the
+          price of showing a big change about 2.5 s sooner.</p>
       </div>
       <div class="flag-item">
-        <h3>The live desktop uses 0.34% of a core, above the 0.2% goal</h3>
-        <p>Every rescan of the home folder itself costs about 0.1 s of database work. This cost is
-          older than Phase 2; the benchmark copy has no such activity, so it reads 0.14%.</p>
+        <h3>The live desktop reads about 0.25% of a core</h3>
+        <p>Folder rescans of the home folder now cost nothing measurable. What is left comes from the
+          app list's once-a-second check, the main loop and, most likely, the history clean-up, which
+          Phase 3 did not change.</p>
       </div>
       <div class="flag-item watch">
-        <h3>At the edge: the 1 s target and two memory limits</h3>
-        <p>A full check takes 0.98 s against 1.0 s; memory after a rebuild is +9.9% against 10%;
-          freed memory still held after big changes is 5 MB against a 5 MB limit. The ledger is
-          12.6 MB, against the 5 MB the plan expected.</p>
+        <h3>At the edge: the 1 s target and freed memory</h3>
+        <p>A full check takes 0.95 s against 1.0 s; freed memory still held after big changes is 5 MB
+          against a 5 MB limit. What is left of a full check is almost all Linux reading file
+          details.</p>
       </div>
     </div>
   </section>

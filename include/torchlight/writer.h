@@ -68,7 +68,11 @@ typedef struct {
     bool exhaustive;
 } tl_writer_options;
 typedef struct {
-    bool indexing, degraded, history_enabled, watch_degraded, recovering;
+    /* indexing: a pass or a deferred compaction is running. compaction_pending:
+     * the published delta is past its bound and a full rebuild will compact it
+     * once the writer is idle; deferred_compactions counts those rebuilds. */
+    bool indexing, degraded, history_enabled, watch_degraded, recovering, compaction_pending;
+    uint64_t deferred_compactions;
     /* scoped_reconciliations counts passes that rescanned only event scopes;
      * delta_publications counts snapshots published as a delta over the base,
      * full_builds whole-engine rebuilds (startup, recovery, compaction). */

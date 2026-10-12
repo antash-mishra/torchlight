@@ -321,13 +321,16 @@ tl_status catalog_snapshot_find(const tl_catalog_snapshot *snapshot, uint64_t id
     return status;
 }
 /* ---- publication and leases -------------------------------------------------- */
-tl_status catalog_publish(tl_catalog *catalog, tl_catalog_snapshot **snapshot) {
+/* equal: a snapshot of the active catalog_gen may replace it (compaction). */
+static tl_status publish_snapshot(tl_catalog *catalog, tl_catalog_snapshot **snapshot, bool equal) {
     if (catalog == NULL || snapshot == NULL || *snapshot == NULL)
         return TL_INVALID;
     lock_catalog(catalog);
     tl_status status = TL_OK;
+    uint64_t active = catalog->active == NULL ? 0 : catalog->active->catalog_gen;
     if ((*snapshot)->owner != NULL ||
-        (catalog->active != NULL && (*snapshot)->catalog_gen <= catalog->active->catalog_gen))
+        (catalog->active != NULL &&
+         ((*snapshot)->catalog_gen < active || ((*snapshot)->catalog_gen == active && !equal))))
         status = TL_STATE;
     else if (catalog->snapshots == catalog->snapshot_capacity)
         status = TL_LIMIT;
@@ -343,6 +346,12 @@ tl_status catalog_publish(tl_catalog *catalog, tl_catalog_snapshot **snapshot) {
     }
     unlock_catalog(catalog);
     return status;
+}
+tl_status catalog_publish(tl_catalog *catalog, tl_catalog_snapshot **snapshot) {
+    return publish_snapshot(catalog, snapshot, false);
+}
+tl_status catalog_publish_compacted(tl_catalog *catalog, tl_catalog_snapshot **snapshot) {
+    return publish_snapshot(catalog, snapshot, true);
 }
 static tl_lexical_workspace *base_workspace(const tl_catalog_reader *reader) {
     return reader->snapshot->base->workspaces[reader->base_workspace].workspace;
