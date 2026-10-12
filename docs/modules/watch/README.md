@@ -1,7 +1,8 @@
 # watch
 
-> **Status:** Implemented (M2; M6 created flag; M7 metadata flag, filesystem types and slot
-> reuse): bounded inotify collection and rename pairing
+> **Status:** Implemented (M2; M6 created flag; M7 metadata flag, filesystem types, slot
+> reuse and one long-lived watch set confirmed and swept by full scans): bounded inotify
+> collection and rename pairing
 > **Source:** `src/fs/watch.c` · **Header:** `include/torchlight/watch.h`
 > **Tests:** `tests/unit/test_watch.c`, `tests/unit/test_writer.c`, `tests/test_daemon.py`
 
@@ -22,10 +23,10 @@ Directory capacity/kernel watch exhaustion returns a counted unavailable status;
 the writer puts that directory in its repair set and rescans it periodically.
 Instance creation failure also permits scan-only operation: the writer reports
 degradation, retains an existing watch set and retries setup on later scans.
-Ignored/deleted watches schedule repair. The worker keeps the old watch set live
-while installing its replacement during a scan, then drains it before pruning.
-Events on the new set drive subsequent reconciliation. Offline/unreadable
-directories never establish deletion.
+Ignored/deleted watches schedule repair. Since M7 Phase 2 one watch set lives
+for the daemon's lifetime: full scans confirm and sweep it instead of building
+a replacement (see below). Offline/unreadable directories never establish
+deletion.
 
 `watch_feed` replays validated kernel-format buffers for deterministic tests.
 Tests cover real file/directory cookies, relocated descendant watches, malformed
@@ -84,3 +85,32 @@ watched directory five times with room for the root plus one (each cycle after
 the first failed with `TL_LIMIT` before) and checks that a reused slot reports
 events under its new path. See
 [ADR 0043](../../adr/0043-mount-changes-near-roots-and-watch-slot-reuse.md).
+
+## One long-lived watch set (M7 Phase 2)
+
+Full scans used to build a new inotify instance, re-adding every directory
+(34,471 `inotify_add_watch` calls and twice the kernel watches at 213k
+entries until the swap). Now they reuse the live watcher
+([ADR 0040](../../adr/0040-cheap-full-scans.md)):
+
+- `watch_begin` starts a scan generation and resets `unavailable`, which
+  therefore counts failures since the last full scan, as a fresh watcher's
+  counter did.
+- `watch_add(path, identity)` confirms a directory for this generation. A
+  second lookup map (path → slot) finds the slot at that path. When it holds
+  the same object (device and inode from the crawl), no system call runs.
+  Otherwise `inotify_add_watch` runs: the kernel returns the existing
+  descriptor for an object watched under another path (moved, events not
+  drained yet), whose slot then adopts the new path. A path match alone is
+  never trusted: a directory moved out of every root keeps its watch under
+  the stale path, and a new directory created there must get its own.
+- Paired directory moves (`relocate`) re-key the moved slots and confirm them.
+- `watch_sweep(keep)` removes the watches no add or move confirmed since
+  `watch_begin` (`inotify_rm_watch`, slot freed; the IN_IGNORED that follows is
+  dropped silently), except those keep spares (below roots the scan could not
+  read).
+
+Tests cover the skipped system call (a confirmed add succeeds on a mode-0
+directory, where `inotify_add_watch` fails), sweeping (an unconfirmed
+directory stops reporting events, a confirmed one again later) and a new
+directory under a stale path (gets its own watch; the stale one is swept).

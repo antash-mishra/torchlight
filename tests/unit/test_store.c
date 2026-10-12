@@ -222,6 +222,86 @@ static void scoped_prunes_and_changes(void) {
     store_destroy(store);
     CHECK(unlink(database) == 0);
 }
+struct signature_lookup {
+    const char *path;
+    uint64_t signature;
+    bool found;
+};
+static tl_status find_signature(void *context, const tl_store_entry *entry) {
+    struct signature_lookup *lookup = context;
+    if (strcmp(entry->path, lookup->path) == 0) {
+        lookup->signature = entry->signature;
+        lookup->found = true;
+    }
+    return TL_OK;
+}
+static uint64_t saved_signature(tl_store *store, const char *path) {
+    struct signature_lookup lookup = {path, 0, false};
+    CHECK(store_load(store, find_signature, &lookup) == TL_OK && lookup.found);
+    return lookup.signature;
+}
+static tl_crawl_entry stat_entry(const char *path, bool is_dir, int64_t mtime, uint64_t inode) {
+    return (tl_crawl_entry){.path = path,
+                            .is_dir = is_dir,
+                            .has_stat = true,
+                            .mtime = mtime,
+                            .size = 4,
+                            .has_identity = true,
+                            .identity_birth = true,
+                            .device = 9,
+                            .inode = inode,
+                            .identity_sec = 100};
+}
+/* ADR 0040: a saved row's signature equals store_signature of the entry that
+ * wrote it and changes with anything store_put compares; an exact full scan
+ * prunes only the rows it declares unseen, never one it put; a scoped scan
+ * keeps entries it only marks seen. */
+static void signatures_and_exact_prunes(void) {
+    char database[] = "/tmp/torchlight-exact-XXXXXX";
+    int fd = mkstemp(database);
+    CHECK(fd >= 0 && close(fd) == 0);
+    tl_store *store = NULL;
+    CHECK(store_create(database, &store) == TL_OK && store_begin(store) == TL_OK);
+    const char *paths[] = {"/e", "/e/a", "/e/b", "/e/d", "/e/d/x"};
+    for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
+        tl_crawl_entry entry =
+            stat_entry(paths[i], i == 0 || i == 3, (int64_t)i + 1, (uint64_t)i + 1);
+        CHECK(store_put(store, &entry) == TL_OK);
+    }
+    CHECK(store_prune(store, "/e") == TL_OK && store_commit(store) == TL_OK);
+    const tl_crawl_entry file = stat_entry("/e/a", false, 2, 2);
+    uint64_t signature = 0, changed = 0;
+    CHECK(store_signature(&file, &signature) && signature == saved_signature(store, "/e/a"));
+    tl_crawl_entry touched = file;
+    touched.mtime = 99;
+    CHECK(store_signature(&touched, &changed) && changed != signature);
+    touched = file;
+    touched.inode = 77;
+    CHECK(store_signature(&touched, &changed) && changed != signature);
+    touched.unreadable = true;
+    CHECK(!store_signature(&touched, &changed) && !store_signature(NULL, &changed));
+    /* Exact full scan: b vanished; a was rewritten although declared unseen
+     * (a stale ledger), so it stays; d/x is unknown to the caller and stays. */
+    uint64_t a = id_of(store, "/e/a"), b = id_of(store, "/e/b");
+    CHECK(store_unseen(store, &a, 1) == TL_STATE); /* outside a transaction */
+    CHECK(store_begin(store) == TL_OK);
+    CHECK(store_put(store, &file) == TL_OK);
+    uint64_t unseen[] = {a, b};
+    CHECK(store_unseen(store, unseen, 2) == TL_OK && store_prune(store, "/e") == TL_OK);
+    CHECK(store_commit(store) == TL_OK);
+    CHECK(id_of(store, "/e/a") == a && id_of(store, "/e/b") == 0 && id_of(store, "/e/d/x") != 0);
+    uint64_t zero = 0;
+    CHECK(store_begin(store) == TL_OK && store_unseen(store, &zero, 1) == TL_INVALID);
+    CHECK(store_rollback(store) == TL_OK);
+    /* Scoped children scan of /e/d: x only marked seen stays. */
+    CHECK(store_begin(store) == TL_OK && store_mark_seen(store, "/e/d/x") == TL_OK);
+    CHECK(store_prune_children(store, "/e/d") == TL_OK && store_commit(store) == TL_OK);
+    CHECK(id_of(store, "/e/d/x") != 0 && store_mark_seen(store, "/e/d/x") == TL_STATE);
+    CHECK(store_begin(store) == TL_OK && store_prune_children(store, "/e/d") == TL_OK);
+    CHECK(store_commit(store) == TL_OK && id_of(store, "/e/d/x") == 0);
+    store_destroy(store);
+    CHECK(unlink(database) == 0);
+}
 struct retained {
     size_t count;
     uint64_t file_ids[8];
@@ -478,6 +558,7 @@ static void metadata_refreshes(void) {
 }
 void test_store(void) {
     scoped_prunes_and_changes();
+    signatures_and_exact_prunes();
     metadata_refreshes();
     history_batches();
     history_batch_lost();

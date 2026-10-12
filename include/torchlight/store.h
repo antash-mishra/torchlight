@@ -3,10 +3,13 @@
 #define TORCHLIGHT_STORE_H
 #include "torchlight/crawl.h"
 typedef struct tl_store tl_store;
+/* signature: store_signature of what the row holds; a crawl entry with the
+ * same signature would leave the row unchanged. */
 typedef struct {
     uint64_t id;
     const char *path;
     bool is_root, is_dir;
+    uint64_t signature;
 } tl_store_entry;
 typedef tl_status (*tl_store_callback)(void *context, const tl_store_entry *entry);
 typedef enum {
@@ -55,6 +58,24 @@ tl_status store_begin(tl_store *store);
  * transaction. TL_INVALID for malformed entries, TL_IO for SQL, TL_LIMIT for
  * byte lengths beyond SQLite's limit, TL_STATE outside scan. */
 tl_status store_put(tl_store *store, const tl_crawl_entry *entry);
+/** Compute what a row holds after store_put(entry) as a 64-bit hash of the
+ * compared columns (is_dir, mtime, size, identity). When it equals a loaded
+ * row's tl_store_entry.signature at the same path, store_put would change
+ * nothing there. false (out untouched) for entries store_put must always see:
+ * without stat or identity, or unreadable. Pure; no errors. */
+bool store_signature(const tl_crawl_entry *entry, uint64_t *out);
+/** Mark path seen in the active scan transaction without writing its row, for
+ * an entry whose signature shows it unchanged, so a scoped prune keeps it.
+ * TL_INVALID for NULL/relative paths, TL_STATE outside a transaction, TL_IO. */
+tl_status store_mark_seen(tl_store *store, const char *path);
+/** Declare, for an exact full scan in the active transaction, the ids of the
+ * rows it did not see (ascending or not, duplicates ignored). From then on
+ * store_prune and store_forget_root delete only among these rows, and never
+ * one at a path this transaction put: rows the caller did not know about are
+ * kept rather than deleted. Without this call they delete every row the
+ * transaction did not see. TL_INVALID for NULL ids with a count or ids of 0
+ * or beyond INT64_MAX, TL_STATE outside a transaction, TL_IO. */
+tl_status store_unseen(tl_store *store, const uint64_t *ids, size_t count);
 /** Persist accepted desktop launch once by desktop id, independent of file rows.
  * Strings borrowed during call. Same errors/idempotency as store_open_event. */
 tl_status store_desktop_open(tl_store *store, const char *event_id, const char *desktop_id,

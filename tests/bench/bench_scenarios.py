@@ -29,6 +29,12 @@ Phases (default all, in this order):
   mounts       in a private user and mount namespace (unshare, nsenter):
                tmpfs mounted and unmounted outside the root, then inside it;
                only the latter may cause full scans
+  rescan       forced no-change full scans (reconcile), one at a time: scan
+               time, CPU per thread, file traffic, SQLite temp files open
+               during the scan, and the kernel watch count (steady and peak)
+  syscalls     the daemon launched under strace -f -c: once only to start,
+               once with forced no-change full scans; the difference per
+               scan by system call (attaching needs ptrace rights we lack)
 The daemon closes clients idle for five seconds (IPC_DEADLINE_MS), so the
 client reconnects when a call fails."""
 import argparse
@@ -63,6 +69,10 @@ RETAINED_FREE_GATE_MIB, REBUILT_GROWTH_GATE_PCT = 5, 10.0
 DEFAULT_DATA_DIRS = "/usr/local/share:/usr/share"
 LAG_ITERATIONS, LAG_PAUSE_S = 15, 0.3
 QUERY_COUNT = 900
+# Forced no-change full scans measured one by one, and under strace.
+RESCAN_REPEATS, STRACE_SCANS = 5, 3
+# How often the rescan phase samples watches and open files during a scan.
+SCAN_SAMPLE_S = 0.05
 
 
 def percentiles(values):
@@ -166,7 +176,8 @@ def desktop_files(directories):
 
 
 class Daemon:
-    def __init__(self, options, name, tree, rescan_ms=None, fresh=False, extra=(), namespace=False):
+    def __init__(self, options, name, tree, rescan_ms=None, fresh=False, extra=(), namespace=False,
+                 wrapper=()):
         self.base = options.work / "runs" / name
         if fresh:
             shutil.rmtree(self.base, ignore_errors=True)
@@ -202,8 +213,16 @@ class Daemon:
         self.results = options.profiles
         self.log = open(self.base / "daemon.log", "ab")
         self.started = time.perf_counter()
-        self.process = subprocess.Popen(command, stdout=self.log, stderr=self.log, env=env)
+        self.process = subprocess.Popen(list(wrapper) + command, stdout=self.log, stderr=self.log,
+                                        env=env)
         self.pid = self.process.pid
+        # A wrapper (strace) forks the daemon: measure and signal that child.
+        self.wrapped = bool(wrapper)
+        while self.wrapped and self.pid == self.process.pid:
+            children = Path(f"/proc/{self.process.pid}/task/{self.process.pid}/children")
+            found = children.read_text().split() if children.exists() else []
+            self.pid = int(found[0]) if found else self.pid
+            time.sleep(0.01)
         self.connection = self.stream = None
         self.sequence = 0
         self.connect()
@@ -310,6 +329,21 @@ class Daemon:
                 values[key[:-1]] = int(value) // PAGE_MIB
         return values
 
+    def descriptors(self):
+        """(inotify watches, open SQLite temp files) from /proc fd tables."""
+        watches = temp = 0
+        for fd in Path(f"/proc/{self.pid}/fd").iterdir():
+            try:
+                target = os.readlink(fd)
+                if target == "anon_inode:inotify":
+                    info = Path(f"/proc/{self.pid}/fdinfo/{fd.name}").read_text()
+                    watches += sum(line.startswith("inotify wd:") for line in info.splitlines())
+                elif "etilqs" in target:
+                    temp += 1
+            except OSError:
+                pass
+        return watches, temp
+
     def reset_peak(self):
         Path(f"/proc/{self.pid}/clear_refs").write_text("5")
 
@@ -334,7 +368,10 @@ class Daemon:
         if self.connection:
             self.stream.close()
             self.connection.close()
-        self.process.terminate()
+        if self.wrapped:
+            os.kill(self.pid, 15)  # the wrapper exits with the daemon
+        else:
+            self.process.terminate()
         self.process.wait(timeout=60)
         self.log.close()
         self.socket_path.unlink(missing_ok=True)
@@ -386,6 +423,34 @@ class Meter:
 
 def counters(daemon):
     return daemon.status()
+
+
+def full_scans(status):
+    return status["reconciliations"] - status["scoped_reconciliations"]
+
+
+def forced_scan(daemon, sample=None):
+    """Request a full scan and wait for it to finish, calling sample() while
+    it runs. Returns the status after it."""
+    before = full_scans(daemon.status())
+    daemon.call("reconcile")
+    while True:
+        if sample:
+            sample()
+        status = daemon.status()
+        if full_scans(status) > before and not status["active"]:
+            return status
+        time.sleep(SCAN_SAMPLE_S)
+
+
+def strace_counts(path):
+    """System call -> calls from an strace -c summary."""
+    counts = {}
+    for line in Path(path).read_text().splitlines():
+        fields = line.split()
+        if len(fields) in (5, 6) and fields[0][0].isdigit() and fields[-1] != "total":
+            counts[fields[-1]] = int(fields[3])
+    return counts
 
 
 def scan_counts(before, after):
@@ -659,8 +724,58 @@ class Scenarios:
         daemon.stop()
         inside.rmdir()
 
+    def rescan(self):
+        """Forced full scans that find nothing changed (ADR 0040)."""
+        daemon = self.daemon()
+        daemon.wait_idle()
+        time.sleep(1)
+        steady_watches, _ = daemon.descriptors()
+        daemon.control("reset")
+        runs = []
+        for _ in range(RESCAN_REPEATS):
+            meter, peak = Meter(daemon), dict(watches=0, temp_files=0)
 
-PHASES = ["cold", "warm", "quiet", "queries", "lag", "events", "mounts"]
+            def sample():
+                watches, temp = daemon.descriptors()
+                peak["watches"] = max(peak["watches"], watches)
+                peak["temp_files"] = max(peak["temp_files"], temp)
+            status = forced_scan(daemon, sample)
+            runs.append(dict(scan_ms=status["last_scan_ms"], writes=status.get("last_scan_writes"),
+                             unseen=status.get("last_scan_unseen"), peak_watches=peak["watches"],
+                             temp_files=peak["temp_files"], **meter.result()))
+        middle = lambda key: sorted(run[key] for run in runs)[len(runs) // 2]
+        self.record("rescan_no_change", runs=runs, steady_watches=steady_watches,
+                    median_scan_ms=middle("scan_ms"), median_cpu_s=middle("cpu_s"),
+                    median_io_read_mib=middle("io_read_mib"), median_io_write_mib=middle("io_write_mib"),
+                    max_peak_watches=max(run["peak_watches"] for run in runs),
+                    max_temp_files=max(run["temp_files"] for run in runs))
+        daemon.dump(f"{self.label}-rescan")
+        daemon.stop()
+
+    def syscalls(self):
+        """System calls per no-change full scan, from two strace -c runs."""
+        if shutil.which("strace") is None:
+            self.record("syscalls_per_scan", skipped="strace unavailable")
+            return
+        totals = {}
+        for scans in (0, STRACE_SCANS):
+            summary = self.options.work / f"strace-{self.label}-{scans}.txt"
+            daemon = Daemon(self.options, self.label, self.corpus.tree, rescan_ms=QUIET_RESCAN_MS,
+                            wrapper=["strace", "-f", "-c", "-o", str(summary)])
+            daemon.wait_idle()
+            for _ in range(scans):
+                forced_scan(daemon)
+            daemon.stop()
+            totals[scans] = strace_counts(summary)
+        names = set(totals[0]) | set(totals[STRACE_SCANS])
+        per_scan = {name: round((totals[STRACE_SCANS].get(name, 0) - totals[0].get(name, 0)) / STRACE_SCANS)
+                    for name in names}
+        self.record("syscalls_per_scan", scans=STRACE_SCANS,
+                    calls={name: n for name, n in sorted(per_scan.items(), key=lambda item: -item[1])
+                           if n > 0})
+
+
+PHASES = ["cold", "warm", "quiet", "queries", "lag", "events", "mounts", "rescan", "syscalls"]
 
 
 def parse_arguments():

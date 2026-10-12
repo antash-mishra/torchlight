@@ -60,7 +60,7 @@ static void metadata_events(void) {
     int fd = open(file, O_CREAT | O_WRONLY, 0600);
     CHECK(fd >= 0 && close(fd) == 0);
     tl_watch *watch = NULL;
-    CHECK(watch_create(4, &watch) == TL_OK && watch_add(watch, root) == TL_OK);
+    CHECK(watch_create(4, &watch) == TL_OK && watch_add(watch, root, NULL) == TL_OK);
     CHECK(chmod(file, 0644) == 0 && chmod(sub, 0755) == 0);
     struct metadata_seen seen = {0};
     struct pollfd ready = {watch_descriptor(watch), POLLIN, 0};
@@ -133,16 +133,16 @@ static void slot_reuse(void) {
     struct slot_events seen = {false, file};
     CHECK(snprintf(file, sizeof(file), "%s/none", root) > 0);
     tl_watch *watch = NULL;
-    CHECK(watch_create(2, &watch) == TL_OK && watch_add(watch, root) == TL_OK);
+    CHECK(watch_create(2, &watch) == TL_OK && watch_add(watch, root, NULL) == TL_OK);
     for (int i = 0; i < SLOT_CYCLES; i++) {
         CHECK(snprintf(directory, sizeof(directory), "%s/d%d", root, i) > 0);
-        CHECK(mkdir(directory, 0700) == 0 && watch_add(watch, directory) == TL_OK);
+        CHECK(mkdir(directory, 0700) == 0 && watch_add(watch, directory, NULL) == TL_OK);
         CHECK(rmdir(directory) == 0);
         drain_until(watch, 1, &seen);
     }
     CHECK(snprintf(directory, sizeof(directory), "%s/last", root) > 0);
     CHECK(snprintf(file, sizeof(file), "%s/file", directory) > 0);
-    CHECK(mkdir(directory, 0700) == 0 && watch_add(watch, directory) == TL_OK);
+    CHECK(mkdir(directory, 0700) == 0 && watch_add(watch, directory, NULL) == TL_OK);
     int fd = open(file, O_CREAT | O_WRONLY, 0600);
     CHECK(fd >= 0 && close(fd) == 0);
     struct pollfd ready = {watch_descriptor(watch), POLLIN, 0};
@@ -153,7 +153,139 @@ static void slot_reuse(void) {
     watch_destroy(watch);
     CHECK(unlink(file) == 0 && rmdir(directory) == 0 && rmdir(root) == 0);
 }
+static tl_watch_identity identity_of(const char *path) {
+    struct stat info;
+    CHECK(stat(path, &info) == 0);
+    return (tl_watch_identity){(uint64_t)info.st_dev, (uint64_t)info.st_ino};
+}
+struct swept_events {
+    const char *wanted, *unwanted;
+    bool wanted_seen, unwanted_seen;
+};
+static tl_status observe_needles(void *context, const tl_watch_event *event) {
+    struct swept_events *seen = context;
+    if (event->path != NULL && strstr(event->path, seen->wanted) != NULL)
+        seen->wanted_seen = true;
+    if (event->path != NULL && strstr(event->path, seen->unwanted) != NULL)
+        seen->unwanted_seen = true;
+    return TL_OK;
+}
+/* Drain until an event path contains wanted (at most a second), then 100 ms
+ * more; true when wanted arrived and unwanted never did. */
+static bool only_wanted(tl_watch *watch, const char *wanted, const char *unwanted) {
+    struct swept_events seen = {wanted, unwanted, false, false};
+    struct pollfd ready = {watch_descriptor(watch), POLLIN, 0};
+    while (!seen.wanted_seen && poll(&ready, 1, 1000) > 0)
+        CHECK(watch_drain(watch, observe_needles, &seen) == TL_OK);
+    while (poll(&ready, 1, 100) > 0)
+        CHECK(watch_drain(watch, observe_needles, &seen) == TL_OK);
+    return seen.wanted_seen && !seen.unwanted_seen;
+}
+static void touch_file(const char *path) {
+    int fd = open(path, O_CREAT | O_WRONLY, 0600);
+    CHECK(fd >= 0 && close(fd) == 0);
+}
+/* ADR 0040: a full scan re-adding a directory the watcher already holds for
+ * the same object makes no system call. Proof: with the directory unreadable,
+ * inotify_add_watch fails, yet the confirmed add succeeds. */
+static void confirmed_watches_skip_the_kernel(void) {
+    if (geteuid() == 0)
+        return; /* root can watch mode-0 directories */
+    char root[] = "/tmp/torchlight-confirm-XXXXXX", sub[256];
+    CHECK(mkdtemp(root) != NULL);
+    CHECK(snprintf(sub, sizeof(sub), "%s/sub", root) > 0 && mkdir(sub, 0700) == 0);
+    tl_watch_identity root_identity = identity_of(root), sub_identity = identity_of(sub);
+    tl_watch *watch = NULL;
+    CHECK(watch_create(4, &watch) == TL_OK);
+    CHECK(watch_add(watch, root, &root_identity) == TL_OK &&
+          watch_add(watch, sub, &sub_identity) == TL_OK);
+    CHECK(chmod(sub, 0) == 0);
+    watch_begin(watch);
+    CHECK(watch_add(watch, root, &root_identity) == TL_OK &&
+          watch_add(watch, sub, &sub_identity) == TL_OK);
+    CHECK(watch_stats(watch).unavailable == 0 && watch_sweep(watch, NULL, NULL) == 0);
+    CHECK(watch_stats(watch).directories == 2);
+    /* Without identity the kernel is asked, and refuses. */
+    CHECK(watch_add(watch, sub, NULL) == TL_IO && watch_stats(watch).unavailable == 1);
+    watch_begin(watch);
+    CHECK(watch_stats(watch).unavailable == 0);
+    watch_destroy(watch);
+    CHECK(chmod(sub, 0700) == 0 && rmdir(sub) == 0 && rmdir(root) == 0);
+}
+static bool keep_nothing(void *context, const char *path) {
+    (void)context;
+    (void)path;
+    return false;
+}
+static bool keep_all(void *context, const char *path) {
+    (void)context;
+    (void)path;
+    return true;
+}
+/* A full scan that no longer reaches a directory (excluded, deleted, moved
+ * out of every root) removes its watch; keep spares unscanned roots. */
+static void sweep_drops_unconfirmed(void) {
+    char root[] = "/tmp/torchlight-sweep-XXXXXX", sub[256], inner[300], outer[300];
+    CHECK(mkdtemp(root) != NULL);
+    CHECK(snprintf(sub, sizeof(sub), "%s/sub", root) > 0 && mkdir(sub, 0700) == 0);
+    CHECK(snprintf(inner, sizeof(inner), "%s/inner.txt", sub) > 0);
+    CHECK(snprintf(outer, sizeof(outer), "%s/outer.txt", root) > 0);
+    tl_watch_identity root_identity = identity_of(root), sub_identity = identity_of(sub);
+    tl_watch *watch = NULL;
+    CHECK(watch_create(4, &watch) == TL_OK);
+    CHECK(watch_add(watch, root, &root_identity) == TL_OK &&
+          watch_add(watch, sub, &sub_identity) == TL_OK);
+    watch_begin(watch);
+    CHECK(watch_add(watch, root, &root_identity) == TL_OK);
+    CHECK(watch_sweep(watch, keep_all, NULL) == 0 && watch_stats(watch).directories == 2);
+    CHECK(watch_sweep(watch, keep_nothing, NULL) == 1 && watch_stats(watch).directories == 1);
+    touch_file(inner);
+    touch_file(outer);
+    CHECK(only_wanted(watch, "/outer.txt", "/inner.txt"));
+    /* Confirming again after a sweep re-adds the directory. */
+    watch_begin(watch);
+    CHECK(watch_add(watch, root, &root_identity) == TL_OK &&
+          watch_add(watch, sub, &sub_identity) == TL_OK);
+    CHECK(watch_sweep(watch, NULL, NULL) == 0 && watch_stats(watch).directories == 2);
+    watch_destroy(watch);
+    CHECK(unlink(inner) == 0 && unlink(outer) == 0 && rmdir(sub) == 0 && rmdir(root) == 0);
+}
+/* A directory moved out of the watched tree keeps its watch under the old
+ * path (only IN_MOVE_SELF reaches it). A new directory created at that path
+ * must get its own watch, not be mistaken for the old one; the sweep then
+ * drops the stale watch. */
+static void stale_path_gets_new_watch(void) {
+    char root[] = "/tmp/torchlight-stale-XXXXXX", outside[] = "/tmp/torchlight-away-XXXXXX";
+    char path[256], away[256], file[300], gone[300];
+    CHECK(mkdtemp(root) != NULL && mkdtemp(outside) != NULL);
+    CHECK(snprintf(path, sizeof(path), "%s/a", root) > 0 && mkdir(path, 0700) == 0);
+    CHECK(snprintf(away, sizeof(away), "%s/a", outside) > 0);
+    CHECK(snprintf(file, sizeof(file), "%s/file.txt", path) > 0);
+    CHECK(snprintf(gone, sizeof(gone), "%s/gone.txt", away) > 0);
+    tl_watch_identity root_identity = identity_of(root), old_identity = identity_of(path);
+    tl_watch *watch = NULL;
+    CHECK(watch_create(4, &watch) == TL_OK);
+    CHECK(watch_add(watch, root, &root_identity) == TL_OK &&
+          watch_add(watch, path, &old_identity) == TL_OK);
+    CHECK(rename(path, away) == 0 && mkdir(path, 0700) == 0);
+    tl_watch_identity new_identity = identity_of(path);
+    CHECK(new_identity.inode != old_identity.inode);
+    watch_begin(watch);
+    CHECK(watch_add(watch, root, &root_identity) == TL_OK &&
+          watch_add(watch, path, &new_identity) == TL_OK);
+    CHECK(watch_stats(watch).directories == 3);
+    CHECK(watch_sweep(watch, NULL, NULL) == 1 && watch_stats(watch).directories == 2);
+    touch_file(gone);
+    touch_file(file);
+    CHECK(only_wanted(watch, "/a/file.txt", "/a/gone.txt"));
+    watch_destroy(watch);
+    CHECK(unlink(file) == 0 && unlink(gone) == 0 && rmdir(path) == 0 && rmdir(away) == 0);
+    CHECK(rmdir(root) == 0 && rmdir(outside) == 0);
+}
 void test_watch(void) {
+    confirmed_watches_skip_the_kernel();
+    sweep_drops_unconfirmed();
+    stale_path_gets_new_watch();
     metadata_events();
     filesystem_types();
     slot_reuse();
@@ -165,8 +297,8 @@ void test_watch(void) {
     CHECK(snprintf(fresh, sizeof(fresh), "%s/new/fresh", root) > 0);
     tl_watch *watch = NULL;
     CHECK(watch_create(2, &watch) == TL_OK);
-    CHECK(watch_add(watch, root) == TL_OK && watch_add(watch, old) == TL_OK &&
-          watch_add(watch, old) == TL_OK);
+    CHECK(watch_add(watch, root, NULL) == TL_OK && watch_add(watch, old, NULL) == TL_OK &&
+          watch_add(watch, old, NULL) == TL_OK);
     CHECK(watch_stats(watch).directories == 2);
     CHECK(rename(old, renamed) == 0);
     struct observations seen = {0};
@@ -190,8 +322,8 @@ void test_watch(void) {
     CHECK(watch_feed(watch, &overflow, sizeof(overflow) - 1, observed, &seen) == TL_INVALID);
     CHECK(watch_stats(watch).overflows == 1);
     watch_destroy(watch);
-    CHECK(watch_create(1, &watch) == TL_OK && watch_add(watch, root) == TL_OK);
-    CHECK(watch_add(watch, renamed) == TL_LIMIT && watch_stats(watch).unavailable == 1);
+    CHECK(watch_create(1, &watch) == TL_OK && watch_add(watch, root, NULL) == TL_OK);
+    CHECK(watch_add(watch, renamed, NULL) == TL_LIMIT && watch_stats(watch).unavailable == 1);
     watch_destroy(watch);
     CHECK(unlink(fresh) == 0 && rmdir(renamed) == 0 && rmdir(arrived) == 0 && rmdir(root) == 0);
 }

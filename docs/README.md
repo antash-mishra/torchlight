@@ -1,7 +1,7 @@
 # Torchlight docs
 
-For a plain-language tour of how the whole system works, with diagrams, open
-[System design](system-design.html) in a browser. For an overview of what was
+For a plain-language tour of how the whole system works, with diagrams and
+charts of measured performance, open [System design](system-design.html) in a browser. For an overview of what was
 built and what comes next, open [Built and next](system-overview.html).
 The implemented M3 popup follows the [GUI specification](m3-gui-design.md) and
 [interactive design preview](m3-gui-preview.html), including Cinnamon X11 focus,
@@ -31,8 +31,11 @@ Phase 1: the desktop catalog parses only when a change stamp moves
 full scans and dropped watch slots are reused
 ([ADR 0043](adr/0043-mount-changes-near-roots-and-watch-slot-reuse.md)), and
 memory is measured against a warm steady state
-([ADR 0044](adr/0044-m7-memory-acceptance.md)). Phase 2 (cheaper full scans)
-remains proposed.
+([ADR 0044](adr/0044-m7-memory-acceptance.md)). Phase 2 makes the remaining
+full scans cheap: one stat per entry, one long-lived watcher and an in-memory
+persisted-state map ([ADR 0040](adr/0040-cheap-full-scans.md)). Its
+[health report](reports/m7-phase2-health-report.html) lists every measurement
+with reference ranges, red flags and definitions in plain language.
 
 Start here. Read in this order:
 
@@ -135,6 +138,7 @@ the root [README](../README.md) for commands, and
 | service | Resident daemon | [daemon](modules/daemon/README.md) |
 | service | Background writer/history | [writer](modules/writer/README.md) |
 | service | Incremental delta publication | [delta](modules/delta/README.md) |
+| service | Persisted-state map (M7) | [ledger](modules/ledger/README.md) |
 | service | Personal ranking state (M5) | [personal](modules/personal/README.md) |
 | bin | CLI client | [cli](modules/cli/README.md) |
 | ui | GTK4 popup & optional TUI | [ui](modules/ui/README.md) |
@@ -240,6 +244,7 @@ the root [README](../README.md) for commands, and
 - [0042: Desktop catalog change stamps](adr/0042-desktop-change-stamps.md)
   parses `.desktop` files only when a cheap stat stamp of the applications
   trees changes, instead of every second.
+- [0040: Cheap full scans: one stat, one long-lived watcher, a persisted-state map](adr/0040-cheap-full-scans.md)
 - [0043: Full scans only for mounts near a root; reuse dropped watch slots](adr/0043-mount-changes-near-roots-and-watch-slot-reuse.md)
   ignores mount-table changes away from the indexed roots (hourly backup
   checks, snaps) and frees the watch slots of deleted directories.

@@ -45,6 +45,10 @@ void test_parallel(void);
 void test_json(void);
 /** Run protocol and singleton socket lifecycle checks. */
 void test_ipc(void);
+/** Compare exact (persisted-state map) and exhaustive scans over random changes. */
+void test_scan_equivalence(void);
+/** Run persisted-state map lookup, removal and compaction checks. */
+void test_ledger(void);
 /** Run rename, relocated-watch, overflow and exhaustion checks. */
 void test_watch(void);
 /** Run mount-table parsing, escape decoding and root-relevance checks. */

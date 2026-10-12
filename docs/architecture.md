@@ -118,9 +118,14 @@ depends on the lower modules; filesystem and index modules never call storage.
    changes, mounts at, below or above a root (others are ignored) and the
    hourly backstop scan every root instead.
 2. `crawl` walks those scopes (or roots) and emits path/stat data with
-   device/inode and birth time (ctime fallback). `store` retires changed
-   incarnations before upserting and prunes only listed scopes. Failed walks
-   retain their repair scope until a successful scan verifies it or its absence.
+   device/inode and birth time (ctime fallback), one stat per entry. The
+   writer compares each entry with its persisted-state map (`ledger`, ADR
+   0040): a full scan sends only new or changed entries and the ids of rows it
+   did not find, and a scoped scan marks unchanged entries seen. `store`
+   retires changed incarnations before upserting and prunes only listed scopes
+   (on full scans only among the declared unseen rows). Failed walks retain
+   their repair scope until a successful scan verifies it or its absence. Full
+   scans confirm the one long-lived watcher's watches and sweep the rest.
 3. `store` commits the catalog batch in one short transaction and reports the
    ids of the catalog rows it touched. Metadata-only refreshes commit too,
    but cause no publication; completely unchanged batches roll back.

@@ -1,5 +1,6 @@
 /* Durable BLOB-path catalog, prepared migration statements and atomic scans. */
 #include "torchlight/store.h"
+#include "torchlight/hashmap.h"
 #include "torchlight/json.h"
 #include "torchlight/path.h"
 #include <limits.h>
@@ -30,7 +31,7 @@ static const char *const HISTORY_SQL[HISTORY_STATEMENTS] = {
 struct tl_store {
     sqlite3 *db;
     /* Per-entry statements are prepared once; a scan runs them for every entry. */
-    sqlite3_stmt *put, *mark_seen, *keep, *identity;
+    sqlite3_stmt *put, *mark_seen, *keep, *identity, *unseen;
     sqlite3_stmt *embedding_get, *embedding_put, *embedding_touch;
     sqlite3_stmt *history[HISTORY_STATEMENTS];
     /* history_batch: a store_history_begin transaction is open. changed: the
@@ -38,6 +39,9 @@ struct tl_store {
      * refreshed existing rows' metadata. metadata_write is set while an upsert
      * runs that can only refresh metadata, for the update hook. */
     bool transaction, reading, changed, embedding_batch, history_batch;
+    /* exact: the active scan transaction declared its unseen rows
+     * (store_unseen), so pruning deletes only among them. */
+    bool exact;
     bool metadata_changed, metadata_write;
     /* Ids of files rows inserted, updated or deleted by the current catalog
      * transaction (see store_changes), up to change_limit before overflow. */
@@ -96,6 +100,7 @@ static const char PUT_SQL[] =
     "OR files.is_dir IS NOT excluded.is_dir "
     "OR (excluded.identity IS NOT NULL AND files.identity IS NOT excluded.identity)";
 static const char MARK_SEEN_SQL[] = "INSERT OR IGNORE INTO seen VALUES(?1)";
+static const char UNSEEN_SQL[] = "INSERT OR IGNORE INTO gone VALUES(?1)";
 static const char KEEP_SQL[] = "INSERT OR IGNORE INTO kept VALUES(?1)";
 static tl_status execute(tl_store *store, const char *sql) {
     sqlite3_stmt *statement = NULL;
@@ -231,6 +236,7 @@ static tl_status prepare_statements(tl_store *store) {
     if (sqlite3_prepare_v2(store->db, PUT_SQL, -1, &store->put, NULL) != SQLITE_OK ||
         sqlite3_prepare_v2(store->db, MARK_SEEN_SQL, -1, &store->mark_seen, NULL) != SQLITE_OK ||
         sqlite3_prepare_v2(store->db, KEEP_SQL, -1, &store->keep, NULL) != SQLITE_OK ||
+        sqlite3_prepare_v2(store->db, UNSEEN_SQL, -1, &store->unseen, NULL) != SQLITE_OK ||
         sqlite3_prepare_v2(store->db, "SELECT identity,is_dir FROM files WHERE path=?1", -1,
                            &store->identity, NULL) != SQLITE_OK ||
         sqlite3_prepare_v2(store->db,
@@ -271,6 +277,8 @@ tl_status store_create(const char *path, tl_store **out) {
     if (status == TL_OK)
         status = execute(store, "CREATE TEMP TABLE kept(path BLOB PRIMARY KEY)");
     if (status == TL_OK)
+        status = execute(store, "CREATE TEMP TABLE gone(id INTEGER PRIMARY KEY)");
+    if (status == TL_OK)
         status = prepare_statements(store);
     if (status == TL_OK)
         sqlite3_update_hook(store->db, catalog_change, store);
@@ -287,6 +295,7 @@ void store_destroy(tl_store *store) {
     sqlite3_finalize(store->put);
     sqlite3_finalize(store->mark_seen);
     sqlite3_finalize(store->keep);
+    sqlite3_finalize(store->unseen);
     sqlite3_finalize(store->identity);
     sqlite3_finalize(store->embedding_get);
     sqlite3_finalize(store->embedding_put);
@@ -301,12 +310,27 @@ void store_destroy(tl_store *store) {
     }
     free(store);
 }
+/* The membership tables mean something only inside one scan transaction, so
+ * they are emptied outside any: emptied inside one, a rolled-back (unchanged)
+ * scan would bring the rows back, and every later scan would delete and
+ * journal them again (megabytes of temp-file writes after a cold index). */
+static tl_status clear_membership(tl_store *store) {
+    tl_status status = execute(store, "DELETE FROM seen");
+    if (status == TL_OK)
+        status = execute(store, "DELETE FROM kept");
+    if (status == TL_OK)
+        status = execute(store, "DELETE FROM gone");
+    return status;
+}
 tl_status store_begin(tl_store *store) {
     if (store == NULL)
         return TL_INVALID;
     if (store->transaction || store->reading || store->embedding_batch || store->history_batch)
         return TL_STATE;
-    tl_status status = execute(store, "BEGIN IMMEDIATE");
+    /* Normally already empty (cleared when the last transaction ended). */
+    tl_status status = clear_membership(store);
+    if (status == TL_OK)
+        status = execute(store, "BEGIN IMMEDIATE");
     if (status != TL_OK)
         return status;
     store->transaction = true;
@@ -315,10 +339,8 @@ tl_status store_begin(tl_store *store) {
     store->change_count = 0;
     store->changes_overflow = false;
     store->roots_changed = false;
-    status = execute(store, "DELETE FROM seen");
-    if (status == TL_OK)
-        status = execute(store, "DELETE FROM kept");
-    return status;
+    store->exact = false;
+    return TL_OK;
 }
 static tl_status bind_blob(sqlite3_stmt *statement, int parameter, const char *bytes,
                            size_t length) {
@@ -351,6 +373,49 @@ static void encode_identity(const tl_crawl_entry *entry, unsigned char out[IDENT
     identity_number(out + 9, 8, entry->inode);
     identity_number(out + 17, 8, (uint64_t)entry->identity_sec);
     identity_number(out + 25, 4, entry->identity_nsec);
+}
+/* Signatures hash exactly the columns store_put compares (is_dir, mtime,
+ * size, identity bytes), each tagged present or absent, so a saved row and a
+ * crawl entry hash alike exactly when the upsert would change nothing. */
+enum { SIGNATURE_ABSENT, SIGNATURE_PRESENT };
+static uint64_t signature_number(uint64_t state, bool present, uint64_t value) {
+    unsigned char bytes[9] = {present ? SIGNATURE_PRESENT : SIGNATURE_ABSENT};
+    if (present)
+        identity_number(bytes + 1, 8, value);
+    return hashmap_hash(state, bytes, present ? sizeof(bytes) : 1);
+}
+static uint64_t signature_of(bool is_dir, bool has_mtime, int64_t mtime, bool has_size,
+                             int64_t size, const unsigned char *identity, size_t identity_length) {
+    unsigned char kind = is_dir ? 1 : 0;
+    uint64_t state = hashmap_hash(HASHMAP_HASH_SEED, &kind, 1);
+    state = signature_number(state, has_mtime, (uint64_t)mtime);
+    state = signature_number(state, has_size, (uint64_t)size);
+    state = signature_number(state, identity != NULL, identity_length);
+    return identity == NULL ? state : hashmap_hash(state, identity, identity_length);
+}
+bool store_signature(const tl_crawl_entry *entry, uint64_t *out) {
+    if (entry == NULL || out == NULL || !entry->has_stat || !entry->has_identity ||
+        entry->unreadable || entry->size < 0)
+        return false;
+    unsigned char identity[IDENTITY_BYTES];
+    encode_identity(entry, identity);
+    *out = signature_of(entry->is_dir, true, entry->mtime, true, entry->size, identity,
+                        IDENTITY_BYTES);
+    return true;
+}
+/* The signature of a loaded row from columns is_dir, mtime, size, identity
+ * starting at first. Values of an unexpected type count as absent, so they
+ * never match a crawl entry and the next scan rewrites them. */
+static uint64_t row_signature(sqlite3_stmt *statement, int first) {
+    bool has_mtime = sqlite3_column_type(statement, first + 1) == SQLITE_INTEGER,
+         has_size = sqlite3_column_type(statement, first + 2) == SQLITE_INTEGER,
+         has_identity = sqlite3_column_type(statement, first + 3) == SQLITE_BLOB;
+    const unsigned char *identity = has_identity ? sqlite3_column_blob(statement, first + 3) : NULL;
+    int length = has_identity ? sqlite3_column_bytes(statement, first + 3) : 0;
+    return signature_of(sqlite3_column_int(statement, first) != 0, has_mtime,
+                        sqlite3_column_int64(statement, first + 1), has_size,
+                        sqlite3_column_int64(statement, first + 2), identity,
+                        length < 0 ? 0 : (size_t)length);
 }
 /* What the catalog holds at an entry's path before its upsert. replaced: a
  * different filesystem object now has the path (its saved identity differs). */
@@ -458,6 +523,34 @@ tl_status store_put(tl_store *store, const tl_crawl_entry *entry) {
         status = run_cached(store->keep, entry->path);
     return status;
 }
+tl_status store_mark_seen(tl_store *store, const char *path) {
+    if (store == NULL || path == NULL || path[0] != '/')
+        return TL_INVALID;
+    if (!store->transaction)
+        return TL_STATE;
+    return run_cached(store->mark_seen, path);
+}
+tl_status store_unseen(tl_store *store, const uint64_t *ids, size_t count) {
+    if (store == NULL || (ids == NULL && count != 0))
+        return TL_INVALID;
+    if (!store->transaction)
+        return TL_STATE;
+    tl_status status = TL_OK;
+    for (size_t i = 0; i < count && status == TL_OK; i++) {
+        if (ids[i] == 0 || ids[i] > INT64_MAX ||
+            sqlite3_bind_int64(store->unseen, 1, (sqlite3_int64)ids[i]) != SQLITE_OK) {
+            status = TL_INVALID;
+            break;
+        }
+        if (sqlite3_step(store->unseen) != SQLITE_DONE)
+            status = TL_IO;
+        if (sqlite3_reset(store->unseen) != SQLITE_OK)
+            status = TL_IO;
+    }
+    if (status == TL_OK)
+        store->exact = true;
+    return status;
+}
 /* Statements below bind ?1 to a root and ?2 to its slash-terminated prefix.
  * Deleting unseen entries in scope spares everything at or below a kept path. */
 #define DELETE_UNSEEN_IN_SCOPE                                                                     \
@@ -475,6 +568,26 @@ static const char *const PRUNE_SQL[] = {
 /* Forgetting unregisters the root, then drops what no scan in this
  * transaction saw or kept. */
 static const char *const FORGET_SQL[] = {"DELETE FROM roots WHERE path=?1", DELETE_UNSEEN_IN_SCOPE};
+/* Exact scans (store_unseen) name their unseen rows instead of marking every
+ * seen path: only those rows may go, and never one at a path the transaction
+ * put. A row the caller did not know about therefore survives. The rowid IN
+ * list keeps the cost proportional to the unseen rows, not the catalog. */
+#define DELETE_GONE_IN_SCOPE                                                                       \
+    "DELETE FROM files WHERE id IN(SELECT id FROM gone) "                                          \
+    "AND (path=?1 OR substr(path,1,length(?2))=?2) AND path NOT IN(SELECT path FROM seen) "        \
+    "AND NOT EXISTS(SELECT 1 FROM kept WHERE files.path=kept.path OR "                             \
+    "(substr(files.path,1,length(kept.path))=kept.path "                                           \
+    "AND substr(files.path,length(kept.path)+1,1)=X'2F'))"
+/* A nested root counts as seen when the transaction put it or it has a row
+ * the caller did not declare unseen. */
+static const char *const PRUNE_GONE_SQL[] = {
+    "INSERT OR IGNORE INTO kept SELECT path FROM roots WHERE path<>?1 "
+    "AND substr(path,1,length(?2))=?2 AND path NOT IN(SELECT path FROM seen) "
+    "AND NOT EXISTS(SELECT 1 FROM files WHERE files.path=roots.path "
+    "AND files.id NOT IN(SELECT id FROM gone))",
+    DELETE_GONE_IN_SCOPE, "INSERT OR IGNORE INTO roots VALUES(?1)"};
+static const char *const FORGET_GONE_SQL[] = {"DELETE FROM roots WHERE path=?1",
+                                              DELETE_GONE_IN_SCOPE};
 static tl_status run_statement(tl_store *store, const char *sql, const char *root,
                                const char *prefix) {
     sqlite3_stmt *statement = NULL;
@@ -519,9 +632,15 @@ static tl_status retire_scope(tl_store *store, const char *path) {
     return run_scoped(store, steps, sizeof(steps) / sizeof(steps[0]), path);
 }
 tl_status store_prune(tl_store *store, const char *root) {
+    if (store != NULL && store->exact)
+        return run_scoped(store, PRUNE_GONE_SQL, sizeof(PRUNE_GONE_SQL) / sizeof(PRUNE_GONE_SQL[0]),
+                          root);
     return run_scoped(store, PRUNE_SQL, sizeof(PRUNE_SQL) / sizeof(PRUNE_SQL[0]), root);
 }
 tl_status store_forget_root(tl_store *store, const char *root) {
+    if (store != NULL && store->exact)
+        return run_scoped(store, FORGET_GONE_SQL,
+                          sizeof(FORGET_GONE_SQL) / sizeof(FORGET_GONE_SQL[0]), root);
     return run_scoped(store, FORGET_SQL, sizeof(FORGET_SQL) / sizeof(FORGET_SQL[0]), root);
 }
 tl_status store_keep(tl_store *store, const char *path) {
@@ -674,8 +793,12 @@ tl_status store_commit(tl_store *store) {
     tl_status status = advance_catalog_gen(store);
     if (status == TL_OK)
         status = execute(store, "COMMIT");
-    if (status == TL_OK)
+    if (status == TL_OK) {
         store->transaction = false;
+        /* Best effort: the next store_begin clears them otherwise. */
+        tl_status cleared = clear_membership(store);
+        (void)cleared;
+    }
     return status;
 }
 tl_status store_rollback(tl_store *store) {
@@ -684,8 +807,11 @@ tl_status store_rollback(tl_store *store) {
     if (!store->transaction)
         return TL_STATE;
     tl_status status = execute(store, "ROLLBACK");
-    if (status == TL_OK)
+    if (status == TL_OK) {
         store->transaction = false;
+        tl_status cleared = clear_membership(store);
+        (void)cleared; /* the next store_begin clears them otherwise */
+    }
     /* Rolled-back writes never reached a committed view. */
     store->change_count = 0;
     store->changes_overflow = false;
@@ -706,7 +832,7 @@ static tl_status load_row(sqlite3_stmt *statement, tl_store_callback callback, v
     memcpy(path, bytes, (size_t)length);
     path[length] = 0;
     tl_store_entry entry = {(uint64_t)id, path, sqlite3_column_int(statement, 2) != 0,
-                            sqlite3_column_int(statement, 3) != 0};
+                            sqlite3_column_int(statement, 3) != 0, row_signature(statement, 3)};
     tl_status status = callback(context, &entry);
     free(path);
     return status;
@@ -716,8 +842,8 @@ tl_status store_load(tl_store *store, tl_store_callback callback, void *context)
         return TL_INVALID;
     sqlite3_stmt *statement = NULL;
     const char *sql =
-        "SELECT id,files.path,EXISTS(SELECT 1 FROM roots WHERE roots.path=files.path),files.is_dir "
-        "FROM files ORDER BY id";
+        "SELECT id,files.path,EXISTS(SELECT 1 FROM roots WHERE roots.path=files.path),files.is_dir,"
+        "files.mtime,files.size,files.identity FROM files ORDER BY id";
     if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
         return TL_IO;
     tl_status status = TL_OK;
@@ -766,8 +892,8 @@ static tl_status load_ids(tl_store *store, const uint64_t *ids, size_t count,
                           tl_store_callback callback, void *context) {
     sqlite3_stmt *statement = NULL;
     const char *sql =
-        "SELECT id,files.path,EXISTS(SELECT 1 FROM roots WHERE roots.path=files.path),files.is_dir "
-        "FROM files WHERE id=?1";
+        "SELECT id,files.path,EXISTS(SELECT 1 FROM roots WHERE roots.path=files.path),files.is_dir,"
+        "files.mtime,files.size,files.identity FROM files WHERE id=?1";
     if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
         return TL_IO;
     tl_status status = TL_OK;

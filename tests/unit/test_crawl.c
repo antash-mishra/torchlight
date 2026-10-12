@@ -1,6 +1,7 @@
 /* Crawler errors, unreadable scopes, allowlist traversal and root coverage. */
 #include "test.h"
 #include "torchlight/crawl.h"
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -196,7 +197,57 @@ static void device_boundaries(void) {
     crawl_destroy(crawler);
     CHECK(unlink(file) == 0 && rmdir(sub) == 0 && rmdir(root) == 0);
 }
+struct records {
+    size_t entries, matched;
+};
+static tl_status compare_record(void *context, const tl_crawl_entry *entry) {
+    struct records *records = context;
+    struct stat info;
+    CHECK(lstat(entry->path, &info) == 0);
+    records->entries++;
+    if (entry->has_stat && entry->has_identity && !entry->unreadable &&
+        entry->is_dir == S_ISDIR(info.st_mode) && entry->inode == (uint64_t)info.st_ino &&
+        entry->mtime == (int64_t)info.st_mtime && entry->size == (int64_t)info.st_size)
+        records->matched++;
+    return TL_OK;
+}
+/* The walk skips fts's own stat of files (FTS_NOSTAT), so every record's
+ * metadata comes from the single statx: files, a symlink (never followed)
+ * and nested directories, which must still be entered. */
+static void one_stat_records(void) {
+    char root[] = "/tmp/torchlight-records-XXXXXX", path[128];
+    CHECK(mkdtemp(root) != NULL);
+    make(root, "/a", true);
+    make(root, "/a/b", true);
+    make(root, "/a/b/deep.txt", false);
+    snprintf(path, sizeof(path), "%s/a/b/deep.txt", root);
+    FILE *file = fopen(path, "w");
+    CHECK(file != NULL && fputs("12345", file) >= 0 && fclose(file) == 0);
+    struct timespec times[2] = {{.tv_sec = 1000000000}, {.tv_sec = 1000000000}};
+    CHECK(utimensat(AT_FDCWD, path, times, 0) == 0);
+    make(root, "/top.txt", false);
+    char link[128];
+    snprintf(link, sizeof(link), "%s/link", root);
+    snprintf(path, sizeof(path), "%s/a", root);
+    CHECK(symlink(path, link) == 0);
+    tl_crawl *crawler = NULL;
+    CHECK(crawl_create(NULL, NULL, 0, &crawler) == TL_OK);
+    struct records records = {0};
+    CHECK(crawl_run(crawler, root, compare_record, &records) == TL_OK);
+    CHECK(records.entries == 6 && records.matched == 6);
+    records = (struct records){0};
+    CHECK(crawl_scope(crawler, path, true, compare_record, &records) == TL_OK);
+    CHECK(records.entries == 3 && records.matched == 3);
+    crawl_destroy(crawler);
+    const char *cleanup[] = {"/a/b/deep.txt", "/a/b", "/a", "/top.txt", "/link"};
+    for (size_t i = 0; i < 5; i++) {
+        snprintf(path, sizeof(path), "%s%s", root, cleanup[i]);
+        CHECK(remove(path) == 0);
+    }
+    CHECK(rmdir(root) == 0);
+}
 void test_crawl(void) {
+    one_stat_records();
     device_boundaries();
     scoped_walks();
     tl_crawl *crawler = NULL;

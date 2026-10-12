@@ -2,7 +2,9 @@
 
 **Status: Phase 1 complete (2026-10-11): every gate passes on a realistic
 desktop after the [real-desktop review](#real-desktop-review-2026-10-11).
-Phase 2 proposed.** This is
+Phase 2 implemented (2026-10-11): every exit criterion passes, with three
+open red flags; see [Phase 2 results](#phase-2-results-2026-10-11) and the
+[health report](reports/m7-phase2-health-report.html).** This is
 the working plan for two phases of indexing work, based on a headless
 profile of the daemon taken on 2026-10-10. Raw data is in
 `tests/bench/results/2026-10-10-m7-baseline.jsonl` (scenario metrics) and
@@ -820,13 +822,76 @@ After Phase 1, full scans still run at startup, after overflow, for
 3.9 s and 4.1 CPU-s at 213k, and 13.2 s and 9.7 CPU-s at 494k. Most of
 that is checking each file twice and writing every unchanged row to SQLite.
 
+### Phase 2 in simple words
+
+Torchlight keeps a card for every item on disk, so search can answer
+without touching the disk. Phase 1 made it rely on inotify: when a file is
+created, deleted or renamed, only that folder is checked again. Some moments
+still need a walk over every item, a **full scan**. Phase 2 does not make
+full scans rarer. It makes each one cheap.
+
+A full scan that finds nothing changed costs about 4 s, 4 CPU-s and about
+150 MB of file traffic at 213k items, and 13 s at 494k. Almost all of it is
+wasted:
+
+| Waste | Cost per no-change scan at 213k |
+|---|---|
+| Every file is inspected twice (`fts` stat, then our `statx`) | about 1.1 CPU-s (27%) |
+| Every unchanged file still goes through SQLite: about 640k statements, then a rollback | about 2.3 CPU-s (57%) |
+| The `seen` temp table spills to a scratch file | about 100 MB written and 187 MB read back |
+| All 34k folder watches are added to a new watcher, then swapped in | little CPU, but the kernel watch count doubles during the scan |
+
+**How often full scans run.** Unchanged by Phase 2:
+
+| Trigger | When | Frequency |
+|---|---|---|
+| Startup | the daemon starts | once per login, boot or restart |
+| Backstop | `--repair-ms` (default 1 h) after the last full scan | at most once an hour |
+| Overflow | inotify lost events (its queue holds 16,384 by default) | only during bulk changes: large checkouts, unpacking, syncs |
+| Too many folders | more than 1,024 changed folders in one pass, or a root itself changed | bulk changes |
+| Mount | a mount at, below or above a root | rare; mounts elsewhere no longer count (ADR 0043) |
+| `reconcile` | the user asks | manual |
+| Failure | retry after a failed pass | rare |
+| Degraded coverage | no watcher, or more than 256 directories inotify cannot cover | **every `rescan_ms` (30 s)** while it lasts |
+
+On a healthy desktop that is one scan per start plus at most one an hour:
+about 25 a day on an always-on machine. The live daemon on 2026-10-11 showed
+exactly that state (`last_full_reason: startup`, `repair_scopes` 0, 34,474
+watches).
+
+What Phase 2 changes per scan, and so on average:
+
+| | Today | After Phase 2 (expected) |
+|---|---|---|
+| No-change full scan, 213k | 3.9 s, 4.1 CPU-s | about 1 s, 1.1 CPU-s |
+| Startup scan, 213k | 3.8 to 4.3 s | 1 to 1.5 s |
+| No-change full scan, 494k | 13.2 s | about 3 s |
+| Scratch-file traffic per scan | about 290 MB | none |
+| Hourly backstop, averaged | about 0.1% of a core | about 0.03% |
+| Degraded coverage (a full scan every 30 s) | about 14% of a core | about 4% |
+| Memory | | +5 MB at 213k, +12 MB at 494k |
+
+Phase 2 lowers the number of full scans in one case only, indirectly: no
+longer doubling kernel watches during a scan makes it less likely that a
+large tree hits the per-user watch limit (249,237 here, shared with editors
+and IDEs). Hitting that limit is what drops the daemon into degraded mode,
+which runs a full scan every 30 s. The backstop interval stays at 1 h: after
+Phase 2 it costs too little to be worth lengthening.
+
+Users notice the daemon settling about 1 s after login instead of about 4 s,
+and faster recovery after bulk changes. Search speed does not change.
+
 ### Step 2.1: one stat per entry
 
 - Open the walk with `FTS_NOSTAT`. glibc's `fts` then skips the stat for
   entries whose `d_type` is known and not a directory, reporting `FTS_NSOK`.
   Directories are still stat'd for cycle detection.
-- `report`/`file_identity` take all metadata from the single `statx` and no
-  longer read `fts_statp` for `FTS_NSOK` entries.
+- `report`/`file_identity` take all metadata from the single `statx`. Under
+  `FTS_NOSTAT`, glibc stats into a local buffer and leaves `fts_statp` NULL
+  for **every** entry, directories included (checked with glibc 2.39 on
+  2026-10-11). So `device_boundary`, the mount-point check that sends
+  network and FUSE mounts to the repair set, must compare the `statx` device
+  with the parent directory's, kept per level by the walk.
 - `DT_UNKNOWN` filesystems fall back to today's behavior automatically.
 - Follow-up only if measurements justify it: a small `openat`/`getdents64`
   walker using `statx(dirfd, name)`, which avoids full-path lookups for deep
@@ -938,6 +1003,215 @@ verifies. Decide with the 2.3 numbers.
   writer, ADR 0040, and a recorded `bench-scenarios` run comparing against
   this baseline.
 
+### Implementation plan (2026-10-11)
+
+Reading the steps against the current code found gaps the steps above do
+not cover. Each must be handled in its step.
+
+**Step 2.1 (small):**
+- `report` returns `TL_IO` when `fts_statp` is NULL, so under `FTS_NOSTAT`
+  it must stop reading `fts_statp` entirely. Mount-point detection moves to
+  `statx` data (see the step). Without that move, network and FUSE mounts
+  silently lose their repair scans.
+- `file_identity` falls back to the `fts` stat when `statx` is unavailable
+  (`ENOSYS`, `EINVAL`, `EOPNOTSUPP`). Under `FTS_NOSTAT` there is no such
+  stat, so that fallback becomes an `fstatat` call.
+
+**Step 2.2 (medium):**
+- Skip `inotify_add_watch` only when both the path and the directory's
+  identity (device and inode, which the crawl already reports) match the
+  slot. A directory moved out of every root keeps its watch and its old path,
+  because only `IN_MOVE_SELF` reaches its own watch. A new directory created
+  under the old name would then match by path alone and stay unwatched.
+- `watch_degraded` is `unavailable != 0`, a cumulative counter. Today it
+  clears because each full scan replaces the watcher. A reused watcher needs
+  a per-generation count, or one failure would report degraded forever.
+- `prepare_watch`/`swap_watch` and `building_watch` go away. A new instance
+  is created only when none exists. `coverage_lost` clears once one does.
+
+**Step 2.3 (large; the main saving):**
+- Refresh the persisted-state map from SQLite after each commit, using the
+  touched row ids the persistence thread already collects for delta
+  publication (`job_ids`, then a `store_load_ids`-style read that also
+  returns the signature columns). When those ids are incomplete, reload the
+  whole map at the same point the writer already falls back to a full
+  rebuild. A failed commit or a `reload` also reloads it. The map is a cache
+  of committed rows, never a second source of truth.
+- Scoped rescans keep the SQL prune, which deletes every row not in `seen`.
+  Unchanged entries in a scoped rescan therefore still need `INSERT INTO
+  seen`: one statement instead of three, not zero. To reach zero, read the
+  scope's rows by path range and compare them in memory. Do this only if
+  measurements justify it.
+- `settle_missing_repairs` (through `repair_branch_seen`) checks whether a
+  repair directory is gone by searching the batch for every reported
+  directory. When the batch holds only differences, the scoped scan must
+  record the directories and unreadable entries it reported in a separate
+  list.
+- Full-scan deletion must reproduce what `PRUNE_SQL`/`FORGET_SQL` give for
+  free:
+  - kept scopes (unreadable directories, offline roots)
+  - registered roots nested inside another root
+  - roots removed from the configuration
+  - renames applied before and after the upserts
+  - `identity_changed` replacement
+- No schema change is needed: `mtime`, `size`, `is_dir` and `identity` are
+  already stored.
+
+**Order of work**, measuring after each step:
+1. Add a `rescan` phase to `bench_scenarios.py` that forces no-change full
+   scans. It records wall time, CPU per thread, `etilqs` file traffic and
+   peak kernel watches. Record the baseline on the current build.
+2. Step 2.1.
+3. Step 2.2, with ADR 0040 (part 1).
+4. Step 2.3, in four slices:
+   1. Map load and refresh after commit.
+   2. Full scans compare against the map and delete by id
+      (`store_delete_ids`), with the old path behind a test-only switch and
+      the randomized equivalence test.
+   3. Scoped rescans use the same comparison.
+   4. The batch stops copying unchanged paths.
+
+   ADR 0040 (part 2) covers 2.3.
+5. Run the full benchmark against the exit criteria and decide Step 2.4.
+6. Update the module docs for crawl, watch, store and writer, the glossary
+   (persisted-state map, signature), `milestone-status.md`, `PLAN.md` and
+   this plan's results.
+7. Validate and write a health report (Step 2.5 below).
+
+### Step 2.5: validation and health report
+
+After implementation, check the whole system the way a lab checks a blood
+sample: many measurements, each with a reference range and a flag.
+
+- **Live service.** Rebuild, restart the user's `torchlightd` service and
+  confirm it is healthy on the real home folder: the startup scan, status
+  counters, the watch count, idle CPU and RSS.
+- **Correctness.** `make test` (ASan, UBSan and LeakSanitizer), `make lint`,
+  the randomized equivalence test, and `make bench` (ranking fixtures and
+  typing latency at 50k and 500k).
+- **Performance.** `bench_scenarios.py` on the baseline binary (HEAD before
+  Phase 2) and on the Phase 2 binary, back to back on the same mirror:
+  - no-change full scans
+  - warm start
+  - idle
+  - events
+  - mounts
+  - queries during a scan
+
+  Profile both binaries with the sampler, and use `strace -c` for system
+  calls and `etilqs` traffic.
+- **Memory.** Run the sanitized daemon through the scenarios and stop it
+  cleanly to look for leaks. Record steady and peak RSS, retained free heap
+  (`mallinfo`, trim), the persisted-state map's size and whether RSS grows
+  across repeated full scans.
+- **Red flags.** Any value outside its reference range, any regression
+  against the baseline, any leak, and any test that is flaky or needed a
+  retry.
+- **Report.** A self-contained local HTML page,
+  `docs/reports/m7-phase2-health-report.html`, readable by someone without
+  a technical background:
+  - a summary verdict
+  - one panel per area, with a table of measurement, result, reference
+    range, flag and baseline value
+  - the red flags, each with a plain-language explanation
+  - a definitions section for every technical term used
+
+**Step 2.4 recommendation:** do not adopt it if 2.3 meets the 1 s target.
+Full scans are rare after Phase 1. Skipping unchanged directories would save
+little, and it weakens what a repair scan verifies.
+
+### Phase 2 results (2026-10-11)
+
+**Phase 2 implemented** ([ADR 0040](adr/0040-cheap-full-scans.md)). The
+[health report](reports/m7-phase2-health-report.html) presents every
+measurement below with reference ranges, flags and definitions in plain
+language. The old (HEAD `ab377a0`) and new optimized builds (`-O3`, sampler
+attached) ran back to back on the same machine and trees, with the host's
+applications and history on.
+
+| Exit criterion | Measured | Before | Result |
+|---|---|---|---|
+| No-change full scan at 213k: ≤ 1.0 s, ≤ 1.2 CPU-s | 978 ms (median of 5; runs 968 to 989), 1.00 CPU-s | 3,969 ms, 4.00 CPU-s | Pass, narrowly: the same scan code measured 1,028 ms in an earlier run |
+| No-change full scan at 494k: ≤ 3 s | 1,859 ms, 1.89 CPU-s | 7,784 ms, 7.79 CPU-s | Pass |
+| No SQLite temp-file I/O during scans | 0 MiB written, 1 MiB read; no `pwrite64` | 293 MiB written, 495 MiB read | Pass |
+| Kernel watches never above steady | peak 34,461 = steady | peak 68,914 | Pass |
+| Warm-start scan ≤ 1.5 s at 213k | 1,134 ms | 3,251 ms | Pass |
+| Equivalence test; all tests; `make test`, `make lint` | 9 of 9 seeds identical; all suites pass; 0 lint warnings | | Pass |
+
+System calls per no-change scan (`strace -c`, three scans): stat calls
+430,257 → 249,809 (one `statx` per entry plus fts's own stat of each
+directory), `inotify_add_watch` 34,453 → 0, `pread64` 70,026 → 0, `pwrite64`
+18,413 → 0. CPU per scan (sampler): database 2.00 → 0 s,
+inspecting files 1.00 → 0.56 s, watches 0.17 → 0 s, folder listing and
+opening 0.29 → 0.26 s, in-memory comparison 0.10 s.
+
+Unchanged or within noise: idle 0.15% → 0.14% of a core, 20 Hz churn 0.13% →
+0.13%, small-folder create/delete p50 107 ms, query round trip p50 0.79 →
+0.74 ms (p95 2.46 → 2.80 ms; the query path did not change), `make bench`
+9/9 fixtures at 50k and 500k with typing p95 3.74 ms at 500k, mount changes
+outside the root 0 full scans, inside 2. Create lag in the 2,838-entry
+folder improved from 161 to 139 ms (exact scoped passes). Memory: steady RSS
+176 → 171 MiB, after the events 195 → 193 MiB, RSS flat at 199 MiB over 30
+consecutive full scans. The ledger itself is 12.6 MiB at 213k. The sanitized
+daemon on the 213k mirror (cold index, three forced scans, burst, rename,
+delete, queries) reported no leaks, memory errors or undefined behaviour.
+
+Found and fixed while validating:
+- **Membership tables restored by rollback.** An unchanged scan rolls back,
+  and the `seen`/`kept`/`gone` tables had been emptied inside the
+  transaction, so every unchanged scan after a cold index re-deleted and
+  journaled them (about 15 MB of temp-file writes per scan at 20k entries).
+  They are now emptied outside any transaction; `unchanged_scans_write_nothing`
+  in `test_daemon.py` guards it.
+- **Ledger refresh before publication** delayed a 22k-entry deletion from
+  219 to 344 ms. It now runs after publication. Over 7 repeated runs the
+  deletion takes 246 ms against 223 ms, within noise.
+
+Open items (red flags in the report):
+- **20k-file burst visible 1.3 s later.** Medians of 7 runs: 3,002 ms against
+  1,672 ms. The faster crawl finishes its first pass over the still-growing
+  tree earlier, so the second pass exceeds the delta bound and forces a full
+  rebuild. The old build's second pass fit a delta in 7 of 8 runs. Total CPU
+  is +7%. A tree that appears at once (rename) is +6%. Candidate fix: wait for
+  event bursts to settle (up to a cap) before a scoped pass.
+- **Search ready after restart 0.2 s later** (1,524 against 1,325 ms, median
+  of 6). The startup load now also fills the ledger and reads signature
+  columns. Candidate fix: open the socket before the catalog loads (already
+  listed under Out of scope), or fill the ledger on the indexing thread.
+- **Home-folder rescans cost about 0.1 s of persistence CPU each** (an
+  existing cost): `PRUNE_CHILDREN_SQL` for a root walks the whole catalog's
+  path range. On the live desktop it dominated idle CPU while this work ran:
+  0.44% of a core over 20 minutes and 0.34% over 10 minutes on the final
+  build, against 0.25% in the Phase 1 review.
+- **Close to their gates:** retained free heap 5 MiB (gate 5) and RSS after a
+  rebuild +9.9% (gate 10%), because the ledger grows with the 64k entries the
+  rebuild test adds.
+
+The live service (the user's `-O0` unit) restarted on the new build:
+- Startup scan 1.23 s.
+- Forced full check 2.84 → 1.06 s and 2.94 → 1.07 CPU-s.
+- File traffic per check: 182 MiB read and 49 MiB written before; 1 MiB read
+  and none written after.
+- RSS 170 → 152 MiB.
+
+**Step 2.4 decision:** not adopted. The full scan meets its targets without
+it, and skipping unchanged directories would weaken what a repair scan
+verifies.
+
+The invocations were:
+
+```sh
+python3 tests/bench/bench_scenarios.py --daemon build/m7p2-$BUILD/torchlightd \
+  --sampler build/m7p2-base/sampler.so --paths /tmp/torchlight-m7-review-corpus.paths \
+  --work build/m7-fixed --label m7p2-$BUILD --idle-s 180 \
+  --results tests/bench/results/2026-10-11-m7p2-213k-$BUILD.jsonl \
+  cold warm quiet queries lag events mounts rescan syscalls
+python3 tests/bench/bench_scenarios.py --daemon build/m7p2-$BUILD/torchlightd \
+  --fixture build/bench_fixture --size 500000 --work build/m7p2-fx500 --label m7p2-$BUILD \
+  --idle-s 30 --results tests/bench/results/2026-10-11-m7p2-494k-$BUILD.jsonl cold warm rescan
+make bench > tests/bench/results/2026-10-11-m7p2-lexical.txt
+```
+
 ## Storage alternatives considered: SQLite tuning and mmap
 
 Measured 2026-10-10 on the 213k mirror: three forced no-change full rescans
@@ -971,7 +1245,7 @@ per variant (`tests/bench/results/2026-10-10-m7-sqlite-pragmas.jsonl`).
 
 ## Decisions to make
 
-Taken for Phase 1 (the recommended options; each can still be revisited):
+Taken (the recommended options; each can still be revisited):
 
 1. **Backstop interval when coverage is healthy:** 1 h, `--repair-ms`
    (`0` turns it off).
@@ -994,9 +1268,8 @@ Taken for Phase 1 (the recommended options; each can still be revisited):
    scans only for mounts near a root, with watch slots reused
    ([ADR 0043](adr/0043-mount-changes-near-roots-and-watch-slot-reuse.md)).
 
-Still open:
-
-8. **Step 2.4:** adopt directory-stamp skipping or not, after 2.3.
+8. **Step 2.4:** not adopted (2026-10-11). The full scan meets its targets
+   without it ([Phase 2 results](#phase-2-results-2026-10-11)).
 
 ## Out of scope (measured above, planned later)
 

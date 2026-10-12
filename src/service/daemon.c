@@ -358,6 +358,10 @@ static void indexing_status(tl_json_buffer *b, const tl_writer_stats *stats,
     json_number(b, stats->watch_unavailable);
     json_raw(b, ",\"last_scan_ms\":");
     json_number(b, stats->last_scan_ms);
+    json_raw(b, ",\"last_scan_writes\":");
+    json_number(b, stats->last_scan_writes);
+    json_raw(b, ",\"last_scan_unseen\":");
+    json_number(b, stats->last_scan_unseen);
     json_raw(b, ",\"offline_roots\":");
     json_number(b, stats->offline_roots);
     json_raw(b, ",\"unreadable_scopes\":");

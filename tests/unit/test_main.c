@@ -32,6 +32,7 @@ int main(void) {
     test_delta();
     test_store();
     test_identity();
+    test_ledger();
     test_crawl();
     test_watch();
     test_mounts();
@@ -40,6 +41,7 @@ int main(void) {
     test_writer_fallback();
     test_writer_repair();
     test_writer_history();
+    test_scan_equivalence();
     puts("All module tests passed.");
     return 0;
 }

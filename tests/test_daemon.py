@@ -443,6 +443,43 @@ def metadata_reconciles(service):
         service.stop()
 
 
+def written_bytes(service):
+    values = dict(line.split(": ") for line in Path(f"/proc/{service.process.pid}/io").read_text().splitlines())
+    return int(values["wchar"])
+
+
+def unchanged_scans_write_nothing(service):
+    """ADR 0040: a full scan that finds nothing changed sends no entry to the
+    store and declares no row unseen. Regression: the scan membership tables
+    were emptied inside each scan transaction, so after a cold index every
+    unchanged (rolled-back) scan restored and deleted thousands of rows again,
+    megabytes of SQLite temp-file writes per scan."""
+    for folder in range(60):
+        (service.root / f"folder{folder}").mkdir()
+        for name in range(100):
+            (service.root / f"folder{folder}/file{name}.txt").write_bytes(b"")
+    def present(path):
+        target = os.fsencode(path)
+        wait_for(lambda: target in service.paths(path.name))
+    service.start()
+    try:
+        present(service.root / "folder59/file99.txt")
+        reconcile_once(service)
+        before = written_bytes(service)
+        status = reconcile_once(service)
+        written = written_bytes(service) - before
+        assert status["last_full_reason"] == "reconcile", status
+        assert status["last_scan_writes"] == 0 and status["last_scan_unseen"] == 0, status
+        assert written < 1024 * 1024, written
+        (service.root / "folder0/file0.txt").unlink()
+        (service.root / "folder1/new.txt").write_bytes(b"")
+        present(service.root / "folder1/new.txt")
+        status = reconcile_once(service)
+        assert status["last_scan_writes"] == 0 and status["last_scan_unseen"] == 0, status
+    finally:
+        service.stop()
+
+
 def repair_after_unreadable_parent(service):
     """A failed scoped walk must not forget an unwatched descendant. Also
     settle a deleted repair after its parent successfully lists its absence."""
@@ -822,6 +859,9 @@ with tempfile.TemporaryDirectory(prefix="torchlight-daemon-") as temporary:
     metadata = Path(temporary) / "metadata"
     metadata.mkdir(mode=0o700)
     metadata_reconciles(Service(metadata, "--rescan-ms", "3600000", "--repair-ms", "0"))
+    unchanged = Path(temporary) / "unchanged"
+    unchanged.mkdir(mode=0o700)
+    unchanged_scans_write_nothing(Service(unchanged, "--rescan-ms", "3600000", "--repair-ms", "0"))
     if os.geteuid() != 0:
         repair = Path(temporary) / "repair"
         repair.mkdir(mode=0o700)

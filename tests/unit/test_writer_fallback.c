@@ -1,4 +1,5 @@
-/* Instance exhaustion must preserve periodic scans, status and later recovery. */
+/* Instance exhaustion must preserve periodic scans, status and later recovery;
+ * once a watcher exists, full scans reuse it instead of creating another. */
 #include "test.h"
 #include "torchlight/writer.h"
 #include <fcntl.h>
@@ -9,6 +10,7 @@
 
 struct watch_fault {
     atomic_bool unavailable;
+    atomic_size_t created;
 };
 struct fixture {
     char base[64], root[128], file[160], fresh[160], database[128], config_path[128];
@@ -28,7 +30,10 @@ static void touch(const char *path) {
 static tl_status create_watch(void *context, size_t capacity, tl_watch **out) {
     struct watch_fault *fault = context;
     *out = NULL;
-    return atomic_load(&fault->unavailable) ? TL_IO : watch_create(capacity, out);
+    if (atomic_load(&fault->unavailable))
+        return TL_IO;
+    atomic_fetch_add(&fault->created, 1);
+    return watch_create(capacity, out);
 }
 static uint64_t query_id(tl_catalog *catalog, const char *query) {
     tl_catalog_reader *reader = NULL;
@@ -75,6 +80,7 @@ static void start_fixture(struct fixture *fixture) {
                         &fixture->config) == TL_OK);
     CHECK(catalog_create(2, &fixture->catalog) == TL_OK);
     atomic_init(&fixture->fault.unavailable, true);
+    atomic_init(&fixture->fault.created, 0);
     tl_writer_options options = {.config = fixture->config,
                                  .catalog = fixture->catalog,
                                  .socket_path = "/tmp/torchlight-unused-fallback.sock",
@@ -99,14 +105,26 @@ static void recover_watch(struct fixture *fixture) {
     }
     tl_writer_stats healthy = stats(fixture->writer);
     CHECK(!healthy.watch_degraded && healthy.watches == 1 && !healthy.degraded);
+    CHECK(atomic_load(&fixture->fault.created) == 1);
+    /* ADR 0040: later full scans reuse the live watcher, so instance
+     * exhaustion no longer matters to them: no instance is created, the
+     * watch count stays and coverage stays healthy. */
     atomic_store(&fixture->fault.unavailable, true);
+    uint64_t full = healthy.reconciliations - healthy.scoped_reconciliations;
     CHECK(unlink(fixture->fresh) == 0);
     CHECK(writer_reconcile(fixture->writer) == TL_OK);
-    for (size_t i = 0; i < 10000 && query_id(fixture->catalog, "fresh.txt") != 0; i++)
+    tl_writer_stats reused = stats(fixture->writer);
+    for (size_t i = 0;
+         i < 10000 && (reused.reconciliations - reused.scoped_reconciliations <= full ||
+                       reused.indexing || query_id(fixture->catalog, "fresh.txt") != 0);
+         i++) {
         pause_briefly();
+        reused = stats(fixture->writer);
+    }
     CHECK(query_id(fixture->catalog, "fresh.txt") == 0);
-    tl_writer_stats reduced = stats(fixture->writer);
-    CHECK(reduced.watch_degraded && reduced.watches == healthy.watches);
+    CHECK(reused.reconciliations - reused.scoped_reconciliations > full);
+    CHECK(!reused.watch_degraded && reused.watches == healthy.watches);
+    CHECK(atomic_load(&fixture->fault.created) == 1);
     touch(fixture->fresh);
     CHECK(wait_for_file(fixture->catalog, "fresh.txt", 0) != 0);
 }

@@ -9,6 +9,7 @@
  * backstop full scan every repair_ms. */
 #include "torchlight/writer.h"
 #include "torchlight/delta.h"
+#include "torchlight/ledger.h"
 #include "torchlight/mounts.h"
 #include "torchlight/path.h"
 #include "torchlight/store.h"
@@ -71,10 +72,21 @@ struct paths {
     size_t count;
     bool unresolved;
 };
-/* One crawled entry with its owned path copy; entry.path aliases path. */
+/* One crawled entry with its owned path copy; entry.path aliases path.
+ * unchanged: a scoped exact pass found it as saved, so it is only marked
+ * seen (scoped prunes keep it) instead of written. */
 struct batch_entry {
     char *path;
     tl_crawl_entry entry;
+    bool unchanged;
+};
+/* A directory whose saved row an exact pass found changed. If the commit
+ * replaced that row (a different directory now has the path), the store
+ * retired its saved subtree, and the unchanged descendants the pass did not
+ * write must be rescanned. */
+struct dirty_directory {
+    uint64_t id;
+    char *path;
 };
 /* Everything one reconciliation wants persisted, prepared by the indexing
  * thread and applied by the persistence thread in one short transaction.
@@ -87,6 +99,12 @@ struct batch {
     /* Full batches prune every successfully scanned root; scoped batches prune
      * only the scopes whose rescans succeeded. */
     bool full;
+    /* exact: compared with the persisted-state map (ADR 0040). A full exact
+     * batch holds only new, changed or uncomparable entries and lists in gone
+     * the saved rows its scan did not find; a scoped one also carries its
+     * unchanged entries, to mark them seen. */
+    bool exact;
+    tl_vec *gone; /* uint64_t */
     struct scope scopes[WRITER_SCOPE_CAPACITY];
     size_t scope_count;
 };
@@ -97,10 +115,10 @@ struct tl_writer {
     /* store: persistence thread's write connection (creating thread until the
      * workers start). reader: indexing thread's read-only connection. */
     tl_store *store, *reader;
-    tl_watch *watch, *building_watch;
-    /* The watcher scans install new directory watches into: the one being
-     * built during a full scan, or the live one during a scoped rescan. */
-    tl_watch *scan_watch;
+    /* One long-lived watcher: every scan adds into it, and a full scan
+     * confirms its watches and sweeps the rest (ADR 0040). NULL until one
+     * can be created; then only full scans can find changes. */
+    tl_watch *watch;
     tl_crawl *crawler;
     struct paths roots;
     pthread_t thread, persistence_thread;
@@ -125,9 +143,8 @@ struct tl_writer {
     /* Indexing thread only. The repair set: recursive scopes inotify cannot
      * keep current (unwatched, unreadable, network/FUSE mounts), rebuilt by
      * each full scan and rescanned every rescan_ms. repair_overflow (below):
-     * some did not fit. coverage_lost: the last full scan could not create a
-     * watcher. offline: roots the last full scan could not read, probed for
-     * their return. */
+     * some did not fit. offline: roots the last full scan could not read,
+     * probed for their return. */
     char *repairs[WRITER_REPAIR_CAPACITY];
     size_t repair_count;
     tl_vec *offline; /* char * */
@@ -144,7 +161,7 @@ struct tl_writer {
     int mounts;
     tl_mounts *mount_table;
     tl_status callback_status;
-    bool dirty, reload, last_scoped, repair_overflow, coverage_lost, release_pending;
+    bool dirty, reload, last_scoped, repair_overflow, release_pending;
     size_t scan_entries, offline_roots, unreadable_scopes;
     /* Batch handoff, guarded by mutex. job_ids holds the committed batch's
      * touched row ids; job_complete is false when they cannot describe it. */
@@ -155,6 +172,15 @@ struct tl_writer {
     bool job_changed, job_complete, usage_loaded;
     tl_vec *job_ids; /* uint64_t */
     tl_delta *delta;
+    /* Indexing thread only (writer_create before start). The persisted-state
+     * map scans compare against; NULL with options.exhaustive, unused while
+     * incomplete. changed_ids: rows the current pass found changed, reloaded
+     * into it after the commit; dirty_directories: the directories among
+     * them. scan_writes: entries the current pass sends as new or changed. */
+    tl_ledger *ledger;
+    tl_vec *changed_ids;       /* uint64_t */
+    tl_vec *dirty_directories; /* struct dirty_directory */
+    uint64_t scan_writes;
     /* Startup usage summary built by the persistence thread, until the search
      * thread takes it (writer_take_usage). */
     tl_usage *usage;
@@ -250,8 +276,11 @@ static bool sidecar(const char *path, const char *base) {
 static bool excluded(const tl_writer *writer, const char *path) {
     return sidecar(path, writer->database) || sidecar(path, writer->socket_path);
 }
+/* ledger: the persisted-state map being reloaded from the same rows, or NULL
+ * when it is complete already (or a put failed: it stays incomplete). */
 struct builder {
     tl_lexical *engine;
+    tl_ledger *ledger;
     const tl_writer_options *options;
     size_t entries, bytes;
 };
@@ -267,16 +296,27 @@ static tl_status build_entry(void *context, const tl_store_entry *entry) {
         builder->entries++;
         builder->bytes += length;
     }
+    /* The map is an optimization: failing to fill it never fails a build. */
+    if (status == TL_OK && builder->ledger != NULL &&
+        ledger_put(builder->ledger, entry->id, entry->path, entry->signature) != TL_OK)
+        builder->ledger = NULL;
     return status;
 }
 /* Indexing thread: build a snapshot from one committed read view, reporting
- * its generation and size for the delta bookkeeping. */
+ * its generation and size for the delta bookkeeping. An incomplete
+ * persisted-state map is reloaded from the same rows at no extra SQL cost. */
 static tl_status make_snapshot(tl_writer *writer, tl_catalog_snapshot **out,
                                struct builder *builder, uint64_t *catalog_gen) {
     *builder = (struct builder){.options = &writer->options};
+    if (writer->ledger != NULL && !ledger_complete(writer->ledger)) {
+        builder->ledger = writer->ledger;
+        ledger_reset(builder->ledger);
+    }
     tl_status status = lexical_create(&builder->engine);
     if (status == TL_OK)
         status = store_load_catalog(writer->reader, build_entry, builder, catalog_gen);
+    if (status == TL_OK && builder->ledger != NULL)
+        ledger_seal(builder->ledger);
     if (status == TL_OK)
         status = lexical_finish(builder->engine);
     if (status == TL_OK)
@@ -520,6 +560,7 @@ static void batch_free(struct batch *batch) {
         free(keep[i]);
     vec_destroy(batch->entries);
     vec_destroy(batch->keep);
+    vec_destroy(batch->gone);
     *batch = (struct batch){0};
 }
 static tl_status batch_init(struct batch *batch) {
@@ -527,6 +568,8 @@ static tl_status batch_init(struct batch *batch) {
     tl_status status = vec_create(sizeof(struct batch_entry), &batch->entries);
     if (status == TL_OK)
         status = vec_create(sizeof(char *), &batch->keep);
+    if (status == TL_OK)
+        status = vec_create(sizeof(uint64_t), &batch->gone);
     return status;
 }
 static tl_status batch_keep(struct batch *batch, const char *path) {
@@ -625,8 +668,7 @@ static bool root_returned(const tl_writer *writer) {
 /* Indexing thread, every rescan_ms: rescan the repair set through scoped
  * passes, or everything when coverage itself is missing. */
 static void schedule_repair(tl_writer *writer) {
-    if (writer->watch == NULL || writer->coverage_lost || writer->repair_overflow ||
-        root_returned(writer)) {
+    if (writer->watch == NULL || writer->repair_overflow || root_returned(writer)) {
         request_full(writer, WRITER_FULL_REPAIR);
         schedule(writer, 0);
         return;
@@ -646,12 +688,123 @@ struct scan {
 static tl_status cover_directory(tl_writer *writer, const tl_crawl_entry *entry) {
     if (entry->device_boundary)
         check_filesystem(writer, entry->path);
-    if (writer->scan_watch == NULL)
+    if (writer->watch == NULL)
         return TL_OK;
-    tl_status watched = watch_add(writer->scan_watch, entry->path);
+    tl_watch_identity identity = {entry->device, entry->inode};
+    tl_status watched =
+        watch_add(writer->watch, entry->path, entry->has_identity ? &identity : NULL);
     if (watched == TL_IO || watched == TL_LIMIT)
         add_repair(writer, entry->path);
     return watched == TL_IO || watched == TL_LIMIT ? TL_OK : watched;
+}
+/* ---- persisted-state map (ADR 0040) ---------------------------------------- */
+static void clear_dirty(tl_writer *writer) {
+    struct dirty_directory *directories = vec_data(writer->dirty_directories);
+    for (size_t i = 0; i < vec_count(writer->dirty_directories); i++)
+        free(directories[i].path);
+    vec_clear(writer->dirty_directories);
+    vec_clear(writer->changed_ids);
+}
+/* Remember a saved row this pass found changed, to reload it after commit. */
+static tl_status note_dirty(tl_writer *writer, uint64_t id, const tl_crawl_entry *entry) {
+    tl_status status = vec_append(writer->changed_ids, &id);
+    if (status != TL_OK || !entry->is_dir)
+        return status;
+    struct dirty_directory directory = {id, strdup(entry->path)};
+    status = directory.path == NULL ? TL_NOMEM : vec_append(writer->dirty_directories, &directory);
+    if (status != TL_OK)
+        free(directory.path);
+    return status;
+}
+/* What an exact pass does with a crawled entry: write it (new, changed or not
+ * comparable), only mark it seen (unchanged, scoped pass) or skip it entirely
+ * (unchanged, full pass: store_unseen covers deletion instead). */
+enum verdict { VERDICT_WRITE, VERDICT_SEEN, VERDICT_SKIP };
+static tl_status compare_entry(tl_writer *writer, const struct batch *batch,
+                               const tl_crawl_entry *entry, enum verdict *verdict) {
+    *verdict = VERDICT_WRITE;
+    if (!batch->exact)
+        return TL_OK;
+    uint64_t id = 0, saved = 0, signature = 0;
+    if (!ledger_find(writer->ledger, entry->path, &id, &saved) ||
+        !store_signature(entry, &signature))
+        return TL_OK;
+    if (signature != saved)
+        return note_dirty(writer, id, entry);
+    *verdict = batch->full ? VERDICT_SKIP : VERDICT_SEEN;
+    return TL_OK;
+}
+static tl_status load_ledger_row(void *context, const tl_store_entry *entry) {
+    return ledger_put(context, entry->id, entry->path, entry->signature);
+}
+/* Indexing thread: reload the whole map from the committed catalog. */
+static void rebuild_ledger(tl_writer *writer) {
+    uint64_t catalog_gen = 0;
+    ledger_reset(writer->ledger);
+    if (store_load_catalog(writer->reader, load_ledger_row, writer->ledger, &catalog_gen) == TL_OK)
+        ledger_seal(writer->ledger);
+}
+/* Indexing thread, before a pass: whether it can compare with the map. A full
+ * pass first reloads an incomplete map (a failed refresh); a scoped pass just
+ * writes everything, as before ADR 0040. */
+static bool prepare_ledger(tl_writer *writer, bool full) {
+    clear_dirty(writer);
+    if (writer->ledger == NULL)
+        return false;
+    if (full && !ledger_complete(writer->ledger))
+        rebuild_ledger(writer);
+    if (!ledger_complete(writer->ledger))
+        return false;
+    return !full || ledger_begin(writer->ledger) == TL_OK;
+}
+static int compare_ids(const void *left, const void *right) {
+    uint64_t a = *(const uint64_t *)left, b = *(const uint64_t *)right;
+    return a < b ? -1 : a > b;
+}
+/* Sort ids ascending and drop repeats. */
+static void sort_unique(tl_vec *ids) {
+    uint64_t *data = vec_data(ids);
+    size_t count = vec_count(ids), unique = 0;
+    if (count > 1)
+        qsort(data, count, sizeof(uint64_t), compare_ids);
+    for (size_t i = 0; i < count; i++)
+        if (unique == 0 || data[unique - 1] != data[i])
+            data[unique++] = data[i];
+    vec_truncate(ids, unique);
+}
+/* A changed directory whose row the commit replaced (the store retired its
+ * saved subtree with it) gets a recursive rescan: the pass skipped its
+ * unchanged descendants, so nothing wrote them back yet. */
+static void rescan_replaced(tl_writer *writer) {
+    const struct dirty_directory *directories = vec_const_data(writer->dirty_directories);
+    for (size_t i = 0; i < vec_count(writer->dirty_directories); i++) {
+        if (ledger_contains(writer->ledger, directories[i].id))
+            continue;
+        add_scope(writer, strdup(directories[i].path), true);
+        schedule(writer, 0);
+    }
+}
+/* Indexing thread, after an exact pass committed and was published: reload
+ * every row the commit touched (job_ids) or rewrote (changed_ids), so the map
+ * matches the catalog again. Runs after publication, so it never delays
+ * search; the next pass is the first to need it. */
+static void refresh_ledger(tl_writer *writer, bool catalog_changed) {
+    if (catalog_changed && vec_append_array(writer->changed_ids, vec_const_data(writer->job_ids),
+                                            vec_count(writer->job_ids)) != TL_OK) {
+        ledger_invalidate(writer->ledger);
+        return;
+    }
+    sort_unique(writer->changed_ids);
+    const uint64_t *ids = vec_const_data(writer->changed_ids);
+    size_t count = vec_count(writer->changed_ids);
+    for (size_t i = 0; i < count; i++)
+        ledger_remove(writer->ledger, ids[i]);
+    uint64_t catalog_gen = 0;
+    if (count != 0 && store_load_ids(writer->reader, ids, count, load_ledger_row, writer->ledger,
+                                     &catalog_gen) != TL_OK)
+        ledger_invalidate(writer->ledger);
+    if (ledger_complete(writer->ledger))
+        rescan_replaced(writer);
 }
 static tl_status scan_entry(void *context, const tl_crawl_entry *entry) {
     struct scan *scan = context;
@@ -671,7 +824,15 @@ static tl_status scan_entry(void *context, const tl_crawl_entry *entry) {
         if (covered != TL_OK)
             return writer->callback_status = covered;
     }
-    struct batch_entry copy = {.path = strdup(entry->path), .entry = *entry};
+    enum verdict verdict = VERDICT_WRITE;
+    tl_status compared = compare_entry(writer, scan->batch, entry, &verdict);
+    if (compared != TL_OK)
+        return writer->callback_status = compared;
+    if (verdict == VERDICT_SKIP)
+        return TL_OK;
+    writer->scan_writes += verdict == VERDICT_WRITE;
+    struct batch_entry copy = {
+        .path = strdup(entry->path), .entry = *entry, .unchanged = verdict == VERDICT_SEEN};
     if (copy.path == NULL)
         return writer->callback_status = TL_NOMEM;
     copy.entry.path = copy.path;
@@ -688,7 +849,6 @@ static tl_status scan_roots(tl_writer *writer, struct batch *batch) {
     writer->offline_roots = 0;
     writer->unreadable_scopes = 0;
     writer->callback_status = TL_OK;
-    writer->scan_watch = writer->building_watch;
     batch->full = true;
     /* This scan rebuilds the repair set and the offline roots from scratch. */
     clear_repairs(writer);
@@ -796,7 +956,6 @@ static void settle_missing_repairs(tl_writer *writer, const struct batch *batch)
 static tl_status scan_scopes(tl_writer *writer, struct batch *batch) {
     writer->scan_entries = 0;
     writer->callback_status = TL_OK;
-    writer->scan_watch = writer->watch;
     batch->full = false;
     struct scan scan = {writer, batch};
     /* Root availability and unreadable-scope counts describe the last full scan. */
@@ -854,7 +1013,8 @@ static tl_status apply_entries(tl_writer *writer, const struct batch *batch) {
     for (size_t i = 0; i < vec_count(batch->entries) && status == TL_OK; i++) {
         if (atomic_load(&writer->stop))
             return TL_STATE;
-        status = store_put(writer->store, &entries[i].entry);
+        status = entries[i].unchanged ? store_mark_seen(writer->store, entries[i].path)
+                                      : store_put(writer->store, &entries[i].entry);
     }
     char *const *keep = vec_const_data(batch->keep);
     for (size_t i = 0; i < vec_count(batch->keep) && status == TL_OK; i++)
@@ -867,6 +1027,10 @@ static tl_status apply_entries(tl_writer *writer, const struct batch *batch) {
                      : store_prune_children(writer->store, batch->scopes[i].path);
     if (!batch->full)
         return status;
+    /* An exact scan skipped its unchanged entries, so it names the rows it
+     * did not find instead: only those may be pruned or forgotten below. */
+    if (status == TL_OK && batch->exact)
+        status = store_unseen(writer->store, vec_const_data(batch->gone), vec_count(batch->gone));
     if (status == TL_OK)
         status = store_roots(writer->store, forget_root, writer);
     for (size_t i = 0; i < writer->roots.count && status == TL_OK; i++)
@@ -925,32 +1089,46 @@ static void update_watch_stats(tl_writer *writer, const tl_watch *watch) {
     writer->counted_unavailable = stats.unavailable;
     unlock_writer(writer);
 }
+/* Before a full scan: start a scan generation in the live watcher, or create
+ * the watcher when none exists yet (startup, or after instance exhaustion). */
 static tl_status prepare_watch(tl_writer *writer) {
+    writer->counted_unavailable = 0;
+    if (writer->watch != NULL) {
+        watch_begin(writer->watch);
+        return TL_OK;
+    }
     tl_status status =
         writer->options.create_watch == NULL
-            ? watch_create(writer->options.watch_capacity, &writer->building_watch)
+            ? watch_create(writer->options.watch_capacity, &writer->watch)
             : writer->options.create_watch(writer->options.watch_context,
-                                           writer->options.watch_capacity, &writer->building_watch);
+                                           writer->options.watch_capacity, &writer->watch);
     if (status != TL_IO)
         return status;
-    /* Instance exhaustion cannot be a prerequisite for repair. Keep the
-     * existing watcher live; until a later full scan creates one, new
-     * directories go unwatched, so every repair tick scans everything. */
-    writer->coverage_lost = true;
+    /* Instance exhaustion cannot be a prerequisite for repair. Until a later
+     * full scan creates a watcher, every repair tick scans everything. */
     lock_writer(writer);
     writer->stats.watch_degraded = true;
     writer->stats.watch_unavailable++;
     unlock_writer(writer);
     return TL_OK;
 }
-static void swap_watch(tl_writer *writer) {
-    if (writer->building_watch == NULL)
+/* Whether directory lies below a selected root this full scan could not read:
+ * its watch stays, since nothing proved the directory gone. */
+static bool unscanned_root(void *context, const char *directory) {
+    const tl_writer *writer = context;
+    for (size_t i = 0; i < writer->roots.count; i++)
+        if (writer->roots.selected[i] && !writer->roots.scanned[i] &&
+            path_within(directory, writer->roots.items[i]))
+            return true;
+    return false;
+}
+/* After a successful full scan: drop watches the scan did not confirm
+ * (deleted, excluded or unrooted directories) and publish the counters. */
+static void sweep_watch(tl_writer *writer) {
+    if (writer->watch == NULL)
         return;
-    watch_destroy(writer->watch);
-    writer->watch = writer->building_watch;
-    writer->building_watch = NULL;
-    writer->coverage_lost = false;
-    writer->counted_unavailable = 0;
+    size_t removed = watch_sweep(writer->watch, unscanned_root, writer);
+    (void)removed;
     update_watch_stats(writer, writer->watch);
 }
 /* Indexing thread: scan privately, persist through the owner, then build the
@@ -988,7 +1166,11 @@ static tl_status collect(tl_writer *writer, struct batch *batch) {
         return status;
     filter_renames(writer);
     batch->rename_pre = writer->rename_count;
+    batch->exact = prepare_ledger(writer, !writer->last_scoped);
+    writer->scan_writes = 0;
     status = writer->last_scoped ? scan_scopes(writer, batch) : scan_roots(writer, batch);
+    if (status == TL_OK && batch->exact && batch->full)
+        status = ledger_unseen(writer->ledger, batch->gone);
     /* An overflow during the scan discards every pair, including earlier ones. */
     if (batch->rename_pre > writer->rename_count)
         batch->rename_pre = writer->rename_count;
@@ -1008,6 +1190,17 @@ static tl_status reconcile(tl_writer *writer) {
     bool catalog_changed = false;
     if (status == TL_OK)
         status = persist(writer, &batch, &catalog_changed);
+    bool refresh = status == TL_OK && batch.exact;
+    if (refresh && catalog_changed && !writer->job_complete) {
+        /* The touched rows are unknown; the full rebuild that publication
+         * then performs refills the map instead. */
+        ledger_invalidate(writer->ledger);
+        refresh = false;
+    }
+    lock_writer(writer);
+    writer->stats.last_scan_writes = writer->scan_writes;
+    writer->stats.last_scan_unseen = vec_count(batch.gone);
+    unlock_writer(writer);
     batch_free(&batch);
     /* A full scan's batch copied every path: tens of MB of small blocks that
      * would otherwise stay in the allocator's free lists. */
@@ -1015,7 +1208,8 @@ static tl_status reconcile(tl_writer *writer) {
         writer->release_pending = true;
     if (status == TL_OK) {
         clear_renames(writer);
-        swap_watch(writer);
+        if (!writer->last_scoped)
+            sweep_watch(writer);
     } else {
         /* The taken scopes are gone; a full pass repairs whatever they held. */
         request_full(writer, WRITER_FULL_FAILURE);
@@ -1024,8 +1218,9 @@ static tl_status reconcile(tl_writer *writer) {
         status = publish_changes(writer);
     if (status != TL_OK && catalog_changed)
         writer->reload = true;
-    watch_destroy(writer->building_watch);
-    writer->building_watch = NULL;
+    /* After a failed publication too: the commit is what the map mirrors. */
+    if (refresh)
+        refresh_ledger(writer, catalog_changed);
     return status;
 }
 static bool pop_history(tl_writer *writer, struct history *event) {
@@ -1431,6 +1626,12 @@ tl_status writer_create(const tl_writer_options *options, tl_writer **out) {
     if (status == TL_OK)
         status = vec_create(sizeof(uint64_t), &writer->job_ids);
     if (status == TL_OK)
+        status = vec_create(sizeof(uint64_t), &writer->changed_ids);
+    if (status == TL_OK)
+        status = vec_create(sizeof(struct dirty_directory), &writer->dirty_directories);
+    if (status == TL_OK && !options->exhaustive)
+        status = ledger_create(&writer->ledger);
+    if (status == TL_OK)
         status = vec_create(sizeof(char *), &writer->offline);
     if (status == TL_OK)
         status = delta_create(&writer->delta);
@@ -1482,8 +1683,12 @@ void writer_destroy(tl_writer *writer) {
         close(writer->mounts);
     mounts_destroy(writer->mount_table);
     delta_destroy(writer->delta);
+    if (writer->dirty_directories != NULL)
+        clear_dirty(writer);
+    vec_destroy(writer->changed_ids);
+    vec_destroy(writer->dirty_directories);
+    ledger_destroy(writer->ledger);
     watch_destroy(writer->watch);
-    watch_destroy(writer->building_watch);
     crawl_destroy(writer->crawler);
     free_paths(&writer->roots);
     clear_renames(writer);

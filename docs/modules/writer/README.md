@@ -1,7 +1,8 @@
 # writer
 
 > **Status:** Implemented (M6 steps 1 and 3; M5 batched history and usage load; M7 phase 1 repair
-> set, metadata commits, memory release, and full scans only for mounts near a root):
+> set, metadata commits, memory release, and full scans only for mounts near a root; M7 Phase 2
+> exact passes against the persisted-state map and one long-lived watcher):
 > indexing and persistence threads, private
 > scan batches, scoped rescans of event directories, delta publication with compaction;
 > M2/M3 reconciliation contracts retained
@@ -24,20 +25,20 @@ never I/O or builds. See
 [ADR 0028](../../adr/0028-m6-search-thread-and-persistence-owner.md).
 
 An event burst schedules one reconciliation, coalesced for 100 ms. The worker
-resolves/deduplicates configured roots each time, installs a replacement watch
-set while crawling, applies paired renames, and prunes only successfully scanned
-scopes. Unreadable subtrees and unresolved root aliases retain saved rows.
-The old watcher stays live until the scan finishes; events during crawling
-schedule another pass. Since M7 nothing scans every root on a timer while
+resolves/deduplicates configured roots each time, confirms watches in the one
+live watcher while crawling (sweeping the unconfirmed ones after a full scan),
+applies paired renames, and prunes only successfully scanned scopes.
+Unreadable subtrees and unresolved root aliases retain saved rows. Events
+during crawling schedule another pass. Since M7 nothing scans every root on a timer while
 inotify covers every directory: every `rescan_ms` (default 30 s) only the
 repair set is rescanned, and a backstop full scan runs every `repair_ms`
 (default one hour). See "Repair set and backstop" below.
 
 Failure to create an inotify instance no longer blocks reconciliation. TL_IO
 increments watch-unavailable status, marks coverage degraded and continues
-scanning without a replacement watcher. Any existing watcher stays live, but
-new directories go unwatched, so every repair tick scans every root until a
-later full scan creates a watcher and restores watch coverage. Memory or invalid-input failures still roll back the batch.
+scanning without a watcher, so every repair tick scans every root until a
+later full scan creates one. Since M7 Phase 2 an instance is created only when
+none exists, so a live watcher never depends on creating another. Memory or invalid-input failures still roll back the batch.
 
 Scans compare persisted filesystem incarnations before upserting paths, so a
 replacement retires stale ids even when notifications were coalesced or missed.
@@ -148,7 +149,7 @@ Now a pass scans every root only for a reason, recorded as
 | `overflow` | inotify queue overflow, cookie exhaustion or a failed drain |
 | `scopes` | more than 1024 scopes, a failed scope copy, or a scope above a root |
 | `failure` | retry after a failed pass |
-| `repair` | no watcher, a watcher that could not be replaced, a repair set too large (256), or an offline root that is a readable directory again |
+| `repair` | no watcher, a repair set too large (256), or an offline root that is a readable directory again |
 | `mount` | `/proc/self/mountinfo` polled `POLLPRI` and a mount at, below or above a root appeared or went, or the table could not be read |
 | `backstop` | `repair_ms` passed since the last successful full scan |
 
@@ -225,11 +226,54 @@ The indexing thread is named `tl-index` and the persistence thread
 `tl-persist` (`tl_thread_name`), so `top -H`, debuggers and the M7 sampler
 attribute CPU to them.
 
+## Exact passes (M7 Phase 2)
+
+A full scan used to put every crawled entry through SQLite and rebuild the
+watcher: 3.9 s and 4.1 CPU-s at 213k entries when nothing had changed. Now
+([ADR 0040](../../adr/0040-cheap-full-scans.md)):
+
+- **Watcher.** `prepare_watch` starts a scan generation in the live watcher
+  (or creates one when none exists). `cover_directory` passes the crawl's
+  device and inode, so a directory already watched costs no system call.
+  After a successful full scan `sweep_watch` removes unconfirmed watches,
+  sparing those below selected roots the scan could not read.
+- **Persisted-state map.** The writer owns a [ledger](../ledger/README.md),
+  filled by the first full build from the rows it loads. Before each pass
+  `prepare_ledger` decides whether the pass is *exact*. A full pass reloads an
+  incomplete ledger from the reader first; a scoped pass with an incomplete
+  ledger just writes everything. In an exact pass `compare_entry` looks up
+  every crawled entry: an unchanged one (equal `store_signature`) is skipped
+  by a full pass or sent as mark-seen-only by a scoped pass. New, changed and
+  uncomparable entries are written; changed rows are remembered. A full exact
+  pass then lists the rows it did not find (`ledger_unseen`), and
+  `apply_entries` declares them with `store_unseen` before the root prunes.
+- **Refresh.** After an exact commit has been published, `refresh_ledger`
+  removes and reloads every row the commit touched (`job_ids`) or that the pass
+  found changed. Running after publication keeps it off the path to search
+  results: before, reloading the 22k ids of a deleted tree made the deletion
+  visible 125 ms later. If the touched rows are unknown (tracking overflow,
+  roots changed), the ledger is marked incomplete before publication, so the
+  full rebuild that publication then performs refills it.
+- **Replaced directories.** If a directory the pass found changed lost its
+  row in the commit, the store replaced it and retired its saved subtree,
+  whose unchanged descendants the pass had skipped. `rescan_replaced` queues
+  a recursive scope for it, scheduled at once.
+- **Status.** `last_scan_writes` (entries sent as new or changed) and
+  `last_scan_unseen` (rows a full scan did not find).
+- **Tests.** `tl_writer_options.exhaustive` (testing only) restores the old
+  behavior. `test_scan_equivalence.c` runs both modes side by side over
+  random changes, offline (startup scans) and live, and requires identical
+  catalogs (path, kind, root flag, signature). It also covers a replaced
+  directory deterministically, failing without the follow-up rescan, and
+  checks that an unchanged full scan writes nothing while the exhaustive one
+  writes every entry. `test_writer_fallback.c` checks that a recovered
+  watcher is reused, with no new instance, by later full scans.
+
 ## Memory release (M7 phase 1)
 
 `catalog_reclaim` reports how many base engines it freed. When it freed one
-(a full build's predecessor), or a full scan freed its batch (a copy of every
-path), the indexing thread calls `tl_writer_options.release_memory` at most
+(a full build's predecessor), or a full scan freed its batch (since M7 Phase 2
+a copy of only the changed paths), the indexing thread calls `tl_writer_options.release_memory` at most
 once per second. The library
 assumes no allocator; `torchlightd` passes a glibc `malloc_trim(0)` wrapper
 and sets its allocator policy in `main` ([ADR 0039](../../adr/0039-returning-freed-memory.md)).

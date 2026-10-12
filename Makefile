@@ -36,7 +36,7 @@ SOURCES = src/core/common.c src/core/vec.c src/core/hashmap.c src/core/config.c 
           src/index/trigram.c src/index/typo.c src/index/dirtree.c src/index/lexical.c \
           src/index/embed.c src/index/potion.c src/index/vector.c src/index/rank.c src/index/usage.c \
           src/index/desktop.c src/index/lexical_query.c src/index/catalog.c src/fs/crawl.c src/fs/watch.c src/fs/mounts.c src/storage/store.c \
-          src/ipc/ipc.c src/ipc/async.c src/ipc/client.c src/service/delta.c src/service/personal.c src/service/writer.c src/service/semantic.c src/service/daemon.c
+          src/ipc/ipc.c src/ipc/async.c src/ipc/client.c src/service/delta.c src/service/ledger.c src/service/personal.c src/service/writer.c src/service/semantic.c src/service/daemon.c
 BIN_SOURCES = src/bin/torchlight.c src/bin/torchlightd.c
 OBJECTS = $(SOURCES:%.c=build/%.o)
 HEADERS = $(wildcard include/torchlight/*.h) $(wildcard src/*/*.h)

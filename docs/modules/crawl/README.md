@@ -1,7 +1,7 @@
 # crawl
 
-> **Status:** Implemented (M1/M2; M6 scoped walks; M7 device boundaries): physical crawl, allowlist,
-> roots and filesystem identity
+> **Status:** Implemented (M1/M2; M6 scoped walks; M7 device boundaries; M7 Phase 2 one stat per
+> entry): physical crawl, allowlist, roots and filesystem identity
 > **Source:** `src/fs/crawl.c` · **Header:** `include/torchlight/crawl.h`
 > **Tests:** `tests/unit/test_crawl.c`, `tests/test_cli.py`
 
@@ -15,13 +15,31 @@ path/stat record; callback errors propagate and walking closes its resources.
 Stat records now include device/inode and a birth timestamp where `statx`
 supports it. A fresh statx observation supplies both identity and metadata,
 without following symlinks. Missing birth time falls back to ctime; unsupported
-statx uses the fts stat. Other lookup failures mark the scope unreadable so the
+statx falls back to one `fstatat`. Other lookup failures mark the scope unreadable so the
 store cannot mistake failed observation for replacement. The store decides
 whether a changed incarnation must retire an id; crawl never calls storage.
 
+**One stat per entry (M7 Phase 2).** The walk runs with `FTS_NOSTAT`, so fts
+no longer stats entries whose `d_type` says they are not directories, and the
+single `statx` in `file_identity` is the only stat of a file (213k fewer
+`newfstatat` calls per scan of the home mirror). Under `FTS_NOSTAT` glibc
+leaves `fts_statp` NULL for every entry. With `FTS_NOSTAT|FTS_PHYSICAL` it
+also guesses a directory's subdirectory count from its link count and stops
+entering subdirectories once the guess is used up. On a filesystem that
+reports 2 links for every directory (some FUSE filesystems), subtrees would
+vanish silently, which is why `find` has `-noleaf`. The walk therefore sets
+each directory's `fts_nlink` to 1 before fts lists it, which turns the guess
+off (checked on glibc 2.39: with a forced count of 2, subdirectories became
+unstat'd files). An unstat'd entry that turns out to be a directory (replaced
+since the listing) is reported unreadable, so its saved subtree is kept and
+repaired. `one_stat_records` in `test_crawl.c` compares every record of a
+root walk and a scoped walk with `lstat`. See
+[ADR 0040](../../adr/0040-cheap-full-scans.md).
+
 **Device boundaries (M7).** A directory record sets `device_boundary` when it
 is the walk's starting directory or lies on a different device than its parent
-(a mount point). The writer checks only those directories' filesystem types,
+(a mount point), compared through `fts_dev`, which fts keeps for directories
+even under `FTS_NOSTAT`. The writer checks only those directories' filesystem types,
 one `statfs` each, to find network and FUSE mounts that need periodic repair.
 `device_boundaries` in `test_crawl.c` covers a root walk and a scoped walk.
 

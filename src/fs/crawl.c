@@ -1,5 +1,6 @@
-/* fts-based physical scans: default exclusions, allowlist traversal, and
- * unreadable scopes reported separately from excluded trees. */
+/* fts-based physical scans with one stat per entry: default exclusions,
+ * allowlist traversal, and unreadable scopes reported separately from
+ * excluded trees. */
 #include "torchlight/crawl.h"
 #include "torchlight/path.h"
 #include <errno.h>
@@ -9,6 +10,8 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
+/* A directory link count that tells fts nothing about subdirectories. */
+#define CRAWL_UNKNOWN_LINKS 1
 struct tl_crawl {
     char *exclude;
     char **allow;
@@ -96,33 +99,48 @@ static bool failed(const FTSENT *entry) {
 static bool directory(const FTSENT *entry) {
     return entry->fts_info == FTS_D || entry->fts_info == FTS_DNR || entry->fts_info == FTS_DC;
 }
-static void file_identity(const FTSENT *entry, tl_crawl_entry *record) {
-    const struct stat *info = entry->fts_statp;
+/* A failed lookup cannot prove anything about the entry, so its scope stays
+ * unreadable and the caller keeps what was saved there. */
+static void lookup_failed(tl_crawl_entry *record) {
+    record->has_stat = false;
+    record->has_identity = false;
+    record->unreadable = true;
+}
+/* Without statx (old kernels or filesystems): one fstatat, ctime identity. */
+static void legacy_identity(const char *path, tl_crawl_entry *record) {
+    struct stat info;
+    if (fstatat(AT_FDCWD, path, &info, AT_SYMLINK_NOFOLLOW) != 0 || info.st_size < 0) {
+        lookup_failed(record);
+        return;
+    }
     record->has_identity = true;
-    record->device = (uint64_t)info->st_dev;
-    record->inode = (uint64_t)info->st_ino;
-    record->identity_sec = (int64_t)info->st_ctim.tv_sec;
-    record->identity_nsec = (uint32_t)info->st_ctim.tv_nsec;
+    record->device = (uint64_t)info.st_dev;
+    record->inode = (uint64_t)info.st_ino;
+    record->is_dir = S_ISDIR(info.st_mode);
+    record->mtime = (int64_t)info.st_mtime;
+    record->size = (int64_t)info.st_size;
+    record->identity_sec = (int64_t)info.st_ctim.tv_sec;
+    record->identity_nsec = (uint32_t)info.st_ctim.tv_nsec;
+}
+/* The entry's only stat: the walk runs with FTS_NOSTAT, so one statx supplies
+ * metadata and identity together, without following symlinks. */
+static void file_identity(const char *path, tl_crawl_entry *record) {
     struct statx identity;
-    int code = statx(AT_FDCWD, entry->fts_path, AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT,
+    int code = statx(AT_FDCWD, path, AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT,
                      STATX_BASIC_STATS | STATX_BTIME, &identity);
     if (code != 0) {
-        if (errno != ENOSYS && errno != EINVAL && errno != EOPNOTSUPP) {
-            record->has_stat = false;
-            record->has_identity = false;
-            record->unreadable = true;
-        }
+        if (errno == ENOSYS || errno == EINVAL || errno == EOPNOTSUPP)
+            legacy_identity(path, record);
+        else
+            lookup_failed(record);
         return;
     }
-    /* Use one fresh statx observation for metadata and identity, rather than
-     * combining an earlier fts stat with a replacement's birth time. */
     if ((identity.stx_mask & STATX_BASIC_STATS) != STATX_BASIC_STATS ||
         identity.stx_size > INT64_MAX) {
-        record->has_stat = false;
-        record->has_identity = false;
-        record->unreadable = true;
+        lookup_failed(record);
         return;
     }
+    record->has_identity = true;
     record->device = (uint64_t)makedev(identity.stx_dev_major, identity.stx_dev_minor);
     record->inode = identity.stx_ino;
     record->is_dir = S_ISDIR(identity.stx_mode);
@@ -133,35 +151,43 @@ static void file_identity(const FTSENT *entry, tl_crawl_entry *record) {
     record->identity_sec = stamp.tv_sec;
     record->identity_nsec = stamp.tv_nsec;
 }
-/* The walk's start has no stat'd parent to compare with, so it counts too. */
+/* The walk's start has no parent to compare with, so it counts too. fts keeps
+ * fts_dev for every directory it stats, even under FTS_NOSTAT (where
+ * fts_statp is NULL for every entry). */
 static bool device_boundary(const FTSENT *entry) {
     if (!directory(entry))
         return false;
-    if (entry->fts_level == 0)
-        return true;
-    const FTSENT *parent = entry->fts_parent;
-    return parent->fts_statp != NULL && entry->fts_statp->st_dev != parent->fts_statp->st_dev;
+    return entry->fts_level == 0 || entry->fts_dev != entry->fts_parent->fts_dev;
 }
 static tl_status report(const FTSENT *entry, bool has_stat, enum walk_mode mode,
                         tl_crawl_callback callback, void *context) {
-    if (has_stat && entry->fts_statp == NULL)
-        return TL_IO;
     tl_crawl_entry record = {.path = entry->fts_path,
                              .is_dir = directory(entry),
                              .is_root = mode == WALK_ROOT && entry->fts_level == 0,
                              .unreadable = failed(entry),
                              .has_stat = has_stat,
-                             .mtime = has_stat ? (int64_t)entry->fts_statp->st_mtime : 0,
-                             .size = has_stat ? (int64_t)entry->fts_statp->st_size : 0,
                              .device_boundary = has_stat && device_boundary(entry)};
     if (has_stat)
-        file_identity(entry, &record);
+        file_identity(entry->fts_path, &record);
+    /* fts skipped the stat because d_type said "not a directory". One that is
+     * a directory after all (replaced since the listing) was not entered:
+     * keep its saved subtree and let repair rescan it. */
+    if (entry->fts_info == FTS_NSOK && record.is_dir && mode != WALK_CHILDREN)
+        record.unreadable = true;
     return callback(context, &record);
 }
 static tl_status visit(tl_crawl *crawler, FTS *walk, FTSENT *entry, enum walk_mode mode,
                        tl_crawl_callback callback, void *context) {
     if (entry->fts_info == FTS_DP)
         return TL_OK;
+    /* Under FTS_NOSTAT glibc's fts assumes a directory with link count n holds
+     * n - 2 subdirectories and reports every later entry unstat'd, as a file,
+     * never entering it. Filesystems that misreport link counts (some FUSE
+     * filesystems give every directory 2) would lose whole subtrees, as with
+     * find without -noleaf. Count 1 turns that guess off before fts lists the
+     * directory; only entries whose d_type says "not a directory" skip it. */
+    if (entry->fts_info == FTS_D)
+        entry->fts_nlink = CRAWL_UNKNOWN_LINKS;
     /* A children-only walk reports level-1 directories but never enters them. */
     if (mode == WALK_CHILDREN && entry->fts_level == 1 && entry->fts_info == FTS_D &&
         fts_set(walk, entry, FTS_SKIP) != 0)
@@ -199,9 +225,10 @@ static tl_status walk_from(tl_crawl *crawler, const char *root, enum walk_mode m
     char *canonical = realpath(root, NULL);
     if (canonical == NULL)
         return TL_IO;
-    /* NOCHDIR keeps callbacks and concurrent callers independent of cwd. */
+    /* NOCHDIR keeps callbacks and concurrent callers independent of cwd.
+     * NOSTAT leaves non-directories to the one statx in file_identity. */
     char *roots[] = {canonical, NULL};
-    FTS *walk = fts_open(roots, FTS_PHYSICAL | FTS_NOCHDIR, NULL);
+    FTS *walk = fts_open(roots, FTS_PHYSICAL | FTS_NOCHDIR | FTS_NOSTAT, NULL);
     if (walk == NULL) {
         free(canonical);
         return TL_IO;

@@ -62,6 +62,10 @@ typedef struct {
      * can hand freed heap back to the OS. The library assumes no allocator. */
     void (*release_memory)(void *context);
     void *release_context;
+    /* Testing only: never compare scans with the persisted-state map, so every
+     * pass writes every entry and prunes by seen membership (the behavior
+     * before ADR 0040). Equivalence tests run both modes side by side. */
+    bool exhaustive;
 } tl_writer_options;
 typedef struct {
     bool indexing, degraded, history_enabled, watch_degraded, recovering;
@@ -77,6 +81,10 @@ typedef struct {
      * cannot cover them (unwatched, unreadable, network/FUSE mounts). */
     size_t watches, history_pending, offline_roots, unreadable_scopes, repair_scopes;
     uint64_t last_scan_ms;
+    /* last_scan_writes: entries the last pass sent to the store as changed or
+     * new (an unchanged full scan sends none, ADR 0040); last_scan_unseen:
+     * catalog rows its full scan did not find, the only deletion candidates. */
+    uint64_t last_scan_writes, last_scan_unseen;
     tl_writer_full_reason last_full_reason;
 } tl_writer_stats;
 /** Create owned writer, load/publish the saved catalog before crawling and start

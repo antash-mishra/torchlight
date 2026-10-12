@@ -515,7 +515,11 @@ full scans; both are fixed and every Phase 1 gate passes with a realistic
 application list and history. The deletion-compaction optimization stays
 [removed](docs/m7-plan.md#deletion-compaction-removed-2026-10-11): the memory
 gate is measured against a warm steady state and after a rebuild (ADR 0044).
-Phase 2 (cheaper full scans) remains proposed.
+Phase 2 (cheaper full scans) is implemented (ADR 0040): one stat per entry,
+one long-lived watcher, and an in-memory persisted-state map, so a full scan
+that finds nothing changed costs 0.98 s and 1.0 CPU-s at 213k instead of 4.0 s
+and 4.0 CPU-s ([results](docs/m7-plan.md#phase-2-results-2026-10-11),
+[health report](docs/reports/m7-phase2-health-report.html)).
 Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
 tracked explicitly in the verification report.
 
@@ -731,7 +735,7 @@ tracked explicitly in the verification report.
    reconcile, a base-plus-delta segmented engine, and incremental semantic
    snapshots. It records the baseline numbers each step must beat.
 8. **M7: Quiet indexing and lean memory.** Phase 1 complete (2026-10-11).
-   Phase 2 proposed.
+   Phase 2 implemented (2026-10-11).
    A headless profile ([M7 plan](docs/m7-plan.md)) showed that the 30-second
    full rescan cost 7 to 9% of a core at 213k entries and that a file written
    20 times a second cost 43%, while search reads only names.
@@ -745,7 +749,14 @@ tracked explicitly in the verification report.
      the OS after full rebuilds (ADR 0039).
    - **Phase 2: make the remaining full scans cheap.** One stat per entry,
      reuse of the live watcher, and an in-memory comparison so that only
-     differences reach SQLite.
+     differences reach SQLite (ADR 0040). At 213k a no-change full scan takes
+     0.98 s and 1.0 CPU-s instead of 4.0 s and 4.0 CPU-s, writes nothing
+     instead of 293 MiB, and never doubles the kernel watches; at 494k it
+     takes 1.9 s instead of 7.8 s. The warm-start scan takes 1.1 s instead of
+     3.3 s. Open: a 20k-file burst becomes searchable 1.3 s later (the second
+     pass needs a full rebuild), search is ready 0.2 s later after a restart,
+     and rescans of the home folder itself cost 0.1 s of persistence CPU (an
+     existing cost). See the [health report](docs/reports/m7-phase2-health-report.html).
 
    Acceptance for phase 1 at 213k, with the host's applications and history:
    idle at most 0.2% of a core with no full scan while coverage is complete,

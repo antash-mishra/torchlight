@@ -1,7 +1,7 @@
 # store
 
-> **Status:** Implemented (M4; M5 history batches; M7 metadata refresh commits verified): schema v4, versioned embedding
-> cache plus catalog/history
+> **Status:** Implemented (M4; M5 history batches; M7 metadata refresh commits verified; M7 Phase 2
+> signatures, mark-seen and exact prunes): schema v4, versioned embedding cache plus catalog/history
 > **Source:** `src/storage/store.c` · **Header:** `include/torchlight/store.h`
 > **Tests:** `tests/unit/test_store.c`, `tests/unit/test_identity.c`, CLI/daemon integration
 
@@ -147,6 +147,49 @@ embedding columns, an unchanged published view and a later name publication
 across the stored/published `catalog_gen` gap. A second unchanged scan does not
 advance the stored `catalog_gen`. See
 [ADR 0038](../../adr/0038-repair-scans-and-metadata-events.md).
+
+## Signatures and exact scans (M7 Phase 2)
+
+Full scans no longer send every crawled entry through SQL
+([ADR 0040](../../adr/0040-cheap-full-scans.md)). The store supplies what the
+writer's persisted-state map needs, and keeps deciding what may be deleted:
+
+- **Signatures.** Every loaded row (`store_load`, `store_load_catalog`,
+  `store_load_ids`) carries `signature`, an FNV-1a hash over exactly the
+  columns `store_put` compares: `is_dir`, `mtime`, `size` and the identity
+  bytes, each tagged present or absent. `store_signature(entry)` hashes a
+  crawl entry the same way (false for entries without stat or identity, or
+  unreadable, which must always reach `store_put`). Equal signatures at a
+  path mean the upsert would change nothing. Values of an unexpected type
+  count as absent, so they never match and the next scan rewrites them.
+- **`store_mark_seen(path)`** marks an unchanged entry of a scoped scan seen
+  without touching its row (one statement instead of three), so the scoped
+  prunes, which delete what the transaction did not see, keep it.
+- **`store_unseen(ids)`** declares, for an exact full scan, the rows it did
+  not find (temp table `gone`). For the rest of the transaction `store_prune`
+  and `store_forget_root` use variants that delete only rows in `gone`, never
+  one at a path the transaction put (`seen`), with the same scope, kept-path
+  and nested-root rules. A nested root counts as seen when the transaction put
+  it or its row is not in `gone`. A row the caller did not know about is
+  therefore kept, not deleted. `rowid IN (SELECT id FROM gone)` makes the
+  cost proportional to the unseen rows instead of the catalog, and the
+  `seen` table holds only the changed entries, so it no longer spills to a
+  temporary file.
+
+The membership tables (`seen`, `kept`, `gone`) are emptied outside any
+transaction: after `store_commit` or `store_rollback`, and again before
+`store_begin` opens the next one. They used to be emptied inside the scan
+transaction, so an unchanged scan, which rolls back, restored them. After a
+cold index, every later unchanged scan then deleted and journaled thousands of
+rows again: about 15 MB of temp-file writes per scan at 20k entries, hidden
+until exact scans removed everything else (found while validating ADR 0040).
+
+Unit tests cover signature equality with `store_put` no-ops, `store_mark_seen`
+under a scoped prune, and exact pruning. `unchanged_scans_write_nothing` in
+`tests/test_daemon.py` checks, after a cold index of 6,000 files, that an
+unchanged full scan writes no entry and less than 1 MiB in all (about 1.1 MB
+with the old clearing). The writer's randomized equivalence
+test compares exact and exhaustive catalogs end to end.
 
 ## History batches and retained opens (M5)
 
