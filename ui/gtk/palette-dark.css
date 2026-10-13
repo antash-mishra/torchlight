@@ -1,0 +1,18 @@
+/* Mørketid, Tekst's dark palette (ADR 0048), loaded when the desktop prefers dark. */
+@define-color tk_surface #171a1d;
+@define-color tk_panel #1c2024;
+@define-color tk_ink #e8ebe6;
+@define-color tk_muted #979fa5;
+@define-color tk_faint #5f686e;
+@define-color tk_line #2b3136;
+@define-color tk_edge alpha(#e8ebe6, 0.1);
+@define-color tk_sel_bg #e8ebe6;
+@define-color tk_sel_ink #171a1d;
+@define-color tk_red #e26b61;
+@define-color tk_green #87b872;
+@define-color tk_yellow #e6b04a;
+@define-color tk_cyan #5fb6c1;
+@define-color tk_magenta #c78cc1;
+@define-color tk_blue #7c9fd3;
+@define-color tk_shadow_near alpha(black, 0.5);
+@define-color tk_shadow_far alpha(black, 0.55);

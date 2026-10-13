@@ -469,6 +469,20 @@ static bool hierarchy_key(struct popup *popup, guint key) {
     rerender(popup, false);
     return true;
 }
+/* Ctrl+C with no query text selected copies the selected file or folder's path, as
+ * shown (control characters escaped); the entry keeps Ctrl+C for selected text. */
+static bool copy_path(struct popup *popup) {
+    int start = 0, end = 0;
+    if (gtk_editable_get_selection_bounds(GTK_EDITABLE(popup->entry), &start, &end))
+        return false;
+    const tl_popup_item *item = popup_model_selected_item(popup->model);
+    const tl_popup_row *row = popup_model_selected(popup->model);
+    if (item == NULL || item->kind != POPUP_ITEM_RESULT || row->application)
+        return false;
+    gdk_clipboard_set_text(gtk_widget_get_clipboard(popup->window), row->display);
+    popup_view_set_copied(popup->view);
+    return true;
+}
 static gboolean key_pressed(GtkEventControllerKey *controller, guint key, guint keycode,
                             GdkModifierType modifiers, gpointer context) {
     (void)controller;
@@ -485,6 +499,8 @@ static gboolean key_pressed(GtkEventControllerKey *controller, guint key, guint 
         select_row(popup, true);
         return true;
     }
+    if ((key == GDK_KEY_c || key == GDK_KEY_C) && (modifiers & GDK_CONTROL_MASK) != 0)
+        return copy_path(popup);
     if (key == GDK_KEY_Left || key == GDK_KEY_KP_Left || key == GDK_KEY_Right ||
         key == GDK_KEY_KP_Right)
         return hierarchy_key(popup, key);
@@ -528,6 +544,29 @@ static void retry_clicked(GtkButton *button, gpointer context) {
     start_query(popup);
     gtk_widget_grab_focus(popup->entry);
 }
+static bool json_true(const tl_json *json, size_t object, const char *key) {
+    size_t member = json_member(json, object, key);
+    return member != SIZE_MAX && json->tokens[member].type == JSON_BOOL &&
+           json->text[json->tokens[member].start] == 't';
+}
+/* An absent or malformed count reads as zero; the strip then leaves it out or shows 0. */
+static uint64_t json_count(const tl_json *json, size_t object, const char *key) {
+    uint64_t value = 0;
+    size_t member = json_member(json, object, key);
+    if (member == SIZE_MAX || json_uint(json, member, &value) != TL_OK)
+        return 0;
+    return value;
+}
+/* The index state the idle strip shows, read from a status reply. */
+static tl_popup_index read_index(const tl_json *json) {
+    size_t indexing = json_member(json, 0, "indexing");
+    return (tl_popup_index){.known = indexing != SIZE_MAX,
+                            .updating = json_true(json, indexing, "active"),
+                            .degraded = json_true(json, indexing, "degraded") ||
+                                        json_true(json, indexing, "watch_degraded"),
+                            .watches = (size_t)json_count(json, indexing, "watches"),
+                            .last_scan_ms = json_count(json, indexing, "last_scan_ms")};
+}
 static void status_response(void *context, tl_status status, const char *response, size_t length,
                             bool terminal) {
     struct popup *popup = context;
@@ -536,15 +575,11 @@ static void status_response(void *context, tl_status status, const char *respons
         tl_json json;
         tl_status decoded = json_parse(response, length, tokens, 256, &json);
         if (decoded == TL_OK) {
-            size_t indexing = json_member(&json, 0, "indexing");
-            size_t degraded = json_member(&json, indexing, "degraded");
-            size_t watching = json_member(&json, indexing, "watch_degraded");
-            size_t active = json_member(&json, indexing, "active");
-            bool limited = (degraded != SIZE_MAX && json.text[tokens[degraded].start] == 't') ||
-                           (watching != SIZE_MAX && json.text[tokens[watching].start] == 't');
-            if (limited)
+            tl_popup_index index = read_index(&json);
+            popup_view_set_index(popup->view, &index);
+            if (index.degraded)
                 set_status(popup, "Some folders are unavailable");
-            else if (active != SIZE_MAX && json.text[tokens[active].start] == 't')
+            else if (index.updating)
                 set_status(popup, "Updating index…");
             if (gtk_widget_get_visible(popup->retry) && popup->query == NULL) {
                 popup->dirty = true;
@@ -561,16 +596,19 @@ static void status_response(void *context, tl_status status, const char *respons
         popup->status_exchange = NULL;
     }
 }
-static gboolean poll_status(gpointer context) {
-    struct popup *popup = context;
+/* Ask the daemon for its status unless a request is already out. */
+static void request_status(struct popup *popup) {
     if (!popup->visible || popup->status_exchange != NULL)
-        return G_SOURCE_CONTINUE;
+        return;
     tl_ipc_request request = {.operation = IPC_STATUS};
     g_strlcpy(request.request_id, "status", sizeof(request.request_id));
     tl_status status = ipc_exchange_create(popup->socket_path, &request, status_response, popup,
                                            &popup->status_exchange);
     if (status != TL_OK && popup_model_selected(popup->model) == NULL)
         set_status(popup, "Search service unavailable");
+}
+static gboolean poll_status(gpointer context) {
+    request_status(context);
     return G_SOURCE_CONTINUE;
 }
 static void place_window(GtkWidget *widget, gpointer context) {
@@ -700,6 +738,8 @@ static int command_line(GApplication *application, GApplicationCommandLine *comm
     /* Read open windows after the first paint, never on the way to it. */
     remove_timer(&popup->windows_idle);
     popup->windows_idle = g_idle_add(windows_ready, popup);
+    /* The idle strip shows the index's state at once, not after the next poll. */
+    request_status(popup);
     return 0;
 }
 tl_status launcher_create(tl_launcher **out) {

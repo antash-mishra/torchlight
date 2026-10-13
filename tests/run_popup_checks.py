@@ -62,7 +62,7 @@ wm = subprocess.Popen([sys.argv[1], '--sm-disable'], stdout=subprocess.DEVNULL, 
 try:
     time.sleep(.5)
     if 'tests/bench/bench_popup.py' not in sys.argv and Path('build/test_popup_view').exists():
-        # Software rendering has no halo margin and GL rendering has one; check both.
+        # Software rendering has no shadow margin and GL rendering has one; check both.
         for renderer in ['cairo', 'ngl']:
             subprocess.run(['build/test_popup_view'], check=True, env=dict(os.environ, ASAN_OPTIONS='detect_leaks=0', G_DEBUG='fatal-warnings', GSK_RENDERER=renderer))
     raise SystemExit(subprocess.run(sys.argv[2:]).returncode)

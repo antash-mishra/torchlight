@@ -60,7 +60,9 @@ CPPCHECK ?= cppcheck
 # Only GTK recipes expand these, so headless targets never require GTK or X11.
 GTK_CPPFLAGS = $(subst -I,-isystem ,$(shell $(PKG_CONFIG) --cflags 'gtk4 >= 4.14' x11))
 GTK_LDLIBS = $(shell $(PKG_CONFIG) --libs 'gtk4 >= 4.14' x11)
-UI_SOURCES = ui/gtk/model.c ui/gtk/windows.c ui/gtk/windows_x11.c ui/gtk/actions.c ui/gtk/launcher.c ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c src/bin/torchlight-gtk.c
+# The presentation's widgets, which the native view test builds on its own.
+VIEW_SOURCES = ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c ui/gtk/header.c ui/gtk/index_strip.c
+UI_SOURCES = ui/gtk/model.c ui/gtk/windows.c ui/gtk/windows_x11.c ui/gtk/actions.c ui/gtk/launcher.c $(VIEW_SOURCES) src/bin/torchlight-gtk.c
 POPUP_FIXTURE_SOURCE = tests/fixtures/popup_probe.c
 WINDOW_FIXTURE_SOURCE = tests/fixtures/window_app.c
 all: headless build/torchlight-gtk
@@ -70,14 +72,19 @@ $(FRIZBEE_LIB): $(FRIZBEE_INPUTS)
 	$(CARGO) build --release --offline --locked --manifest-path $(FRIZBEE_MANIFEST) --target-dir build/frizbee
 	@touch $@
 UI_HEADERS = $(wildcard ui/gtk/*.h)
-UI_RESOURCES = build/ui/gtk/resources.c
-$(UI_RESOURCES): ui/gtk/resources.xml ui/gtk/popup.css
+# Each bundle compiles to one string literal and ISO C guarantees only 4095 bytes, so
+# the styles are split across bundles.
+UI_RESOURCES = build/ui/gtk/resources.c build/ui/gtk/palettes.c
+build/ui/gtk/resources.c: ui/gtk/resources.xml ui/gtk/popup.css
 	@mkdir -p $(@D)
 	glib-compile-resources --sourcedir=ui/gtk --generate-source --target=$@ --c-name=torchlight_ui $<
+build/ui/gtk/palettes.c: ui/gtk/palettes.xml ui/gtk/palette-light.css ui/gtk/palette-dark.css
+	@mkdir -p $(@D)
+	glib-compile-resources --sourcedir=ui/gtk --generate-source --target=$@ --c-name=torchlight_palettes $<
 build/torchlight-gtk: $(OBJECTS) $(UI_SOURCES) $(UI_HEADERS) $(UI_RESOURCES) $(HEADERS) $(FRIZBEE_LIB)
 	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(UI_SOURCES) $(UI_RESOURCES) $(OBJECTS) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
-build/test_popup_view: ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c tests/gtk/test_view.c $(UI_HEADERS) $(UI_RESOURCES) $(FRIZBEE_LIB)
-	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(SAN_FLAGS) ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c tests/gtk/test_view.c $(UI_RESOURCES) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
+build/test_popup_view: $(VIEW_SOURCES) tests/gtk/test_view.c $(UI_HEADERS) $(UI_RESOURCES) $(FRIZBEE_LIB)
+	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(SAN_FLAGS) $(VIEW_SOURCES) tests/gtk/test_view.c $(UI_RESOURCES) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
 build/test_popup_probe.so: $(POPUP_FIXTURE_SOURCE)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) -fPIC -shared $< $(GTK_LDLIBS) -ldl -o $@
@@ -199,6 +206,8 @@ install: all
 	install -m 755 build/torchlight build/torchlightd build/torchlight-gtk $(DESTDIR)$(PREFIX)/bin/
 	install -m 644 packaging/org.torchlight.Launcher.desktop $(DESTDIR)$(PREFIX)/share/applications/
 	install -m 644 packaging/torchlightd.service $(DESTDIR)$(PREFIX)/lib/systemd/user/
+	install -d $(DESTDIR)$(PREFIX)/share/fonts/torchlight
+	install -m 644 third_party/fonts/schibsted-grotesk/SchibstedGrotesk-VF.ttf third_party/fonts/bedstead/bedstead.otf $(DESTDIR)$(PREFIX)/share/fonts/torchlight/
 # Same unit name, but started with the user manager instead of a graphical session.
 install-headless: headless
 	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/lib/systemd/user

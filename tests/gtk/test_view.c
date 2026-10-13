@@ -1,11 +1,11 @@
-/* Native presentation regressions: real allocations, gliding selection, motion timers and paths. */
+/* Native presentation regressions: real allocations, gliding selection, motion timers,
+ * Tekst's header, idle strip and Fastext footer, and paths. */
+#include "../../ui/gtk/header.h"
+#include "../../ui/gtk/index_strip.h"
 #include "../../ui/gtk/path_label.h"
 #include "../../ui/gtk/view.h"
 #include "../unit/test.h"
 #include <string.h>
-/* Search area (a 48px field ending in its 1px horizon, 10px padding on each side)
- * plus the 1px surface border. */
-#define EMPTY_HEIGHT 70
 #define SURFACE_WIDTH 680
 static void settle(int milliseconds) {
     gint64 deadline = g_get_monotonic_time() + (gint64)milliseconds * 1000;
@@ -31,7 +31,7 @@ static graphene_rect_t bounds(GtkWidget *widget) {
     CHECK(gtk_widget_compute_bounds(widget, GTK_WIDGET(gtk_widget_get_root(widget)), &result));
     return result;
 }
-/* Render the popup window, halo included; with TORCHLIGHT_TEST_VIEW_CAPTURE set, save
+/* Render the popup window, shadow included; with TORCHLIGHT_TEST_VIEW_CAPTURE set, save
  * it for the docs. */
 static void capture(tl_popup_widgets widgets, const char *artifact) {
     const char *directory = g_getenv("TORCHLIGHT_TEST_VIEW_CAPTURE");
@@ -114,7 +114,8 @@ static void test_rows(void) {
     g_strlcpy(row.name, "config.c", sizeof(row.name));
     g_strlcpy(row.display, "/src/core/config.c", sizeof(row.display));
     GtkWidget *cascade = g_object_ref_sink(result_widget(&row, POPUP_ENTER_CASCADE, 9));
-    CHECK(gtk_widget_has_css_class(cascade, "enter-7"));
+    CHECK(gtk_widget_has_css_class(cascade, "enter-7") &&
+          gtk_widget_has_css_class(cascade, "kind-file"));
     CHECK(strcmp(icon_name(cascade), "text-x-csrc") == 0);
     GtkWidget *fresh = g_object_ref_sink(result_widget(&row, POPUP_ENTER_FADE, 0));
     CHECK(gtk_widget_has_css_class(fresh, "fresh") && !gtk_widget_has_css_class(fresh, "enter-0"));
@@ -130,7 +131,8 @@ static void test_rows(void) {
           strcmp(gtk_widget_get_tooltip_text(plain), "/src/core/config.c") == 0);
     row.folder = true;
     GtkWidget *folder = g_object_ref_sink(result_widget(&row, POPUP_ENTER_NONE, 0));
-    CHECK(strcmp(icon_name(folder), "folder") == 0);
+    CHECK(strcmp(icon_name(folder), "folder") == 0 &&
+          gtk_widget_has_css_class(folder, "kind-folder"));
     g_object_unref(cascade);
     g_object_unref(fresh);
     g_object_unref(plain);
@@ -156,6 +158,13 @@ static void test_children(void) {
     GtkWidget *plain = g_object_ref_sink(popup_view_result(&app, 0, POPUP_ENTER_NONE, 0));
     /* An application row is its icon and name alone: no subtitle, count or tooltip. */
     CHECK(label_text(plain, "result-detail") == NULL && gtk_widget_get_tooltip_text(plain) == NULL);
+    CHECK(gtk_widget_has_css_class(plain, "kind-app"));
+    app.settings = true;
+    GtkWidget *panel = g_object_ref_sink(popup_view_result(&app, 0, POPUP_ENTER_NONE, 0));
+    CHECK(gtk_widget_has_css_class(panel, "kind-setting") &&
+          !gtk_widget_has_css_class(panel, "kind-app"));
+    g_object_unref(panel);
+    app.settings = false;
     GtkWidget *name = gtk_widget_get_last_child(plain);
     CHECK(GTK_IS_LABEL(name) && strcmp(gtk_label_get_text(GTK_LABEL(name)), "Google Chrome") == 0);
     GtkWidget *window = g_object_ref_sink(
@@ -164,6 +173,7 @@ static void test_children(void) {
     GtkWidget *box = gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(window));
     CHECK(gtk_widget_has_css_class(box, "child") && gtk_widget_has_css_class(box, "enter-1"));
     CHECK(gtk_widget_has_css_class(box, "window") && !gtk_widget_has_css_class(box, "new-window"));
+    CHECK(gtk_widget_has_css_class(box, "kind-window"));
     CHECK(strcmp(icon_name(box), "google-chrome") == 0);
     CHECK(strcmp(label_text(window, "result-name"), "Docs") == 0);
     GtkWidget *more = g_object_ref_sink(popup_view_child(
@@ -175,7 +185,6 @@ static void test_children(void) {
     GtkWidget *added = g_object_ref_sink(
         popup_view_child(&app, POPUP_ITEM_NEW_WINDOW, "New window", POPUP_ENTER_NONE, 7));
     box = gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(added));
-    /* New window ends its application's guide line. */
     CHECK(strcmp(icon_name(box), "list-add-symbolic") == 0 &&
           gtk_widget_has_css_class(box, "new-window"));
     g_object_unref(plain);
@@ -184,8 +193,9 @@ static void test_children(void) {
     g_object_unref(added);
 }
 static void check_editing(tl_popup_widgets widgets) {
+    /* The first show offers the plain prompt; later shows rotate through tips. */
     CHECK(strcmp(gtk_entry_get_placeholder_text(GTK_ENTRY(widgets.entry)),
-                 "Search apps, settings, files and folders") == 0);
+                 "Search apps, files and settings") == 0);
     char *paste = g_strnfill(300, 'x');
     gtk_editable_set_text(GTK_EDITABLE(widgets.entry), paste);
     gtk_editable_set_position(GTK_EDITABLE(widgets.entry), -1);
@@ -234,6 +244,18 @@ static GtkWidget *select_index(tl_popup_view *view, tl_popup_widgets widgets, in
     popup_view_select(view, GTK_WIDGET(row), glide);
     return GTK_WIDGET(row);
 }
+/* A label beneath widget showing exactly text, or NULL. */
+static GtkWidget *label_with(GtkWidget *widget, const char *text) {
+    if (GTK_IS_LABEL(widget) && strcmp(gtk_label_get_text(GTK_LABEL(widget)), text) == 0)
+        return widget;
+    for (GtkWidget *child = gtk_widget_get_first_child(widget); child != NULL;
+         child = gtk_widget_get_next_sibling(child)) {
+        GtkWidget *found = label_with(child, text);
+        if (found != NULL)
+            return found;
+    }
+    return NULL;
+}
 static void check_results(tl_popup_view *view, tl_popup_widgets widgets) {
     graphene_rect_t before = bounds(widgets.entry), after;
     gtk_editable_set_text(GTK_EDITABLE(widgets.entry), "config");
@@ -247,15 +269,32 @@ static void check_results(tl_popup_view *view, tl_popup_widgets widgets) {
           before.size.width == after.size.width);
     CHECK(gtk_widget_get_visible(widgets.scroll));
     CHECK(gtk_widget_get_visible(find_named(widgets.root, "popup-footer")));
-    graphene_rect_t highlight = bounds(find_named(widgets.root, "popup-highlight"));
+    GtkWidget *track = find_named(widgets.root, "popup-highlight");
+    graphene_rect_t highlight = bounds(track);
     graphene_rect_t selected = bounds(row);
     CHECK(graphene_rect_equal(&highlight, &selected));
+    /* The block's edge takes the selected row's kind; the header counts the results. */
+    CHECK(gtk_widget_has_css_class(track, "kind-file") &&
+          !gtk_widget_has_css_class(track, "kind-app"));
+    CHECK(strcmp(label_text(find_named(widgets.root, "popup-header"), "result-count"),
+                 "1 result") == 0);
+    /* With a query, the idle strip gives way to the results. */
+    CHECK(!gtk_widget_get_visible(find_named(widgets.root, "popup-index")));
+    popup_view_set_copied(view);
+    CHECK(label_with(widgets.root, "Copied") != NULL &&
+          label_with(widgets.root, "Copy path") == NULL);
+    settle(1300);
+    CHECK(label_with(widgets.root, "Copy path") != NULL);
     popup_view_set_results(view, 0);
     gtk_list_box_remove_all(GTK_LIST_BOX(widgets.list));
     popup_view_select(view, NULL, false);
     popup_view_set_status(view, "No matches. Try a name or part of its folder path.");
     settle(60);
-    CHECK((int)bounds(widgets.root).size.height == EMPTY_HEIGHT);
+    /* No matches keeps the compact query line: the header and search area alone. */
+    graphene_rect_t header = bounds(find_named(widgets.root, "popup-header"));
+    graphene_rect_t search = bounds(find_named(widgets.root, "popup-search"));
+    CHECK(bounds(widgets.root).size.height < header.size.height + search.size.height + 30);
+    CHECK(strcmp(label_text(find_named(widgets.root, "popup-header"), "result-count"), "") == 0);
     CHECK(!gtk_widget_get_child_visible(find_named(widgets.root, "popup-highlight")));
 }
 /* The highlight glides through intermediate places, then rests on the new row. */
@@ -352,19 +391,19 @@ static void capture_results(tl_popup_view *view, tl_popup_widgets widgets) {
     gtk_list_box_remove_all(GTK_LIST_BOX(widgets.list));
     popup_view_select(view, NULL, false);
 }
-/* With a compositor and a GPU renderer the surface sits inside a transparent halo
+/* With a compositor and a GPU renderer the surface sits inside a transparent shadow
  * margin, and the window grows by it; otherwise the surface fills the window. */
-static void check_halo(tl_popup_view *view, tl_popup_widgets widgets) {
+static void check_shadow(tl_popup_view *view, tl_popup_widgets widgets) {
     tl_popup_margins margins = popup_view_margins(view);
-    bool halo = gtk_widget_has_css_class(widgets.root, "glow");
+    bool shadow = gtk_widget_has_css_class(widgets.root, "shadowed");
     GtkWidget *window = GTK_WIDGET(gtk_widget_get_root(widgets.root));
     GdkDisplay *display = gtk_widget_get_display(window);
     GskRenderer *renderer = gtk_native_get_renderer(GTK_NATIVE(window));
-    /* Software rendering redraws blurred shadows on every resize, so it gets no halo. */
-    CHECK(halo == (gdk_display_is_composited(display) && gdk_display_is_rgba(display) &&
-                   !GSK_IS_CAIRO_RENDERER(renderer) &&
-                   !gtk_widget_has_css_class(widgets.root, "high-contrast")));
-    if (halo)
+    /* Software rendering redraws blurred shadows on every resize, so it gets none. */
+    CHECK(shadow == (gdk_display_is_composited(display) && gdk_display_is_rgba(display) &&
+                     !GSK_IS_CAIRO_RENDERER(renderer) &&
+                     !gtk_widget_has_css_class(widgets.root, "high-contrast")));
+    if (shadow)
         CHECK(margins.left > 0 && margins.left == margins.right && margins.top > 0 &&
               margins.bottom > margins.top);
     else
@@ -382,8 +421,52 @@ static GtkWidget *new_window(void) {
     gtk_window_set_default_size(GTK_WINDOW(window), SURFACE_WIDTH, -1);
     return window;
 }
+/* The idle strip: unknown, then known states, and one line however large the font. */
+static void test_index_strip(void) {
+    GtkWidget *window = new_window(), *strip = popup_index_strip_new();
+    gtk_window_set_child(GTK_WINDOW(window), strip);
+    CHECK(strcmp(popup_index_strip_text(strip, 0), "Checking the index") == 0);
+    CHECK(!popup_index_strip_shown(strip, 1) && !popup_index_strip_shown(strip, 2));
+    tl_popup_index index = {.known = true, .watches = 34477, .last_scan_ms = 1205};
+    popup_index_strip_set(strip, &index);
+    popup_index_strip_fit(strip, 10000);
+    CHECK(strcmp(popup_index_strip_text(strip, 0), "Index up to date") == 0);
+    CHECK(strcmp(popup_index_strip_text(strip, 1), "34 477 folders watched") == 0);
+    CHECK(strcmp(popup_index_strip_text(strip, 2), "Last scan 1.2 s") == 0);
+    CHECK(popup_index_strip_shown(strip, 1) && popup_index_strip_shown(strip, 2));
+    index.last_scan_ms = 840;
+    index.updating = true;
+    popup_index_strip_set(strip, &index);
+    CHECK(strcmp(popup_index_strip_text(strip, 0), "Updating the index") == 0);
+    CHECK(strcmp(popup_index_strip_text(strip, 2), "Last scan 840 ms") == 0);
+    index.degraded = true;
+    popup_index_strip_set(strip, &index);
+    CHECK(strcmp(popup_index_strip_text(strip, 0), "Some folders are unavailable") == 0);
+    /* Too narrow: the last scan goes first, then the folders; the state stays. */
+    popup_index_strip_fit(strip, 1);
+    CHECK(popup_index_strip_shown(strip, 0) && !popup_index_strip_shown(strip, 1) &&
+          !popup_index_strip_shown(strip, 2));
+    popup_index_strip_fit(strip, 10000);
+    CHECK(popup_index_strip_shown(strip, 1) && popup_index_strip_shown(strip, 2));
+    gtk_window_destroy(GTK_WINDOW(window));
+    g_object_unref(window);
+}
+/* A forced dark theme loads the dark palette, as the desktop's dark theme would. */
+static void test_forced_dark(void) {
+    g_setenv("GTK_THEME", "Adwaita:dark", true);
+    GtkWidget *window = new_window();
+    tl_popup_view *view = NULL;
+    CHECK(popup_view_create(window, &view) == TL_OK);
+    tl_popup_widgets widgets = popup_view_widgets(view);
+    CHECK(gtk_widget_has_css_class(widgets.root, "dark") &&
+          !gtk_widget_has_css_class(widgets.root, "light"));
+    gtk_window_destroy(GTK_WINDOW(window));
+    popup_view_destroy(view);
+    g_object_unref(window);
+    g_unsetenv("GTK_THEME");
+}
 /* GTK_THEME overrides the theme setting without changing it; a forced high-contrast
- * theme must still drop the night palette and its halo. */
+ * theme must still drop the palette and the shadow. */
 static void test_forced_contrast(void) {
     g_setenv("GTK_THEME", "HighContrast", true);
     GtkWidget *window = new_window();
@@ -393,7 +476,7 @@ static void test_forced_contrast(void) {
     popup_view_configure(view, SURFACE_WIDTH, 800);
     tl_popup_margins margins = popup_view_margins(view);
     CHECK(gtk_widget_has_css_class(widgets.root, "high-contrast"));
-    CHECK(!gtk_widget_has_css_class(widgets.root, "glow") && margins.left == 0 &&
+    CHECK(!gtk_widget_has_css_class(widgets.root, "shadowed") && margins.left == 0 &&
           margins.bottom == 0);
     gtk_window_destroy(GTK_WINDOW(window));
     popup_view_destroy(view);
@@ -407,7 +490,7 @@ static void test_view(void) {
     CHECK(popup_view_create(window, &view) == TL_OK);
     tl_popup_widgets widgets = popup_view_widgets(view);
     /* As the launcher does: realize, fit hints and the viewport to the work area, then
-     * size the window for the surface and its halo margin. */
+     * size the window for the surface and its shadow margin. */
     gtk_widget_realize(window);
     popup_view_configure(view, SURFACE_WIDTH, 800);
     tl_popup_margins margins = popup_view_margins(view);
@@ -420,14 +503,27 @@ static void test_view(void) {
     popup_view_set_active(view, true);
     CHECK(!gtk_widget_has_css_class(widgets.root, "opening"));
     settle(100);
-    CHECK((int)bounds(widgets.root).size.height == EMPTY_HEIGHT);
-    check_halo(view, widgets);
+    /* Empty: the header with its clock, the query line and the idle strip, nothing else. */
+    GtkWidget *header = find_named(widgets.root, "popup-header");
+    CHECK(gtk_widget_get_visible(header) && strchr(popup_header_clock(header), '/') != NULL);
+    CHECK(gtk_widget_get_visible(find_named(widgets.root, "popup-index")));
+    CHECK(gtk_widget_has_css_class(widgets.root, "dark") !=
+          gtk_widget_has_css_class(widgets.root, "light"));
+    popup_view_set_index(view,
+                         &(tl_popup_index){.known = true, .watches = 34477, .last_scan_ms = 1205});
+    check_shadow(view, widgets);
+    settle(60); /* The new facts relayout the strip; a snapshot waits for allocation. */
     capture(widgets, "empty");
     CHECK(!gtk_widget_get_visible(widgets.scroll));
     CHECK(!gtk_widget_get_visible(find_named(widgets.root, "popup-footer")));
     CHECK(gtk_entry_get_icon_storage_type(GTK_ENTRY(widgets.entry), GTK_ENTRY_ICON_SECONDARY) ==
           GTK_IMAGE_EMPTY);
     check_editing(widgets);
+    /* Each later show offers the next tip. */
+    popup_view_set_active(view, false);
+    popup_view_set_active(view, true);
+    CHECK(strcmp(gtk_entry_get_placeholder_text(GTK_ENTRY(widgets.entry)),
+                 "Try raedme: typos are fine") == 0);
     check_results(view, widgets);
     capture_results(view, widgets);
     check_feedback(view, widgets);
@@ -452,9 +548,11 @@ int main(void) {
     test_paths();
     test_rows();
     test_children();
+    test_index_strip();
     test_view();
+    test_forced_dark();
     test_forced_contrast();
-    puts("Native view: path fitting, icons, entrances, glide, motion timers, halo and geometry "
-         "passed.");
+    puts("Native view: path fitting, icons, entrances, glide, motion timers, header, idle strip, "
+         "palettes, shadow and geometry passed.");
     return 0;
 }

@@ -6,12 +6,14 @@ built and what comes next, open [Built and next](system-overview.html).
 The implemented M3 popup follows the [GUI specification](m3-gui-design.md) and
 [interactive design preview](m3-gui-preview.html), including Cinnamon X11 focus,
 keyboard actions, status/error states and asynchronous IPC requirements.
-The GTK popup has its own look, a torch in the dark: a night-blue surface with a
-lit rim and halo, Ubuntu Sans type, a horizon line that lights while typing and a
-gliding amber beam on the selected result, with short, bounded motion; see
-[ADR 0048](adr/0048-torch-in-the-dark-popup.md), which replaced the theme-following
-look of [ADR 0034](adr/0034-theme-following-popup-with-motion.md), and the
-[native captures](ui/native-results.png).
+The GTK popup has its own look, Tekst: teletext's information design on quiet
+Nordic surfaces, in light and dark palettes, with Schibsted Grotesk for what you
+read and the teletext face Bedstead for what the system says, a page header with
+a ticking clock, an inverse-video selection, colored Fastext links and short,
+bounded motion; see [ADR 0048](adr/0048-tekst-popup.md), which replaced the
+theme-following look of [ADR 0034](adr/0034-theme-following-popup-with-motion.md),
+the [native captures](ui/native-results.png) and the
+[interactive prototype](designs/tekst/index.html).
 Running applications list their open windows beneath their result, with a New
 window action ([ADR 0035](adr/0035-open-windows-under-applications.md)). Results
 take one line each, with a short folder ([ADR 0036](adr/0036-one-line-results.md)).
@@ -275,10 +277,11 @@ the root [README](../README.md) for commands, and
 - [0047: Rank files by place, and let people exclude folders](adr/0047-place-ranking-and-excluded-folders.md)
   gives each file a small penalty for depth and for lying inside installed or
   vendored software, inside its match tier, and adds an `exclude` setting.
-- [0048: A torch in the dark: the popup's own look](adr/0048-torch-in-the-dark-popup.md)
-  replaces the theme-following popup with a night palette, a lit rim and halo,
-  Ubuntu Sans, a horizon line and an amber selection beam; high contrast keeps
-  the theme's colors.
+- [0048: Tekst, the popup's own look](adr/0048-tekst-popup.md)
+  replaces the theme-following popup with teletext's information design on
+  Nordic light and dark palettes, Schibsted Grotesk and Bedstead type, an idle
+  index strip, Fastext links with Copy path and a CRT switch-off; high contrast
+  keeps the theme's colors.
 
 ## Keeping docs current
 

@@ -1,0 +1,18 @@
+/* Snø, Tekst's light palette (ADR 0048), loaded when the desktop prefers light. */
+@define-color tk_surface #f4f5f1;
+@define-color tk_panel #ebede7;
+@define-color tk_ink #1d2226;
+@define-color tk_muted #626b72;
+@define-color tk_faint #a0a7ab;
+@define-color tk_line #d9ddd6;
+@define-color tk_edge alpha(#1d2226, 0.1);
+@define-color tk_sel_bg #1d2226;
+@define-color tk_sel_ink #f4f5f1;
+@define-color tk_red #c2463e;
+@define-color tk_green #4e8a47;
+@define-color tk_yellow #b8811a;
+@define-color tk_cyan #24838f;
+@define-color tk_magenta #94508d;
+@define-color tk_blue #3a5f93;
+@define-color tk_shadow_near alpha(#1d2226, 0.12);
+@define-color tk_shadow_far alpha(#1d2226, 0.3);

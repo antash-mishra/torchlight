@@ -1,113 +1,117 @@
-/* Torchlight popup: a torch in the dark. One deep surface, lit only where attention is:
- * the rim when summoned, the horizon while typing and the beam on the selected result.
- * Light starts amber at the torch (top left) and cools to indigo as it fades. Sizes are
- * logical pixels; text sizes are relative so the desktop font scale applies. */
-@define-color tl_night #0e1424;
-@define-color tl_night_top #172036;
-@define-color tl_ink #e8ecf8;
-@define-color tl_haze #8a94b4;
-@define-color tl_lumen #ffb547;
-@define-color tl_dusk #5c6cff;
-
+/* Torchlight popup, Tekst (ADR 0048): Nordic surfaces carrying teletext's information
+ * design. Schibsted Grotesk sets what you read; Bedstead, a teletext face, sets what the
+ * system says. Colours come from palette-light.css or palette-dark.css, which the view
+ * loads for the desktop's preference. Sizes are logical pixels; text sizes are relative
+ * so the desktop font scale applies. */
 window.torchlight { background: transparent; }
-/* The surface, top layer first: a sheen, the opaque night interior, a slot for the
- * opening sweep (empty at rest), then the rim's top, bottom, left and right strips. The
- * interior covers the strips, so they show only through the transparent 1px border;
- * strips meet in the same color at each corner and keep software rendering cheap. */
-.torchlight .launcher-surface { font-family: "Ubuntu Sans", "Ubuntu", "Noto Sans", "Cantarell", sans-serif; color: @tl_ink; border: 1px solid transparent; border-radius: 16px; background-color: transparent; background-image: linear-gradient(180deg, @tl_night_top, alpha(@tl_night_top, 0)), image(@tl_night), none, linear-gradient(90deg, alpha(@tl_lumen, 0.85), alpha(@tl_lumen, 0.3) 35%, alpha(@tl_lumen, 0.18)), linear-gradient(90deg, alpha(@tl_dusk, 0.22), alpha(@tl_dusk, 0.55)), linear-gradient(180deg, alpha(@tl_lumen, 0.85), alpha(@tl_lumen, 0.25) 45%, alpha(@tl_dusk, 0.22)), linear-gradient(180deg, alpha(@tl_lumen, 0.18), alpha(@tl_dusk, 0.3) 50%, alpha(@tl_dusk, 0.55)); background-clip: padding-box, padding-box, border-box, border-box, border-box, border-box, border-box; background-origin: border-box; background-size: 100% 120px, 100% 100%, 300% 100%, 100% 16px, 100% 16px, 16px 100%, 16px 100%; background-position: 0 0, 0 0, 100% 0, 0 0, 0 100%, 0 0, 100% 0; background-repeat: no-repeat; }
-/* Only a compositor shows the halo, in the transparent margin the view reserves: light
- * spills amber from the torch's corner and indigo from the far one, above a shadow. */
-.torchlight .launcher-surface.glow { box-shadow: 0 0 0 1px alpha(black, 0.45), 0 12px 24px -10px alpha(black, 0.7), -6px -4px 18px -8px alpha(@tl_lumen, 0.34), 4px 8px 20px -8px alpha(@tl_dusk, 0.36), inset 0 1px alpha(white, 0.05); }
+.torchlight .launcher-surface { font-family: "Schibsted Grotesk", "Ubuntu Sans", "Cantarell", "Noto Sans", sans-serif; color: @tk_ink; background-color: @tk_surface; border: 1px solid @tk_edge; border-radius: 14px; }
+/* Only GPU rendering gets the shadow, in the transparent margin the view reserves. */
+.torchlight .launcher-surface.shadowed { box-shadow: 0 1px 3px @tk_shadow_near, 0 10px 24px -6px @tk_shadow_far; }
+.torchlight .page-header, .torchlight .index-strip, .torchlight .result-detail, .torchlight .footer, .torchlight .inline-status, .torchlight .group-header { font-family: "Bedstead", "Ubuntu Sans Mono", monospace; }
 
-/* Search: the query on the night itself, above the horizon line. Layers: the sweep band
- * (parked past the right end, and transparent but for the opening), the typing glow and
- * the line; every state keeps their shapes so transitions interpolate instead of fading. */
-.torchlight .search-area { padding: 10px 12px; }
-.torchlight .search-field { min-height: 47px; padding: 0 10px 1px; background-image: linear-gradient(90deg, transparent 44%, alpha(@tl_lumen, 0) 50%, transparent 56%), radial-gradient(ellipse at 28% 100%, alpha(@tl_lumen, 0), transparent 70%), linear-gradient(90deg, alpha(@tl_haze, 0), alpha(@tl_haze, 0) 22%, alpha(@tl_haze, 0) 70%, alpha(@tl_haze, 0)); background-size: 300% 1px, 100% 22px, 100% 1px; background-position: 0% 100%, 0 100%, 0 100%; background-repeat: no-repeat; transition: background-image 420ms ease-out; }
-.torchlight .has-results .search-field { background-image: linear-gradient(90deg, transparent 44%, alpha(@tl_lumen, 0) 50%, transparent 56%), radial-gradient(ellipse at 28% 100%, alpha(@tl_lumen, 0), transparent 70%), linear-gradient(90deg, alpha(@tl_haze, 0), alpha(@tl_haze, 0.24) 22%, alpha(@tl_haze, 0.24) 70%, alpha(@tl_haze, 0)); }
-.torchlight .search-field.typing { background-image: linear-gradient(90deg, transparent 44%, alpha(@tl_lumen, 0) 50%, transparent 56%), radial-gradient(ellipse at 28% 100%, alpha(@tl_lumen, 0.16), transparent 70%), linear-gradient(90deg, alpha(@tl_lumen, 0), alpha(@tl_lumen, 0.95) 22%, alpha(@tl_dusk, 0.7) 70%, alpha(@tl_dusk, 0)); transition-duration: 120ms; }
-.torchlight .search-icon { color: @tl_haze; min-width: 18px; min-height: 18px; transition: color 420ms ease-out; }
-.torchlight .search-field.typing .search-icon { color: @tl_lumen; transition-duration: 120ms; }
-.torchlight .search-field spinner { color: @tl_lumen; min-width: 18px; min-height: 18px; }
-.torchlight .query-entry { min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none; color: @tl_ink; caret-color: @tl_lumen; font-size: 1.5em; font-weight: 300; }
+/* Row 0: the teletext page header. */
+.torchlight .page-header { padding: 9px 18px 0; font-size: 0.8em; color: @tk_muted; }
+.torchlight .page-number, .torchlight .result-count { color: @tk_ink; }
+.torchlight .clock { color: @tk_yellow; }
+
+/* The query, then a rule: dotted at rest, an ink line drawn while typing. */
+.torchlight .search-area { padding: 4px 18px 0; }
+.torchlight .search-field { min-height: 52px; padding: 0; }
+.torchlight .search-icon { color: @tk_faint; min-width: 18px; min-height: 18px; transition: color 160ms ease-out; }
+.torchlight .search-field.typing .search-icon, .torchlight .search-field spinner { color: @tk_ink; }
+.torchlight .query-entry { min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none; color: @tk_ink; caret-color: @tk_red; font-size: 1.6em; font-weight: 500; letter-spacing: -0.025em; }
 .torchlight .query-entry text { padding: 0; }
-.torchlight .query-entry text selection { background-color: alpha(@tl_lumen, 0.32); color: @tl_ink; }
-.torchlight .query-entry placeholder { color: alpha(@tl_ink, 0.38); }
-.torchlight .inline-status { font-size: 0.9em; color: @tl_haze; }
-.torchlight .retry { min-width: 0; min-height: 0; padding: 0 2px; border: 0; background: transparent; box-shadow: none; color: @tl_lumen; font-weight: 500; }
-.torchlight .retry:focus-visible { outline: 1px solid alpha(@tl_lumen, 0.7); outline-offset: 2px; }
+.torchlight .query-entry text selection { background-color: alpha(@tk_cyan, 0.3); color: @tk_ink; }
+.torchlight .query-entry placeholder { color: @tk_faint; }
+.torchlight .inline-status { font-size: 0.8em; color: @tk_muted; }
+.torchlight .retry { min-width: 0; min-height: 0; padding: 0 2px; border: 0; background: transparent; box-shadow: none; color: @tk_red; text-decoration-line: underline; }
+.torchlight .retry:focus-visible { outline: 1px solid @tk_red; outline-offset: 2px; }
+.torchlight .search-rule { min-height: 1px; margin-top: 2px; background-image: linear-gradient(90deg, @tk_faint 2px, transparent 2px); background-size: 5px 1px; background-repeat: repeat-x; }
+.torchlight .search-rule-ink { min-height: 1px; background-color: @tk_ink; transform: scaleX(0); transform-origin: 0 50%; transition: transform 380ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+.torchlight .search-field.typing + .search-rule > .search-rule-ink { transform: none; transition-duration: 220ms; }
 
-/* Results: the selection track draws one beam beneath transparent rows. */
-.torchlight list { padding: 6px 8px 8px; background: transparent; }
-/* One-line rows. Only the gliding beam is lit: no second hover tint. */
-.torchlight list > row, .torchlight list > row:hover { min-height: 40px; padding: 0; border-radius: 10px; background: transparent; color: @tl_ink; outline: none; box-shadow: none; }
-.torchlight list > row:selected, .torchlight list > row:selected:hover { background-color: transparent; color: @tl_ink; }
-/* The beam: an amber rail at the torch, its glow, and light falling off to the right. */
-.torchlight .selection-highlight { border-radius: 10px; background-image: linear-gradient(@tl_lumen, @tl_lumen), radial-gradient(ellipse at 0% 50%, alpha(@tl_lumen, 0.26), transparent 70%), linear-gradient(90deg, alpha(@tl_lumen, 0.14), alpha(@tl_lumen, 0.05) 55%, alpha(@tl_lumen, 0)); background-size: 3px 20px, 140px 100%, 100% 100%; background-position: 0 50%, 0 0, 0 0; background-repeat: no-repeat; box-shadow: inset 0 0 0 1px alpha(@tl_lumen, 0.09); transition: background-image 90ms ease-out, box-shadow 90ms ease-out; }
-.torchlight .selection-highlight.flash { background-image: linear-gradient(@tl_lumen, @tl_lumen), radial-gradient(ellipse at 0% 50%, alpha(@tl_lumen, 0.45), transparent 70%), linear-gradient(90deg, alpha(@tl_lumen, 0.34), alpha(@tl_lumen, 0.16) 55%, alpha(@tl_lumen, 0.04)); box-shadow: inset 0 0 0 1px alpha(@tl_lumen, 0.3); }
-.torchlight .result { padding: 0 12px 0 10px; }
-.torchlight .result-name { color: @tl_ink; transition: color 130ms ease-out; }
-.torchlight .result-icon { -gtk-icon-filter: brightness(0.9); }
-.torchlight .result-detail { font-size: 0.9em; font-stretch: condensed; letter-spacing: 0.01em; color: @tl_haze; transition: color 130ms ease-out; }
-.torchlight list > row:selected .result-name { color: #fff4e2; }
-.torchlight list > row:selected .result-detail { color: alpha(@tl_ink, 0.72); }
-.torchlight list > row:selected .result-icon { -gtk-icon-filter: none; }
-/* An application's windows and actions hang from a guide line beneath its icon. */
-.torchlight list > row.child-row, .torchlight list > row.child-row:hover { min-height: 32px; }
-.torchlight .result.child { padding-left: 46px; background-image: linear-gradient(alpha(@tl_haze, 0.3), alpha(@tl_haze, 0.3)); background-size: 1px 100%; background-position: 22px 0; background-repeat: no-repeat; }
-.torchlight .result.child.new-window { background-image: linear-gradient(alpha(@tl_haze, 0.3), alpha(@tl_haze, 0.3)), linear-gradient(alpha(@tl_haze, 0.3), alpha(@tl_haze, 0.3)); background-size: 1px 50%, 12px 1px; background-position: 22px 0, 22px 50%; }
-.torchlight .child-action { color: @tl_haze; }
-.torchlight .child .result-icon { color: @tl_haze; }
-.torchlight list > row:selected .child-action, .torchlight list > row:selected .child .result-icon { color: @tl_ink; }
+/* Teletext colour blocks: one colour per kind of thing, never a wash. */
+.torchlight .block { min-width: 8px; min-height: 8px; }
+.torchlight .block.red { background-color: @tk_red; }
+.torchlight .block.green { background-color: @tk_green; }
+.torchlight .block.yellow { background-color: @tk_yellow; }
+.torchlight .block.cyan { background-color: @tk_cyan; }
+.torchlight .block.magenta { background-color: @tk_magenta; }
+.torchlight .block.blue { background-color: @tk_blue; }
+/* Idle strip: what the index is doing while the query is empty. */
+.torchlight .index-strip { padding: 12px 18px 14px; font-size: 0.75em; color: @tk_muted; }
+
+/* Results; the selection track draws one inverse-video block beneath them. */
+.torchlight list { padding: 6px 10px 10px; background: transparent; }
+.torchlight list > row, .torchlight list > row:hover { min-height: 40px; padding: 0; border-radius: 8px; background: transparent; color: @tk_ink; outline: none; box-shadow: none; }
+.torchlight list > row:hover:not(:selected) { box-shadow: inset 0 0 0 1px alpha(@tk_ink, 0.22); }
+.torchlight list > row:selected, .torchlight list > row:selected:hover { background-color: transparent; }
+.torchlight .selection-highlight { border-radius: 8px; background-color: @tk_sel_bg; box-shadow: inset 4px 0 @tk_cyan; transition: box-shadow 140ms ease-out; }
+.torchlight .selection-highlight.kind-setting { box-shadow: inset 4px 0 @tk_magenta; }
+.torchlight .selection-highlight.kind-folder { box-shadow: inset 4px 0 @tk_yellow; }
+.torchlight .selection-highlight.kind-file { box-shadow: inset 4px 0 @tk_blue; }
+.torchlight .selection-highlight.kind-window { box-shadow: inset 4px 0 @tk_green; }
+.torchlight .result { padding: 0 12px 0 14px; }
+.torchlight .result-name { color: @tk_ink; transition: color 110ms ease-out; }
+.torchlight .result-detail { font-size: 0.75em; color: @tk_muted; transition: color 110ms ease-out; }
+.torchlight list > row:selected .result-name, .torchlight list > row:selected .child-action, .torchlight list > row:selected .child .result-icon { color: @tk_sel_ink; }
+.torchlight list > row:selected .result-detail { color: alpha(@tk_sel_ink, 0.66); }
+/* An application's windows and actions sit beneath it, their icons under its name. */
+.torchlight list > row.child-row, .torchlight list > row.child-row:hover:not(:selected) { min-height: 32px; }
+.torchlight .result.child { padding-left: 50px; }
+.torchlight .result.child .result-name, .torchlight .child-action { color: @tk_muted; }
+.torchlight .child .result-icon { color: @tk_green; }
 .torchlight scrollbar { background: transparent; border: none; }
-.torchlight scrollbar slider { min-width: 4px; border: none; border-radius: 4px; background-color: alpha(@tl_haze, 0.4); }
+.torchlight scrollbar slider { min-width: 4px; border: none; border-radius: 4px; background-color: alpha(@tk_muted, 0.5); }
 
-/* Footer: a darker base plate with status, then key hints drawn as keycaps. */
-.torchlight .footer { padding: 8px 16px 9px; background-color: alpha(black, 0.22); border-top: 1px solid alpha(@tl_haze, 0.1); }
-.torchlight .status, .torchlight .hint-label { font-size: 0.9em; color: @tl_haze; }
-.torchlight .keycap { font-size: 0.9em; font-weight: 500; min-width: 10px; padding: 0 6px; border-radius: 6px; border: 1px solid alpha(@tl_haze, 0.32); border-top-color: alpha(@tl_haze, 0.5); background-color: alpha(@tl_ink, 0.05); color: @tl_ink; box-shadow: inset 0 -1px alpha(black, 0.35); }
-tooltip.background { background-color: alpha(@tl_night, 0.97); color: @tl_ink; border: 1px solid alpha(@tl_lumen, 0.28); border-radius: 8px; font-family: "Ubuntu Sans", "Ubuntu", "Noto Sans", sans-serif; }
+/* Fastext footer: status, then the coloured links of a teletext page. */
+.torchlight .footer { padding: 10px 18px 11px; border-top: 1px solid @tk_line; font-size: 0.75em; color: @tk_muted; }
+.torchlight .keycap { min-width: 0; padding: 0; border: 0; background: none; box-shadow: none; color: @tk_ink; }
+.torchlight .hint.done .hint-label { color: @tk_ink; }
+tooltip.background { background-color: @tk_panel; color: @tk_ink; border: 1px solid @tk_line; border-radius: 8px; }
 
-/* Motion. Only the opening plays unprompted; the rest answers input. Every effect is
- * short, never loops, never delays input or results, and GTK turns it all off when the
- * desktop disables animations. */
-@keyframes popup-open { from { opacity: 0; transform: translateY(-10px) scale(0.97); } to { opacity: 1; transform: none; } }
-@keyframes popup-close { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-6px) scale(0.98); } }
-@keyframes halo-flare { from { box-shadow: 0 0 0 1px alpha(black, 0.45), 0 12px 24px -10px alpha(black, 0.7), -6px -4px 18px -4px alpha(@tl_lumen, 0.6), 4px 8px 20px -4px alpha(@tl_dusk, 0.55), inset 0 1px alpha(white, 0.05); } to { box-shadow: 0 0 0 1px alpha(black, 0.45), 0 12px 24px -10px alpha(black, 0.7), -6px -4px 18px -8px alpha(@tl_lumen, 0.34), 4px 8px 20px -8px alpha(@tl_dusk, 0.36), inset 0 1px alpha(white, 0.05); } }
-/* The torch sweep: one band of light crosses the popup as it opens, lighting the rim's
- * edges and the horizon line together. */
-@keyframes rim-sweep { from { background-position: 0 0, 0 0, 100% 0, 0 0, 0 100%, 0 0, 100% 0; } to { background-position: 0 0, 0 0, 0% 0, 0 0, 0 100%, 0 0, 100% 0; } }
-@keyframes torch-sweep { from { background-position: 100% 100%, 0 100%, 0 100%; } to { background-position: 0% 100%, 0 100%, 0 100%; } }
-@keyframes result-enter { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+/* Motion. Only the opening plays unprompted; the rest answers input. Nothing waits for
+ * an effect, and GTK turns all of it off when the desktop disables animations. */
+@keyframes popup-open { from { opacity: 0; transform: translateY(-10px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes transmit { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @keyframes result-fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes launch-pulse { from { transform: none; } 45% { transform: scale(1.12); } to { transform: none; } }
-.torchlight .launcher-surface.opening { transform-origin: 50% 0; background-image: linear-gradient(180deg, @tl_night_top, alpha(@tl_night_top, 0)), image(@tl_night), linear-gradient(100deg, transparent 44%, alpha(#ffe2a8, 0.95) 50%, transparent 56%), linear-gradient(90deg, alpha(@tl_lumen, 0.85), alpha(@tl_lumen, 0.3) 35%, alpha(@tl_lumen, 0.18)), linear-gradient(90deg, alpha(@tl_dusk, 0.22), alpha(@tl_dusk, 0.55)), linear-gradient(180deg, alpha(@tl_lumen, 0.85), alpha(@tl_lumen, 0.25) 45%, alpha(@tl_dusk, 0.22)), linear-gradient(180deg, alpha(@tl_lumen, 0.18), alpha(@tl_dusk, 0.3) 50%, alpha(@tl_dusk, 0.55)); animation: popup-open 200ms cubic-bezier(0.16, 1, 0.3, 1) both, rim-sweep 560ms cubic-bezier(0.4, 0, 0.2, 1) 120ms both; }
-.torchlight .launcher-surface.glow.opening { animation: popup-open 200ms cubic-bezier(0.16, 1, 0.3, 1) both, rim-sweep 560ms cubic-bezier(0.4, 0, 0.2, 1) 120ms both, halo-flare 640ms ease-out 40ms both; }
-.torchlight .launcher-surface.closing { transform-origin: 50% 0; animation: popup-close 110ms ease-in both; }
-.torchlight .opening .search-field { background-image: linear-gradient(90deg, transparent 44%, alpha(@tl_lumen, 0.95) 50%, transparent 56%), radial-gradient(ellipse at 28% 100%, alpha(@tl_lumen, 0), transparent 70%), linear-gradient(90deg, alpha(@tl_haze, 0), alpha(@tl_haze, 0) 22%, alpha(@tl_haze, 0) 70%, alpha(@tl_haze, 0)); animation: torch-sweep 560ms cubic-bezier(0.4, 0, 0.2, 1) 120ms both; }
-/* First results are revealed from the left 18ms apart; later new rows only fade. */
-.torchlight .result.enter-0 { animation: result-enter 160ms cubic-bezier(0.16, 1, 0.3, 1) 0ms both; }
-.torchlight .result.enter-1 { animation: result-enter 160ms cubic-bezier(0.16, 1, 0.3, 1) 18ms both; }
-.torchlight .result.enter-2 { animation: result-enter 160ms cubic-bezier(0.16, 1, 0.3, 1) 36ms both; }
-.torchlight .result.enter-3 { animation: result-enter 160ms cubic-bezier(0.16, 1, 0.3, 1) 54ms both; }
-.torchlight .result.enter-4 { animation: result-enter 160ms cubic-bezier(0.16, 1, 0.3, 1) 72ms both; }
-.torchlight .result.enter-5 { animation: result-enter 160ms cubic-bezier(0.16, 1, 0.3, 1) 90ms both; }
-.torchlight .result.enter-6 { animation: result-enter 160ms cubic-bezier(0.16, 1, 0.3, 1) 108ms both; }
-.torchlight .result.enter-7 { animation: result-enter 160ms cubic-bezier(0.16, 1, 0.3, 1) 126ms both; }
+/* Teletext's flash attribute: the block blinks twice. */
+@keyframes flash { 0% { opacity: 1; } 20% { opacity: 0.2; } 40% { opacity: 1; } 60% { opacity: 0.2; } 80% { opacity: 1; } }
+/* CRT switch-off: the page squeezes to a bright line, then the line shrinks away. */
+@keyframes crt-off { 0% { opacity: 1; transform: none; filter: none; } 60% { opacity: 1; transform: scale(1, 0.012); filter: brightness(2.2); } 100% { opacity: 0; transform: scale(0, 0.012); filter: brightness(3); } }
+.torchlight .launcher-surface.opening { transform-origin: 50% 0; animation: popup-open 230ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+/* The header arrives as if transmitted: each part steps in, left to right. */
+.torchlight .opening .page-header > label { animation: transmit 200ms steps(4, end) both; }
+.torchlight .opening .page-header > label:nth-child(2) { animation-delay: 40ms; }
+.torchlight .opening .page-header > label:nth-child(3) { animation-delay: 80ms; }
+.torchlight .opening .page-header > label:nth-child(4) { animation-delay: 120ms; }
+.torchlight .opening .index-strip > box { animation: rise 180ms cubic-bezier(0.2, 0.8, 0.2, 1) 120ms both; }
+.torchlight .opening .index-strip > box:nth-child(2) { animation-delay: 160ms; }
+.torchlight .opening .index-strip > box:nth-child(3) { animation-delay: 200ms; }
+.torchlight .launcher-surface.closing { transform-origin: 50% 50%; animation: crt-off 200ms cubic-bezier(0.55, 0, 0.85, 0.35) both; }
+.torchlight .selection-highlight.flash { animation: flash 300ms steps(1, end) both; }
+/* First results arrive top to bottom, 16ms apart; later new rows only fade. */
+.torchlight .result.enter-0 { animation: rise 190ms cubic-bezier(0.2, 0.8, 0.2, 1) 0ms both; }
+.torchlight .result.enter-1 { animation: rise 190ms cubic-bezier(0.2, 0.8, 0.2, 1) 16ms both; }
+.torchlight .result.enter-2 { animation: rise 190ms cubic-bezier(0.2, 0.8, 0.2, 1) 32ms both; }
+.torchlight .result.enter-3 { animation: rise 190ms cubic-bezier(0.2, 0.8, 0.2, 1) 48ms both; }
+.torchlight .result.enter-4 { animation: rise 190ms cubic-bezier(0.2, 0.8, 0.2, 1) 64ms both; }
+.torchlight .result.enter-5 { animation: rise 190ms cubic-bezier(0.2, 0.8, 0.2, 1) 80ms both; }
+.torchlight .result.enter-6 { animation: rise 190ms cubic-bezier(0.2, 0.8, 0.2, 1) 96ms both; }
+.torchlight .result.enter-7 { animation: rise 190ms cubic-bezier(0.2, 0.8, 0.2, 1) 112ms both; }
 .torchlight .result.fresh { animation: result-fade 100ms ease-out both; }
-.torchlight .result.launching .result-icon { animation: launch-pulse 180ms ease-out; }
 
 /* Accessibility and size variants come last so they win over equal specificity.
- * High contrast drops the night palette for the theme's own colors. */
-.torchlight .launcher-surface.high-contrast { background-image: none; background-color: @theme_bg_color; color: @theme_fg_color; border-color: @theme_fg_color; box-shadow: none; }
-.torchlight .high-contrast .search-field, .torchlight .high-contrast .search-field.typing { background-image: none; box-shadow: inset 0 -2px @theme_fg_color; }
-.torchlight .high-contrast .selection-highlight, .torchlight .high-contrast .selection-highlight.flash { background-image: none; background-color: @theme_selected_bg_color; box-shadow: none; }
-.torchlight .high-contrast .query-entry, .torchlight .high-contrast .result-name, .torchlight .high-contrast .result-detail, .torchlight .high-contrast .child-action, .torchlight .high-contrast .status, .torchlight .high-contrast .hint-label, .torchlight .high-contrast .inline-status, .torchlight .high-contrast .search-icon, .torchlight .high-contrast .keycap { color: @theme_fg_color; }
+ * High contrast drops the palette for the theme's own colours. */
+.torchlight .launcher-surface.high-contrast { background-color: @theme_bg_color; color: @theme_fg_color; border-color: @theme_fg_color; box-shadow: none; }
+.torchlight .high-contrast .selection-highlight { background-color: @theme_selected_bg_color; box-shadow: none; }
+.torchlight .high-contrast .query-entry, .torchlight .high-contrast .result-name, .torchlight .high-contrast .result.child .result-name, .torchlight .high-contrast .result-detail, .torchlight .high-contrast .child-action, .torchlight .high-contrast .page-header, .torchlight .high-contrast .clock, .torchlight .high-contrast .index-strip, .torchlight .high-contrast .footer, .torchlight .high-contrast .keycap, .torchlight .high-contrast .inline-status, .torchlight .high-contrast .search-icon, .torchlight .high-contrast .retry { color: @theme_fg_color; caret-color: @theme_fg_color; }
 .torchlight .high-contrast list > row:selected .result-name, .torchlight .high-contrast list > row:selected .result-detail, .torchlight .high-contrast list > row:selected .child-action { color: @theme_selected_fg_color; }
-.torchlight .high-contrast .footer { background-color: transparent; border-top-color: @theme_fg_color; }
-.torchlight .high-contrast .result.child { background-image: none; }
-.torchlight .high-contrast .query-entry { caret-color: @theme_fg_color; }
-.torchlight .high-contrast .result-icon { -gtk-icon-filter: none; }
-.torchlight .high-contrast .retry { color: @theme_fg_color; text-decoration-line: underline; }
-.torchlight .compact .search-area { padding: 8px 10px; }
-.torchlight .quiet-motion .search-field, .torchlight .quiet-motion .search-field.typing, .torchlight .quiet-motion .search-icon, .torchlight .quiet-motion .selection-highlight, .torchlight .quiet-motion .result-name, .torchlight .quiet-motion .result-detail { transition: none; }
+.torchlight .high-contrast .search-rule-ink { background-color: @theme_fg_color; }
+.torchlight .high-contrast .footer { border-top-color: @theme_fg_color; }
+.torchlight .compact .page-header { padding: 8px 12px 0; }
+.torchlight .compact .search-area { padding: 2px 12px 0; }
+.torchlight .compact .index-strip { padding: 10px 12px 12px; }
+.torchlight .compact .footer { padding: 8px 12px; }
+.torchlight .quiet-motion .search-icon, .torchlight .quiet-motion .search-rule-ink, .torchlight .quiet-motion .selection-highlight, .torchlight .quiet-motion .result-name, .torchlight .quiet-motion .result-detail { transition: none; }

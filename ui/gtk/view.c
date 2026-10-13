@@ -1,15 +1,19 @@
-/* Torch-in-the-dark GTK presentation: lit rim and halo, horizon line, gliding beam and
+/* Tekst GTK presentation (ADR 0048): a teletext page header, the query and its rule, an
+ * idle index strip, results under an inverse-video selection, a Fastext footer and
  * bounded motion. */
 #include "view.h"
+#include "header.h"
 #include "path_label.h"
 #include "selection_track.h"
 #include <stdio.h>
 #include <string.h>
 #define TYPING_IDLE_MS 700
-/* Longest opening effect (torch sweep: 120ms delay + 560ms) plus a frame of slack. */
-#define OPENING_MS 700
-/* Matches the popup-close keyframes; the window hides when the fade has finished. */
-#define CLOSING_MS 110
+/* Longest opening effect (the idle strip's last fact: 200ms delay + 180ms) plus slack. */
+#define OPENING_MS 450
+/* Matches the CRT switch-off keyframes; the window hides when they have finished. */
+#define CLOSING_MS 200
+/* How long the Copy path link says "Copied". */
+#define COPIED_MS 1200
 #define SPINNER_FADE_MS 120
 /* Rows past this share the last cascade delay, so long lists never feel slow. */
 #define CASCADE_STEPS 8U
@@ -25,25 +29,35 @@
 /* Room for "10 results" before optional key hints give way. */
 #define STATUS_CHARS 10
 #define SEARCH_ICON_SIZE 18
-/* Room for popup.css's halo (18px and 20px blurs, offset toward their corners and
- * flaring on open) and the shadow below (12px down, 24px blur). The sides fit within
+/* Room for popup.css's shadow (10px down, 24px blur, -6px spread). The sides fit within
  * the 48px the launcher leaves inside the work area. */
-#define HALO_SIDE 20
-#define HALO_TOP 18
-#define HALO_BOTTOM 28
+#define SHADOW_SIDE 20
+#define SHADOW_TOP 10
+#define SHADOW_BOTTOM 28
+#define HINT_SPACING 6
+/* The placeholder changes on each show, teaching the forgiving search. */
+static const char *const TIPS[] = {"Search apps, files and settings", "Try raedme: typos are fine",
+                                   "Try prjnts: initials work",
+                                   "Try work notes: folder names count"};
+/* Style classes for what a row is; the selection's edge takes that kind's colour. */
+static const char *const KINDS[] = {"kind-app", "kind-setting", "kind-folder", "kind-file",
+                                    "kind-window"};
 struct popup_view {
     tl_popup_widgets widgets;
     GtkWidget *window, *field, *footer, *message, *message_box, *text, *reveal, *close, *icons,
-        *spinner, *track;
+        *spinner, *track, *header, *strip, *copy, *copy_label;
     GtkSettings *settings;
     GdkDisplay *display;
-    GtkCssProvider *css;
+    /* The stylesheet and the light or dark palette it takes its colours from. */
+    GtkCssProvider *css, *palette;
     /* The window's surface while realized, for its input region; weak. */
     GdkSurface *surface;
     tl_popup_margins margins;
-    guint typing_timer, opening_timer, closing_timer;
-    size_t results;
-    bool active, animations;
+    guint typing_timer, opening_timer, closing_timer, copied_timer;
+    size_t results, tip;
+    /* The visible surface's width from the last configure, for fitting the idle strip. */
+    int width;
+    bool active, animations, dark;
 };
 static void remove_timer(guint *timer) {
     if (*timer != 0)
@@ -63,6 +77,8 @@ static void update_message(tl_popup_view *view) {
     bool message = gtk_label_get_text(GTK_LABEL(view->message))[0] != 0;
     gtk_widget_set_visible(view->message_box,
                            !empty(view) && (retry || (message && view->results == 0)));
+    /* The idle strip has the space below an empty query to itself. */
+    gtk_widget_set_visible(view->strip, empty(view));
 }
 static void retry_changed(GObject *object, GParamSpec *parameter, gpointer context) {
     (void)object;
@@ -100,14 +116,18 @@ static GtkWidget *label(const char *text, const char *class) {
     gtk_widget_add_css_class(widget, class);
     return widget;
 }
-/* A key hint: NULL-terminated key names drawn as keycaps, then the action. */
-static GtkWidget *hint(const char *const *keys, const char *action) {
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
+/* A Fastext link: a teletext colour block, the NULL-terminated key names, then the action. */
+static GtkWidget *hint(const char *colour, const char *const *keys, const char *action) {
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, HINT_SPACING);
+    gtk_widget_add_css_class(box, "hint");
+    GtkWidget *block = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_add_css_class(block, "block");
+    gtk_widget_add_css_class(block, colour);
+    gtk_widget_set_valign(block, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(box), block);
     for (; *keys != NULL; keys++)
         gtk_box_append(GTK_BOX(box), label(*keys, "keycap"));
-    GtkWidget *text = label(action, "hint-label");
-    gtk_widget_set_margin_start(text, 3);
-    gtk_box_append(GTK_BOX(box), text);
+    gtk_box_append(GTK_BOX(box), label(action, "hint-label"));
     return box;
 }
 static GtkWidget *create_icons(tl_popup_view *view) {
@@ -129,7 +149,7 @@ static GtkWidget *create_entry(tl_popup_view *view) {
     view->widgets.entry = gtk_entry_new();
     gtk_entry_set_has_frame(GTK_ENTRY(view->widgets.entry), false);
     const char *name = "Search apps, settings, files and folders";
-    gtk_entry_set_placeholder_text(GTK_ENTRY(view->widgets.entry), name);
+    gtk_entry_set_placeholder_text(GTK_ENTRY(view->widgets.entry), TIPS[0]);
     gtk_editable_set_width_chars(GTK_EDITABLE(view->widgets.entry), 1);
     gtk_widget_set_hexpand(view->widgets.entry, true);
     gtk_widget_set_valign(view->widgets.entry, GTK_ALIGN_CENTER);
@@ -158,6 +178,18 @@ static GtkWidget *create_message(tl_popup_view *view) {
     gtk_widget_set_visible(view->message_box, false);
     return view->message_box;
 }
+/* The rule under the query: dotted at rest, with an ink line drawn over it while typing. */
+static GtkWidget *create_rule(void) {
+    GtkWidget *rule = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_add_css_class(rule, "search-rule");
+    GtkWidget *ink = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_add_css_class(ink, "search-rule-ink");
+    gtk_widget_set_hexpand(ink, true);
+    gtk_widget_set_valign(ink, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(rule), ink);
+    gtk_accessible_update_state(GTK_ACCESSIBLE(rule), GTK_ACCESSIBLE_STATE_HIDDEN, true, -1);
+    return rule;
+}
 static GtkWidget *create_search(tl_popup_view *view) {
     GtkWidget *area = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_add_css_class(area, "search-area");
@@ -168,10 +200,11 @@ static GtkWidget *create_search(tl_popup_view *view) {
     gtk_box_append(GTK_BOX(view->field), create_entry(view));
     gtk_box_append(GTK_BOX(view->field), create_message(view));
     gtk_box_append(GTK_BOX(area), view->field);
+    gtk_box_append(GTK_BOX(area), create_rule());
     return area;
 }
 static GtkWidget *create_footer(tl_popup_view *view) {
-    view->footer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 14);
+    view->footer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 18);
     gtk_widget_add_css_class(view->footer, "footer");
     gtk_widget_set_name(view->footer, "popup-footer");
     view->widgets.status = label("", "status");
@@ -180,13 +213,48 @@ static GtkWidget *create_footer(tl_popup_view *view) {
     gtk_label_set_width_chars(GTK_LABEL(view->widgets.status), STATUS_CHARS);
     gtk_widget_set_hexpand(view->widgets.status, true);
     gtk_box_append(GTK_BOX(view->footer), view->widgets.status);
-    gtk_box_append(GTK_BOX(view->footer), hint((const char *const[]){"Enter", NULL}, "Open"));
-    view->reveal = hint((const char *const[]){"Ctrl", "Enter", NULL}, "Show in Folder");
+    gtk_box_append(GTK_BOX(view->footer),
+                   hint("red", (const char *const[]){"Enter", NULL}, "Open"));
+    view->reveal = hint("green", (const char *const[]){"Ctrl", "Enter", NULL}, "Show in folder");
     gtk_box_append(GTK_BOX(view->footer), view->reveal);
-    view->close = hint((const char *const[]){"Esc", NULL}, "Close");
+    view->copy = hint("yellow", (const char *const[]){"Ctrl", "C", NULL}, "Copy path");
+    view->copy_label = gtk_widget_get_last_child(view->copy);
+    gtk_box_append(GTK_BOX(view->footer), view->copy);
+    view->close = hint("cyan", (const char *const[]){"Esc", NULL}, "Close");
     gtk_box_append(GTK_BOX(view->footer), view->close);
     gtk_widget_set_visible(view->footer, false);
     return view->footer;
+}
+/* GTK 4.14 has no colour-scheme query, so dark means a dark preference or a theme
+ * named dark (Mint-Y-Dark, Adwaita:dark). */
+static bool prefers_dark(GtkSettings *settings, const char *theme) {
+    gboolean preferred = false;
+    g_object_get(settings, "gtk-application-prefer-dark-theme", &preferred, NULL);
+    if (preferred || theme == NULL)
+        return preferred != 0;
+    char *lower = g_ascii_strdown(theme, -1);
+    bool named = strstr(lower, "dark") != NULL;
+    g_free(lower);
+    return named;
+}
+/* Swap in the palette stylesheet for the scheme; the main stylesheet names its colours. */
+static void apply_palette(tl_popup_view *view, bool dark) {
+    if (view->palette != NULL && dark == view->dark)
+        return;
+    if (view->palette != NULL) {
+        gtk_style_context_remove_provider_for_display(view->display,
+                                                      GTK_STYLE_PROVIDER(view->palette));
+        g_object_unref(view->palette);
+    }
+    view->dark = dark;
+    view->palette = gtk_css_provider_new();
+    gtk_css_provider_load_from_resource(view->palette,
+                                        dark ? "/org/torchlight/launcher/palette-dark.css"
+                                             : "/org/torchlight/launcher/palette-light.css");
+    gtk_style_context_add_provider_for_display(view->display, GTK_STYLE_PROVIDER(view->palette),
+                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    gtk_widget_remove_css_class(view->widgets.root, dark ? "light" : "dark");
+    gtk_widget_add_css_class(view->widgets.root, dark ? "dark" : "light");
 }
 static void settings_changed(GObject *object, GParamSpec *parameter, gpointer context) {
     (void)object;
@@ -210,6 +278,7 @@ static void settings_changed(GObject *object, GParamSpec *parameter, gpointer co
         gtk_widget_add_css_class(view->widgets.root, "high-contrast");
     else
         gtk_widget_remove_css_class(view->widgets.root, "high-contrast");
+    apply_palette(view, prefers_dark(view->settings, theme));
     g_free(theme);
 }
 static GtkWidget *create_results(tl_popup_view *view) {
@@ -236,12 +305,16 @@ static void build_content(tl_popup_view *view) {
     gtk_widget_set_name(view->widgets.root, "popup-surface");
     gtk_widget_set_overflow(view->widgets.root, GTK_OVERFLOW_HIDDEN);
     view->settings = g_object_ref(gtk_widget_get_settings(view->window));
+    view->header = popup_header_new();
+    gtk_box_append(GTK_BOX(view->widgets.root), view->header);
     gtk_box_append(GTK_BOX(view->widgets.root), create_search(view));
+    view->strip = popup_index_strip_new();
+    gtk_box_append(GTK_BOX(view->widgets.root), view->strip);
     gtk_box_append(GTK_BOX(view->widgets.root), create_results(view));
     gtk_box_append(GTK_BOX(view->widgets.root), create_footer(view));
     gtk_window_set_child(GTK_WINDOW(view->window), view->widgets.root);
 }
-/* Clicks in the transparent halo margin reach the windows beneath, as if the
+/* Clicks in the transparent shadow margin reach the windows beneath, as if the
  * window ended at the visible surface. */
 static void apply_input_region(tl_popup_view *view, int width, int height) {
     if (view->surface == NULL)
@@ -266,28 +339,28 @@ static void window_realized(GtkWidget *window, gpointer context) {
     g_object_add_weak_pointer(G_OBJECT(view->surface), (gpointer *)&view->surface);
     g_signal_connect(view->surface, "layout", G_CALLBACK(surface_layout), view);
 }
-/* The halo needs a transparent window, so a compositor and an RGBA visual, and a GPU
+/* The shadow needs a transparent window, so a compositor and an RGBA visual, and a GPU
  * renderer: GTK's software renderer blurs and uploads each shadow on every full
  * redraw, which added about 20ms to a results paint on a private X server. High
  * contrast keeps a plain surface that fills its window. */
-static bool halo_available(tl_popup_view *view) {
+static bool shadow_available(tl_popup_view *view) {
     GskRenderer *renderer = gtk_native_get_renderer(GTK_NATIVE(view->window));
     return gdk_display_is_composited(view->display) && gdk_display_is_rgba(view->display) &&
            renderer != NULL && !GSK_IS_CAIRO_RENDERER(renderer) &&
            !gtk_widget_has_css_class(view->widgets.root, "high-contrast");
 }
-static void update_halo(tl_popup_view *view) {
-    bool halo = halo_available(view);
-    view->margins = halo ? (tl_popup_margins){HALO_SIDE, HALO_SIDE, HALO_TOP, HALO_BOTTOM}
-                         : (tl_popup_margins){0, 0, 0, 0};
+static void update_shadow(tl_popup_view *view) {
+    bool shadow = shadow_available(view);
+    view->margins = shadow ? (tl_popup_margins){SHADOW_SIDE, SHADOW_SIDE, SHADOW_TOP, SHADOW_BOTTOM}
+                           : (tl_popup_margins){0, 0, 0, 0};
     gtk_widget_set_margin_start(view->widgets.root, view->margins.left);
     gtk_widget_set_margin_end(view->widgets.root, view->margins.right);
     gtk_widget_set_margin_top(view->widgets.root, view->margins.top);
     gtk_widget_set_margin_bottom(view->widgets.root, view->margins.bottom);
-    if (halo)
-        gtk_widget_add_css_class(view->widgets.root, "glow");
+    if (shadow)
+        gtk_widget_add_css_class(view->widgets.root, "shadowed");
     else
-        gtk_widget_remove_css_class(view->widgets.root, "glow");
+        gtk_widget_remove_css_class(view->widgets.root, "shadowed");
     if (view->surface != NULL)
         apply_input_region(view, gdk_surface_get_width(view->surface),
                            gdk_surface_get_height(view->surface));
@@ -306,6 +379,8 @@ static void connect_signals(tl_popup_view *view) {
     g_signal_connect(view->settings, "notify::gtk-enable-animations", G_CALLBACK(settings_changed),
                      view);
     g_signal_connect(view->settings, "notify::gtk-theme-name", G_CALLBACK(settings_changed), view);
+    g_signal_connect(view->settings, "notify::gtk-application-prefer-dark-theme",
+                     G_CALLBACK(settings_changed), view);
     g_signal_connect(view->window, "realize", G_CALLBACK(window_realized), view);
     if (gtk_widget_get_realized(view->window))
         window_realized(view->window, view);
@@ -324,7 +399,7 @@ tl_status popup_view_create(GtkWidget *window, tl_popup_view **out) {
     install_style(view);
     connect_signals(view);
     settings_changed(NULL, NULL, view);
-    update_halo(view);
+    update_shadow(view);
     *out = view;
     return TL_OK;
 }
@@ -348,6 +423,7 @@ void popup_view_set_status(tl_popup_view *view, const char *text) {
 }
 void popup_view_set_results(tl_popup_view *view, size_t count) {
     view->results = count;
+    popup_header_set_count(view->header, count);
     gtk_widget_set_visible(view->widgets.scroll, count != 0);
     gtk_widget_set_visible(view->footer, count != 0);
     if (count != 0)
@@ -401,10 +477,18 @@ static void add_entrance(GtkWidget *result, tl_popup_entrance entrance, size_t i
     if (written > 0 && (size_t)written < sizeof(class))
         gtk_widget_add_css_class(result, class);
 }
+/* What a row is: settings, application, folder or file. */
+static const char *kind_class(const tl_popup_row *row) {
+    return row->settings      ? "kind-setting"
+           : row->application ? "kind-app"
+           : row->folder      ? "kind-folder"
+                              : "kind-file";
+}
 GtkWidget *popup_view_result(const tl_popup_row *row, size_t path_keep, tl_popup_entrance entrance,
                              size_t index) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
     gtk_widget_add_css_class(box, "result");
+    gtk_widget_add_css_class(box, kind_class(row));
     add_entrance(box, entrance, index);
     gtk_box_append(GTK_BOX(box), result_icon(row));
     GtkWidget *name = label(row->name, "result-name");
@@ -440,7 +524,7 @@ static GtkWidget *child_icon(const tl_popup_row *parent, tl_popup_item_kind kind
     gtk_widget_add_css_class(image, "result-icon");
     return image;
 }
-/* New window is always a group's last child, so its guide line ends there. */
+/* Which child a row is: a window, more windows or new window. */
 static const char *child_class(tl_popup_item_kind kind) {
     return kind == POPUP_ITEM_NEW_WINDOW     ? "new-window"
            : kind == POPUP_ITEM_MORE_WINDOWS ? "more-windows"
@@ -452,6 +536,7 @@ GtkWidget *popup_view_child(const tl_popup_row *parent, tl_popup_item_kind kind,
     gtk_widget_add_css_class(box, "result");
     gtk_widget_add_css_class(box, "child");
     gtk_widget_add_css_class(box, child_class(kind));
+    gtk_widget_add_css_class(box, "kind-window");
     add_entrance(box, entrance, index);
     gtk_box_append(GTK_BOX(box), child_icon(parent, kind));
     GtkWidget *name = label(text, kind == POPUP_ITEM_WINDOW ? "result-name" : "child-action");
@@ -465,7 +550,19 @@ GtkWidget *popup_view_child(const tl_popup_row *parent, tl_popup_item_kind kind,
     gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), box);
     return row;
 }
+/* The selection block's edge takes the colour of the row it moves to. */
+static void mark_kind(GtkWidget *highlight, GtkWidget *row) {
+    GtkWidget *content = row != NULL && GTK_IS_LIST_BOX_ROW(row)
+                             ? gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(row))
+                             : NULL;
+    for (size_t i = 0; i < G_N_ELEMENTS(KINDS); i++)
+        if (content != NULL && gtk_widget_has_css_class(content, KINDS[i]))
+            gtk_widget_add_css_class(highlight, KINDS[i]);
+        else
+            gtk_widget_remove_css_class(highlight, KINDS[i]);
+}
 void popup_view_select(tl_popup_view *view, GtkWidget *row, bool glide) {
+    mark_kind(popup_selection_track_get_highlight(view->track), row);
     popup_selection_track_set_target(view->track, row, glide);
 }
 void popup_view_set_searching(tl_popup_view *view, bool searching) {
@@ -488,15 +585,16 @@ void popup_view_set_launching(tl_popup_view *view, bool launching) {
     if (result != NULL)
         gtk_widget_remove_css_class(result, "launching");
 }
-/* Large desktop fonts must never widen the popup: drop the least essential hints
- * (Close, then Show in Folder) until the footer fits. Open always stays. */
+/* Large desktop fonts must never widen the popup: drop the least essential links
+ * (Close, Copy path, then Show in folder) until the footer fits. Open always stays. */
 static void fit_hints(tl_popup_view *view, int width) {
-    GtkWidget *optional[] = {view->close, view->reveal};
+    GtkWidget *optional[] = {view->close, view->copy, view->reveal};
     gtk_widget_set_visible(view->close, true);
+    gtk_widget_set_visible(view->copy, true);
     gtk_widget_set_visible(view->reveal, width >= COMPACT_WIDTH);
     for (size_t i = 0; i < G_N_ELEMENTS(optional); i++) {
         int minimum, natural;
-        /* Measure the whole surface so its border, padding and halo margin count too. */
+        /* Measure the whole surface so its border, padding and shadow margin count too. */
         gtk_widget_measure(view->widgets.root, GTK_ORIENTATION_HORIZONTAL, -1, &minimum, &natural,
                            NULL, NULL);
         if (minimum <= width + view->margins.left + view->margins.right)
@@ -505,7 +603,9 @@ static void fit_hints(tl_popup_view *view, int width) {
     }
 }
 void popup_view_configure(tl_popup_view *view, int width, int height_limit) {
-    update_halo(view);
+    update_shadow(view);
+    view->width = width;
+    popup_index_strip_fit(view->strip, width);
     if (width < COMPACT_WIDTH)
         gtk_widget_add_css_class(view->widgets.root, "compact");
     else
@@ -526,6 +626,26 @@ void popup_view_configure(tl_popup_view *view, int width, int height_limit) {
 tl_popup_margins popup_view_margins(tl_popup_view *view) {
     return view->margins;
 }
+void popup_view_set_index(tl_popup_view *view, const tl_popup_index *index) {
+    popup_index_strip_set(view->strip, index);
+    if (view->width != 0)
+        popup_index_strip_fit(view->strip, view->width);
+}
+static gboolean copied_finished(gpointer context) {
+    tl_popup_view *view = context;
+    view->copied_timer = 0;
+    gtk_label_set_text(GTK_LABEL(view->copy_label), "Copy path");
+    gtk_widget_remove_css_class(view->copy, "done");
+    return G_SOURCE_REMOVE;
+}
+void popup_view_set_copied(tl_popup_view *view) {
+    remove_timer(&view->copied_timer);
+    gtk_label_set_text(GTK_LABEL(view->copy_label), "Copied");
+    gtk_widget_add_css_class(view->copy, "done");
+    gtk_accessible_announce(GTK_ACCESSIBLE(view->widgets.status), "Path copied",
+                            GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_MEDIUM);
+    view->copied_timer = g_timeout_add(COPIED_MS, copied_finished, view);
+}
 static gboolean opening_finished(gpointer context) {
     tl_popup_view *view = context;
     view->opening_timer = 0;
@@ -541,8 +661,11 @@ void popup_view_set_active(tl_popup_view *view, bool active) {
     gtk_widget_remove_css_class(view->field, "typing");
     gtk_widget_remove_css_class(view->widgets.root, "opening");
     gtk_widget_remove_css_class(view->widgets.root, "closing");
+    popup_header_set_running(view->header, active);
     if (!active)
         return;
+    gtk_entry_set_placeholder_text(GTK_ENTRY(view->widgets.entry),
+                                   TIPS[view->tip++ % G_N_ELEMENTS(TIPS)]);
     popup_view_set_launching(view, false);
     popup_view_set_searching(view, false);
     if (!view->animations)
@@ -575,6 +698,7 @@ void popup_view_destroy(tl_popup_view *view) {
     remove_timer(&view->typing_timer);
     remove_timer(&view->opening_timer);
     remove_timer(&view->closing_timer);
+    remove_timer(&view->copied_timer);
     g_signal_handlers_disconnect_by_data(view->settings, view);
     g_signal_handlers_disconnect_by_data(view->widgets.entry, view);
     g_signal_handlers_disconnect_by_data(view->widgets.retry, view);
@@ -586,7 +710,9 @@ void popup_view_destroy(tl_popup_view *view) {
         g_object_remove_weak_pointer(G_OBJECT(view->surface), (gpointer *)&view->surface);
     }
     gtk_style_context_remove_provider_for_display(view->display, GTK_STYLE_PROVIDER(view->css));
+    gtk_style_context_remove_provider_for_display(view->display, GTK_STYLE_PROVIDER(view->palette));
     g_object_unref(view->css);
+    g_object_unref(view->palette);
     g_object_unref(view->display);
     g_object_unref(view->settings);
     g_object_unref(view->widgets.root);

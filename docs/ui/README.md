@@ -2,11 +2,12 @@
 
 These are actual GTK snapshots of the popup window from `tests/gtk/test_view.c`,
 rendered through Cairo with animations disabled. They use Mint-Y icons and the
-desktop's 13pt interface font size; the stylesheet sets Ubuntu Sans and the
-night palette of [ADR 0048](../adr/0048-torch-in-the-dark-popup.md), so the GTK
-theme only matters for high contrast. They were rendered on a private X display
-with Metacity compositing and GTK's GL renderer (software Mesa), so the window
-has its transparent halo margin: the PNGs are transparent around the surface.
+desktop's 13pt interface font size; the stylesheet sets Schibsted Grotesk and
+Bedstead (installed from `third_party/fonts`) and the Mørketid palette of
+[ADR 0048](../adr/0048-tekst-popup.md), chosen because the Mint-Y-Dark theme's name
+says dark. They were rendered on a private X display with Metacity compositing and
+GTK's GL renderer (software Mesa), so the window has its transparent shadow
+margin: the PNGs are transparent around the surface.
 The font and icon theme were set in a temporary `gtk-4.0/settings.ini`. The rows
 are fixture data in the one-line layout of
 [ADR 0036](../adr/0036-one-line-results.md); native IPC and actions are checked
@@ -15,11 +16,11 @@ separately.
 - [Empty popup](native-empty.png)
 - [Results: an application with a window, files and a folder](native-results.png)
 - [The same results in high contrast](native-results-contrast.png), which uses the
-  theme's colors and no halo
+  theme's colors and no shadow
 
 Replay after building `build/test_popup_view`, on a display with a compositing
 window manager (for example `metacity --sm-disable` on a private Xvfb display)
-and with GL rendering, so the halo shows:
+and with GL rendering, so the shadow shows:
 
 ```sh
 GSK_RENDERER=ngl GTK_THEME=Mint-Y-Dark TORCHLIGHT_TEST_VIEW_CAPTURE="$PWD/docs/ui" ./build/test_popup_view
@@ -36,4 +37,4 @@ view test disables LeakSanitizer for GTK/font caches; ASan and UBSan still check
 memory errors and timer teardown.
 
 See [the GUI specification](../m3-gui-design.md) and
-[ADR 0048](../adr/0048-torch-in-the-dark-popup.md).
+[ADR 0048](../adr/0048-tekst-popup.md).

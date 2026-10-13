@@ -116,7 +116,7 @@ static void write_frame(struct popup_probe *probe, bool ready) {
             "\"retry_focus\":%s,\"retry_clicks\":%u,\"selected\":%d,"
             "\"results_visible\":%s,\"footer_visible\":%s,\"typing\":%s,"
             "\"entry_x\":%.1f,\"entry_y\":%.1f,\"entry_width\":%.1f,\"clear_icon\":%s,"
-            "\"halo_left\":%d,\"halo_top\":%d}\n",
+            "\"shadow_left\":%d,\"shadow_top\":%d}\n",
             (long long)painted, (long long)probe->changed, probe->painted ? "false" : "true",
             ready ? "true" : "false", rows, encoded_query, encoded_status,
             gtk_widget_get_visible(probe->retry) ? "true" : "false",

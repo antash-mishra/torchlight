@@ -1,0 +1,5 @@
+<!-- Tekst's light and dark palettes, a bundle of their own so each stays within ISO C string limits. -->
+<gresources><gresource prefix="/org/torchlight/launcher">
+  <file compressed="true">palette-light.css</file>
+  <file compressed="true">palette-dark.css</file>
+</gresource></gresources>

@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Torchlight Tekst</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ubuntu+Sans:wght@300..700&display=swap">
+<style>
+@font-face { font-family: "Bedstead"; src: url("fonts/bedstead.otf") format("opentype"); font-weight: 400; font-stretch: 100%; font-display: block; }
+@font-face { font-family: "Bedstead"; src: url("fonts/bedstead-bold.otf") format("opentype"); font-weight: 700; font-stretch: 100%; font-display: block; }
+/* Ultra Condensed is exactly half as wide: at twice the size it is teletext's double height. */
+@font-face { font-family: "Bedstead"; src: url("fonts/bedstead-ultracondensed.otf") format("opentype"); font-weight: 400; font-stretch: 50%; font-display: block; }
+@font-face { font-family: "Schibsted Grotesk"; src: url("fonts/SchibstedGrotesk-VF.ttf") format("truetype"); font-weight: 400 900; font-display: block; }
+@font-face { font-family: "Familjen Grotesk"; src: url("fonts/FamiljenGrotesk-VF.ttf") format("truetype"); font-weight: 400 700; font-display: block; }
+@font-face { font-family: "Doto"; src: url("fonts/Doto-VF.ttf") format("truetype"); font-weight: 100 900; font-display: block; }
+
+/* Tekst: Nordic surfaces carrying teletext's information design.
+   Layout: a page bar with scheme controls, the live popup on a quiet desktop stage, then the spec. */
+:root {
+  /* Snø, the light scheme */
+  --desk-a: #cdd6d8; --desk-b: #8fa3ab;
+  --surface: #f4f5f1; --panel: #ebede7; --ink: #1d2226; --muted: #626b72; --faint: #a0a7ab; --line: #d9ddd6;
+  --sel-bg: #1d2226; --sel-ink: #f4f5f1;
+  --red: #c2463e; --green: #4e8a47; --yellow: #b8811a; --cyan: #24838f; --magenta: #94508d; --blue: #3a5f93;
+  --shadow: 0 1px 2px rgb(29 34 38 / .07), 0 14px 34px rgb(29 34 38 / .18), 0 36px 72px rgb(29 34 38 / .12);
+  --page-bg: #eef0ec; --page-ink: #1d2226; --page-muted: #5d666d; --page-line: #d5d9d2; --page-card: #f8f9f6;
+  --font-ui: "Ubuntu Sans", "Cantarell", "Noto Sans", system-ui, sans-serif;
+  --font-tt: "Bedstead", "Ubuntu Sans Mono", ui-monospace, monospace;
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  /* Type roles; each type style below redefines them. */
+  --f-query: var(--font-ui); --s-query: 27px; --w-query: 400; --tr-query: -.01em; --st-query: 100%; --v-query: normal;
+  --f-name: var(--font-ui); --s-name: 15px; --w-name: 400; --tr-name: 0;
+  --f-title: var(--font-ui); --s-title: 19px; --w-title: 500; --tr-title: 0; --st-title: 100%;
+  --f-head: var(--font-tt); --s-head: 13px; --w-head: 400; --v-head: normal;
+  --f-clock: var(--font-tt); --s-clock: 13px; --w-clock: 400; --v-clock: normal;
+  --f-sys: var(--font-tt); --s-sys: 12px; --tr-sys: 0;
+  color-scheme: light;
+}
+/* Kringkasting: Schibsted Grotesk, a Norwegian news grotesque, with teletext for the system voice. */
+:root[data-type="kringkasting"] {
+  --f-query: "Schibsted Grotesk", var(--font-ui); --s-query: 30px; --w-query: 500; --tr-query: -.025em;
+  --f-name: "Schibsted Grotesk", var(--font-ui); --s-name: 15.5px; --w-name: 400; --tr-name: -.005em;
+  --f-title: "Schibsted Grotesk", var(--font-ui); --s-title: 22px; --w-title: 700; --tr-title: -.02em;
+}
+/* Dobbelhøyde: all teletext; the query and the preview title in double height. */
+:root[data-type="dobbel"] {
+  --f-query: var(--font-tt); --s-query: 34px; --w-query: 400; --tr-query: 0; --st-query: 50%;
+  --f-name: var(--font-tt); --s-name: 16px; --w-name: 400;
+  --f-title: var(--font-tt); --s-title: 32px; --w-title: 400; --st-title: 50%;
+}
+/* Punktmatris: a dot-matrix display face for the query and header, Familjen Grotesk for text. */
+:root[data-type="punkt"] {
+  --f-query: "Doto", var(--font-tt); --s-query: 36px; --w-query: 900; --tr-query: .01em; --v-query: "ROND" 100;
+  --f-name: "Familjen Grotesk", var(--font-ui); --s-name: 15.5px; --w-name: 400;
+  --f-title: "Familjen Grotesk", var(--font-ui); --s-title: 21px; --w-title: 600; --tr-title: -.01em;
+  --f-head: "Familjen Grotesk", var(--font-ui); --s-head: 13px; --w-head: 500;
+  --f-clock: "Doto", var(--font-tt); --s-clock: 17px; --w-clock: 900; --v-clock: "ROND" 100;
+  --f-sys: "Familjen Grotesk", var(--font-ui); --s-sys: 12.5px; --tr-sys: .02em;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    /* Mørketid, the dark scheme */
+    --desk-a: #232a30; --desk-b: #0d1013;
+    --surface: #171a1d; --panel: #1c2024; --ink: #e8ebe6; --muted: #979fa5; --faint: #5f686e; --line: #2b3136;
+    --sel-bg: #e8ebe6; --sel-ink: #171a1d;
+    --red: #e26b61; --green: #87b872; --yellow: #e6b04a; --cyan: #5fb6c1; --magenta: #c78cc1; --blue: #7c9fd3;
+    --shadow: 0 1px 2px rgb(0 0 0 / .45), 0 18px 44px rgb(0 0 0 / .5), 0 40px 80px rgb(0 0 0 / .3);
+    --page-bg: #111417; --page-ink: #e8ebe6; --page-muted: #959ea4; --page-line: #262c31; --page-card: #15191c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --desk-a: #232a30; --desk-b: #0d1013;
+  --surface: #171a1d; --panel: #1c2024; --ink: #e8ebe6; --muted: #979fa5; --faint: #5f686e; --line: #2b3136;
+  --sel-bg: #e8ebe6; --sel-ink: #171a1d;
+  --red: #e26b61; --green: #87b872; --yellow: #e6b04a; --cyan: #5fb6c1; --magenta: #c78cc1; --blue: #7c9fd3;
+  --shadow: 0 1px 2px rgb(0 0 0 / .45), 0 18px 44px rgb(0 0 0 / .5), 0 40px 80px rgb(0 0 0 / .3);
+  --page-bg: #111417; --page-ink: #e8ebe6; --page-muted: #959ea4; --page-line: #262c31; --page-card: #15191c;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page-bg); color: var(--page-ink); font-family: var(--font-ui); font-size: 16px; line-height: 1.5; transition: background-color 200ms ease, color 200ms ease; }
+kbd { font-family: var(--f-sys); font-size: var(--s-sys); }
+
+/* Page bar */
+.pagebar { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; padding-block: 14px; padding-inline: 20px; border-bottom: 1px solid var(--page-line); }
+.brand { display: flex; align-items: center; gap: 10px; font-size: 18px; }
+.brand b { font-weight: 600; }
+.brand .mark { width: 12px; height: 12px; background: var(--cyan); box-shadow: 14px 0 0 var(--yellow), 28px 0 0 var(--magenta); margin-right: 30px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--page-line); border-radius: 8px; overflow: hidden; }
+.seg button, .ghost { font: inherit; font-size: 14px; color: var(--page-ink); background: transparent; border: 0; padding: 6px 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--page-line); }
+.seg button[aria-pressed="true"] { background: var(--page-ink); color: var(--page-bg); }
+.ghost { border: 1px solid var(--page-line); border-radius: 8px; display: inline-flex; gap: 6px; align-items: center; }
+.ghost kbd { border: 1px solid var(--page-line); border-radius: 4px; padding: 0 4px; }
+button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+/* Stage: a quiet desktop under the popup */
+.stage { position: relative; min-height: 640px; padding-block: 56px 48px; padding-inline: 16px; display: grid; justify-items: center; align-content: start; background: radial-gradient(120% 90% at 20% 0%, var(--desk-a), var(--desk-b)); overflow: hidden; }
+.stage-hint { position: absolute; bottom: 16px; left: 0; right: 0; text-align: center; margin: 0; font-family: var(--font-tt); font-size: 13px; color: rgb(255 255 255 / .82); text-shadow: 0 1px 2px rgb(0 0 0 / .4); }
+.stage-states { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 18px; }
+.stage-states button { font-family: var(--font-tt); font-size: 12px; color: #fff; background: rgb(0 0 0 / .28); border: 1px solid rgb(255 255 255 / .22); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.stage-states button:hover { background: rgb(0 0 0 / .42); }
+
+/* The popup */
+.popup { width: min(880px, 100%); background: var(--surface); color: var(--ink); border-radius: 14px; box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--ink) 9%, transparent); overflow: hidden; transform-origin: 50% 0; transition: background-color 200ms ease, color 200ms ease; }
+.popup[hidden] { display: none; }
+
+/* Row 0: the teletext header line */
+.ttbar { display: flex; gap: 18px; align-items: baseline; padding: 9px 18px 0; font-family: var(--f-head); font-size: var(--s-head); font-weight: var(--w-head); font-variation-settings: var(--v-head); color: var(--muted); white-space: nowrap; }
+.ttbar .pg, .ttbar .clk { font-family: var(--f-clock); font-size: var(--s-clock); font-weight: var(--w-clock); font-variation-settings: var(--v-clock); }
+.ttbar .pg { color: var(--ink); }
+.ttbar .grow { flex: 1; }
+.ttbar .cnt { color: var(--ink); }
+.ttbar .clk { color: var(--yellow); font-variant-numeric: tabular-nums; }
+
+/* Search */
+.search { display: flex; align-items: center; gap: 14px; padding: 8px 18px 14px; cursor: text; }
+.glass { width: 20px; height: 20px; flex: none; fill: none; stroke: var(--faint); stroke-width: 1.6; transition: stroke 160ms ease; }
+.search.typing .glass { stroke: var(--ink); }
+#q { flex: 1; min-width: 0; font-family: var(--f-query); font-size: var(--s-query); font-weight: var(--w-query); font-stretch: var(--st-query); font-variation-settings: var(--v-query); line-height: 1.2; letter-spacing: var(--tr-query); color: var(--ink); caret-color: var(--red); background: transparent; border: 0; outline: 0; padding: 0; }
+#q::placeholder { color: var(--faint); opacity: 1; }
+.inline { font-family: var(--f-sys); font-size: calc(var(--s-sys) + 1px); color: var(--muted); white-space: nowrap; display: flex; gap: 12px; align-items: center; }
+.inline[hidden] { display: none; }
+.inline button { font: inherit; color: var(--red); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+/* The rule under the query: dotted when idle, a drawn line while typing. */
+.rule { height: 1px; margin: 0 18px; background-image: radial-gradient(circle, var(--faint) .7px, transparent 1px); background-size: 6px 1px; background-repeat: repeat-x; }
+.rule::after { content: ""; display: block; height: 1px; background: var(--ink); transform: scaleX(0); transform-origin: 0 50%; transition: transform 380ms var(--ease); }
+.search.typing + .rule::after { transform: scaleX(1); transition-duration: 220ms; }
+
+/* Idle strip: what the index is doing, in teletext type */
+.strip { display: flex; flex-wrap: wrap; gap: 6px 22px; padding: 12px 18px 14px; font-family: var(--f-sys); font-size: var(--s-sys); letter-spacing: var(--tr-sys); color: var(--muted); }
+.strip span { display: inline-flex; align-items: center; gap: 8px; }
+.strip i { width: 8px; height: 8px; background: var(--c); display: inline-block; }
+.strip[hidden] { display: none; }
+
+/* Body: grouped results and the preview panel */
+.body { display: grid; grid-template-columns: minmax(0, 1fr) 300px; border-top: 0; }
+.body[hidden] { display: none; }
+.list { position: relative; max-height: 452px; overflow-y: auto; padding: 6px 10px 12px; scrollbar-width: thin; }
+.group { display: flex; align-items: center; gap: 10px; height: 30px; padding: 6px 10px 0; font-family: var(--f-sys); font-size: var(--s-sys); letter-spacing: var(--tr-sys); color: var(--muted); }
+.group i { width: 9px; height: 9px; background: var(--c); }
+.group .n { margin-left: auto; color: var(--faint); }
+.row { position: relative; z-index: 1; display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 12px 0 14px; border-radius: 8px; cursor: default; }
+.row.child { height: 32px; padding-left: 50px; }
+.row .ic { width: 24px; height: 24px; flex: none; object-fit: contain; }
+.row.child .ic { width: 16px; height: 16px; }
+.row .nm { font-family: var(--f-name); font-size: var(--s-name); font-weight: var(--w-name); letter-spacing: var(--tr-name); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 110ms ease; }
+.row.child .nm { font-size: calc(var(--s-name) - 1px); color: var(--muted); }
+.row .where { margin-left: auto; padding-left: 16px; font-family: var(--f-sys); font-size: var(--s-sys); letter-spacing: var(--tr-sys); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; transition: color 110ms ease; }
+.row .dot { width: 6px; height: 6px; flex: none; background: var(--green); margin: 0 5px; }
+.row:hover::after { content: ""; position: absolute; inset: 0; border-radius: 8px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 24%, transparent); pointer-events: none; }
+.row.on:hover::after { box-shadow: none; }
+.row.on .nm, .row.on.child .nm { color: var(--sel-ink); }
+.row.on .where { color: color-mix(in srgb, var(--sel-ink) 66%, transparent); }
+/* The selection: an inverse-video block with the category's colour at its edge. */
+.sel { position: absolute; z-index: 0; left: 10px; right: 10px; top: 0; height: 40px; border-radius: 8px; background: var(--sel-bg); box-shadow: inset 4px 0 0 var(--c, var(--cyan)); transition: transform 140ms var(--ease), height 140ms var(--ease), box-shadow 140ms ease; pointer-events: none; }
+.sel[hidden] { display: none; }
+.sel.jump { transition: none; }
+.sel.flash { animation: flash 300ms steps(1, end) both; }
+@keyframes flash { 0% { opacity: 1 } 20% { opacity: .2 } 40% { opacity: 1 } 60% { opacity: .2 } 80%, 100% { opacity: 1 } }
+
+.preview { background: var(--panel); border-left: 1px solid var(--line); padding: 20px 20px 22px; display: grid; align-content: start; gap: 14px; max-height: 476px; overflow-y: auto; transition: background-color 200ms ease; }
+.pv-head { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 4px 14px; align-items: center; }
+.pv-head img { width: 56px; height: 56px; grid-row: span 2; object-fit: contain; }
+.pv-name { font-family: var(--f-title); font-size: var(--s-title); font-weight: var(--w-title); font-stretch: var(--st-title); letter-spacing: var(--tr-title); line-height: 1.15; overflow-wrap: anywhere; }
+.pv-kind { font-family: var(--f-sys); font-size: var(--s-sys); letter-spacing: var(--tr-sys); color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.pv-kind i { width: 8px; height: 8px; background: var(--c); }
+.pv-desc { margin: 0; font-family: var(--f-name); font-size: calc(var(--s-name) - 1px); color: var(--muted); }
+.pv-meta { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin: 0; font-family: var(--f-sys); font-size: var(--s-sys); letter-spacing: var(--tr-sys); }
+.pv-meta dt { color: var(--muted); }
+.pv-meta dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
+.pv-label { font-family: var(--f-sys); font-size: var(--s-sys); letter-spacing: var(--tr-sys); color: var(--muted); margin: 0 0 -6px; }
+.pv-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-family: var(--f-name); font-size: calc(var(--s-name) - 1px); }
+.pv-list li { display: flex; align-items: center; gap: 10px; }
+.pv-list li i { width: 8px; height: 8px; flex: none; background: var(--c); }
+.pv-list li kbd { margin-left: auto; color: var(--muted); }
+.pv-line { height: 1px; background: var(--line); }
+.ln { animation: pv-in 170ms var(--ease) both; animation-delay: calc(var(--i) * 22ms); }
+@keyframes pv-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+
+/* Fastext footer: the four coloured links of a teletext page */
+.fastext { display: flex; flex-wrap: wrap; gap: 6px 22px; padding: 11px 18px 12px; border-top: 1px solid var(--line); font-family: var(--f-sys); font-size: var(--s-sys); letter-spacing: var(--tr-sys); color: var(--muted); }
+.fastext[hidden] { display: none; }
+.fx { display: inline-flex; gap: 8px; align-items: center; }
+.fx i { width: 10px; height: 10px; background: var(--c); }
+.fx kbd { color: var(--ink); }
+.fx.done { color: var(--ink); }
+
+/* Motion */
+.popup.opening { animation: open 230ms var(--ease) both; }
+@keyframes open { from { opacity: 0; transform: translateY(-10px) scale(.985); } to { opacity: 1; transform: none; } }
+.popup.opening .ttbar { animation: transmit 200ms steps(6, end) both; }
+@keyframes transmit { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+.popup.opening .strip span { animation: pv-in 180ms var(--ease) both; animation-delay: calc(120ms + var(--i) * 40ms); }
+.row.in, .group.in { animation: row-in 190ms var(--ease) both; animation-delay: calc(var(--i) * 16ms); }
+@keyframes row-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.popup.closing { transform-origin: 50% 50%; animation: crt-off 200ms cubic-bezier(.55, 0, .85, .35) both; }
+@keyframes crt-off {
+  0% { transform: none; filter: none; opacity: 1; }
+  60% { transform: scale(1, .012); filter: brightness(2.2); opacity: 1; }
+  100% { transform: scale(0, .012); filter: brightness(3); opacity: 0; }
+}
+.count-tick { animation: tick 160ms steps(2, end); }
+@keyframes tick { from { opacity: .2; } to { opacity: 1; } }
+.still *, .still *::before, .still *::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* Spec */
+.spec { max-width: 1040px; margin: 0 auto; padding-block: 44px 72px; padding-inline: 20px; display: grid; gap: 40px; }
+.spec header { display: grid; gap: 10px; max-width: 68ch; }
+.spec h1 { margin: 0; font-size: clamp(30px, 4vw, 44px); font-weight: 300; letter-spacing: -.015em; line-height: 1.1; text-wrap: balance; }
+.spec h1 b { font-weight: 600; }
+.spec h2 { margin: 0 0 10px; font-size: 22px; font-weight: 600; text-wrap: balance; }
+.spec h3 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+.spec p { margin: 0; max-width: 68ch; }
+.spec .lede { color: var(--page-muted); font-size: 18px; }
+.spec section { display: grid; gap: 14px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 18px 28px; }
+.cols > div { min-width: 0; }
+.card { background: var(--page-card); border: 1px solid var(--page-line); border-radius: 12px; padding: 18px 20px; min-width: 0; }
+.muted { color: var(--page-muted); }
+.tt { font-family: var(--font-tt); font-size: 13px; }
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.sw { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 0 10px; align-items: center; font-size: 14px; }
+.sw b { grid-row: span 2; width: 34px; height: 34px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgb(0 0 0 / .12); }
+.sw span { font-family: var(--font-tt); font-size: 12px; color: var(--page-muted); }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--page-line); vertical-align: top; }
+th { font-weight: 600; white-space: nowrap; }
+td.tt { white-space: nowrap; }
+ul.plain { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 72ch; }
+.diagram { font-family: var(--font-tt); font-size: 12px; line-height: 1.45; background: var(--page-card); border: 1px solid var(--page-line); border-radius: 12px; padding: 16px 18px; overflow-x: auto; white-space: pre; color: var(--page-ink); }
+
+@media (max-width: 760px) {
+  .body { grid-template-columns: minmax(0, 1fr); }
+  .preview { border-left: 0; border-top: 1px solid var(--line); max-height: none; }
+  .ttbar .svc { display: none; }
+  #q { font-size: 22px; }
+}
+</style>
+</head>
+<body>
+<div class="pagebar">
+  <div class="brand"><span class="mark" aria-hidden="true"></span><span>Torchlight <b>Tekst</b></span></div>
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Colour scheme">
+      <button type="button" data-scheme="auto" aria-pressed="true">Auto</button>
+      <button type="button" data-scheme="light" aria-pressed="false">Light</button>
+      <button type="button" data-scheme="dark" aria-pressed="false">Dark</button>
+    </div>
+    <div class="seg" role="group" aria-label="Type style">
+      <button type="button" data-typeset="tekst" aria-pressed="true">Ubuntu Sans</button>
+      <button type="button" data-typeset="kringkasting" aria-pressed="false">Kringkasting</button>
+      <button type="button" data-typeset="dobbel" aria-pressed="false">Dobbelhøyde</button>
+      <button type="button" data-typeset="punkt" aria-pressed="false">Punktmatris</button>
+    </div>
+    <button type="button" class="ghost" id="toggle">Open or close <kbd>Alt</kbd><kbd>Space</kbd></button>
+  </div>
+</div>
+
+<main>
+  <section class="stage" aria-label="Interactive prototype">
+    <div class="stage-states" role="group" aria-label="Jump to a state">
+      <button type="button" data-state="empty">Empty</button>
+      <button type="button" data-state="term">Typing “term”</button>
+      <button type="button" data-state="notes">“work notes”</button>
+      <button type="button" data-state="raedme">Typo “raedme”</button>
+      <button type="button" data-state="none">No matches</button>
+      <button type="button" data-state="offline">Offline</button>
+    </div>
+    <div class="popup" id="popup" role="dialog" aria-label="Torchlight">
+      <div class="ttbar" aria-hidden="true">
+        <span class="pg">P100</span><span class="svc">Torchlight</span><span class="grow"></span>
+        <span class="cnt" id="cnt"></span><span class="clk" id="clk"></span>
+      </div>
+      <label class="search" id="search">
+        <svg class="glass" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="M15.4 15.4 21 21"></path></svg>
+        <input id="q" type="text" autocomplete="off" spellcheck="false" aria-label="Search apps, files and settings" aria-controls="list">
+        <span class="inline" id="inline" hidden></span>
+      </label>
+      <div class="rule" aria-hidden="true"></div>
+      <div class="strip" id="strip">
+        <span style="--c: var(--green); --i: 0"><i></i>Index up to date</span>
+        <span style="--c: var(--cyan); --i: 1"><i></i>34,477 folders watched</span>
+        <span style="--c: var(--yellow); --i: 2"><i></i>Last scan 1.2 s</span>
+        <span style="--c: var(--magenta); --i: 3"><i></i>7 favourites learned</span>
+      </div>
+      <div class="body" id="body" hidden>
+        <div class="list" id="list" role="listbox" aria-label="Results">
+          <div class="sel" id="sel" aria-hidden="true" hidden></div>
+        </div>
+        <aside class="preview" id="preview" aria-live="polite"></aside>
+      </div>
+      <footer class="fastext" id="fastext" hidden>
+        <span class="fx" style="--c: var(--red)"><i></i><kbd>↵</kbd> Open</span>
+        <span class="fx" style="--c: var(--green)"><i></i><kbd>Ctrl ↵</kbd> Show in folder</span>
+        <span class="fx" id="fx-copy" style="--c: var(--yellow)"><i></i><kbd>Ctrl C</kbd> <span>Copy path</span></span>
+        <span class="fx" style="--c: var(--cyan)"><i></i><kbd>Esc</kbd> Close</span>
+      </footer>
+    </div>
+    <p class="stage-hint" id="hint">Type to search. ↑ ↓ to move, Enter to open, Esc to close.</p>
+  </section>
+
+  <article class="spec">
+    <header>
+      <h1>Tekst: <b>Nordic calm</b> with a teletext memory</h1>
+      <p class="lede">The Nordic broadcasters kept teletext running long after everyone else: NRK Tekst-TV, SVT Text and Yle Teksti-TV still publish pages today. Tekst takes that page's information design (page numbers, colour-coded sections, inverse-video highlights and the four coloured links) and sets it on quiet Scandinavian surfaces with generous space.</p>
+    </header>
+
+    <section>
+      <h2>1. Design language</h2>
+      <div class="cols">
+        <div class="card">
+          <h3>The theme</h3>
+          <p>Calm, light-filled surfaces in two schemes, Snø (snow) and Mørketid (the polar night). Colour is rare and always means something: each kind of result keeps one teletext colour, shown as a small square block, never as a wash. The selected row is drawn in inverse video, the way a teletext page highlights a line.</p>
+        </div>
+        <div class="card">
+          <h3>Linux-native</h3>
+          <p>From Libadwaita it takes the 14px window radius, flat layered shadows and a hairline border, and it follows the system's light or dark preference. From Kirigami it takes list sections with quiet headers and an inline detail pane. From current launchers it takes the two-pane palette with a preview and motion that explains what changed.</p>
+        </div>
+        <div class="card">
+          <h3>The retro half</h3>
+          <p>Bedstead, a free recreation of the teletext character set, sets everything the system says: the page header, counts, folders, metadata and keys. A clock ticks in the header with teletext's slash seconds. Closing switches the page off like a CRT.</p>
+        </div>
+      </div>
+      <div class="cols">
+        <div>
+          <h3>Snø (light)</h3>
+          <div class="swatches" id="sw-light"></div>
+        </div>
+        <div>
+          <h3>Mørketid (dark)</h3>
+          <div class="swatches" id="sw-dark"></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. Layout</h2>
+      <div class="diagram">P100   Torchlight                          12 results   21:52/07   row 0: page header
+⌕  term▏                                                               search line
+· · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · · ·   rule, drawn while typing
+■ Apps                          2 │
+  ▣ Terminal              2 windows │  ▣  Terminal                      preview panel
+    · ~/workspace/torchlight        │     Application
+    · htop                          │  Use the command line
+    + New window                    │  Open windows
+■ Files                         3 │  ■ ~/workspace/torchlight
+  ▤ terminal-notes.md  ~/…/docs     │  Actions
+■ Folders                       1 │  ■ Switch to window          ↵
+  ▢ terminals         ~/Pictures    │  ■ New window
+■ Open   ■ Show in folder   ■ Copy path   ■ Close                     Fastext keys</div>
+      <div class="cols">
+        <div>
+          <h3>Visual hierarchy</h3>
+          <p>The query is the largest thing on screen. Below it, results are grouped into teletext-style sections, each with its colour block and count. The preview panel on the right is quieter, set on a slightly darker surface. The header and Fastext lines are smallest: they frame the page without asking for attention.</p>
+        </div>
+        <div>
+          <h3>Search bar states</h3>
+          <ul class="plain">
+            <li><b>Empty:</b> compact, with only the header, the query line and an idle strip of index status. The placeholder rotates through tips, such as “Try raedme: typos are fine”.</li>
+            <li><b>Active:</b> the caret blinks in lingonberry red; the dotted rule waits.</li>
+            <li><b>Typing:</b> the rule draws from left to right in ink, the icon darkens, the count in the header ticks.</li>
+            <li><b>No matches / offline:</b> said inline at the end of the line in teletext type, with Retry.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="cols">
+        <div>
+          <h3>Results as pages, not a pile</h3>
+          <p>Results are grouped by kind: Apps, Settings, Folders, Files. Groups are ordered by their best match, so the strongest result is always on top; inside a group the daemon's ranking stands. Running apps keep their windows beneath them. Arrow keys move through every row in display order.</p>
+        </div>
+        <div>
+          <h3>Preview panel</h3>
+          <p>Files show their type, size, modified time and folder; folders show how many items they hold; apps show their description, open windows and actions; settings show what they manage. Every action is listed with its key. With an empty query the panel is hidden and the idle strip shows the index status instead.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. Typography and micro-interactions</h2>
+      <p>Try the four type styles with the switcher at the top of the page; every one keeps the same layout, colours and motion. All the faces are free to ship with Torchlight (SIL Open Font License, or public domain for Bedstead).</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Style</th><th>Query</th><th>Names and preview</th><th>System voice</th><th>Character</th></tr></thead>
+          <tbody>
+            <tr><td><b>Dobbelhøyde</b> (recommended)</td><td>Bedstead in double height</td><td>Bedstead; preview title in double height</td><td>Bedstead</td><td>One typeface used the way teletext used it: normal and double height. Bedstead's Ultra Condensed cut is exactly half as wide, so at twice the size it is a true double-height letter. The most niche, and the one only Torchlight could have.</td></tr>
+            <tr><td><b>Punktmatris</b></td><td>Doto, a dot-matrix face</td><td>Familjen Grotesk, from Stockholm's Familjen studio</td><td>Familjen Grotesk; page number and clock in Doto</td><td>An LED departure board: retro in the query and clock, quirky and very readable everywhere else.</td></tr>
+            <tr><td><b>Kringkasting</b></td><td>Schibsted Grotesk 500</td><td>Schibsted Grotesk</td><td>Bedstead</td><td>The Norwegian news grotesque of the Schibsted media group: crisp and editorial, the quietest of the three.</td></tr>
+            <tr><td>Ubuntu Sans</td><td>Ubuntu Sans 400</td><td>Ubuntu Sans</td><td>Bedstead</td><td>The baseline: already on every Ubuntu and Mint system, but common.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted">Sizes stay relative to the desktop font, so its scaling still applies. Fallbacks are Cantarell and Noto Sans for text and Ubuntu Sans Mono for Bedstead, the GNOME and KDE defaults.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Moment</th><th>What you see</th><th>Timing</th></tr></thead>
+          <tbody>
+            <tr><td>Open</td><td>The window drops into place; the header line is transmitted in six steps, then the idle strip appears item by item.</td><td class="tt">230ms, steps 200ms</td></tr>
+            <tr><td>Typing</td><td>The rule draws under the query; results arrive top to bottom, 16ms apart; the header count ticks.</td><td class="tt">220ms, 190ms rows</td></tr>
+            <tr><td>Arrow keys</td><td>The inverse block glides to the next row and its edge takes that row's colour; the row's text inverts as the block lands.</td><td class="tt">140ms glide</td></tr>
+            <tr><td>Preview</td><td>Once the selection rests, the panel redraws line by line, like a page arriving.</td><td class="tt">70ms rest, 22ms lines</td></tr>
+            <tr><td>Hover</td><td>A hairline frame around the row; no fill, so the selection stays the only block.</td><td class="tt">instant</td></tr>
+            <tr><td>Enter</td><td>The block flashes twice, teletext's flash attribute, then the page switches off.</td><td class="tt">300ms</td></tr>
+            <tr><td>Close</td><td>CRT switch-off: the page squeezes to a bright line, then the line shrinks to nothing.</td><td class="tt">200ms</td></tr>
+            <tr><td>Reduced motion</td><td>Everything above jumps to its end state; the clock still ticks.</td><td class="tt">0ms</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Building it in GTK</h2>
+      <ul class="plain">
+        <li>Every effect is opacity, transforms, colour and stepped keyframes, which GTK CSS animates. The CRT switch-off is a transform plus a brightness filter on the surface.</li>
+        <li>Light and dark: GTK 4.14 has no colour-scheme media query, so the view adds a <span class="tt">dark</span> class from the desktop's preference and the stylesheet carries both palettes, split into two resources to stay within the embedding limit.</li>
+        <li>Grouping is a reordering in the popup model; the daemon and its ranking do not change.</li>
+        <li>The preview reads file size and dates with asynchronous GIO calls, and app descriptions from their desktop entries off the main thread, so typing never waits.</li>
+        <li>The chosen fonts (Bedstead is CC0; Doto, Familjen Grotesk and Schibsted Grotesk are OFL) would be vendored and registered at startup, which adds fontconfig as a direct dependency; or installed once to <span class="tt">~/.local/share/fonts</span>. Double height needs only Bedstead's Ultra Condensed cut and <span class="tt">font-stretch</span>, which GTK CSS supports.</li>
+        <li>Suggested order: the look and motion first, then grouping, then the preview panel.</li>
+      </ul>
+    </section>
+  </article>
+</main>
+
+<script>
+(() => {
+  "use strict";
+  const ICON = (path) => "file:///usr/share/icons/Mint-Y/" + path + ".png";
+  const DATA = [
+    { kind: "app", name: "Terminal", icon: ICON("apps/48/utilities-terminal"), desc: "Use the command line", windows: ["antash@mint: ~/workspace/torchlight", "htop"] },
+    { kind: "app", name: "Text Editor", icon: ICON("apps/48/accessories-text-editor"), desc: "Edit text files", windows: ["PLAN.md (~/workspace/torchlight)"] },
+    { kind: "app", name: "Files", icon: ICON("places/48/system-file-manager"), desc: "Access and organise files", windows: [] },
+    { kind: "app", name: "Firefox Web Browser", icon: ICON("apps/48/firefox"), desc: "Browse the World Wide Web", windows: [] },
+    { kind: "setting", name: "Display", icon: ICON("apps/48/preferences-desktop-display"), desc: "Manage display settings" },
+    { kind: "setting", name: "Sound", icon: ICON("apps/48/preferences-desktop-sound"), desc: "Manage sound settings" },
+    { kind: "setting", name: "Keyboard", icon: ICON("apps/48/preferences-desktop-keyboard"), desc: "Manage keyboard settings and shortcuts" },
+    { kind: "folder", name: "terminals", icon: ICON("places/48/folder"), path: "~/Pictures/terminals", items: 14, modified: "2 Oct 18:04" },
+    { kind: "folder", name: "torchlight", icon: ICON("places/48/folder"), path: "~/workspace/torchlight", items: 23, modified: "13 Oct 21:15" },
+    { kind: "folder", name: "notes", icon: ICON("places/48/folder"), path: "~/Documents/work/notes", items: 41, modified: "12 Oct 08:51" },
+    { kind: "file", name: "terminal-notes.md", icon: ICON("mimetypes/48/text-markdown"), path: "~/workspace/torchlight/docs/terminal-notes.md", type: "Markdown document", size: "4.2 kB", modified: "13 Oct 21:40" },
+    { kind: "file", name: "terminal.c", icon: ICON("mimetypes/48/text-x-csrc"), path: "~/workspace/torchlight/ui/gtk/terminal.c", type: "C source code", size: "11.8 kB", modified: "12 Oct 09:12" },
+    { kind: "file", name: "README.md", icon: ICON("mimetypes/48/text-markdown"), path: "~/workspace/torchlight/README.md", type: "Markdown document", size: "5.6 kB", modified: "13 Oct 21:20" },
+    { kind: "file", name: "PLAN.md", icon: ICON("mimetypes/48/text-markdown"), path: "~/workspace/torchlight/PLAN.md", type: "Markdown document", size: "38.1 kB", modified: "11 Oct 16:30" },
+    { kind: "file", name: "popup.css", icon: ICON("mimetypes/48/text-css"), path: "~/workspace/torchlight/ui/gtk/popup.css", type: "CSS stylesheet", size: "14.6 kB", modified: "13 Oct 12:40" },
+    { kind: "file", name: "projectNotes.md", icon: ICON("mimetypes/48/text-markdown"), path: "~/Documents/work/projectNotes.md", type: "Markdown document", size: "2.3 kB", modified: "9 Oct 17:05" },
+    { kind: "file", name: "meeting notes.txt", icon: ICON("mimetypes/48/text-x-generic"), path: "~/Documents/work/notes/meeting notes.txt", type: "Plain text document", size: "812 bytes", modified: "12 Oct 08:51" },
+    { kind: "file", name: "config", icon: ICON("mimetypes/48/text-x-generic"), path: "~/.config/terminator/config", type: "Plain text document", size: "1.1 kB", modified: "30 Sep 11:02" },
+    { kind: "file", name: "display-setup.sh", icon: ICON("mimetypes/48/text-x-script"), path: "~/bin/display-setup.sh", type: "Shell script", size: "640 bytes", modified: "4 Oct 22:10" },
+  ];
+  const KINDS = {
+    app: { label: "Apps", color: "var(--cyan)", word: "Application" },
+    setting: { label: "Settings", color: "var(--magenta)", word: "Settings panel" },
+    folder: { label: "Folders", color: "var(--yellow)", word: "Folder" },
+    file: { label: "Files", color: "var(--blue)", word: "File" },
+  };
+  const LIMIT = { app: 4, setting: 3, folder: 3, file: 6 };
+  const TIPS = ["Search apps, files and settings", "Try raedme: typos are fine", "Try prjnts: initials work", "Try work notes: folder names count"];
+
+  const $ = (id) => document.getElementById(id);
+  const popup = $("popup"), q = $("q"), list = $("list"), sel = $("sel"), preview = $("preview");
+  const body = $("body"), strip = $("strip"), fastext = $("fastext"), search = $("search"), inline = $("inline");
+  const cnt = $("cnt"), clk = $("clk"), hint = $("hint");
+  let rows = [], selected = 0, shown = new Set(), typingTimer = 0, previewTimer = 0, tipIndex = 0, offline = false, busy = false;
+
+  /* Matching: prefix, word start, substring, initials, one swapped pair and folder words. */
+  function swaps(s) {
+    const out = [];
+    for (let i = 0; i + 1 < s.length; i++) out.push(s.slice(0, i) + s[i + 1] + s[i] + s.slice(i + 2));
+    return out;
+  }
+  function subsequence(n, s) {
+    let i = 0;
+    for (const ch of n) if (ch === s[i]) i++;
+    return i === s.length;
+  }
+  function score(item, query) {
+    const n = item.name.toLowerCase(), s = query.toLowerCase().trim();
+    if (!s) return -1;
+    const short = n.length * 0.05;
+    if (n.startsWith(s)) return 100 - short;
+    if (n.split(/[\s._\-]+/).some((w) => w.startsWith(s))) return 85 - short;
+    if (n.includes(s)) return 70 - short;
+    const words = s.split(/\s+/).filter(Boolean);
+    if (words.length > 1) {
+      const hay = (n + " " + (item.path || "")).toLowerCase();
+      if (words.every((w) => hay.includes(w))) return 60 - short;
+    }
+    if (swaps(s).some((t) => n.startsWith(t) || n.includes(t))) return 55 - short;
+    if (s.length >= 3 && subsequence(n, s)) return 40 - short;
+    return -1;
+  }
+  function shortFolder(path) {
+    const parts = path.split("/");
+    parts.pop();
+    if (parts.length <= 3) return parts.join("/");
+    return parts[0] + "/…/" + parts.slice(-2).join("/");
+  }
+  function findGroups(query) {
+    const groups = {};
+    for (const item of DATA) {
+      const s = score(item, query);
+      if (s < 0) continue;
+      (groups[item.kind] = groups[item.kind] || []).push({ item, s });
+    }
+    return Object.entries(groups)
+      .map(([kind, hits]) => ({ kind, hits: hits.sort((a, b) => b.s - a.s).slice(0, LIMIT[kind]) }))
+      .sort((a, b) => b.hits[0].s - a.hits[0].s);
+  }
+
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function rowNode(entry, i) {
+    const node = el("div", "row" + (entry.child ? " child" : ""));
+    node.setAttribute("role", "option");
+    node.dataset.index = String(i);
+    if (entry.child === "window") node.append(el("span", "dot"));
+    if (entry.child === "new") { const plus = el("span", "dot"); plus.style.background = "var(--green)"; node.append(plus); }
+    if (!entry.child) { const img = el("img", "ic"); img.alt = ""; img.src = entry.item.icon; node.append(img); }
+    node.append(el("span", "nm", entry.label));
+    if (entry.where) node.append(el("span", "where", entry.where));
+    node.addEventListener("mousedown", (event) => { event.preventDefault(); select(i, true); });
+    node.addEventListener("dblclick", () => launch(false));
+    return node;
+  }
+  function render(animate) {
+    const query = q.value;
+    const empty = query.trim() === "";
+    list.querySelectorAll(".row, .group").forEach((node) => node.remove());
+    rows = [];
+    if (empty || offline) {
+      body.hidden = true; fastext.hidden = true; sel.hidden = true;
+      strip.hidden = !empty;
+      cnt.textContent = "";
+      inline.hidden = !offline || empty;
+      if (offline && !empty) { inline.innerHTML = ""; inline.append(el("span", "", "Search offline")); const retry = el("button", "", "Retry"); retry.type = "button"; retry.addEventListener("click", () => { offline = false; render(true); q.focus(); }); inline.append(retry); }
+      shown = new Set();
+      return;
+    }
+    strip.hidden = true;
+    const groups = findGroups(query);
+    if (!groups.length) {
+      body.hidden = true; fastext.hidden = true; sel.hidden = true;
+      inline.hidden = false; inline.textContent = "No matches";
+      cnt.textContent = "0 results";
+      shown = new Set();
+      return;
+    }
+    inline.hidden = true;
+    let order = 0, total = 0;
+    const next = new Set();
+    for (const group of groups) {
+      const kind = KINDS[group.kind];
+      const head = el("div", "group");
+      head.style.setProperty("--c", kind.color);
+      head.append(el("i"), el("span", "", kind.label), el("span", "n", String(group.hits.length)));
+      if (animate) { head.classList.add("in"); head.style.setProperty("--i", String(order++)); }
+      list.append(head);
+      for (const { item } of group.hits) {
+        total++;
+        const where = item.kind === "app" ? (item.windows.length ? item.windows.length + (item.windows.length === 1 ? " window" : " windows") : "")
+          : item.path ? shortFolder(item.path) : "";
+        const entries = [{ item, label: item.name, where, color: kind.color, key: item.name }];
+        if (item.kind === "app" && item.windows.length) {
+          for (const title of item.windows) entries.push({ item, label: title, child: "window", color: "var(--green)", key: item.name + "/" + title });
+          entries.push({ item, label: "New window", child: "new", color: "var(--green)", key: item.name + "/new" });
+        }
+        for (const entry of entries) {
+          const node = rowNode(entry, rows.length);
+          if (animate || !shown.has(entry.key)) { node.classList.add("in"); node.style.setProperty("--i", String(order++)); }
+          next.add(entry.key);
+          rows.push({ ...entry, node });
+          list.append(node);
+        }
+      }
+    }
+    shown = next;
+    body.hidden = false; fastext.hidden = false; sel.hidden = false;
+    cnt.textContent = total + (total === 1 ? " result" : " results");
+    cnt.classList.remove("count-tick"); void cnt.offsetWidth; cnt.classList.add("count-tick");
+    select(Math.min(selected, rows.length - 1), false, true);
+  }
+
+  function place(jump) {
+    const row = rows[selected];
+    if (!row) return;
+    sel.classList.toggle("jump", Boolean(jump));
+    sel.style.transform = "translateY(" + row.node.offsetTop + "px)";
+    sel.style.height = row.node.offsetHeight + "px";
+    sel.style.setProperty("--c", row.color);
+    rows.forEach((r, i) => { r.node.classList.toggle("on", i === selected); r.node.setAttribute("aria-selected", String(i === selected)); });
+    const top = row.node.offsetTop, bottom = top + row.node.offsetHeight;
+    if (top < list.scrollTop) list.scrollTop = top - 6;
+    else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight + 6;
+  }
+  function select(index, glide, jump) {
+    if (!rows.length) return;
+    selected = Math.max(0, Math.min(rows.length - 1, index));
+    place(jump || !glide);
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(drawPreview, jump ? 0 : 70);
+  }
+
+  function line(node, i) { node.classList.add("ln"); node.style.setProperty("--i", String(i)); return node; }
+  function actionList(items) {
+    const ul = el("ul", "pv-list");
+    for (const [label, key, color] of items) {
+      const li = el("li");
+      const block = el("i"); block.style.setProperty("--c", color);
+      li.append(block, el("span", "", label));
+      if (key) li.append(el("kbd", "", key));
+      ul.append(li);
+    }
+    return ul;
+  }
+  function drawPreview() {
+    const row = rows[selected];
+    preview.textContent = "";
+    if (!row) return;
+    const item = row.item, kind = KINDS[item.kind];
+    let i = 0;
+    const head = el("div", "pv-head");
+    const img = el("img"); img.alt = ""; img.src = item.icon;
+    const kindLine = el("div", "pv-kind"); kindLine.style.setProperty("--c", kind.color);
+    kindLine.append(el("i"), el("span", "", item.type || kind.word));
+    head.append(img, el("div", "pv-name", item.name), kindLine);
+    preview.append(line(head, i++));
+    if (item.desc) preview.append(line(el("p", "pv-desc", item.desc), i++));
+    if (item.kind === "file" || item.kind === "folder") {
+      const dl = el("dl", "pv-meta");
+      const pairs = item.kind === "file"
+        ? [["Size", item.size], ["Modified", item.modified], ["Folder", item.path.split("/").slice(0, -1).join("/")]]
+        : [["Items", String(item.items)], ["Modified", item.modified], ["Where", item.path]];
+      for (const [k, v] of pairs) dl.append(el("dt", "", k), el("dd", "", v));
+      preview.append(line(dl, i++));
+    }
+    if (item.kind === "app" && item.windows.length) {
+      preview.append(line(el("p", "pv-label", "Open windows"), i++));
+      preview.append(line(actionList(item.windows.map((w) => [w, "", "var(--green)"])), i++));
+    }
+    preview.append(line(el("div", "pv-line"), i++));
+    preview.append(line(el("p", "pv-label", "Actions"), i++));
+    const actions = item.kind === "app"
+      ? [[item.windows.length ? "Switch to window" : "Open", "↵", "var(--red)"], ["New window", "→", "var(--green)"], ["Show desktop file", "Ctrl ↵", "var(--green)"]]
+      : item.kind === "setting" ? [["Open", "↵", "var(--red)"]]
+        : [["Open", "↵", "var(--red)"], ["Show in folder", "Ctrl ↵", "var(--green)"], ["Copy path", "Ctrl C", "var(--yellow)"]];
+    preview.append(line(actionList(actions), i++));
+  }
+
+  /* Opening, closing and launching */
+  function open() {
+    if (!popup.hidden) return;
+    popup.hidden = false;
+    popup.classList.remove("closing");
+    popup.classList.remove("opening"); void popup.offsetWidth; popup.classList.add("opening");
+    q.value = ""; selected = 0;
+    q.placeholder = TIPS[tipIndex++ % TIPS.length];
+    render(false);
+    q.focus();
+    hint.textContent = "Type to search. ↑ ↓ to move, Enter to open, Esc to close.";
+    setTimeout(() => popup.classList.remove("opening"), 420);
+  }
+  function close() {
+    if (popup.hidden || popup.classList.contains("closing")) return;
+    popup.classList.add("closing");
+    setTimeout(() => { popup.hidden = true; popup.classList.remove("closing"); busy = false; hint.textContent = "Closed. Press Alt+Space or the button above to open it again."; }, 210);
+  }
+  function launch(reveal) {
+    if (busy || !rows[selected]) return;
+    busy = true;
+    sel.classList.remove("flash"); void sel.offsetWidth; sel.classList.add("flash");
+    setTimeout(() => { sel.classList.remove("flash"); close(); }, reveal ? 300 : 300);
+  }
+  function copyPath() {
+    const row = rows[selected];
+    if (!row || !row.item.path) return;
+    const label = $("fx-copy").querySelector("span:last-child");
+    const done = () => { label.textContent = "Copied"; $("fx-copy").classList.add("done"); setTimeout(() => { label.textContent = "Copy path"; $("fx-copy").classList.remove("done"); }, 1200); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(row.item.path).then(done, done);
+    else done();
+  }
+
+  q.addEventListener("input", () => {
+    search.classList.add("typing");
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => search.classList.remove("typing"), 700);
+    render(false);
+  });
+  q.addEventListener("blur", () => { search.classList.remove("typing"); });
+  q.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); select(selected + (event.key === "ArrowDown" ? 1 : -1), true); }
+    else if (event.key === "Enter") { event.preventDefault(); launch(event.ctrlKey); }
+    else if (event.key === "Escape") { event.preventDefault(); close(); }
+    else if (event.key.toLowerCase() === "c" && event.ctrlKey && q.selectionStart === q.selectionEnd) { event.preventDefault(); copyPath(); }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.altKey && event.code === "Space") { event.preventDefault(); popup.hidden ? open() : close(); }
+  });
+  $("toggle").addEventListener("click", () => { popup.hidden ? open() : close(); });
+  document.querySelectorAll("[data-state]").forEach((button) => button.addEventListener("click", () => {
+    const state = button.dataset.state;
+    if (popup.hidden) open();
+    offline = state === "offline";
+    q.value = { empty: "", term: "term", notes: "work notes", raedme: "raedme", none: "qwzx", offline: "term" }[state];
+    selected = 0;
+    search.classList.toggle("typing", q.value !== "");
+    render(true);
+    q.focus();
+  }));
+
+  /* Colour scheme */
+  const root = document.documentElement;
+  document.querySelectorAll("[data-scheme]").forEach((button) => button.addEventListener("click", () => {
+    const scheme = button.dataset.scheme;
+    if (scheme === "auto") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", scheme);
+    document.querySelectorAll("[data-scheme]").forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
+    try { localStorage.setItem("tekst-scheme", scheme); } catch (error) { /* storage unavailable */ }
+  }));
+  try {
+    const saved = localStorage.getItem("tekst-scheme");
+    if (saved) { const button = document.querySelector('[data-scheme="' + saved + '"]'); if (button) button.click(); }
+  } catch (error) { /* storage unavailable */ }
+
+  /* Type style */
+  document.querySelectorAll("[data-typeset]").forEach((button) => button.addEventListener("click", () => {
+    const type = button.dataset.typeset;
+    if (type === "tekst") root.removeAttribute("data-type"); else root.setAttribute("data-type", type);
+    document.querySelectorAll("[data-typeset]").forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
+    try { localStorage.setItem("tekst-type", type); } catch (error) { /* storage unavailable */ }
+    requestAnimationFrame(() => { if (rows.length) place(true); });
+  }));
+  let initialType = "dobbel";
+  try { initialType = localStorage.getItem("tekst-type") || initialType; } catch (error) { /* storage unavailable */ }
+  { const button = document.querySelector('[data-typeset="' + initialType + '"]'); if (button) button.click(); }
+
+  /* Swatches, read from the two palettes */
+  const SW = [["Background", "surface"], ["Surface", "panel"], ["Ink", "ink"], ["Muted", "muted"], ["Hairline", "line"], ["Selection", "sel-bg"], ["Apps", "cyan"], ["Settings", "magenta"], ["Folders", "yellow"], ["Files", "blue"], ["Windows", "green"], ["Accent, Open", "red"]];
+  const PALETTES = {
+    light: { surface: "#f4f5f1", panel: "#ebede7", ink: "#1d2226", muted: "#626b72", line: "#d9ddd6", "sel-bg": "#1d2226", cyan: "#24838f", magenta: "#94508d", yellow: "#b8811a", blue: "#3a5f93", green: "#4e8a47", red: "#c2463e" },
+    dark: { surface: "#171a1d", panel: "#1c2024", ink: "#e8ebe6", muted: "#979fa5", line: "#2b3136", "sel-bg": "#e8ebe6", cyan: "#5fb6c1", magenta: "#c78cc1", yellow: "#e6b04a", blue: "#7c9fd3", green: "#87b872", red: "#e26b61" },
+  };
+  for (const [scheme, target] of [["light", "sw-light"], ["dark", "sw-dark"]]) {
+    for (const [name, token] of SW) {
+      const node = el("div", "sw");
+      const chip = el("b"); chip.style.background = PALETTES[scheme][token];
+      node.append(chip, el("div", "", name), el("span", "", PALETTES[scheme][token]));
+      $(target).append(node);
+    }
+  }
+
+  /* The header clock, teletext style */
+  function tick() {
+    const now = new Date();
+    const day = now.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }).replace(",", "");
+    const pad = (n) => String(n).padStart(2, "0");
+    clk.textContent = day + "  " + pad(now.getHours()) + ":" + pad(now.getMinutes()) + "/" + pad(now.getSeconds());
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  popup.hidden = true;
+  open();
+  /* A hash such as #term or #term-dark opens that state, for bookmarks and screenshots. */
+  const [stateName, scheme, typeName, still] = location.hash.slice(1).split("-");
+  if (still === "still") root.classList.add("still");
+  if (scheme) { const button = document.querySelector('[data-scheme="' + scheme + '"]'); if (button) button.click(); }
+  if (typeName) { const button = document.querySelector('[data-typeset="' + typeName + '"]'); if (button) button.click(); }
+  if (stateName) { const button = document.querySelector('[data-state="' + stateName + '"]'); if (button) button.click(); }
+})();
+</script>
+</body>
+</html>

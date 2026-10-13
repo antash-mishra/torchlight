@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Torchlight Popup Directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ubuntu+Sans:wght@300;400;600&family=Ubuntu+Sans+Mono:wght@400&display=swap">
+<style>
+/* Layout: one column of direction cards on phones, two on wide screens; each card is a render plus its notes. */
+:root {
+  --bg: #0d1013; --panel: #151a1f; --line: #262d35;
+  --fg: #e9edf1; --muted: #9aa4af; --torch: #ffb547;
+  --font-body: "Ubuntu Sans", system-ui, sans-serif;
+  --font-mono: "Ubuntu Sans Mono", ui-monospace, monospace;
+  color-scheme: dark;
+}
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 16px; line-height: 1.55; }
+main { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 56px; display: grid; gap: 32px; }
+header { display: grid; gap: 10px; max-width: 70ch; }
+h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 300; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+h1 b { font-weight: 600; color: var(--torch); }
+.lede { color: var(--muted); margin: 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 24px; }
+article { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: grid; grid-template-rows: auto 1fr; min-width: 0; }
+article img { display: block; width: 100%; height: auto; }
+.notes { padding: 18px 20px 22px; display: grid; gap: 10px; align-content: start; }
+.notes h2 { margin: 0; font-size: 22px; font-weight: 600; }
+.notes h2 span { display: block; font-size: 16px; font-weight: 300; color: var(--muted); }
+.notes p { margin: 0; color: var(--fg); }
+.notes p + p { color: var(--muted); }
+.placeholder { font-family: var(--font-mono); font-size: 14px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; margin-top: 4px; }
+.placeholder q { color: var(--fg); }
+section.copy { display: grid; gap: 12px; max-width: 70ch; }
+section.copy h2 { margin: 0; font-size: 22px; font-weight: 600; }
+ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+li code { font-family: var(--font-mono); font-size: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
+.reply { color: var(--muted); max-width: 70ch; margin: 0; }
+.reply b { color: var(--fg); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Three new looks for <b>Torchlight</b></h1>
+  <p class="lede">Each picture is the real GTK popup, drawn by the app's own code with a different stylesheet, shown empty and then with results for “term”. The rows are sample data. The layout, keys and features stay the same in every direction; only the look changes.</p>
+</header>
+<div class="grid">
+<article id="beam">
+  <img src="beam.png" alt="Beam: the popup empty, then with results for term" width="768" height="718">
+  <div class="notes">
+    <h2>Beam <span>The light follows your selection</span></h2>
+    <p>Results sit in the dark. The row you are on is lit warm, its neighbours half-lit, the rest fade away, so moving up and down sweeps a torch over your files.</p><p>The search icon glows like a lens. Warm charcoal surface, warm white light, a rim lit only near the top.</p><p>Motion: the light glides with the selection; when the popup opens, the rows brighten one after another.</p>
+    <div class="placeholder">Placeholder: <q>What are you looking for?</q></div>
+  </div>
+</article>
+<article id="reticle">
+  <img src="reticle.png" alt="Reticle: the popup empty, then with results for term" width="768" height="718">
+  <div class="notes">
+    <h2>Reticle <span>Brackets that lock on</span></h2>
+    <p>Corner brackets frame the popup instead of a full border, and smaller brackets lock around the selected row.</p><p>Query, folders and key hints in Ubuntu Sans Mono; names in Ubuntu Sans. A dashed rule under the query turns solid while you type. One mint signal colour, close to your Mint desktop.</p><p>Motion: the frame brackets close in when it opens; the row brackets glide between rows and tighten on Enter.</p>
+    <div class="placeholder">Placeholder: <q>Locate an app, file or setting</q></div>
+  </div>
+</article>
+<article id="monolith">
+  <img src="monolith.png" alt="Monolith: the popup empty, then with results for term" width="768" height="718">
+  <div class="notes">
+    <h2>Monolith <span>Black, white and nothing else</span></h2>
+    <p>Pure black with a thin white edge, geometric Avant Garde style type (URW Gothic, already installed), and a solid white rule under the query.</p><p>The selection is the surface turned inside out: a white bar with black text. Key hints are small white tabs.</p><p>Motion: the bar slides between rows and flashes on Enter; nothing else moves.</p>
+    <div class="placeholder">Placeholder: <q>Open anything</q></div>
+  </div>
+</article>
+<article id="now">
+  <img src="current.png" alt="Current: the popup empty, then with results for term" width="768" height="718">
+  <div class="notes">
+    <h2>Current <span>What you saw today</span></h2>
+    <p>Night blue with amber light: a lit rim, a halo, a horizon line and an amber rail on the selected row.</p><p>Kept here for comparison.</p>
+    <div class="placeholder">Placeholder: <q>Search apps, settings, files and folders</q></div>
+  </div>
+</article>
+</div>
+<section class="copy">
+  <h2>Placeholder wording</h2>
+  <p class="lede">Any of these can go with any direction.</p>
+  <ul>
+    <li><code>What are you looking for?</code> friendly, short, a question</li>
+    <li><code>Locate an app, file or setting</code> says what it searches</li>
+    <li><code>Open anything</code> the shortest; says what it is for</li>
+    <li>A tip that changes each time it opens, teaching the forgiving search: <code>Try “raedme”: typos still find README.md</code>, <code>Try “work notes”: folder names count</code>, <code>Try “prjnts”: initials find projectNotes.md</code></li>
+  </ul>
+</section>
+<p class="reply">Reply with a direction and a placeholder, for example <b>Reticle with rotating tips</b>, or a mix such as <b>Reticle’s brackets with Beam’s light</b>.</p>
+</main>
+</body>
+</html>

@@ -1,6 +1,7 @@
 /* Private GTK presentation API; launcher owns IPC and actions, view owns appearance. */
 #ifndef TORCHLIGHT_GTK_VIEW_H
 #define TORCHLIGHT_GTK_VIEW_H
+#include "index_strip.h"
 #include "torchlight/common.h"
 #include "torchlight/popup.h"
 #include <gtk/gtk.h>
@@ -11,8 +12,8 @@ typedef struct {
 /** How a result row appears: first results cascade in, later new rows fade. */
 typedef enum { POPUP_ENTER_NONE, POPUP_ENTER_CASCADE, POPUP_ENTER_FADE } tl_popup_entrance;
 /** The transparent margin around the visible surface, in logical pixels, where its
- * halo and shadow are drawn. All zero without a compositor, with GTK's software
- * (Cairo) renderer or in high contrast. */
+ * shadow is drawn. All zero without a compositor, with GTK's software (Cairo)
+ * renderer or in high contrast. */
 typedef struct {
     int left, right, top, bottom;
 } tl_popup_margins;
@@ -37,14 +38,16 @@ GtkWidget *popup_view_result(const tl_popup_row *row, size_t path_keep, tl_popup
 /** Build a compact floating list row beneath borrowed application parent for a
  * child item kind: an open window (its title), more windows or new window. The
  * row's content carries the kind as a style class ("window", "more-windows" or
- * "new-window", which ends the group's guide line). text is borrowed single-line
- * UTF-8 and copied; entrance and index choose the appearance animation. Returns a
+ * "new-window") besides "kind-window". text is borrowed single-line UTF-8 and
+ * copied; entrance and index choose the appearance animation. Returns a
  * GtkListBoxRow for the caller to append. Main thread; no row retained or errors. */
 GtkWidget *popup_view_child(const tl_popup_row *parent, tl_popup_item_kind kind, const char *text,
                             tl_popup_entrance entrance, size_t index);
 /** Move the selection highlight to borrowed list row, or hide it for NULL. glide
- * slides from the previous row when animations are enabled. Main thread; live
- * view. The view keeps a reference to row until the next call. No errors. */
+ * slides from the previous row when animations are enabled; the highlight takes
+ * the row's kind class (kind-app, kind-setting, kind-folder, kind-file or
+ * kind-window) for its colour. Main thread; live view. The view keeps a reference
+ * to row until the next call. No errors. */
 void popup_view_select(tl_popup_view *view, GtkWidget *row, bool glide);
 /** Show the searching spinner in place of the search icon, or restore the icon.
  * Main thread; live view. No ownership transfer or errors. */
@@ -58,13 +61,20 @@ void popup_view_set_launching(tl_popup_view *view, bool launching);
  * (popup_view_margins); call it after realizing the window. Main thread; live view,
  * positive width/height. No ownership transfer or errors. */
 void popup_view_configure(tl_popup_view *view, int width, int height_limit);
-/** Return the halo margin chosen by the last popup_view_configure; the window must
- * be this much larger than the surface on each side. Clicks in it reach the windows
- * beneath. Main thread; live view. No ownership transfer or errors. */
+/** Return the shadow margin chosen by the last popup_view_configure; the window
+ * must be this much larger than the surface on each side. Clicks in it reach the
+ * windows beneath. Main thread; live view. No ownership transfer or errors. */
 tl_popup_margins popup_view_margins(tl_popup_view *view);
+/** Show the borrowed index state in the idle strip under an empty query. Main
+ * thread; live view. No ownership transfer or errors. */
+void popup_view_set_index(tl_popup_view *view, const tl_popup_index *index);
+/** Confirm a copied path: the Copy path link says "Copied" for a moment and screen
+ * readers hear it. Main thread; live view. No errors. */
+void popup_view_set_copied(tl_popup_view *view);
 /** Start/stop presentation with window visibility. Active plays the opening
- * effects; any call cancels typing, opening and pending dismissal timers and
- * keeps the window visible. Main thread; live view. No ownership/errors. */
+ * effects, starts the header clock and shows the next placeholder tip; any call
+ * cancels typing, opening and pending dismissal timers and keeps the window
+ * visible; inactive stops the clock. Main thread; live view. No ownership/errors. */
 void popup_view_set_active(tl_popup_view *view, bool active);
 /** Deactivate and hide the borrowed window, after a short fade when animations
  * are enabled and the window is mapped. set_active and destroy cancel a pending

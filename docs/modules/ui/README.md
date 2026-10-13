@@ -1,7 +1,7 @@
 # ui
 
-> **Status:** Implemented (M3 + torch-in-the-dark popup with motion + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, halo margin and its input region
-> **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track}.c`, `ui/gtk/popup.css`, `src/bin/torchlight-gtk.c`; open windows in [windows](../windows/README.md)
+> **Status:** Implemented (M3 + Tekst look and motion + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, light and dark palettes; grouped results and the preview panel of ADR 0048 are next
+> **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track,header,index_strip}.c`, `ui/gtk/popup.css`, `ui/gtk/palette-{light,dark}.css`, `src/bin/torchlight-gtk.c`; fonts in `third_party/fonts`; open windows in [windows](../windows/README.md)
 > **Headers:** `include/torchlight/{launcher,popup,async,windows}.h`
 > **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/unit/test_windows.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`
 
@@ -15,56 +15,72 @@ hide it. Arrow selection keeps entry focus; Enter opens; Ctrl+Enter reveals;
 clicks use the same resolve path. The scroller displays eleven 40-pixel one-line
 rows ([ADR 0036](../../adr/0036-one-line-results.md)).
 
-The native surface has its own look, a torch in the dark, as specified in
+The native surface has its own look, Tekst, as specified in
 [the GUI specification](../../m3-gui-design.md) and
-[ADR 0048](../../adr/0048-torch-in-the-dark-popup.md). `tl_popup_view` owns the
-presentation: embedded CSS (`popup.css`, stored compressed) whose `@define-color`
-tokens give a night palette with amber light, Ubuntu Sans type (with fallbacks)
-at sizes relative to the desktop font, a borderless search field holding a
-symbolic icon, the plain GtkEntry with an amber caret, a horizon line beneath
-it, and inline feedback. No new dependency is added. The rim is four gradient
-strips under an opaque interior, so it shows only through the transparent 1px
-border. With a compositor, an RGBA visual and a GPU renderer (anything but
-GTK's Cairo renderer, which would blur and upload the shadows on every full
-redraw), `popup_view_configure` gives the surface a transparent halo margin
-(adds the `glow` class and widget margins, reported by `popup_view_margins`);
-it runs after the launcher realizes the window, when the renderer exists. The halo and its shadow are drawn there, and
-the window's input region, updated on each surface layout, excludes it, so
-clicks in it reach the windows beneath. High contrast (the theme setting, or
-`GTK_THEME` as GTK resolves it) uses the theme's colors with no halo, glows or
-guide lines.
+[ADR 0048](../../adr/0048-tekst-popup.md). `tl_popup_view` owns the presentation:
+embedded CSS (`popup.css`, plus `palette-light.css` and `palette-dark.css` in a
+second resource so each stays within ISO C's string literal limit). The view loads
+the dark palette when the desktop prefers dark or its theme's name contains
+"dark", swaps palettes when that changes, and marks the surface `dark` or `light`.
+Schibsted Grotesk sets the query and names; Bedstead, a teletext face, sets the
+header, folders, idle strip, footer and inline status. Both are vendored in
+`third_party/fonts` and installed by `make install`; stand-ins apply when they are
+missing. No library dependency is added. With a compositor, an RGBA visual and a
+GPU renderer (anything but GTK's Cairo renderer, which would blur and upload the
+shadow on every full redraw), `popup_view_configure` gives the surface a
+transparent shadow margin (the `shadowed` class and widget margins, reported by
+`popup_view_margins`); it runs after the launcher realizes the window, when the
+renderer exists. The window's input region, updated on each surface layout,
+excludes the margin, so clicks in it reach the windows beneath. High contrast (the
+theme setting, or `GTK_THEME` as GTK resolves it) uses the theme's colors and no
+shadow.
 
-Empty search collapses to the 70px search area. No-match/offline/limit feedback
-sits at the end of the field only when it has text; `Searching…` is shown by the
-spinner instead, so the entry never shifts while typing. Results and footer appear
-only with matches. Entry position and X11 window top remain fixed. Chrome is
-measured before limiting scroll height against the work area, including
-scaled/small screens; the same measurement hides the Close and then Show in
-Folder hints when a large desktop font would otherwise widen the popup. The
-footer shows only Enter Open, Ctrl+Enter Show in Folder and Esc Close, plus real
-status messages; the result count is announced to screen readers, not shown.
+The surface stacks a page header (`header.c`: `P100`, `Torchlight`, the result
+count and a clock with slash seconds, ticking on each whole second while the view
+is active), the search line, the idle strip, the results and the footer. The
+search line is a borderless field (icon or spinner, the plain GtkEntry with a red
+caret, inline feedback) above a rule that is dotted at rest and drawn in ink while
+the `typing` class holds. Each `set_active` shows the next placeholder tip, the
+plain prompt first. Under an empty query only, the idle strip (`index_strip.c`)
+shows the index's state, the folders watched and the last scan's time from the
+daemon's status reply, which the launcher requests as soon as the popup shows and
+then every 2s; on one line, it leaves out the last scan, then the folders, when a
+large desktop font would widen the popup. No-match/offline/limit feedback sits at
+the end of the field only when it has text; `Searching…` is shown by the spinner
+instead, so the entry never shifts while typing. Results and footer appear only
+with matches. Entry position and X11 window top remain fixed. Chrome is measured
+before limiting scroll height against the work area, including scaled/small
+screens; the same measurement hides the Close, Copy path and then Show in folder
+links when a large desktop font would otherwise widen the popup. The footer shows
+the status, then the Fastext links: Enter Open, Ctrl Enter Show in folder, Ctrl C
+Copy path and Esc Close, each behind its teletext color. Ctrl+C with no query text
+selected copies the selected file's or folder's display path to the clipboard,
+and `popup_view_set_copied` makes the link say "Copied" for 1.2s; with selected
+text, the entry copies it as usual.
 
 Each row is one line: a 24px icon, the name (its natural width up to 40
 characters, end-ellipsized) and, for files and folders, the short folder,
 dimmed and right-aligned to the row's end. Applications and settings
 show their name alone, with no subtitle or tooltip; file rows keep the full
-path as their tooltip. Rows have no hover tint, so the gliding beam is the only
-highlight; its row's name warms and its icon loses the slight dimming of the
-others. Folders use the font's condensed width. Icons are full color: desktop icons, `folder`, or a file type guessed
-from the name only (`g_content_type_guess`, no I/O; unplaced names keep
-`text-x-generic`). The launcher remembers which ids are on screen, so first
-results cascade in and later renders fade in only new rows. `selection_track`
-wraps the list box and draws one highlight, styled as the amber beam, beneath
-transparent rows; it glides 130ms on a frame-clock tick callback, jumps when
-results first appear or relayout, and hides at once when cleared. The view's
-`set_searching` crossfades the icon to a spinner after the 120ms pending timer;
-`set_launching` flashes the selected row until the launch is accepted or fails.
-Showing adds an `opening` class removed by a 700ms timer: the surface rises in,
-the halo flares, and the torch sweep crosses the rim and the horizon line once.
-`popup_view_dismiss` hides the window after a 110ms fade; `set_active` and destroy
-cancel it, and queries/actions are canceled before it starts. The typing glow
-lights the horizon and the search icon; it keeps its 700ms hold and 420ms fade; blur, dismissal and destruction cancel it. Disabled
-GTK animations turn every effect off and make dismissal immediate.
+path as their tooltip. Each row carries its kind as a style class (`kind-app`,
+`kind-setting`, `kind-folder`, `kind-file`, or `kind-window` for children). Hover
+draws a hairline frame and no fill. Icons are full color: desktop icons, `folder`,
+or a file type guessed from the name only (`g_content_type_guess`, no I/O;
+unplaced names keep `text-x-generic`). The launcher remembers which ids are on
+screen, so first results rise in top to bottom and later renders fade in only new
+rows. `selection_track` wraps the list box and draws one inverse-video block
+beneath transparent rows; `popup_view_select` gives the block the target row's
+kind class, so its left edge takes that kind's color. It glides 130ms on a
+frame-clock tick callback, jumps when results first appear or relayout, and hides
+at once when cleared. The view's `set_searching` crossfades the icon to a spinner
+after the 120ms pending timer; `set_launching` makes the block flash twice until
+the launch is accepted or fails. Showing adds an `opening` class removed by a
+450ms timer: the surface drops in, the header's parts step in and the idle strip's
+facts rise. `popup_view_dismiss` hides the window after a 200ms CRT switch-off;
+`set_active` and destroy cancel it, and queries/actions are canceled before it
+starts. The typing state keeps its 700ms hold; blur, dismissal and destruction
+cancel it. Disabled GTK animations turn every effect off and make dismissal
+immediate; the clock still ticks.
 
 `path_label` shows a short folder: `~` for the home directory and at most the
 last two folders (`POPUP_SHORT_FOLDERS`, e.g. `~/…/docs/modules`); folders at
@@ -148,7 +164,7 @@ resolve/launch errors preserve the query. History never claims external success.
 Cinnamon X11 focus, native keyboard launches and repeated toggle are exercised by
 the desktop test. X11 requests centering on the pointer's monitor, clamps width
 and scroller height to its work area, and handles integer GTK scale factors. The
-window is the 680px (or clamped) surface plus the halo margin on each side, and
+window is the 680px (or clamped) surface plus the shadow margin on each side, and
 is centered as a whole, so the surface stays centered.
 Clamping occurs before mapping so window-manager constraints cannot misplace
 an initially oversized window at scale 2. Monitor selection uses full geometry,
@@ -165,13 +181,17 @@ error/restart recovery, no-history mode and 500k rebuild timings are repeatable
 through `make test-ui-isolated` and `make bench-ui`. Native presentation tests check
 highlight geometry and an observed intermediate glide, file-type icons, entrance
 classes, opening/closing timers, spinner and launch states, large pasted queries,
-Unicode and distinguishing paths, geometry and timer destruction, child rows with
-their kind classes, application rows without a window count, the halo margin
-against the display, the renderer, the `glow` class and the window size, and a
-`GTK_THEME` high-contrast override that drops the halo. The isolated session runs
-the native view test under GTK's Cairo and GL renderers. The probe reports the
-halo margin, and the `gl-halo` matrix configuration checks that the pointer
-reaches the window beneath in the margin but not on the surface. The acceptance run maps two real windows with
+Unicode and distinguishing paths, geometry and timer destruction, rows and child
+rows with their kind classes and the selection block taking the selected row's
+kind, application rows without a window count, the header's count and ticking
+clock, the idle strip's states and fitting (shown only under an empty query), the
+placeholder tips, the Copy path confirmation, the light or dark palette class and
+a forced dark theme, the shadow margin against the display, the renderer, the
+`shadowed` class and the window size, and a `GTK_THEME` high-contrast override that
+drops the shadow. The isolated session runs the native view test under GTK's Cairo
+and GL renderers. The probe reports the shadow margin, and the `gl-shadow` matrix
+configuration checks that the pointer reaches the window beneath in the margin but
+not on the surface. The acceptance run maps two real windows with
 `tests/fixtures/window_app.c` and checks Enter, choosing a window, Left/Right,
 a window closed after the snapshot, an application ranked below an exact file
 name and New window. They pass on a bare

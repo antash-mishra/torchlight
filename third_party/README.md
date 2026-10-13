@@ -35,3 +35,12 @@ To update: replace `frizbee/` with the new release, compare its `Cargo.toml`
 features and edition with `frizbee-build/core/Cargo.toml`, run
 `cargo generate-lockfile --offline --manifest-path third_party/frizbee-build/Cargo.toml`,
 then `make test` and `make bench`.
+
+## fonts
+
+| Field | Value |
+|---|---|
+| Upstream | Schibsted Grotesk: https://github.com/google/fonts/tree/main/ofl/schibstedgrotesk; Bedstead 3.261: https://bjh21.me.uk/bedstead/ |
+| License | SIL Open Font License 1.1 (`fonts/schibsted-grotesk/OFL.txt`); Bedstead is public domain (CC0 1.0) |
+| Copied | 2026-10-13, `SchibstedGrotesk[wght].ttf` (renamed `SchibstedGrotesk-VF.ttf`) and `bedstead.otf` |
+| Used for | The popup's typefaces, see [ADR 0048](../docs/adr/0048-tekst-popup.md) and `fonts/README.md`; `make install` installs them to `share/fonts/torchlight` |
