@@ -1,5 +1,6 @@
-"""M2 live catalogs and recovery, M5 personal ranking, and M7 repair coverage
-and metadata persistence through the resident daemon."""
+"""M2 live catalogs and recovery, M5 personal ranking, M7 repair coverage and
+metadata persistence, and M8 exclusions and place ranking through the resident
+daemon."""
 import base64
 from concurrent.futures import ThreadPoolExecutor
 import itertools
@@ -811,6 +812,39 @@ def personal_busy_clients(service):
         service.stop()
 
 
+def excluded_folders_and_place(service):
+    """M8: a folder excluded in the configuration is pruned at startup, its
+    later changes never appear (also after scoped rescans of its parent), and
+    file results rank shallow folders before deep ones with equal names."""
+    root = service.root
+    for directory in ["keep", "sdk/inner", "work", "a/b/c/d/e/f"]:
+        (root / directory).mkdir(parents=True)
+    for file in ["keep/a.txt", "sdk/inner/lib.so", "work/scripts", "a/b/c/d/e/f/scan"]:
+        (root / file).write_bytes(b"")
+    service.start()
+    try:
+        service.indexed(root / "sdk/inner/lib.so")
+        top = service.call("query", query="sc", limit=2)["results"]
+        assert [exact_path(row) for row in top] == [os.fsencode(root / "work/scripts"),
+                                                    os.fsencode(root / "a/b/c/d/e/f/scan")], top
+    finally:
+        service.stop()
+    service.config.write_text(f"root = {root}\nexclude = {root}/sdk\n")
+    service.start()
+    try:
+        wait_for(lambda: os.fsencode(root / "sdk/inner/lib.so") not in service.paths())
+        (root / "sdk/inner/later.so").write_bytes(b"")
+        (root / "sdk/fresh").mkdir()
+        (root / "added.txt").write_bytes(b"")  # a scoped rescan of the root's children
+        service.indexed(root / "added.txt")
+        idle_passes(service)
+        paths = service.paths()
+        assert not any(path.startswith(os.fsencode(root / "sdk")) for path in paths), paths
+        assert os.fsencode(root / "keep/a.txt") in paths
+    finally:
+        service.stop()
+
+
 def slow_output_and_response_limit(service):
     directory = service.root
     for i in range(3):
@@ -885,4 +919,7 @@ with tempfile.TemporaryDirectory(prefix="torchlight-daemon-") as temporary:
     slow = Path(temporary) / "slow"
     slow.mkdir(mode=0o700)
     slow_output_and_response_limit(Service(slow))
+    excluded = Path(temporary) / "excluded"
+    excluded.mkdir(mode=0o700)
+    excluded_folders_and_place(Service(excluded))
 print("Daemon integration tests passed.")

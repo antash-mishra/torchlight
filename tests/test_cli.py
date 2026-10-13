@@ -164,6 +164,61 @@ def config_sync(temporary):
     assert b"mystery" in result.stderr
     assert catalog() == before
 
+def config_excludes(temporary):
+    """`exclude` drops a subtree, beats the allowlist, and prunes on re-index."""
+    home = Path(temporary) / "exclude"
+    for directory in ["keep", "sdk/inner", "other/vendored", ".config/nvim"]:
+        (home / directory).mkdir(parents=True)
+    for file in ["keep/a.txt", "sdk/inner/lib.so", "other/vendored/x.txt", "other/own.txt",
+                 ".config/nvim/init.lua"]:
+        (home / file).write_bytes(b"")
+    database, config = home / "catalog.db", home / "config"
+    env = dict(base_env, HOME=str(home))
+    def catalog():
+        return set(run("query", "--db", str(database), "--null", "--limit", "1000",
+                       "/").split(b"\0")[:-1])
+    def index(success=True):
+        return run_full("index", "--db", str(database), "--config", str(config),
+                        success=success, env=env)
+    config.write_text(f"root = {home}\nallow = {home}/.config/nvim\n")
+    index()
+    assert os.fsencode(home / "sdk/inner/lib.so") in catalog()
+    # Absolute and ~/ spellings, a missing path, and an exclusion over an allowlisted dir.
+    config.write_text(f"root = {home}\nallow = {home}/.config/nvim\nexclude = {home}/sdk\n"
+                      f"exclude = ~/other/vendored\nexclude = {home}/.config\n"
+                      f"exclude = {home}/missing\n")
+    index()
+    paths = catalog()
+    for gone in ["sdk", "sdk/inner/lib.so", "other/vendored", "other/vendored/x.txt",
+                 ".config/nvim/init.lua"]:
+        assert os.fsencode(home / gone) not in paths, gone
+    for kept in ["keep/a.txt", "other", "other/own.txt"]:
+        assert os.fsencode(home / kept) in paths, kept
+    # A relative exclusion is a configuration error and changes nothing.
+    before = catalog()
+    config.write_text(f"root = {home}\nexclude = relative/missing\n")
+    index(success=False)
+    assert catalog() == before
+    # Removing the exclusion brings the subtree back.
+    config.write_text(f"root = {home}\n")
+    index()
+    assert os.fsencode(home / "sdk/inner/lib.so") in catalog()
+
+def place_ranking(temporary):
+    """Shallow files outrank deep and dependency-tree files with equal names."""
+    home = Path(temporary) / "place"
+    for directory in ["work", "a/b/c/d/e/f", "lib/site-packages"]:
+        (home / directory).mkdir(parents=True)
+    for file in ["work/scripts", "a/b/c/d/e/f/scan", "lib/site-packages/scripts"]:
+        (home / file).write_bytes(b"")
+    database = home / "catalog.db"
+    run("index", "--db", str(database), str(home))
+    lines = run("query", "--db", str(database), "--limit", "3", "sc").splitlines()
+    assert lines == [os.fsencode(home / "work/scripts"), os.fsencode(home / "a/b/c/d/e/f/scan"),
+                     os.fsencode(home / "lib/site-packages/scripts")], lines
+    lines = run("query", "--db", str(database), "--limit", "2", "scripts").splitlines()
+    assert lines[0] == os.fsencode(home / "work/scripts"), lines
+
 def catalog_gen_failures_roll_back(temporary):
     """Malformed metadata and exhausted counters cannot reuse a catalog_gen."""
     home = Path(temporary) / "catalog-gen"
@@ -262,6 +317,8 @@ with tempfile.TemporaryDirectory(prefix="torchlight-cli-") as temporary:
     state_db = root / "state" / "torchlight" / "catalog.db"
     assert b"/state/torchlight" not in run("query", "--db", str(state_db), "--null", "--limit", "1000", "/")
     config_sync(temporary)
+    config_excludes(temporary)
+    place_ranking(temporary)
     unavailable_root_aliases(temporary)
     storage_failure_rolls_back(temporary)
     catalog_gen_failures_roll_back(temporary)

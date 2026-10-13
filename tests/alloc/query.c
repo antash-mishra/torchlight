@@ -3,8 +3,9 @@
  * Queries may allocate only to compile Frizbee matchers for words a workspace
  * has not cached (bounded per word and scoring thread); a repeated query, a
  * cached one-symbol answer, attaching personal boosts and boosted queries
- * (including repeated one-symbol ones), and vector/fusion queries (including
- * the two-pass prefix shortlist) allocate nothing. */
+ * (including repeated one-symbol ones), place-ranked queries, and
+ * vector/fusion queries (including the two-pass prefix shortlist) allocate
+ * nothing. */
 #include "torchlight/fuzzy.h"
 #include "torchlight/lexical.h"
 #include "torchlight/rank.h"
@@ -200,6 +201,10 @@ static tl_status check_workers(void) {
     tl_lexical *engine = NULL;
     tl_lexical_workspace *workspace = NULL;
     tl_status status = lexical_create(&engine);
+    /* The daemon's file catalogs rank by place; its penalties are read, never
+     * allocated, during a query. */
+    if (status == TL_OK)
+        status = lexical_set_place_ranking(engine, true);
     for (size_t i = 0; i < ALLOCATION_CORPUS_ENTRIES && status == TL_OK; i++) {
         char path[64];
         int length = snprintf(path, sizeof(path), "/root/mad_notes_%zu.txt", i);

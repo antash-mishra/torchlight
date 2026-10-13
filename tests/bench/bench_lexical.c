@@ -76,6 +76,9 @@ static tl_status build_engine(const bench_corpus *corpus, tl_lexical **engine,
     tl_status status = bench_now(&start);
     if (status == TL_OK)
         status = lexical_create(engine);
+    /* Rank as the daemon's file catalog does. */
+    if (status == TL_OK)
+        status = lexical_set_place_ranking(*engine, true);
     for (size_t i = 0; i < corpus->count && status == TL_OK; i++)
         status = lexical_add(*engine, (uint64_t)i + 1, corpus->paths[i], corpus->is_root[i]);
     if (status == TL_OK)

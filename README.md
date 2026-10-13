@@ -134,11 +134,23 @@ root = ~/Documents
 root = ~/projects
 # Hidden or normally skipped folders to index anyway.
 allow = ~/.config/nvim
+# Folders never to index, even inside a root or an allowed folder.
+exclude = ~/Android/Sdk
+exclude = ~/go/pkg/mod
 ```
 
 Hidden folders and `node_modules`, `target`, `build` and `__pycache__` are skipped
 unless allowed; hidden files are still searchable. Symlinked folders are not
-followed. The catalog and history live in `~/.local/share/torchlight/`.
+followed. An excluded folder's saved entries are removed by the next full
+scan; the daemon reads the configuration when it starts, so restart it after
+editing (`systemctl --user restart torchlightd`). The catalog and history live
+in `~/.local/share/torchlight/`.
+
+Files are ranked by how well their names match, then by where they live:
+among similar matches, files closer to the indexed folder come first, and
+files inside installed or vendored software (`node_modules`, `site-packages`,
+`vendor`, `third_party`, SDKs, Go module caches and versioned install folders)
+come after your own ([ADR 0047](docs/adr/0047-place-ranking-and-excluded-folders.md)).
 
 Daemon options:
 

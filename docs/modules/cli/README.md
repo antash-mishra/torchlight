@@ -20,7 +20,8 @@ The executable wires config, crawl, store and lexical modules. Syntax:
 **Index without ROOT** syncs the catalog to the [configuration](../config/README.md):
 configured `root`s (or `$HOME` when none) are canonicalized, repeated or covered
 roots are scanned once, `allow` entries re-include hidden/ignored directories,
-and registered roots that are no longer configured are forgotten together with
+`exclude` entries drop whole trees (even below a root or an allowed folder;
+their saved entries are pruned), and registered roots that are no longer configured are forgotten together with
 their entries. **Index with ROOT...** refreshes just those roots and forgets
 nothing; a root indexed only this way is forgotten by the next configuration
 sync unless it is configured.

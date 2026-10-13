@@ -2,6 +2,7 @@
  * normalizes basenames into shared arenas, then builds the prefix, trigram and
  * typo channels plus path ordering when sealed. Querying is in lexical_query.c. */
 #include "lexical_internal.h"
+#include "torchlight/place.h"
 #include <stdlib.h>
 #include <string.h>
 tl_status lexical_entry(const tl_lexical *engine, size_t position, uint64_t *id, const char **path,
@@ -77,6 +78,8 @@ tl_status lexical_set_reference(tl_lexical *engine, const tl_lexical *reference)
     if (engine->finished || engine->failed)
         return TL_STATE;
     engine->reference = reference;
+    if (reference != NULL)
+        engine->place_ranking = reference->place_ranking;
     return TL_OK;
 }
 tl_status lexical_slot(const tl_lexical *engine, uint64_t id, size_t *slot) {
@@ -103,6 +106,14 @@ tl_status lexical_set_prefix_bonus(tl_lexical *engine, int bonus) {
     if (engine->finished || engine->failed)
         return TL_STATE;
     engine->prefix_bonus = bonus;
+    return TL_OK;
+}
+tl_status lexical_set_place_ranking(tl_lexical *engine, bool enabled) {
+    if (engine == NULL)
+        return TL_INVALID;
+    if (engine->finished || engine->failed)
+        return TL_STATE;
+    engine->place_ranking = enabled;
     return TL_OK;
 }
 void lexical_destroy(tl_lexical *engine) {
@@ -140,6 +151,7 @@ void lexical_destroy(tl_lexical *engine) {
     free(engine->usable);
     free(engine->path_order);
     free(engine->path_rank);
+    free(engine->place_penalties);
     free(engine);
 }
 /* Normalize name into the scratch vectors; text borrows them until next use. */
@@ -527,6 +539,30 @@ static tl_status build_contexts(tl_lexical *engine) {
     engine->columns.contexts = engine->contexts;
     return TL_OK;
 }
+/* Place penalty of every entry, so a query reads one value per result.
+ * Parents precede children, so one forward pass over the directory tree
+ * carries each node's place down (the root "/" has the empty place); each
+ * entry then takes its parent's penalty. Places depend only on the path and
+ * the usable flags (bounded by the reference's roots too), so a delta's
+ * entries get the same penalty as in a full rebuild. */
+static tl_status build_places(tl_lexical *engine) {
+    if (!engine->place_ranking)
+        return TL_OK;
+    size_t nodes = dirtree_count(engine->tree), slots = engine->count == 0 ? 1 : engine->count;
+    tl_place *places = calloc(nodes, sizeof(*places));
+    engine->place_penalties = calloc(slots, sizeof(uint16_t));
+    if (places == NULL || engine->place_penalties == NULL) {
+        free(places);
+        return TL_NOMEM;
+    }
+    for (uint32_t node = 1; node < nodes; node++)
+        places[node] = place_child(places[dirtree_parent(engine->tree, node)],
+                                   dirtree_name(engine->tree, node), engine->usable[node]);
+    for (size_t slot = 0; slot < engine->count; slot++)
+        engine->place_penalties[slot] = (uint16_t)place_penalty(places[engine->columns.dirs[slot]]);
+    free(places);
+    return TL_OK;
+}
 /* Counting-sort entries by parent node. Each list is immutable and keeps slot
  * order; nodes without entries have an empty range. */
 static tl_status build_directory_entries(tl_lexical *engine) {
@@ -611,6 +647,8 @@ tl_status lexical_finish(tl_lexical *engine) {
         status = build_directory_entries(engine);
     if (status == TL_OK)
         status = build_directory_estimates(engine);
+    if (status == TL_OK)
+        status = build_places(engine);
     if (status == TL_OK)
         status = build_entry_channels(engine);
     if (status == TL_OK)

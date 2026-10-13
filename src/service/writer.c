@@ -261,7 +261,7 @@ static tl_status collect_paths(const tl_config *config, const char *wanted, stru
         tl_status status = config_entry(config, i, &key, &value);
         if (status != TL_OK)
             return status;
-        if (strcmp(key, "root") != 0 && strcmp(key, "allow") != 0)
+        if (strcmp(key, "root") != 0 && strcmp(key, "allow") != 0 && strcmp(key, "exclude") != 0)
             return TL_INVALID;
         if (strcmp(key, wanted) == 0) {
             status = add_path(paths, value);
@@ -279,17 +279,24 @@ static tl_status prepare_paths(tl_writer *writer) {
     free_paths(&writer->roots);
     crawl_destroy(writer->crawler);
     writer->crawler = NULL;
-    struct paths allowed = {0};
+    struct paths allowed = {0}, excluded = {0};
     tl_status status = collect_paths(writer->options.config, "root", &writer->roots);
     if (status == TL_OK)
         status = collect_paths(writer->options.config, "allow", &allowed);
+    /* collect_paths leaves a spare slot: the state directory is never crawled. */
     if (status == TL_OK)
-        status = crawl_create(config_state_directory(writer->options.config),
+        status = collect_paths(writer->options.config, "exclude", &excluded);
+    const char *state = config_state_directory(writer->options.config);
+    if (status == TL_OK && state != NULL)
+        status = add_path(&excluded, state);
+    if (status == TL_OK)
+        status = crawl_create((const char *const *)excluded.items, excluded.count,
                               (const char *const *)allowed.items, allowed.count, &writer->crawler);
     if (status == TL_OK)
         crawl_select_roots(writer->crawler, (const char *const *)writer->roots.items,
                            writer->roots.count, writer->roots.selected);
     free_paths(&allowed);
+    free_paths(&excluded);
     return status;
 }
 static bool sidecar(const char *path, const char *base) {
@@ -340,6 +347,9 @@ static tl_status make_snapshot(tl_writer *writer, tl_catalog_snapshot **out,
         ledger_reset(builder->ledger);
     }
     tl_status status = lexical_create(&builder->engine);
+    /* Delta segments inherit place ranking from this base engine. */
+    if (status == TL_OK)
+        status = lexical_set_place_ranking(builder->engine, true);
     if (status == TL_OK)
         status = store_load_catalog(writer->reader, build_entry, builder, catalog_gen);
     if (status == TL_OK && builder->ledger != NULL)

@@ -1,13 +1,14 @@
 # crawl
 
 > **Status:** Implemented (M1/M2; M6 scoped walks; M7 device boundaries; M7 Phase 2 one stat per
-> entry): physical crawl, allowlist, roots and filesystem identity
+> entry; M8 configured exclusions): physical crawl, allowlist, excluded scopes, roots and
+> filesystem identity
 > **Source:** `src/fs/crawl.c` · **Header:** `include/torchlight/crawl.h`
 > **Tests:** `tests/unit/test_crawl.c`, `tests/test_cli.py`
 
 ## Behavior and ownership
 
-The opaque crawler copies an excluded state scope and an allowlist, and walks
+The opaque crawler copies a list of excluded scopes and an allowlist, and walks
 with fts using FTS_PHYSICAL|FTS_NOCHDIR. Roots are canonicalized, symlink entries
 are reported, and directory symlinks are never traversed. A callback borrows each
 path/stat record; callback errors propagate and walking closes its resources.
@@ -55,8 +56,12 @@ checks:
   reported, and below them the walk follows only paths that lead to an
   allowlisted directory (`allow = ~/.config/nvim` indexes `nvim`, not the rest of
   `~/.config`).
-- The excluded state scope always wins, even below roots or allowlisted
-  directories.
+- Excluded scopes always win, even below roots or allowlisted directories,
+  and even at the root itself (a root inside one reports nothing). They are
+  Torchlight's own state directory and every configured `exclude` path (M8,
+  [ADR 0047](../../adr/0047-place-ranking-and-excluded-folders.md)); callers
+  pass both in one list. An excluded tree is never reported, so the caller's
+  next full scan prunes what was saved there, and the writer never watches it.
 
 **Unreadable scopes.** Below the root, unreadable directories and failed stats
 are reported with `unreadable` set and the walk continues; the store keeps their
@@ -72,7 +77,9 @@ roots covered by another one, so overlapping configuration scans each path once.
 A root inside a hidden directory is not covered and stays separate.
 
 Unit tests cover invalid roots, callback propagation, unreadable directories,
-allowlist traversal (indexed, traversed and skipped paths) and coverage/selection.
+allowlist traversal (indexed, traversed and skipped paths), excluded scopes
+(over the allowlist, at the root, in coverage and scoped walks) and
+coverage/selection.
 CLI fixtures cover symlink cycles, hidden files/directories, explicit hidden
 roots, state exclusion, raw bytes and configured allowlists. Watches and periodic
 recovery are implemented by the M2 writer. Scan cost is proportional to visited

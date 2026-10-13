@@ -687,3 +687,33 @@ Raw data: [fixed](../tests/bench/results/2026-10-11-m7-real-desktop.jsonl),
 [baseline](../tests/bench/results/2026-10-11-m7-real-desktop-baseline.jsonl)
 and [`make bench`](../tests/bench/results/2026-10-11-m7-real-desktop-lexical.txt).
 See the [M7 plan](m7-plan.md#real-desktop-review-2026-10-11).
+
+## M8 place ranking and excluded folders (2026-10-12)
+
+Reference machine under desktop load (load average 3.5 to 5.3), HEAD
+`4490e26` against M8, `-O3` builds. Raw outputs are summarized in the
+[M8 plan](m8-plan.md#results-2026-10-12) and the
+[health report](reports/m8-place-ranking-health-report.html).
+
+**Ranking on the live catalog** (`tests/quality/place_eval.py`, 213,356
+entries, 50 everyday queries, top 10): third-party results 315 to 192 of 500,
+own-folder results 143 to 225. `sc` lists 7 own folders (0 before); one query
+(`model`) lost two deep own results to shallower ones.
+
+**Typing latency** (`make bench`), p95 in ms:
+
+| Corpus | HEAD | M8 |
+|---|---|---|
+| 50k synthetic, 3 runs each | 0.55, 0.55, 0.65 | 0.55, 0.55, 0.58 |
+| 213k real home mirror, 2 runs each | 2.94, 2.81 | 2.82, 2.78 |
+| 500k synthetic, 6 runs each, mirrored order | median 4.75 (4.19 to 4.95) | median 4.77 (4.52 to 4.93) |
+
+At 500k the median p50 is 0.87 ms for HEAD and 0.90 ms for M8. A first
+version that stored penalties per directory needed a second scattered load
+per scored entry and measured 4.91 ms p95 (0.92 ms p50) in the same series;
+storing them per entry (2 bytes) recovered it.
+
+**Labeled quality** (held-out recall@10, HEAD to M8): 50k 0.605 to 0.633,
+500k 0.539 to 0.541, 213k real mirror 0.632 to 0.634. recall@1 on the real
+mirror drops 0.492 to 0.463 because its random targets are 84% SDK and module
+cache files, which M8 demotes on purpose. Fixtures pass 9/9.

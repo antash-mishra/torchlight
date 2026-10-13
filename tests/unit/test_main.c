@@ -26,8 +26,10 @@ int main(void) {
     test_trigram();
     test_typo();
     test_dirtree();
+    test_place();
     test_lexical();
     test_lexical_boost();
+    test_lexical_place();
     test_catalog();
     test_delta();
     test_store();

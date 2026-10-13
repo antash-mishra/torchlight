@@ -47,3 +47,22 @@ Use a larger independently labeled corpus before drawing broad quality claims.
 `evaluate_semantic_daemon.py` evaluates the actual two-phase resident path.
 See [model evaluation](../../docs/m4-model-evaluation.md). Normal tests do not
 require model weights. Private Documents names are not committed.
+
+## M8 place ranking on a real path list
+
+`place_eval.py` indexes a NUL-separated absolute path list (the
+`BENCH_PATHS` format; the common directory is the indexed root) with each
+given engine library, as the daemon's file catalog does, runs 50 everyday
+queries and counts the top-10 results inside third-party trees and inside
+the person's own folders. Both are labeled by path substrings on the command
+line, independent of the engine's own dependency markers:
+
+```sh
+python3 tests/quality/place_eval.py --paths home.paths \
+  --library old/quality_engine.so --library build/quality_engine.so \
+  --third-party /Android/Sdk/ --third-party /go/pkg/ --own /workspace/ \
+  --show sc,scripts --output /tmp/place.json
+```
+
+A library without `lexical_set_place_ranking` (before M8) ranks without it.
+Path lists of a real home folder are private; commit only aggregate counts.

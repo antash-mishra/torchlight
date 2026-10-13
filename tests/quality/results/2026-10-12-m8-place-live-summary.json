@@ -1,0 +1,1345 @@
+{
+ "date": "2026-10-12",
+ "tool": "tests/quality/place_eval.py",
+ "labels": {
+  "third_party": [
+   "/Android/Sdk/",
+   "/go/pkg/",
+   "/vulkan/",
+   "/vulkansdk/",
+   "/Downloads/renderdoc_1.38/",
+   "/nltk_data/",
+   "/site-packages/",
+   "/node_modules/",
+   "/venv/",
+   "/.venv/",
+   "/third_party/",
+   "/vendor/"
+  ],
+  "own": [
+   "/workspace/",
+   "/Documents/",
+   "/Desktop/",
+   "/AndroidStudioProjects/",
+   "/Pictures/",
+   "/Videos/",
+   "/Downloads/"
+  ]
+ },
+ "live_catalog": {
+  "entries": 213356,
+  "queries": 50,
+  "top": 10,
+  "builds": {
+   "head": {
+    "totals": {
+     "third_party": 315,
+     "own": 143,
+     "other": 42
+    },
+    "queries": {
+     "sc": {
+      "third_party": 9,
+      "own": 0,
+      "other": 1
+     },
+     "scripts": {
+      "third_party": 7,
+      "own": 0,
+      "other": 3
+     },
+     "readme": {
+      "third_party": 6,
+      "own": 0,
+      "other": 4
+     },
+     "makefile": {
+      "third_party": 6,
+      "own": 0,
+      "other": 4
+     },
+     "main": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "src": {
+      "third_party": 6,
+      "own": 2,
+      "other": 2
+     },
+     "plan": {
+      "third_party": 2,
+      "own": 6,
+      "other": 2
+     },
+     "torch": {
+      "third_party": 0,
+      "own": 5,
+      "other": 5
+     },
+     "config": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "test": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "notes": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "doc": {
+      "third_party": 8,
+      "own": 0,
+      "other": 2
+     },
+     "bench": {
+      "third_party": 7,
+      "own": 2,
+      "other": 1
+     },
+     "report": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "todo": {
+      "third_party": 5,
+      "own": 4,
+      "other": 1
+     },
+     "index": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "docker": {
+      "third_party": 3,
+      "own": 4,
+      "other": 3
+     },
+     "png": {
+      "third_party": 2,
+      "own": 5,
+      "other": 3
+     },
+     "setup": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "app": {
+      "third_party": 6,
+      "own": 4,
+      "other": 0
+     },
+     "util": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "engine": {
+      "third_party": 7,
+      "own": 3,
+      "other": 0
+     },
+     "shader": {
+      "third_party": 4,
+      "own": 6,
+      "other": 0
+     },
+     "model": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "vaani": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "invaders": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "cmake": {
+      "third_party": 6,
+      "own": 0,
+      "other": 4
+     },
+     "build": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "license": {
+      "third_party": 9,
+      "own": 0,
+      "other": 1
+     },
+     "api": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "rank": {
+      "third_party": 6,
+      "own": 4,
+      "other": 0
+     },
+     "lexical": {
+      "third_party": 3,
+      "own": 7,
+      "other": 0
+     },
+     "crawl": {
+      "third_party": 2,
+      "own": 5,
+      "other": 3
+     },
+     "writer": {
+      "third_party": 6,
+      "own": 3,
+      "other": 1
+     },
+     "catalog": {
+      "third_party": 7,
+      "own": 3,
+      "other": 0
+     },
+     "store": {
+      "third_party": 4,
+      "own": 6,
+      "other": 0
+     },
+     "daemon": {
+      "third_party": 4,
+      "own": 6,
+      "other": 0
+     },
+     "popup": {
+      "third_party": 6,
+      "own": 4,
+      "other": 0
+     },
+     "frizbee": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "invoice": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "resume": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "photo": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "screenshot": {
+      "third_party": 4,
+      "own": 5,
+      "other": 1
+     },
+     "video": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "download": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "keystore": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "gradle": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "manifest": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "kotlin": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "android": {
+      "third_party": 9,
+      "own": 0,
+      "other": 1
+     }
+    }
+   },
+   "m8": {
+    "totals": {
+     "third_party": 192,
+     "own": 225,
+     "other": 83
+    },
+    "queries": {
+     "sc": {
+      "third_party": 0,
+      "own": 7,
+      "other": 3
+     },
+     "scripts": {
+      "third_party": 0,
+      "own": 8,
+      "other": 2
+     },
+     "readme": {
+      "third_party": 3,
+      "own": 0,
+      "other": 7
+     },
+     "makefile": {
+      "third_party": 1,
+      "own": 5,
+      "other": 4
+     },
+     "main": {
+      "third_party": 7,
+      "own": 3,
+      "other": 0
+     },
+     "src": {
+      "third_party": 0,
+      "own": 6,
+      "other": 4
+     },
+     "plan": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "torch": {
+      "third_party": 0,
+      "own": 5,
+      "other": 5
+     },
+     "config": {
+      "third_party": 4,
+      "own": 5,
+      "other": 1
+     },
+     "test": {
+      "third_party": 0,
+      "own": 4,
+      "other": 6
+     },
+     "notes": {
+      "third_party": 5,
+      "own": 1,
+      "other": 4
+     },
+     "doc": {
+      "third_party": 8,
+      "own": 0,
+      "other": 2
+     },
+     "bench": {
+      "third_party": 3,
+      "own": 2,
+      "other": 5
+     },
+     "report": {
+      "third_party": 1,
+      "own": 9,
+      "other": 0
+     },
+     "todo": {
+      "third_party": 5,
+      "own": 4,
+      "other": 1
+     },
+     "index": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "docker": {
+      "third_party": 0,
+      "own": 8,
+      "other": 2
+     },
+     "png": {
+      "third_party": 2,
+      "own": 5,
+      "other": 3
+     },
+     "setup": {
+      "third_party": 1,
+      "own": 7,
+      "other": 2
+     },
+     "app": {
+      "third_party": 4,
+      "own": 6,
+      "other": 0
+     },
+     "util": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "engine": {
+      "third_party": 4,
+      "own": 3,
+      "other": 3
+     },
+     "shader": {
+      "third_party": 3,
+      "own": 6,
+      "other": 1
+     },
+     "model": {
+      "third_party": 0,
+      "own": 8,
+      "other": 2
+     },
+     "vaani": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "invaders": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "cmake": {
+      "third_party": 3,
+      "own": 2,
+      "other": 5
+     },
+     "build": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "license": {
+      "third_party": 0,
+      "own": 0,
+      "other": 10
+     },
+     "api": {
+      "third_party": 7,
+      "own": 3,
+      "other": 0
+     },
+     "rank": {
+      "third_party": 6,
+      "own": 4,
+      "other": 0
+     },
+     "lexical": {
+      "third_party": 3,
+      "own": 7,
+      "other": 0
+     },
+     "crawl": {
+      "third_party": 2,
+      "own": 5,
+      "other": 3
+     },
+     "writer": {
+      "third_party": 6,
+      "own": 3,
+      "other": 1
+     },
+     "catalog": {
+      "third_party": 2,
+      "own": 8,
+      "other": 0
+     },
+     "store": {
+      "third_party": 4,
+      "own": 6,
+      "other": 0
+     },
+     "daemon": {
+      "third_party": 4,
+      "own": 6,
+      "other": 0
+     },
+     "popup": {
+      "third_party": 5,
+      "own": 5,
+      "other": 0
+     },
+     "frizbee": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "invoice": {
+      "third_party": 3,
+      "own": 4,
+      "other": 3
+     },
+     "resume": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "photo": {
+      "third_party": 8,
+      "own": 2,
+      "other": 0
+     },
+     "screenshot": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "video": {
+      "third_party": 9,
+      "own": 0,
+      "other": 1
+     },
+     "download": {
+      "third_party": 8,
+      "own": 1,
+      "other": 1
+     },
+     "keystore": {
+      "third_party": 9,
+      "own": 0,
+      "other": 1
+     },
+     "gradle": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "manifest": {
+      "third_party": 7,
+      "own": 3,
+      "other": 0
+     },
+     "kotlin": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "android": {
+      "third_party": 7,
+      "own": 2,
+      "other": 1
+     }
+    }
+   }
+  }
+ },
+ "live_catalog_final_per_entry": {
+  "entries": 213356,
+  "queries": 50,
+  "top": 10,
+  "builds": {
+   "m8": {
+    "totals": {
+     "third_party": 192,
+     "own": 225,
+     "other": 83
+    },
+    "queries": {
+     "sc": {
+      "third_party": 0,
+      "own": 7,
+      "other": 3
+     },
+     "scripts": {
+      "third_party": 0,
+      "own": 8,
+      "other": 2
+     },
+     "readme": {
+      "third_party": 3,
+      "own": 0,
+      "other": 7
+     },
+     "makefile": {
+      "third_party": 1,
+      "own": 5,
+      "other": 4
+     },
+     "main": {
+      "third_party": 7,
+      "own": 3,
+      "other": 0
+     },
+     "src": {
+      "third_party": 0,
+      "own": 6,
+      "other": 4
+     },
+     "plan": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "torch": {
+      "third_party": 0,
+      "own": 5,
+      "other": 5
+     },
+     "config": {
+      "third_party": 4,
+      "own": 5,
+      "other": 1
+     },
+     "test": {
+      "third_party": 0,
+      "own": 4,
+      "other": 6
+     },
+     "notes": {
+      "third_party": 5,
+      "own": 1,
+      "other": 4
+     },
+     "doc": {
+      "third_party": 8,
+      "own": 0,
+      "other": 2
+     },
+     "bench": {
+      "third_party": 3,
+      "own": 2,
+      "other": 5
+     },
+     "report": {
+      "third_party": 1,
+      "own": 9,
+      "other": 0
+     },
+     "todo": {
+      "third_party": 5,
+      "own": 4,
+      "other": 1
+     },
+     "index": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "docker": {
+      "third_party": 0,
+      "own": 8,
+      "other": 2
+     },
+     "png": {
+      "third_party": 2,
+      "own": 5,
+      "other": 3
+     },
+     "setup": {
+      "third_party": 1,
+      "own": 7,
+      "other": 2
+     },
+     "app": {
+      "third_party": 4,
+      "own": 6,
+      "other": 0
+     },
+     "util": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "engine": {
+      "third_party": 4,
+      "own": 3,
+      "other": 3
+     },
+     "shader": {
+      "third_party": 3,
+      "own": 6,
+      "other": 1
+     },
+     "model": {
+      "third_party": 0,
+      "own": 8,
+      "other": 2
+     },
+     "vaani": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "invaders": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "cmake": {
+      "third_party": 3,
+      "own": 2,
+      "other": 5
+     },
+     "build": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "license": {
+      "third_party": 0,
+      "own": 0,
+      "other": 10
+     },
+     "api": {
+      "third_party": 7,
+      "own": 3,
+      "other": 0
+     },
+     "rank": {
+      "third_party": 6,
+      "own": 4,
+      "other": 0
+     },
+     "lexical": {
+      "third_party": 3,
+      "own": 7,
+      "other": 0
+     },
+     "crawl": {
+      "third_party": 2,
+      "own": 5,
+      "other": 3
+     },
+     "writer": {
+      "third_party": 6,
+      "own": 3,
+      "other": 1
+     },
+     "catalog": {
+      "third_party": 2,
+      "own": 8,
+      "other": 0
+     },
+     "store": {
+      "third_party": 4,
+      "own": 6,
+      "other": 0
+     },
+     "daemon": {
+      "third_party": 4,
+      "own": 6,
+      "other": 0
+     },
+     "popup": {
+      "third_party": 5,
+      "own": 5,
+      "other": 0
+     },
+     "frizbee": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "invoice": {
+      "third_party": 3,
+      "own": 4,
+      "other": 3
+     },
+     "resume": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "photo": {
+      "third_party": 8,
+      "own": 2,
+      "other": 0
+     },
+     "screenshot": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "video": {
+      "third_party": 9,
+      "own": 0,
+      "other": 1
+     },
+     "download": {
+      "third_party": 8,
+      "own": 1,
+      "other": 1
+     },
+     "keystore": {
+      "third_party": 9,
+      "own": 0,
+      "other": 1
+     },
+     "gradle": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "manifest": {
+      "third_party": 7,
+      "own": 3,
+      "other": 0
+     },
+     "kotlin": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "android": {
+      "third_party": 7,
+      "own": 2,
+      "other": 1
+     }
+    }
+   }
+  }
+ },
+ "live_catalog_excluding_android_sdk_and_go_mod": {
+  "entries": 35058,
+  "queries": 50,
+  "top": 10,
+  "builds": {
+   "head": {
+    "totals": {
+     "third_party": 116,
+     "own": 272,
+     "other": 112
+    },
+    "queries": {
+     "sc": {
+      "third_party": 0,
+      "own": 7,
+      "other": 3
+     },
+     "scripts": {
+      "third_party": 3,
+      "own": 4,
+      "other": 3
+     },
+     "readme": {
+      "third_party": 4,
+      "own": 0,
+      "other": 6
+     },
+     "makefile": {
+      "third_party": 0,
+      "own": 5,
+      "other": 5
+     },
+     "main": {
+      "third_party": 2,
+      "own": 5,
+      "other": 3
+     },
+     "src": {
+      "third_party": 0,
+      "own": 2,
+      "other": 8
+     },
+     "plan": {
+      "third_party": 0,
+      "own": 8,
+      "other": 2
+     },
+     "torch": {
+      "third_party": 0,
+      "own": 5,
+      "other": 5
+     },
+     "config": {
+      "third_party": 4,
+      "own": 5,
+      "other": 1
+     },
+     "test": {
+      "third_party": 4,
+      "own": 1,
+      "other": 5
+     },
+     "notes": {
+      "third_party": 6,
+      "own": 2,
+      "other": 2
+     },
+     "doc": {
+      "third_party": 5,
+      "own": 3,
+      "other": 2
+     },
+     "bench": {
+      "third_party": 4,
+      "own": 3,
+      "other": 3
+     },
+     "report": {
+      "third_party": 1,
+      "own": 9,
+      "other": 0
+     },
+     "todo": {
+      "third_party": 0,
+      "own": 5,
+      "other": 5
+     },
+     "index": {
+      "third_party": 4,
+      "own": 3,
+      "other": 3
+     },
+     "docker": {
+      "third_party": 0,
+      "own": 7,
+      "other": 3
+     },
+     "png": {
+      "third_party": 1,
+      "own": 6,
+      "other": 3
+     },
+     "setup": {
+      "third_party": 2,
+      "own": 6,
+      "other": 2
+     },
+     "app": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "util": {
+      "third_party": 10,
+      "own": 0,
+      "other": 0
+     },
+     "engine": {
+      "third_party": 3,
+      "own": 3,
+      "other": 4
+     },
+     "shader": {
+      "third_party": 1,
+      "own": 8,
+      "other": 1
+     },
+     "model": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "vaani": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "invaders": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "cmake": {
+      "third_party": 5,
+      "own": 0,
+      "other": 5
+     },
+     "build": {
+      "third_party": 0,
+      "own": 1,
+      "other": 9
+     },
+     "license": {
+      "third_party": 0,
+      "own": 0,
+      "other": 10
+     },
+     "api": {
+      "third_party": 4,
+      "own": 5,
+      "other": 1
+     },
+     "rank": {
+      "third_party": 6,
+      "own": 4,
+      "other": 0
+     },
+     "lexical": {
+      "third_party": 2,
+      "own": 8,
+      "other": 0
+     },
+     "crawl": {
+      "third_party": 2,
+      "own": 5,
+      "other": 3
+     },
+     "writer": {
+      "third_party": 6,
+      "own": 3,
+      "other": 1
+     },
+     "catalog": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "store": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "daemon": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "popup": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "frizbee": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "invoice": {
+      "third_party": 0,
+      "own": 7,
+      "other": 3
+     },
+     "resume": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "photo": {
+      "third_party": 8,
+      "own": 2,
+      "other": 0
+     },
+     "screenshot": {
+      "third_party": 0,
+      "own": 9,
+      "other": 1
+     },
+     "video": {
+      "third_party": 9,
+      "own": 0,
+      "other": 1
+     },
+     "download": {
+      "third_party": 5,
+      "own": 4,
+      "other": 1
+     },
+     "keystore": {
+      "third_party": 0,
+      "own": 9,
+      "other": 1
+     },
+     "gradle": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "manifest": {
+      "third_party": 2,
+      "own": 8,
+      "other": 0
+     },
+     "kotlin": {
+      "third_party": 2,
+      "own": 5,
+      "other": 3
+     },
+     "android": {
+      "third_party": 2,
+      "own": 4,
+      "other": 4
+     }
+    }
+   },
+   "m8": {
+    "totals": {
+     "third_party": 64,
+     "own": 311,
+     "other": 125
+    },
+    "queries": {
+     "sc": {
+      "third_party": 0,
+      "own": 7,
+      "other": 3
+     },
+     "scripts": {
+      "third_party": 0,
+      "own": 8,
+      "other": 2
+     },
+     "readme": {
+      "third_party": 3,
+      "own": 0,
+      "other": 7
+     },
+     "makefile": {
+      "third_party": 0,
+      "own": 5,
+      "other": 5
+     },
+     "main": {
+      "third_party": 0,
+      "own": 7,
+      "other": 3
+     },
+     "src": {
+      "third_party": 0,
+      "own": 6,
+      "other": 4
+     },
+     "plan": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "torch": {
+      "third_party": 0,
+      "own": 5,
+      "other": 5
+     },
+     "config": {
+      "third_party": 4,
+      "own": 5,
+      "other": 1
+     },
+     "test": {
+      "third_party": 0,
+      "own": 4,
+      "other": 6
+     },
+     "notes": {
+      "third_party": 0,
+      "own": 2,
+      "other": 8
+     },
+     "doc": {
+      "third_party": 4,
+      "own": 4,
+      "other": 2
+     },
+     "bench": {
+      "third_party": 1,
+      "own": 2,
+      "other": 7
+     },
+     "report": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "todo": {
+      "third_party": 0,
+      "own": 4,
+      "other": 6
+     },
+     "index": {
+      "third_party": 2,
+      "own": 3,
+      "other": 5
+     },
+     "docker": {
+      "third_party": 0,
+      "own": 8,
+      "other": 2
+     },
+     "png": {
+      "third_party": 1,
+      "own": 6,
+      "other": 3
+     },
+     "setup": {
+      "third_party": 0,
+      "own": 8,
+      "other": 2
+     },
+     "app": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "util": {
+      "third_party": 7,
+      "own": 3,
+      "other": 0
+     },
+     "engine": {
+      "third_party": 1,
+      "own": 6,
+      "other": 3
+     },
+     "shader": {
+      "third_party": 3,
+      "own": 6,
+      "other": 1
+     },
+     "model": {
+      "third_party": 0,
+      "own": 8,
+      "other": 2
+     },
+     "vaani": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "invaders": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "cmake": {
+      "third_party": 3,
+      "own": 2,
+      "other": 5
+     },
+     "build": {
+      "third_party": 0,
+      "own": 2,
+      "other": 8
+     },
+     "license": {
+      "third_party": 0,
+      "own": 0,
+      "other": 10
+     },
+     "api": {
+      "third_party": 3,
+      "own": 6,
+      "other": 1
+     },
+     "rank": {
+      "third_party": 3,
+      "own": 7,
+      "other": 0
+     },
+     "lexical": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "crawl": {
+      "third_party": 0,
+      "own": 6,
+      "other": 4
+     },
+     "writer": {
+      "third_party": 3,
+      "own": 4,
+      "other": 3
+     },
+     "catalog": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "store": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "daemon": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "popup": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "frizbee": {
+      "third_party": 9,
+      "own": 1,
+      "other": 0
+     },
+     "invoice": {
+      "third_party": 0,
+      "own": 7,
+      "other": 3
+     },
+     "resume": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "photo": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "screenshot": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "video": {
+      "third_party": 9,
+      "own": 0,
+      "other": 1
+     },
+     "download": {
+      "third_party": 4,
+      "own": 5,
+      "other": 1
+     },
+     "keystore": {
+      "third_party": 0,
+      "own": 9,
+      "other": 1
+     },
+     "gradle": {
+      "third_party": 0,
+      "own": 10,
+      "other": 0
+     },
+     "manifest": {
+      "third_party": 2,
+      "own": 8,
+      "other": 0
+     },
+     "kotlin": {
+      "third_party": 1,
+      "own": 5,
+      "other": 4
+     },
+     "android": {
+      "third_party": 1,
+      "own": 2,
+      "other": 7
+     }
+    }
+   }
+  }
+ }
+}

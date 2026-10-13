@@ -23,17 +23,19 @@ an error). The format is deliberately small:
 ```text
 # Lines starting with '#' and blank lines are ignored.
 # Values starting with "~/" expand with HOME; keys may repeat in order.
-root  = ~/Documents
-root  = /data/projects
-allow = ~/.config/nvim
+root    = ~/Documents
+root    = /data/projects
+allow   = ~/.config/nvim
+exclude = ~/Documents/archive
 ```
 
 Keys are `[a-z_]+`, values are nonempty and surrounding whitespace is trimmed.
 There are no inline comments: a `#` after a value is part of the value.
 A malformed line fails with TL_INVALID and its line number. The module stays
 generic: it exposes entries in order (`config_entry_count`, `config_entry`), and
-callers decide which keys exist. The CLI accepts `root` and `allow` and rejects
-any other key. Getters borrow until destruction.
+callers decide which keys exist. The CLI and the daemon accept `root`, `allow`
+and `exclude` (M8, [ADR 0047](../../adr/0047-place-ranking-and-excluded-folders.md))
+and reject any other key. Getters borrow until destruction.
 
 ## Related
 

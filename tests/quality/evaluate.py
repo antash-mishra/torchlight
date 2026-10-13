@@ -34,6 +34,10 @@ class Engine:
             "lexical_destroy": ([C.c_void_p], None),
         }
         self.fields = getattr(self.lib, "lexical_add_fields", None)
+        # Libraries from before M8 have no place ranking; file engines use it when present.
+        self.place = getattr(self.lib, "lexical_set_place_ranking", None)
+        if self.place:
+            signatures["lexical_set_place_ranking"] = ([C.c_void_p, C.c_bool], C.c_int)
         if self.fields:
             signatures["lexical_add_fields"] = (
                 [C.c_void_p, C.c_uint64, C.c_char_p, C.c_char_p, C.c_char_p], C.c_int)
@@ -48,6 +52,8 @@ class Engine:
                 self.check(self.lib.lexical_create(C.byref(engine)))
                 self.engines.append([engine, workspace])
                 self.check(self.lib.lexical_set_prefix_bonus(engine, 2000 if desktop else 0))
+                if self.place and not desktop:
+                    self.check(self.place(engine, True))
                 for number, entry in enumerate(entries, 1):
                     if (entry["kind"] == "app") != desktop:
                         continue

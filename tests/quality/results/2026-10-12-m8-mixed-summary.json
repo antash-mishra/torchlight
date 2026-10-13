@@ -1,0 +1,889 @@
+{
+ "fixture": "mixed.json",
+ "baseline_revision": "7ace90f0a3d1474a0594b08ee8db9fde72e0f713 (frozen)",
+ "comparison_revision": "4490e26 (HEAD before M8)",
+ "queries": 44,
+ "identical_top10_head_vs_m8": 44,
+ "aggregate": {
+  "frozen": {
+   "held_out/abbreviation": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/all": {
+    "queries": 22,
+    "candidate_recall": 0.9523809523809523,
+    "empty_correct": 1.0,
+    "first_useful_rank": 48.61904761904762,
+    "mrr": 0.9523809523809523,
+    "ndcg10": 0.9385623686379458,
+    "top10_success": 0.9523809523809523
+   },
+   "held_out/application_name": {
+    "queries": 3,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/duplicate": {
+    "queries": 2,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/exact": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/extension": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/folder_name": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/metadata": {
+    "queries": 4,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/no_match": {
+    "queries": 1,
+    "empty_correct": 1.0
+   },
+   "held_out/optimal_alignment": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 0.7098097413968655,
+    "top10_success": 1.0
+   },
+   "held_out/path": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/raw_bytes": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/unfinished_typo": {
+    "queries": 3,
+    "candidate_recall": 0.6666666666666666,
+    "first_useful_rank": 334.3333333333333,
+    "mrr": 0.6666666666666666,
+    "ndcg10": 0.6666666666666666,
+    "top10_success": 0.6666666666666666
+   },
+   "held_out/unicode": {
+    "queries": 2,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/abbreviation": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/all": {
+    "queries": 22,
+    "candidate_recall": 0.9047619047619048,
+    "empty_correct": 1.0,
+    "first_useful_rank": 96.23809523809524,
+    "mrr": 0.9047619047619048,
+    "ndcg10": 0.8909433210188983,
+    "top10_success": 0.9047619047619048
+   },
+   "tuning/application_name": {
+    "queries": 3,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/duplicate": {
+    "queries": 2,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/exact": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/extension": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/folder_name": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/metadata": {
+    "queries": 4,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/no_match": {
+    "queries": 1,
+    "empty_correct": 1.0
+   },
+   "tuning/optimal_alignment": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 0.7098097413968655,
+    "top10_success": 1.0
+   },
+   "tuning/path": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/raw_bytes": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/unfinished_typo": {
+    "queries": 3,
+    "candidate_recall": 0.3333333333333333,
+    "first_useful_rank": 667.6666666666666,
+    "mrr": 0.3333333333333333,
+    "ndcg10": 0.3333333333333333,
+    "top10_success": 0.3333333333333333
+   },
+   "tuning/unicode": {
+    "queries": 2,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   }
+  },
+  "head": {
+   "held_out/abbreviation": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/all": {
+    "queries": 22,
+    "candidate_recall": 1.0,
+    "empty_correct": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/application_name": {
+    "queries": 3,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/duplicate": {
+    "queries": 2,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/exact": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/extension": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/folder_name": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/metadata": {
+    "queries": 4,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/no_match": {
+    "queries": 1,
+    "empty_correct": 1.0
+   },
+   "held_out/optimal_alignment": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/path": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/raw_bytes": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/unfinished_typo": {
+    "queries": 3,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/unicode": {
+    "queries": 2,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/abbreviation": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/all": {
+    "queries": 22,
+    "candidate_recall": 1.0,
+    "empty_correct": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/application_name": {
+    "queries": 3,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/duplicate": {
+    "queries": 2,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/exact": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/extension": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/folder_name": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/metadata": {
+    "queries": 4,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/no_match": {
+    "queries": 1,
+    "empty_correct": 1.0
+   },
+   "tuning/optimal_alignment": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/path": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/raw_bytes": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/unfinished_typo": {
+    "queries": 3,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/unicode": {
+    "queries": 2,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   }
+  },
+  "m8": {
+   "held_out/abbreviation": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/all": {
+    "queries": 22,
+    "candidate_recall": 1.0,
+    "empty_correct": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/application_name": {
+    "queries": 3,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/duplicate": {
+    "queries": 2,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/exact": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/extension": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/folder_name": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/metadata": {
+    "queries": 4,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/no_match": {
+    "queries": 1,
+    "empty_correct": 1.0
+   },
+   "held_out/optimal_alignment": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/path": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/raw_bytes": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/unfinished_typo": {
+    "queries": 3,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/unicode": {
+    "queries": 2,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/abbreviation": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/all": {
+    "queries": 22,
+    "candidate_recall": 1.0,
+    "empty_correct": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/application_name": {
+    "queries": 3,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/duplicate": {
+    "queries": 2,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/exact": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/extension": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/folder_name": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/metadata": {
+    "queries": 4,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/no_match": {
+    "queries": 1,
+    "empty_correct": 1.0
+   },
+   "tuning/optimal_alignment": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/path": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/raw_bytes": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/unfinished_typo": {
+    "queries": 3,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/unicode": {
+    "queries": 2,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   }
+  },
+  "bm25": {
+   "held_out/abbreviation": {
+    "queries": 1,
+    "candidate_recall": 0.0,
+    "first_useful_rank": 1001.0,
+    "mrr": 0.0,
+    "ndcg10": 0.0,
+    "top10_success": 0.0
+   },
+   "held_out/all": {
+    "queries": 22,
+    "candidate_recall": 0.6825396825396826,
+    "empty_correct": 1.0,
+    "first_useful_rank": 286.7142857142857,
+    "mrr": 0.7142857142857143,
+    "ndcg10": 0.6568441400336904,
+    "top10_success": 0.7142857142857143
+   },
+   "held_out/application_name": {
+    "queries": 3,
+    "candidate_recall": 0.6666666666666666,
+    "first_useful_rank": 334.3333333333333,
+    "mrr": 0.6666666666666666,
+    "ndcg10": 0.6666666666666666,
+    "top10_success": 0.6666666666666666
+   },
+   "held_out/duplicate": {
+    "queries": 2,
+    "candidate_recall": 0.6666666666666666,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 0.5419585996553166,
+    "top10_success": 1.0
+   },
+   "held_out/exact": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/extension": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/folder_name": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 0.7098097413968655,
+    "top10_success": 1.0
+   },
+   "held_out/metadata": {
+    "queries": 4,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/no_match": {
+    "queries": 1,
+    "empty_correct": 1.0
+   },
+   "held_out/optimal_alignment": {
+    "queries": 1,
+    "candidate_recall": 0.0,
+    "first_useful_rank": 1001.0,
+    "mrr": 0.0,
+    "ndcg10": 0.0,
+    "top10_success": 0.0
+   },
+   "held_out/path": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/raw_bytes": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "held_out/unfinished_typo": {
+    "queries": 3,
+    "candidate_recall": 0.0,
+    "first_useful_rank": 1001.0,
+    "mrr": 0.0,
+    "ndcg10": 0.0,
+    "top10_success": 0.0
+   },
+   "held_out/unicode": {
+    "queries": 2,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/abbreviation": {
+    "queries": 1,
+    "candidate_recall": 0.0,
+    "first_useful_rank": 1001.0,
+    "mrr": 0.0,
+    "ndcg10": 0.0,
+    "top10_success": 0.0
+   },
+   "tuning/all": {
+    "queries": 22,
+    "candidate_recall": 0.6825396825396826,
+    "empty_correct": 1.0,
+    "first_useful_rank": 286.7142857142857,
+    "mrr": 0.7142857142857143,
+    "ndcg10": 0.6568441400336904,
+    "top10_success": 0.7142857142857143
+   },
+   "tuning/application_name": {
+    "queries": 3,
+    "candidate_recall": 0.6666666666666666,
+    "first_useful_rank": 334.3333333333333,
+    "mrr": 0.6666666666666666,
+    "ndcg10": 0.6666666666666666,
+    "top10_success": 0.6666666666666666
+   },
+   "tuning/duplicate": {
+    "queries": 2,
+    "candidate_recall": 0.6666666666666666,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 0.5419585996553166,
+    "top10_success": 1.0
+   },
+   "tuning/exact": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/extension": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/folder_name": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 0.7098097413968655,
+    "top10_success": 1.0
+   },
+   "tuning/metadata": {
+    "queries": 4,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/no_match": {
+    "queries": 1,
+    "empty_correct": 1.0
+   },
+   "tuning/optimal_alignment": {
+    "queries": 1,
+    "candidate_recall": 0.0,
+    "first_useful_rank": 1001.0,
+    "mrr": 0.0,
+    "ndcg10": 0.0,
+    "top10_success": 0.0
+   },
+   "tuning/path": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/raw_bytes": {
+    "queries": 1,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   },
+   "tuning/unfinished_typo": {
+    "queries": 3,
+    "candidate_recall": 0.0,
+    "first_useful_rank": 1001.0,
+    "mrr": 0.0,
+    "ndcg10": 0.0,
+    "top10_success": 0.0
+   },
+   "tuning/unicode": {
+    "queries": 2,
+    "candidate_recall": 1.0,
+    "first_useful_rank": 1.0,
+    "mrr": 1.0,
+    "ndcg10": 1.0,
+    "top10_success": 1.0
+   }
+  }
+ }
+}

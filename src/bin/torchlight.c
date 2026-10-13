@@ -198,14 +198,19 @@ static tl_status allocate_paths(struct path_list *list, size_t capacity) {
     list->scanned = calloc(slots, sizeof(bool));
     return list->paths == NULL || list->keep == NULL || list->scanned == NULL ? TL_NOMEM : TL_OK;
 }
-/* Collect config values of key; reports unknown keys as TL_INVALID. */
+static bool known_key(const char *key) {
+    return strcmp(key, "root") == 0 || strcmp(key, "allow") == 0 || strcmp(key, "exclude") == 0;
+}
+/* Collect config values of key, leaving one spare slot for a default the
+ * caller adds (HOME as root, the state directory as an exclusion); reports
+ * unknown keys as TL_INVALID. */
 static tl_status config_paths(const tl_config *config, const char *key, struct path_list *list) {
     size_t entries = config_entry_count(config);
-    tl_status status = allocate_paths(list, entries);
+    tl_status status = allocate_paths(list, entries + 1);
     for (size_t i = 0; i < entries && status == TL_OK; i++) {
         const char *entry_key = NULL, *value = NULL;
         status = config_entry(config, i, &entry_key, &value);
-        if (status == TL_OK && strcmp(entry_key, "root") != 0 && strcmp(entry_key, "allow") != 0) {
+        if (status == TL_OK && !known_key(entry_key)) {
             fprintf(stderr, "torchlight: unknown configuration key \"%s\"\n", entry_key);
             status = TL_INVALID;
         }
@@ -338,17 +343,25 @@ static tl_status refresh(tl_store *store, tl_crawl *crawler, struct path_list *r
                 deferred);
     return TL_OK;
 }
+/* Scopes never crawled: configured exclusions and Torchlight's own state. */
+static tl_status excluded_paths(const tl_config *config, struct path_list *excluded) {
+    tl_status status = config_paths(config, "exclude", excluded);
+    const char *state = config_state_directory(config);
+    return status == TL_OK && state != NULL ? add_path(excluded, state) : status;
+}
 static tl_status index_roots(tl_store *store, const struct options *options,
                              const tl_config *config) {
-    struct path_list roots = {0}, allow = {0};
+    struct path_list roots = {0}, allow = {0}, excluded = {0};
     tl_crawl *crawler = NULL;
     char *database = realpath(config_database(config), NULL);
     tl_status status = database == NULL ? TL_IO : config_paths(config, "allow", &allow);
     if (status == TL_OK)
+        status = excluded_paths(config, &excluded);
+    if (status == TL_OK)
         status = select_roots(options, config, &roots);
     if (status == TL_OK)
-        status = crawl_create(config_state_directory(config), (const char *const *)allow.paths,
-                              allow.count, &crawler);
+        status = crawl_create((const char *const *)excluded.paths, excluded.count,
+                              (const char *const *)allow.paths, allow.count, &crawler);
     if (status == TL_OK) {
         crawl_select_roots(crawler, (const char *const *)roots.paths, roots.count, roots.keep);
         struct scan_context scan = {.store = store, .database = database};
@@ -357,6 +370,7 @@ static tl_status index_roots(tl_store *store, const struct options *options,
     crawl_destroy(crawler);
     free_paths(&roots);
     free_paths(&allow);
+    free_paths(&excluded);
     free(database);
     return status;
 }
@@ -388,6 +402,8 @@ static tl_status query_catalog(tl_store *store, const struct options *options) {
     tl_lexical_workspace *workspace = NULL;
     tl_result results[LEXICAL_MAX_RESULTS];
     tl_status status = lexical_create(&engine);
+    if (status == TL_OK)
+        status = lexical_set_place_ranking(engine, true);
     if (status == TL_OK)
         status = store_load(store, load_entry, engine);
     if (status == TL_OK)

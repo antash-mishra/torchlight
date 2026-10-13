@@ -35,6 +35,16 @@ tl_status lexical_create(tl_lexical **out);
  * allocation or I/O. TL_INVALID for NULL/out-of-range; TL_STATE after finish
  * or builder failure. Errors leave the previous bonus unchanged. */
 tl_status lexical_set_prefix_bonus(tl_lexical *engine, int bonus);
+/** Turn the place prior on or off for an unsealed builder (default off). When
+ * on, every result except exact raw paths and indexed roots loses the
+ * place_penalty (place.h, 0..PLACE_PENALTY_MAX) of its parent directory: an
+ * ordinary result scores its match plus short-name bonus minus the penalty,
+ * at least 1, and an exact basename scores below the exact-name priority by
+ * the penalty, still classified by lexical_exactness. The cap keeps every
+ * result inside its channel tier. File catalogs turn it on; the desktop
+ * catalog leaves it off. No ownership transfer, allocation or I/O.
+ * TL_INVALID for NULL; TL_STATE after finish or builder failure. */
+tl_status lexical_set_place_ranking(tl_lexical *engine, bool enabled);
 /** Free engine and all paths; workspaces must no longer be used. NULL allowed. */
 void lexical_destroy(tl_lexical *engine);
 /** Copy an absolute path into the builder with a monotonically increasing
@@ -58,9 +68,11 @@ tl_status lexical_add_fields(tl_lexical *engine, uint64_t id, const char *path,
  * a delta segment: its indexed roots also bound parent context (directories
  * above them carry no evidence) and display context, and its trigram index
  * decides which query trigrams are frequent, so entries score the same in
- * either segment. Borrowed: reference must outlive this engine. NULL clears.
- * TL_INVALID for NULL engine or an unsealed reference, TL_STATE after finish
- * or builder failure. No allocation. */
+ * either segment. A non-NULL reference also sets this engine's place ranking
+ * (lexical_set_place_ranking) to the reference's, for the same reason.
+ * Borrowed: reference must outlive this engine. NULL clears the reference
+ * and keeps the place setting. TL_INVALID for NULL engine or an unsealed
+ * reference, TL_STATE after finish or builder failure. No allocation. */
 tl_status lexical_set_reference(tl_lexical *engine, const tl_lexical *reference);
 /** Find the position of nonzero id in a sealed engine by binary search.
  * TL_INVALID for NULL arguments or zero id, TL_STATE when unsealed or absent;
@@ -126,8 +138,9 @@ tl_status lexical_workspace_boost(tl_lexical_workspace *workspace, const tl_lexi
  * enough shared basename trigrams; an explicit generic-name/keyword prefix or subsequence; or a
  * prefix/subsequence within one parent directory name below the indexed roots. A word containing
  * '/' may instead match across the full path. Exact raw paths, then exact basenames, have priority.
- * Ties order by raw path bytes, then id. Boosted entries (lexical_workspace_boost) add their boost
- * to that score. No I/O. The only heap allocation is compiling a Frizbee
+ * With place ranking (lexical_set_place_ranking) results lose their place penalty inside their
+ * tier. Ties order by raw path bytes, then id. Boosted entries (lexical_workspace_boost) add their
+ * boost to that score. No I/O. The only heap allocation is compiling a Frizbee
  * matcher for a word the workspace has not cached: at most one per word and scoring thread, never
  * per entry; repeating a query allocates nothing. TL_INVALID/STATE/LIMIT on contract violations,
  * TL_NOMEM, TL_CANCELLED when the attached flag is set; scratch is reusable on failure, and a

@@ -72,6 +72,12 @@ struct tl_lexical {
     tl_result *symbol_results;
     size_t symbol_counts[LEXICAL_SYMBOL_QUERIES];
     int prefix_bonus;
+    /* Place prior (lexical_set_place_ranking): when on, place_penalties
+     * holds, per slot once sealed, the place_penalty() of the entry's parent
+     * directory, which its result loses. Per slot rather than per directory
+     * so a scored entry costs one load, not two. NULL when off. */
+    bool place_ranking;
+    uint16_t *place_penalties;
     /* Base engine this delta complements (see lexical_set_reference). */
     const tl_lexical *reference;
     bool symbols_ready;

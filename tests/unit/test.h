@@ -75,6 +75,8 @@ void test_trigram(void);
 void test_typo(void);
 /** Run directory-tree checks, aborting on failure. */
 void test_dirtree(void);
+/** Run place prior marker, level and penalty checks, aborting on failure. */
+void test_place(void);
 /** Run scorer checks, aborting on failure. */
 void test_fuzzy(void);
 /** Check the embedder adapter's metadata, ownership and error contracts. */
@@ -95,6 +97,8 @@ void test_usage(void);
 void test_lexical(void);
 /** Check personal boosts against full boosted evaluation on small and large engines. */
 void test_lexical_boost(void);
+/** Run place-ranking ordering, brute-force equivalence and delta checks. */
+void test_lexical_place(void);
 /** Run resident snapshot lifetime, capacity and concurrent-publication checks. */
 void test_catalog(void);
 /** Check incremental deletions, live delta bounds and retained leases. */

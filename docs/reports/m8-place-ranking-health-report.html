@@ -1,0 +1,204 @@
+<!-- M8 health report: ranking files by place and excluding folders, every measurement with its reference range, in plain language. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Lab-style health report of Torchlight M8: ranking files by where they live and excluding folders, with every ranking, speed, memory and correctness check against its reference range.">
+<title>Torchlight Health Report</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f7f6f2; --surface: #ffffff; --surface-2: #f1efe9; --ink: #1c1d21; --ink-2: #43464d;
+  --muted: #676b73; --line: #e2dfd7; --line-strong: #b5b1a7; --hot: #b45309; --hot-soft: #fdf1e1;
+  --hot-ink: #8f4107; --cool: #2f6aa8; --cool-soft: #e8f0f9; --code-bg: #f3f1ec;
+  --ok: #1f7a4d; --ok-soft: #e4f4ea; --warn: #9a5b00; --warn-soft: #fdf1dc; --bad: #b42318;
+  --bad-soft: #fde8e6; --info: #2f6aa8; --info-soft: #e8f0f9; --bar: #2f6aa8; --bar-old: #b5b1a7;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121316; --surface: #1b1c20; --surface-2: #23252a; --ink: #ecebe6; --ink-2: #c6c4be;
+    --muted: #9a9ea6; --line: #2f3137; --line-strong: #50545d; --hot: #f0a23b; --hot-soft: #2f2414;
+    --hot-ink: #f6bd6a; --cool: #7db1e8; --cool-soft: #16222f; --code-bg: #202227;
+    --ok: #5cc98e; --ok-soft: #13271c; --warn: #f0b350; --warn-soft: #2d2213; --bad: #f2867c;
+    --bad-soft: #2e1715; --info: #7db1e8; --info-soft: #16222f; --bar: #7db1e8; --bar-old: #50545d;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121316; --surface: #1b1c20; --surface-2: #23252a; --ink: #ecebe6; --ink-2: #c6c4be;
+  --muted: #9a9ea6; --line: #2f3137; --line-strong: #50545d; --hot: #f0a23b; --hot-soft: #2f2414;
+  --hot-ink: #f6bd6a; --cool: #7db1e8; --cool-soft: #16222f; --code-bg: #202227;
+  --ok: #5cc98e; --ok-soft: #13271c; --warn: #f0b350; --warn-soft: #2d2213; --bad: #f2867c;
+  --bad-soft: #2e1715; --info: #7db1e8; --info-soft: #16222f; --bar: #7db1e8; --bar-old: #50545d;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 "Noto Sans", Inter, Ubuntu, Cantarell, "Segoe UI", -apple-system, "DejaVu Sans", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+main { max-width: 1120px; margin: 0 auto; padding: 48px 32px 56px; }
+code, .mono { font-family: ui-monospace, "JetBrains Mono", "DejaVu Sans Mono", Menlo, monospace; }
+code { font-size: .88em; background: var(--code-bg); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+a { color: var(--cool); text-underline-offset: 3px; }
+a:focus-visible, summary:focus-visible { outline: 3px solid var(--cool); outline-offset: 3px; border-radius: 4px; }
+.eyebrow { margin: 0 0 10px; color: var(--hot-ink); font-size: 13px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+h1 { margin: 0; font-size: clamp(32px, 5vw, 48px); line-height: 1.1; letter-spacing: -.03em; }
+.lede { max-width: 760px; margin: 16px 0 0; color: var(--ink-2); font-size: 18px; }
+h2 { margin: 0 0 6px; font-size: 26px; line-height: 1.25; letter-spacing: -.02em; }
+h2 .num { color: var(--hot); font-variant-numeric: tabular-nums; margin-right: 10px; }
+h3 { margin: 0 0 6px; font-size: 17px; }
+p { margin: 0 0 12px; }
+section { margin-top: 56px; scroll-margin-top: 16px; }
+.sub { max-width: 780px; color: var(--ink-2); }
+nav.toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 26px 0 0; }
+nav.toc a { padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink-2); font-size: 13px; font-weight: 600; text-decoration: none; }
+nav.toc a:hover { border-color: var(--line-strong); color: var(--ink); }
+
+/* Lab header ("specimen" block) */
+.specimen { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0; margin: 26px 0 0; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.specimen div { padding: 12px 16px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.specimen dt { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.specimen dd { margin: 2px 0 0; font-size: 14px; }
+
+/* Verdict */
+.verdict { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 20px; margin: 26px 0 0; padding: 24px; background: var(--surface); border: 1px solid var(--line); border-left: 6px solid var(--ok); border-radius: 16px; }
+.verdict h2 { font-size: 24px; }
+.verdict .big { font-size: 34px; font-weight: 800; letter-spacing: -.02em; color: var(--ok); }
+.counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-content: start; }
+.count { padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); }
+.count b { display: block; font-size: 26px; font-variant-numeric: tabular-nums; }
+.count span { color: var(--ink-2); font-size: 13px; }
+.count.ok b { color: var(--ok); } .count.watch b { color: var(--warn); } .count.bad b { color: var(--bad); } .count.info b { color: var(--info); }
+
+/* Headline comparison bars */
+.headline { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 22px 0 0; }
+.tile { padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.tile .label { color: var(--muted); font-size: 13px; font-weight: 600; }
+.tile .value { font-size: 28px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.tile .was { color: var(--muted); font-size: 13px; }
+.tile .bars { margin-top: 10px; display: grid; gap: 4px; }
+.tile .bar { height: 8px; border-radius: 4px; background: var(--bar); }
+.tile .bar.old { background: var(--bar-old); }
+.tile .better { color: var(--ok); font-weight: 700; font-size: 13px; }
+
+/* Legend */
+.legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 14px 0 0; padding: 0; list-style: none; font-size: 14px; color: var(--ink-2); }
+.legend li { display: inline-flex; align-items: center; gap: 8px; }
+
+/* Flags */
+.flag { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; border: 1px solid transparent; }
+.flag.ok { background: var(--ok-soft); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
+.flag.watch { background: var(--warn-soft); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.flag.bad { background: var(--bad-soft); color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+.flag.info { background: var(--info-soft); color: var(--info); border-color: color-mix(in srgb, var(--info) 30%, transparent); }
+
+/* Panels: lab result tables */
+.panel { margin: 22px 0 0; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.panel header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; padding: 16px 20px; border-bottom: 1px solid var(--line); background: var(--surface-2); }
+.panel header h3 { margin: 0; font-size: 18px; }
+.panel header p { margin: 0; color: var(--ink-2); font-size: 14px; max-width: 720px; }
+.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 10px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.result { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.before { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.range { color: var(--ink-2); white-space: nowrap; }
+td.test b { display: block; }
+td.test span { color: var(--muted); font-size: 13px; }
+tr.bad td.result { color: var(--bad); }
+tr.watch td.result { color: var(--warn); }
+
+/* Red flags */
+.flags { display: grid; gap: 14px; margin: 22px 0 0; }
+.redflag { padding: 18px 20px; background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--warn); border-radius: 0 14px 14px 0; }
+.redflag.bad { border-left-color: var(--bad); }
+.redflag.info { border-left-color: var(--info); }
+.redflag.ok { border-left-color: var(--ok); }
+.redflag h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.redflag p { color: var(--ink-2); margin: 6px 0 0; }
+.redflag p b { color: var(--ink); }
+
+/* Definitions */
+dl.terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin: 22px 0 0; }
+dl.terms div { padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+dl.terms dt { font-weight: 700; }
+dl.terms dd { margin: 4px 0 0; color: var(--ink-2); font-size: 14px; }
+details { margin: 22px 0 0; padding: 14px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+summary { cursor: pointer; font-weight: 700; }
+details ul { margin: 10px 0 0; padding-left: 20px; color: var(--ink-2); font-size: 14px; }
+footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+@media (max-width: 720px) {
+  main { padding: 28px 16px 40px; }
+  .verdict { grid-template-columns: 1fr; }
+  th, td { padding: 9px 10px; }
+}
+.tilebar { background: var(--bar); }
+.panel .bar.old { background: var(--bar-old); }
+
+</style>
+</head>
+<body>
+<main>
+<p class="eyebrow">Torchlight · Health report · M8</p>
+<h1>Do your own files come first now?</h1>
+<p class="lede">M8 gives every file a small penalty for where it lives (deep below your home folder, or inside
+installed or vendored software) and adds an <code>exclude</code> setting. Like a blood test, this report lists
+each measurement with the range it should fall in, a flag, and the value before the change. Plain-language
+definitions are at the end.</p>
+<dl class="specimen"><div><dt>Specimen</dt><dd>torchlightd and its search engine, M8 (branch m8-place-ranking)</dd></div><div><dt>Compared with</dt><dd>Same machine, HEAD 4490e26 (M7 Phase 3), measured the same evening</dd></div><div><dt>Collected</dt><dd>2026-10-12</dd></div><div><dt>Machine</dt><dd>Intel i7-8700K, 6 cores, 32 GB, Linux 6.8, ext4; a desktop in use (load average 3.5 to 5.3)</dd></div><div><dt>Ranking sample</dt><dd>Read-only copy of your live catalog: 213,356 entries, 50 everyday queries</dd></div><div><dt>Speed samples</dt><dd>50k and 500k synthetic fixtures; a 213k mirror of your home folder</dd></div><div><dt>Live sample</dt><dd>Your torchlightd service and popup, restarted on the M8 debug build</dd></div><div><dt>Raw data</dt><dd>tests/bench/results/2026-10-12-m8-*, tests/quality/results/2026-10-12-m8-*</dd></div></dl>
+<nav class="toc" aria-label="Contents"><a href="#summary">Summary</a><a href="#how">How to read</a><a href="#results">Results</a><a href="#flags">Red flags</a><a href="#terms">Definitions</a><a href="#method">Method</a></nav>
+<section id="summary"><div class="verdict" style="border-left-color: var(--warn)"><div><p class="eyebrow">Overall result</p><div class="big" style="color: var(--warn)">Better ranking, same speed</div><p>Among your top 10 file results for 50 everyday searches, files from SDKs, module caches and downloaded tools fell from 315 to 192 of 500, and files from your own folders rose from 143 to 225. Typing <code>sc</code> now lists seven of your own folders where it listed none. Search speed, start-up, memory and the daemon's background work are unchanged within noise; the relevance fixtures and every test suite pass, and the ranking equals a brute-force ranking at every result limit. Excluding the Android SDK and the Go module cache shrinks your index by 84% and raises your own results to 311 of 500. The two out-of-range results read the same on the build before M8 (a full check at its 1 s limit on a busy evening, and the rebuild-memory item from Phase 3).</p></div><div class="counts"><div class="count ok"><b>32</b><span>in range</span></div><div class="count watch"><b>4</b><span>to watch</span></div><div class="count bad"><b>2</b><span>out of range</span></div><div class="count info"><b>6</b><span>for information</span></div></div></div>
+<div class="headline"><div class="tile"><div class="label">Third-party files in your top 10</div><div class="value">192</div><div class="was">before: 315 of 500</div><div class="bars" aria-hidden="true"><div class="bar" style="width:61.0%"></div><div class="bar old" style="width:100.0%"></div></div><div class="better">39% fewer</div></div><div class="tile"><div class="label">Your own files in your top 10</div><div class="value">225</div><div class="was">before: 143 of 500</div><div class="bars" aria-hidden="true"><div class="bar" style="width:100.0%"></div><div class="bar old" style="width:63.6%"></div></div><div class="better">57% more</div></div><div class="tile"><div class="label">Typing <code>sc</code>: your folders</div><div class="value">7 of 10</div><div class="was">before: 0 of 10</div><div class="bars" aria-hidden="true"><div class="bar" style="width:70.0%"></div><div class="bar old" style="width:1.0%"></div></div><div class="better">from none</div></div><div class="tile"><div class="label">Typing at 500k (p95)</div><div class="value">4.77 ms</div><div class="was">before: 4.75 ms</div><div class="bars" aria-hidden="true"><div class="bar" style="width:96.4%"></div><div class="bar old" style="width:96.0%"></div></div><div class="better">same (+0.4%)</div></div></div></section>
+<section id="how"><h2><span class="num">1</span>How to read this report</h2>
+<p class="sub">Each table is a <b>panel</b> of related tests. A row gives the <b>result</b>, the <b>reference
+range</b> it should fall in, a <b>flag</b>, and the value <b>before</b> M8 (HEAD) on the same machine and data,
+measured the same evening. Reference ranges come from the <a href="../m8-plan.md">M8 plan</a> and the M7
+gates. Noisy numbers were measured several times, alternating the builds.</p>
+<ul class="legend"><li><span class="flag ok">✓ In range</span>meets its reference</li>
+<li><span class="flag watch">! Watch</span>passes, but within 5% of its limit or otherwise worth keeping an eye on</li>
+<li><span class="flag bad">✕ Out of range</span>misses its reference: a red flag</li>
+<li><span class="flag info">i For information</span>no target; context only</li></ul></section>
+<section id="results"><h2><span class="num">2</span>Results by panel</h2>
+<p class="sub">Panels 1 and 2 measure ranking with the real engines; panels 3 to 6 speed, memory and the new
+setting with optimized builds; panel 7 the test suites; panel 8 your installed service.</p>
+<div class="panel" id="ranking"><header><h3>Panel 1 · Ranking on your home folder</h3><p>The real engines (HEAD and M8) on a read-only copy of your live catalog: 213,356 entries, 50 everyday queries, top 10 file results each (500 in all). Third-party means SDKs, the Go module cache, downloaded tools and package folders; own means workspace, Documents, Desktop, Android Studio projects, Pictures, Videos and Downloads.</p></header><div class="scroll"><table><thead><tr><th>Test</th><th>Result</th><th>Reference range</th><th>Flag</th><th>Before (HEAD)</th></tr></thead><tbody><tr class="ok"><td class="test"><b>Third-party results in the top 10</b><span>Results inside installed or vendored software.</span></td><td class="result">192 of 500</td><td class="range">fewer than HEAD</td><td><span class="flag ok">✓ In range</span></td><td class="before">315</td></tr><tr class="ok"><td class="test"><b>Your own results in the top 10</b><span>Results from your own folders.</span></td><td class="result">225 of 500</td><td class="range">more than HEAD</td><td><span class="flag ok">✓ In range</span></td><td class="before">143</td></tr><tr class="ok"><td class="test"><b>Typing <code>sc</code>: your folders among the files</b><span>Files and folders after the five apps.</span></td><td class="result">7 of 10</td><td class="range">more than HEAD</td><td><span class="flag ok">✓ In range</span></td><td class="before">0</td></tr><tr class="ok"><td class="test"><b>Typing <code>scripts</code>: <code>~/workspace/torchlight/scripts</code></b><span>Rank among exact-name matches.</span></td><td class="result">5th</td><td class="range">in the top 10</td><td><span class="flag ok">✓ In range</span></td><td class="before">below 10th</td></tr><tr class="watch"><td class="test"><b>Queries that lost own results</b><span>Of the 50 queries.</span></td><td class="result">1 (<code>model</code>, 10 → 8)</td><td class="range">none</td><td><span class="flag watch">! Watch</span></td><td class="before">—</td></tr><tr class="info"><td class="test"><b>With two folders excluded</b><span><code>exclude</code> = <code>~/Android/Sdk</code> and <code>~/go/pkg/mod</code>; third-party / own.</span></td><td class="result">64 / 311</td><td class="range">—</td><td><span class="flag info">i For information</span></td><td class="before">116 / 272 (HEAD, same exclusions)</td></tr></tbody></table></div></div><div class="panel" id="relevance"><header><h3>Panel 2 · Labeled relevance</h3><p>The project's fixed relevance checks: the mixed launcher fixture (apps, settings and competing files), the benchmark's labeled known-item queries and its sanity fixtures.</p></header><div class="scroll"><table><thead><tr><th>Test</th><th>Result</th><th>Reference range</th><th>Flag</th><th>Before (HEAD)</th></tr></thead><tbody><tr class="ok"><td class="test"><b>Mixed fixture against the frozen baseline</b><span>Held-out graded relevance (nDCG@10); the evaluator's own gate.</span></td><td class="result">1.000</td><td class="range">above frozen (0.939)</td><td><span class="flag ok">✓ In range</span></td><td class="before">1.000</td></tr><tr class="ok"><td class="test"><b>Mixed fixture: unchanged top 10</b><span>Queries whose top 10 is identical to HEAD's.</span></td><td class="result">44 of 44</td><td class="range">no losses</td><td><span class="flag ok">✓ In range</span></td><td class="before">—</td></tr><tr class="ok"><td class="test"><b>Benchmark sanity fixtures</b><span>Labeled queries that must find their file.</span></td><td class="result">9/9 every run</td><td class="range">all pass</td><td><span class="flag ok">✓ In range</span></td><td class="before">9/9</td></tr><tr class="ok"><td class="test"><b>Known-item recall@10, held out</b><span>50k / 500k synthetic / 213k real mirror.</span></td><td class="result">0.633 / 0.541 / 0.634</td><td class="range">no drop above 0.02</td><td><span class="flag ok">✓ In range</span></td><td class="before">0.605 / 0.539 / 0.632</td></tr><tr class="watch"><td class="test"><b>Known-item recall@1, real mirror</b><span>Random target files, 84% of them SDK or module cache.</span></td><td class="result">0.463</td><td class="range">drop ≤ 0.02, or explained</td><td><span class="flag watch">! Watch</span></td><td class="before">0.492</td></tr></tbody></table></div></div><div class="panel" id="typing"><header><h3>Panel 3 · Typing speed</h3><p>Time to answer one keystroke in the search engine (<code>make bench</code>), optimized builds, runs alternating with HEAD on a desktop in use (load average 3.5 to 5.3).</p></header><div class="scroll"><table><thead><tr><th>Test</th><th>Result</th><th>Reference range</th><th>Flag</th><th>Before (HEAD)</th></tr></thead><tbody><tr class="watch"><td class="test"><b>Typing at 500k, slow 5% (p95)</b><span>18 runs in mirrored order; median and range.</span></td><td class="result">4.77 ms (4.52–4.93)</td><td class="range">≤ 5 ms and within HEAD's spread</td><td><span class="flag watch">! Watch</span></td><td class="before">4.75 ms (4.19–4.95)</td></tr><tr class="ok"><td class="test"><b>Typing at 500k, typical (p50)</b><span>Same runs, median.</span></td><td class="result">0.90 ms</td><td class="range">≤ HEAD + 10%</td><td><span class="flag ok">✓ In range</span></td><td class="before">0.87 ms</td></tr><tr class="ok"><td class="test"><b>Typing at 50k, p95</b><span>3 runs each.</span></td><td class="result">0.55–0.58 ms</td><td class="range">≤ HEAD + 10%</td><td><span class="flag ok">✓ In range</span></td><td class="before">0.55–0.65 ms</td></tr><tr class="ok"><td class="test"><b>Typing on the 213k real mirror, p95</b><span>2 runs each.</span></td><td class="result">2.78–2.82 ms</td><td class="range">≤ HEAD + 10%</td><td><span class="flag ok">✓ In range</span></td><td class="before">2.81–2.94 ms</td></tr><tr class="info"><td class="test"><b>First version: penalty per folder</b><span>Same 500k series; replaced by a penalty per entry.</span></td><td class="result">4.91 ms p95, 0.92 ms p50</td><td class="range">—</td><td><span class="flag info">i For information</span></td><td class="before">4.75 / 0.87 ms</td></tr></tbody></table></div></div><div class="panel" id="engine"><header><h3>Panel 4 · Building the index in memory</h3><p>Engine build time and memory in the same benchmark runs.</p></header><div class="scroll"><table><thead><tr><th>Test</th><th>Result</th><th>Reference range</th><th>Flag</th><th>Before (HEAD)</th></tr></thead><tbody><tr class="ok"><td class="test"><b>Engine build at 500k</b><span>Seconds to build the in-memory index, all runs.</span></td><td class="result">2.96–3.37 s</td><td class="range">≤ HEAD + 5%</td><td><span class="flag ok">✓ In range</span></td><td class="before">2.96–3.36 s</td></tr><tr class="ok"><td class="test"><b>Engine memory at 500k</b><span>Expected +1 MB (2 bytes per entry); within run-to-run noise.</span></td><td class="result">256.9–257.1 MB</td><td class="range">≤ HEAD + 1%</td><td><span class="flag ok">✓ In range</span></td><td class="before">256.9–257.1 MB</td></tr></tbody></table></div></div><div class="panel" id="daemon"><header><h3>Panel 5 · The daemon on a 213k copy of your home folder</h3><p>The optimized daemons on a mirror of the real home folder (empty files), each run on its own isolated database; two runs per build, alternating.</p></header><div class="scroll"><table><thead><tr><th>Test</th><th>Result</th><th>Reference range</th><th>Flag</th><th>Before (HEAD)</th></tr></thead><tbody><tr class="ok"><td class="test"><b>Search ready after a restart</b><span>Loading the saved index.</span></td><td class="result">1,522 / 1,557 ms</td><td class="range">≤ HEAD + 10%</td><td><span class="flag ok">✓ In range</span></td><td class="before">1,552 / 1,496 ms</td></tr><tr class="ok"><td class="test"><b>Search answer time, idle (p50 / p95)</b><span>900 queries through the socket, two runs.</span></td><td class="result">0.80 / 2.28 and 0.79 / 2.96 ms</td><td class="range">≤ 2 / ≤ 5 ms</td><td><span class="flag ok">✓ In range</span></td><td class="before">0.76 / 2.77 and 0.84 / 2.93 ms</td></tr><tr class="ok"><td class="test"><b>Search during full checks (p95)</b><span>While checks run back to back.</span></td><td class="result">2.41 / 2.67 ms</td><td class="range">≤ 5 ms</td><td><span class="flag ok">✓ In range</span></td><td class="before">2.65 / 3.08 ms</td></tr><tr class="bad"><td class="test"><b>Time for one full check</b><span>Nothing changed; median of 5, two runs.</span></td><td class="result">1,001 / 1,018 ms</td><td class="range">≤ 1,000 ms</td><td><span class="flag bad">✕ Out of range</span></td><td class="before">1,307 / 1,048 ms</td></tr><tr class="ok"><td class="test"><b>Everyday memory (steady RSS)</b><span>After start.</span></td><td class="result">163 MB</td><td class="range">≤ HEAD + 2 MB</td><td><span class="flag ok">✓ In range</span></td><td class="before">162 MB</td></tr><tr class="bad"><td class="test"><b>Memory after a rebuild vs steady</b><span>Known open item from M7 Phase 3.</span></td><td class="result">+10.7%</td><td class="range">≤ +10%</td><td><span class="flag bad">✕ Out of range</span></td><td class="before">+10.1%</td></tr><tr class="ok"><td class="test"><b>Peak memory during a large change</b><span>Highest RSS during the 20k rename.</span></td><td class="result">395 MB</td><td class="range">≤ HEAD + 2 MB</td><td><span class="flag ok">✓ In range</span></td><td class="before">395 MB</td></tr><tr class="ok"><td class="test"><b>20,000 new files searchable</b><span>One run.</span></td><td class="result">527 ms</td><td class="range">≤ HEAD + 20%</td><td><span class="flag ok">✓ In range</span></td><td class="before">505 ms</td></tr><tr class="ok"><td class="test"><b>Renamed 22k-entry folder searchable</b><span>One run.</span></td><td class="result">542 ms</td><td class="range">≤ HEAD + 20%</td><td><span class="flag ok">✓ In range</span></td><td class="before">480 ms</td></tr><tr class="ok"><td class="test"><b>Background CPU while idle</b><span>30 s, default settings.</span></td><td class="result">0.10%</td><td class="range">≤ 0.20%</td><td><span class="flag ok">✓ In range</span></td><td class="before">0.13 / 0.17%</td></tr><tr class="ok"><td class="test"><b>First-ever index</b><span>Empty database.</span></td><td class="result">5.2 s</td><td class="range">≤ HEAD + 10%</td><td><span class="flag ok">✓ In range</span></td><td class="before">5.9 s</td></tr></tbody></table></div></div><div class="panel" id="exclude"><header><h3>Panel 6 · Excluding folders</h3><p><code>torchlight index</code> on the 213k mirror into a fresh database, with and without <code>exclude = ~/Android/Sdk</code> and <code>exclude = ~/go/pkg/mod</code>, twice each.</p></header><div class="scroll"><table><thead><tr><th>Test</th><th>Result</th><th>Reference range</th><th>Flag</th><th>Without exclusions</th></tr></thead><tbody><tr class="info"><td class="test"><b>Entries indexed</b><span>Files and folders saved.</span></td><td class="result">34,989</td><td class="range">—</td><td><span class="flag info">i For information</span></td><td class="before">213,287</td></tr><tr class="info"><td class="test"><b>Time to index from scratch</b><span>Debug command line.</span></td><td class="result">0.68 s</td><td class="range">—</td><td><span class="flag info">i For information</span></td><td class="before">4.0–4.4 s</td></tr><tr class="info"><td class="test"><b>Database size</b><span>On disk.</span></td><td class="result">14.8 MB</td><td class="range">—</td><td><span class="flag info">i For information</span></td><td class="before">90.4 MB</td></tr><tr class="ok"><td class="test"><b>Excluded entries pruned by the daemon</b><span>Saved entries gone after a restart; later changes inside never appear (daemon test).</span></td><td class="result">pruned</td><td class="range">pruned</td><td><span class="flag ok">✓ In range</span></td><td class="before">new test</td></tr><tr class="ok"><td class="test"><b>Exclusion beats the allowlist</b><span>An allowed folder inside an excluded one (crawl and CLI tests).</span></td><td class="result">not indexed</td><td class="range">not indexed</td><td><span class="flag ok">✓ In range</span></td><td class="before">new test</td></tr></tbody></table></div></div><div class="panel" id="correctness"><header><h3>Panel 7 · Correctness and code quality</h3><p>Test suites, the brute-force ranking comparison, mutation checks and lint.</p></header><div class="scroll"><table><thead><tr><th>Test</th><th>Result</th><th>Reference range</th><th>Flag</th><th>Detail</th></tr></thead><tbody><tr class="ok"><td class="test"><b>Unit tests</b><span>All modules, under ASan, UBSan and LeakSanitizer.</span></td><td class="result">all passed</td><td class="range">all pass</td><td><span class="flag ok">✓ In range</span></td><td class="before">make test</td></tr><tr class="ok"><td class="test"><b>Integration suites</b><span>Allocation, CLI, desktop catalog, daemon, semantic, headless build.</span></td><td class="result">6 of 6 passed</td><td class="range">all pass</td><td><span class="flag ok">✓ In range</span></td><td class="before">make test</td></tr><tr class="ok"><td class="test"><b>Ranking equals a brute-force ranking</b><span>Place-off scores minus each penalty, at result limits 1, 5, 10 and 200, with boosts and tombstones; 700 and 70,000 entries.</span></td><td class="result">identical</td><td class="range">identical</td><td><span class="flag ok">✓ In range</span></td><td class="before">test_lexical_place</td></tr><tr class="ok"><td class="test"><b>Delta segments rank like a rebuild</b><span>Inherited setting, same penalties.</span></td><td class="result">identical</td><td class="range">identical</td><td><span class="flag ok">✓ In range</span></td><td class="before">test_lexical_place</td></tr><tr class="watch"><td class="test"><b>Tests catch the bugs they guard</b><span>Each new rule deliberately broken.</span></td><td class="result">11 of 12 caught</td><td class="range">all caught</td><td><span class="flag watch">! Watch</span></td><td class="before">the 12th (score floor) is unreachable</td></tr><tr class="ok"><td class="test"><b>Static analysis</b><span>clang-tidy and cppcheck over all sources and tests.</span></td><td class="result">0 warnings</td><td class="range">0</td><td><span class="flag ok">✓ In range</span></td><td class="before">make lint</td></tr></tbody></table></div></div><div class="panel" id="live"><header><h3>Panel 8 · Your live service</h3><p>Your torchlightd service and popup, restarted on the M8 debug build (the unoptimized build your unit runs).</p></header><div class="scroll"><table><thead><tr><th>Test</th><th>Result</th><th>Reference range</th><th>Flag</th><th>Before</th></tr></thead><tbody><tr class="ok"><td class="test"><b>Startup check after the restart</b><span>Full check right after starting.</span></td><td class="result">1,139 ms</td><td class="range">≤ 1,500 ms (debug build)</td><td><span class="flag ok">✓ In range</span></td><td class="before">1,102 ms (Phase 3)</td></tr><tr class="ok"><td class="test"><b>Health flags</b><span>degraded, watch_degraded, recovering.</span></td><td class="result">all false</td><td class="range">all false</td><td><span class="flag ok">✓ In range</span></td><td class="before">all false</td></tr><tr class="ok"><td class="test"><b>Typing <code>sc</code></b><span>Through the live daemon.</span></td><td class="result">5 apps, then your own folders</td><td class="range">your files before SDK files</td><td><span class="flag ok">✓ In range</span></td><td class="before">5 apps, then NDK headers</td></tr><tr class="info"><td class="test"><b>Popup restarted on the rebuilt binary</b><span>In your desktop session.</span></td><td class="result">running</td><td class="range">—</td><td><span class="flag info">i For information</span></td><td class="before">running since 2 days</td></tr></tbody></table></div></div></section>
+<section id="flags"><h2><span class="num">3</span>Red flags and things to know</h2>
+<p class="sub">Anything out of range, anything found and fixed while validating, and the trade-offs that come
+with the change, each explained in plain words.</p>
+<div class="flags"><article class="redflag bad"><h3><span class="flag bad">Red flag</span>A full check reads 1,001 to 1,018 ms (limit 1,000 ms), on both builds</h3><p><b>What we saw.</b> The median of five forced full checks was 1,001 and 1,018 ms for M8, and 1,307 and 1,048 ms for HEAD, in the same hour. The M7 Phase 3 report measured 943 to 969 ms on a quieter machine.</p><p><b>Why.</b> M8 does not change scanning: excluding folders adds one comparison per folder against the excluded list, which is empty in this run. Both builds slowed together with the machine's load. <b>What it means for you:</b> nothing new; the full check stays at its limit, as Phase 3 already flagged.</p></article><article class="redflag bad"><h3><span class="flag bad">Red flag</span>Memory after a rebuild reads +10.7% (limit +10%), as on HEAD (+10.1%)</h3><p>This is the open item the M7 Phase 3 report described: everyday memory fell more than memory after a rebuild. M8 adds 2 bytes per entry (0.4 MB at 213k) to every engine, steady and rebuilt alike; the single runs differ by 1 MB, within noise.</p></article><article class="redflag watch"><h3><span class="flag watch">Watch</span>Typing at 500k is close to 5 ms on a busy machine</h3><p>The median of six mirrored runs is 4.77 ms for M8 and 4.75 ms for HEAD (load average 3.5 to 5.3). A first version stored the penalty per folder; every scored entry then needed a second scattered memory read, and p95 rose to 4.91 ms. Storing it per entry (2 bytes, 1 MB at 500k) removed the difference. The 213k real mirror is at 2.8 ms on both builds.</p></article><article class="redflag watch"><h3><span class="flag watch">Watch</span>Deep files in your own projects rank a little lower</h3><p>For <code>model</code>, two files seven folders deep (<code>AndroidStudioProjects/…/app/src/main/cpp/include/model.h</code>) dropped out of the top 10 behind shallower matches of the same strength. That is the rule working as designed; opening such a file adds a personal boost that lifts it again.</p></article><article class="redflag watch"><h3><span class="flag watch">Watch</span>Known-item recall@1 on the real mirror drops by 0.029</h3><p>This benchmark picks random files as targets. On your home folder 84% of files are in the Android SDK and the Go module cache, exactly the files M8 ranks later, so their first-place hits drop (0.492 to 0.463). recall@10 holds (0.632 to 0.634), and on synthetic corpora recall@10 rises.</p></article><article class="redflag info"><h3><span class="flag info">Good to know</span>Exact names inside SDKs still come first</h3><p>For <code>readme</code>, <code>doc</code>, <code>util</code>, <code>build</code> or <code>license</code>, files with exactly that name inside third-party trees still lead: a place penalty never moves a result below a weaker kind of match, and an exact name is the strongest. <code>exclude</code> is the remedy: with <code>~/Android/Sdk</code> and <code>~/go/pkg/mod</code> excluded, 311 of the 500 results come from your own folders.</p></article><article class="redflag info"><h3><span class="flag info">Good to know</span>A changed exclude list takes effect when the daemon restarts</h3><p>As with <code>root</code> and <code>allow</code>, the daemon reads its configuration at start-up: run <code>systemctl --user restart torchlightd</code> after editing. The start-up check then removes the excluded folders' saved entries.</p></article><article class="redflag info"><h3><span class="flag info">Good to know</span>A folder named <code>sdk</code> counts as installed software</h3><p>That catches <code>~/Android/Sdk</code>, the largest source of noise here, but also a project's own <code>sdk</code> folder, whose files then rank a little lower.</p></article><article class="redflag ok"><h3><span class="flag ok">Resolved</span>Found by a test: the crawler kept a stale pointer on bad input</h3><p><code>crawl_create</code> promised to set its output to NULL on every invalid call but returned early without doing so when a list was NULL with a nonzero count. The new crawl test caught it; it is fixed.</p></article><article class="redflag watch"><h3><span class="flag watch">Watch</span>One mutation check survives: the score floor of 1</h3><p>Eleven of twelve deliberately broken rules made a test fail. The twelfth removes the rule that an ordinary result scores at least 1 after its penalty. No real match is that weak today: letters scattered through a folder name or across a path score about 270 or more, above the 256 cap, so the floor is a guard for future scorers and cannot be reached by a test.</p></article><article class="redflag info"><h3><span class="flag info">Good to know</span>Found while testing: deltas take trigram statistics from their base</h3><p>A small update index decides which three-letter pieces are common using the main index only, so a few weak trigram matches can differ from a full rebuild until the next compaction. This predates M8 and does not depend on place ranking; it is recorded in ADR 0047.</p></article><article class="redflag info"><h3><span class="flag info">Good to know</span>Your live service runs the first M8 build</h3><p>It was restarted on the build with per-folder penalties, before the per-entry change. Its ranking is identical; only the extra memory read per result remains until the next rebuild from the <code>m8-place-ranking</code> branch.</p></article></div></section>
+<section id="terms"><h2><span class="num">4</span>Definitions</h2>
+<dl class="terms"><div><dt>Place penalty</dt><dd>A few points (0 to 256) a file result loses for where it lives: 24 per folder beyond three below the indexed folder, plus 128 inside installed or vendored software.</dd></div><div><dt>Dependency tree</dt><dd>A folder of software a tool installed or copied in: node_modules, site-packages, vendor, third_party, sysroot, an SDK, a Go module cache, or a version folder such as 27.0.12077973.</dd></div><div><dt>Tier (kind of match)</dt><dd>Exact path, exact name, name start, word start, initials, typo, folder name, letters in order, three-letter pieces. A penalty only reorders results inside a tier.</dd></div><div><dt>Excluded folder</dt><dd>A folder named with exclude = in the configuration: never read, never watched.</dd></div><div><dt>Third-party / own result</dt><dd>Labels for this report only: a result inside SDKs, module caches, downloaded tools or package folders, or inside your workspace and personal folders.</dd></div><div><dt>Known-item recall</dt><dd>How often a benchmark query finds its one target file within the first 1 or 10 results.</dd></div><div><dt>nDCG@10</dt><dd>A relevance score from 0 to 1 that rewards useful results near the top of the first ten.</dd></div><div><dt>Brute-force comparison</dt><dd>Ranking every match the slow, obvious way and checking that the fast engine returns exactly the same list.</dd></div><div><dt>Mutation check</dt><dd>Deliberately breaking a rule to confirm the test that guards it fails.</dd></div><div><dt>p50 / p95</dt><dd>Percentiles: p50 is the typical case, p95 the slow 5%.</dd></div><div><dt>Mirrored order</dt><dd>Running builds A, B, C, C, B, A so that a machine slowly getting busier affects all builds alike.</dd></div><div><dt>-O3 / -O0 build</dt><dd>Optimized (benchmark) versus unoptimized debug build. Your live service runs the debug build.</dd></div></dl></section>
+<section id="method"><h2><span class="num">5</span>How this was measured</h2>
+<p class="sub">Ranking panels load each build's engine library (<code>make build/quality_engine.so</code>) and
+index the same path list; <code>tests/quality/place_eval.py</code> runs the queries and labels results by path.
+Speed panels use <code>make bench</code> and <code>tests/bench/bench_scenarios.py</code> with optimized builds of
+HEAD (from a worktree) and M8, alternating.</p>
+<details><summary>Details and raw data</summary><ul>
+<li>Live catalog: a read-only SQLite dump of <code>files</code> joined with <code>roots</code>; only aggregate
+counts are committed (<code>tests/quality/results/2026-10-12-m8-place-live-summary.json</code>).</li>
+<li>Mixed fixture: <code>tests/quality/evaluate.py</code> against the frozen baseline 7ace90f (its gate) and
+against HEAD (<code>2026-10-12-m8-mixed-summary.json</code>).</li>
+<li><code>make bench</code>: 50k ×3, 500k ×3 and the 213k real mirror ×2 per build, then 18 typing-only runs at
+500k in mirrored order for HEAD, M8 with per-folder penalties and M8 with per-entry penalties
+(<code>tests/bench/results/2026-10-12-m8-lexical.txt</code>).</li>
+<li>Scenarios: cold, warm, queries, rescan and events phases on the 213k mirror, then warm, queries and
+rescan again in the opposite order (<code>2026-10-12-m8-213k-*.jsonl</code>).</li>
+<li>Exclusions: <code>torchlight index</code> on the mirror into fresh databases
+(<code>2026-10-12-m8-exclude.json</code>).</li>
+<li>Mutation checks: each rule broken in a copy of the sources, built with the place, place-ranking and
+crawl tests.</li>
+</ul></details>
+</section>
+<footer>Generated from <code>tests/bench/results/2026-10-12-m8-*</code>, <code>tests/quality/results/2026-10-12-m8-*</code>
+and the validation logs of 2026-10-12. Design and decisions:
+<a href="../adr/0047-place-ranking-and-excluded-folders.md">ADR 0047</a> and the
+<a href="../m8-plan.md">M8 plan</a>. Previous report: <a href="m7-phase3-health-report.html">M7 Phase 3</a>.</footer>
+</main>
+</body>
+</html>

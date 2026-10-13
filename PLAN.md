@@ -524,6 +524,9 @@ its open items (ADRs 0045 and 0046): bursts settle and publish before their
 compaction, children prunes walk the path index, and the ledger is leaner
 ([results](docs/m7-plan.md#phase-3-results-2026-10-12),
 [health report](docs/reports/m7-phase3-health-report.html)).
+M8 ranks files by place and adds an `exclude` setting (ADR 0047): among
+similar matches, shallow files and the person's own folders come before SDKs,
+package caches and vendored code ([M8 plan](docs/m8-plan.md)).
 Cinnamon X11 is the verified target; wider desktop/theme/scaling acceptance is
 tracked explicitly in the verification report.
 
@@ -805,6 +808,20 @@ tracked explicitly in the verification report.
    rebuild, and 40 mount changes outside the root with zero full scans. Each
    remaining full scan still costs about 3.5 CPU-s and 150 MiB of SQLite
    writes, which Phase 2 targets.
+9. **M8: Rank files by place, and exclude folders.** Implemented
+   (2026-10-12; [M8 plan](docs/m8-plan.md), ADR 0047). File ranking knew
+   nothing about where a file lives, so on a desktop whose catalog is 84%
+   Android SDK and Go module cache those trees won every tie: typing `sc`
+   listed ten SDK and module-cache folders. A `place` module now gives each
+   file a penalty of 24 per folder beyond three below the indexed root, plus
+   128 inside a dependency tree (package folders, vendored code, sysroots,
+   SDKs, Go module folders, versioned install folders), capped at 256 so it
+   reorders matches only inside their channel tier. `exclude = PATH` drops a
+   tree from the index. Acceptance: exact results against a brute-force
+   ranking at every capacity, typing p95 at 500k within the HEAD runs' spread,
+   and fewer third-party and more own-folder results in the top 10 of 50
+   everyday queries on the live catalog. See the
+   [health report](docs/reports/m8-place-ranking-health-report.html).
 
 ## Evaluation
 

@@ -12,8 +12,8 @@ milestones).
 ```
 include/torchlight/   public headers, one per module
 src/core/             generic reusable utilities (no Torchlight domain knowledge)
-src/index/            tokenize, dirtree, lexical (prefix, trigram, subseq, typo),
-                      fuzzy, embed, vector, rank
+src/index/            tokenize, dirtree, place, lexical (prefix, trigram, subseq,
+                      typo), fuzzy, embed, vector, rank
 src/storage/          store.c, the ONLY place SQL lives
 src/fs/               crawl, watch
 src/ipc/              socket protocol

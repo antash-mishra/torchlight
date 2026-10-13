@@ -41,6 +41,11 @@ its compaction ([ADR 0045](adr/0045-settled-bursts-and-deferred-compaction.md)),
 and children prunes walk the path index while the ledger is leaner
 ([ADR 0046](adr/0046-children-walks-and-a-lean-ledger.md)); see the
 [Phase 3 health report](reports/m7-phase3-health-report.html).
+The [M8 plan](m8-plan.md) ranks files by place: among similar matches,
+shallow files and the person's own folders come before SDKs, package caches
+and vendored code, and an `exclude` setting drops whole folders
+([ADR 0047](adr/0047-place-ranking-and-excluded-folders.md),
+[health report](reports/m8-place-ranking-health-report.html)).
 
 Start here. Read in this order:
 
@@ -129,6 +134,7 @@ the root [README](../README.md) for commands, and
 | index | Typo channel | [typo](modules/typo/README.md) |
 | index | Fuzzy/edit scorer | [fuzzy](modules/fuzzy/README.md) |
 | index | Interned parent directories | [dirtree](modules/dirtree/README.md) |
+| index | Place prior for file ranking (M8) | [place](modules/place/README.md) |
 | index | Native static Potion | [potion](modules/potion/README.md) |
 | service | Background semantic queries | [semantic](modules/semantic/README.md) |
 | index | Swappable embedder | [embed](modules/embed/README.md) |
@@ -262,6 +268,9 @@ the root [README](../README.md) for commands, and
 - [0046: Children prunes by index walk, and a lean ledger](adr/0046-children-walks-and-a-lean-ledger.md)
   prunes a folder's children with one step per child instead of one per row
   below it, and fingerprints paths in one pass with 4-byte index slots.
+- [0047: Rank files by place, and let people exclude folders](adr/0047-place-ranking-and-excluded-folders.md)
+  gives each file a small penalty for depth and for lying inside installed or
+  vendored software, inside its match tier, and adds an `exclude` setting.
 
 ## Keeping docs current
 

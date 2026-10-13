@@ -289,11 +289,14 @@
       letters, and open an app, a settings panel, a file or a folder. This page explains the pieces
       behind that popup, how they talk to each other, what they do over a day, and how fast and quiet
       they are, with charts drawn from real measurements.</p>
-    <p class="meta">Based on the code at commit <code>ab377a0</code> plus M7 Phase 2 (cheap full
-      checks), 12 October 2026. Numbers come from the reference machine (a 6-core Intel i7-8700K with
-      32 GB of memory) and a 213,000-entry copy of a real home folder, unless a chart says otherwise.
-      The <a href="architecture.md">architecture doc</a> has the full technical detail, and the
-      <a href="reports/m7-phase2-health-report.html">Phase 2 health report</a> every measurement.</p>
+    <p class="meta">Based on the code at commit <code>4490e26</code> (M7 Phase 3) plus M8 (ranking
+      files by place, excluded folders), 12 October 2026. Numbers come from the reference machine (a
+      6-core Intel i7-8700K with 32 GB of memory) and a 213,000-entry copy of a real home folder,
+      unless a chart says otherwise. The <a href="architecture.md">architecture doc</a> has the full
+      technical detail, and the <a href="reports/m7-phase2-health-report.html">Phase 2</a>,
+      <a href="reports/m7-phase3-health-report.html">Phase 3</a> and
+      <a href="reports/m8-place-ranking-health-report.html">M8</a> health reports every
+      measurement.</p>
     <nav class="toc" aria-label="On this page">
       <a href="#short">The short version</a>
       <a href="#vitals">Vital signs</a>
@@ -351,7 +354,7 @@
   <!-- Vital signs ─────────────────────────────────────────────────────── -->
   <section id="vitals">
     <h2><span class="num">2</span>Vital signs</h2>
-    <p class="sub">Six numbers describe how Torchlight feels to use, like the readings on a check-up.
+    <p class="sub">Seven numbers describe how Torchlight feels to use, like the readings on a check-up.
       Each card shows the goal it is measured against. The charts behind them are in
       <a href="#performance">Performance</a>.</p>
 
@@ -397,6 +400,13 @@
         <p>Time to load the saved list into memory. Phase 2 made it 0.2 s slower; Phase 3 won most
           of that back (1.42 s against 1.39 s before Phase 2).</p>
         <span class="status ok">On target: within 10% of before Phase 2</span>
+      </div>
+      <div class="vital">
+        <span class="what">Your own files among the top file results</span>
+        <span class="value">45<small>%</small></span>
+        <p>Top 10 file results of 50 everyday queries that come from your own folders, against 29%
+          before M8. SDK and package-cache results fell from 63% to 38%.</p>
+        <span class="status ok">Better than before M8</span>
       </div>
     </div>
   </section>
@@ -940,7 +950,7 @@
     <figure class="fig">
       <div class="fig-scroll">
         <svg class="dia" viewBox="0 0 1000 380" role="img"
-             aria-label="Your query fans out to four candidate channels: prefix, subsequence, trigram and typo. Their hits are merged into one candidate set, scored with the Frizbee fuzzy matcher plus folder context, and ranked with exact names first. Usage boosts and app results are merged in at the ranking step.">
+             aria-label="Your query fans out to four candidate channels: prefix, subsequence, trigram and typo. Their hits are merged into one candidate set, scored with the Frizbee fuzzy matcher plus folder context minus a small penalty for where the file lives, and ranked with exact names first. Usage boosts and app results are merged in at the ranking step.">
           <defs>
             <marker id="d3n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-n" d="M0 0L10 5L0 10z"/></marker>
           </defs>
@@ -990,9 +1000,10 @@
           <line class="ln" x1="640" y1="197" x2="677" y2="197" marker-end="url(#d3n)"/>
 
           <rect class="bx-hot" x="680" y="157" width="140" height="80" rx="10"/>
-          <text class="t" x="750" y="186" text-anchor="middle">Score</text>
-          <text class="s" x="750" y="205" text-anchor="middle">Frizbee fuzzy match</text>
-          <text class="s" x="750" y="221" text-anchor="middle">+ folder context</text>
+          <text class="t" x="750" y="180" text-anchor="middle">Score</text>
+          <text class="s" x="750" y="198" text-anchor="middle">Frizbee fuzzy match</text>
+          <text class="s" x="750" y="213" text-anchor="middle">+ folder context</text>
+          <text class="s" x="750" y="228" text-anchor="middle">− place penalty</text>
 
           <line class="ln" x1="820" y1="197" x2="857" y2="197" marker-end="url(#d3n)"/>
 
@@ -1031,9 +1042,10 @@
         fuzzy matcher (a vendored Rust library using SIMD instructions) for this. Each folder is
         stored once and scored once, not once per file inside it.</li>
       <li><strong>Rank.</strong> An exact path beats an exact name, and both beat everything else.
-        Apps and settings have their own small engine and are merged with files by score. Things you
-        open often get a small, capped boost, so history can reorder results but never bury an exact
-        match.</li>
+        Among matches of similar strength, files closer to your indexed folder, and outside installed
+        or vendored software, come first (see below). Apps and settings have their own small engine
+        and are merged with files by score. Things you open often get a small, capped boost, so
+        history can reorder results but never bury an exact match.</li>
     </ol>
 
     <div class="table-wrap">
@@ -1044,9 +1056,94 @@
           <tr><td><code>raedme</code></td><td><code>README.md</code></td><td>One swapped letter (typo channel).</td></tr>
           <tr><td><code>work notes</code></td><td><code>~/work/…/notes.md</code></td><td>One word matches the name, the other a parent folder.</td></tr>
           <tr><td><code>display</code></td><td>Display settings</td><td>Apps and settings panels are searched by name, generic name and keywords.</td></tr>
+          <tr><td><code>sc</code></td><td>your own <code>scripts</code> folders</td><td>Many names start with <code>sc</code>; place ranking puts yours before SDK and package-cache folders.</td></tr>
         </tbody>
       </table>
     </div>
+
+    <h3>Where a file lives counts too</h3>
+    <p>Typing two letters matches thousands of names equally well. Until M8, Torchlight broke those
+      ties by name length and then alphabetically by full path, without asking where a file lives.
+      On the reference home folder, 84% of entries sit in the Android SDK and the Go module cache, so
+      those trees won almost every tie: <code>sc</code> listed ten SDK and module-cache folders.</p>
+    <p>Now each file loses a small <strong>place penalty</strong>, worked out once per folder when
+      the index is built:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Rule</th><th>Penalty</th><th>Example</th></tr></thead>
+        <tbody>
+          <tr><td>Up to three folders below the indexed folder</td><td>none</td><td><code>~/workspace/torchlight/scripts</code></td></tr>
+          <tr><td>Each folder deeper than that</td><td>24 points</td><td><code>~/a/b/c/d/e/f/scan</code>: 72</td></tr>
+          <tr><td>Inside installed or vendored software</td><td>128 points more</td><td><code>node_modules</code>, <code>site-packages</code>, <code>vendor</code>, <code>third_party</code>, <code>sysroot</code>, <code>sdk</code>, Go modules (<code>x@v1.2.3</code>), version folders (<code>27.0.12077973</code>)</td></tr>
+          <tr><td>Never more than</td><td>256 points</td><td>less than the gap between two kinds of match (500), so a better kind of match always wins</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figure class="fig">
+      <div class="fig-scroll">
+<svg class="dia chart" viewBox="0 0 1000 196" role="img" aria-label="Top 10 file results of 50 everyday queries on the reference home folder, 500 results in all. Before M8: 315 inside third-party software, 42 elsewhere, 143 in your own folders. With M8: 192 third-party, 83 elsewhere, 225 your own.">
+<text class="lbl-strong" x="190" y="58" text-anchor="end">Before M8</text>
+<rect class="seg-wait" x="200.0" y="40" width="466.2" height="26" rx="3"/>
+<text class="val" x="433.1" y="33" text-anchor="middle">315 third-party</text>
+<rect class="bar-old" x="666.2" y="40" width="62.2" height="26" rx="3"/>
+<text class="val" x="697.3" y="33" text-anchor="middle">42 other</text>
+<rect class="bar-new" x="728.4" y="40" width="211.6" height="26" rx="3"/>
+<text class="val" x="834.2" y="33" text-anchor="middle">143 yours</text>
+<text class="lbl-strong" x="190" y="130" text-anchor="end">With M8</text>
+<rect class="seg-wait" x="200.0" y="112" width="284.2" height="26" rx="3"/>
+<text class="val" x="342.1" y="105" text-anchor="middle">192 third-party</text>
+<rect class="bar-old" x="484.2" y="112" width="122.8" height="26" rx="3"/>
+<text class="val" x="545.6" y="105" text-anchor="middle">83 other</text>
+<rect class="bar-new" x="607.0" y="112" width="333.0" height="26" rx="3"/>
+<text class="val" x="773.5" y="105" text-anchor="middle">225 yours</text>
+<line class="grid" x1="200" y1="156" x2="940" y2="156"/>
+<text class="axis" x="200" y="174" text-anchor="middle">0</text>
+<text class="axis" x="570" y="174" text-anchor="middle">250</text>
+<text class="axis" x="940" y="174" text-anchor="end">500 results</text>
+</svg>
+      </div>
+      <ul class="legend">
+        <li><span class="sw hot"></span>inside SDKs, module caches, downloaded tools and package folders</li>
+        <li><span class="sw data" style="background: var(--line-strong)"></span>other (cloned libraries and the like)</li>
+        <li><span class="sw cool" style="background: var(--cool)"></span>your own folders</li>
+      </ul>
+      <figcaption><strong>Your own files come first among similar matches.</strong> Top 10 file
+        results of 50 everyday queries (<code>sc</code>, <code>scripts</code>, <code>config</code>,
+        <code>readme</code>, …) on the 213,000-entry reference home folder, with the real engines
+        before and after M8. A penalty only reorders results inside their kind of match, so an exact
+        name in an SDK still beats a partial match in your folder.</figcaption>
+    </figure>
+    <div class="cols">
+      <div class="col">
+        <h3>Typing <code>sc</code> before M8</h3>
+        <ul class="mono" style="font-size: 13px">
+          <li>…/Android/Sdk/ndk/27.0…/sysroot/usr/include/scsi</li>
+          <li>…/Android/Sdk/ndk/27.1…/sysroot/usr/include/scsi</li>
+          <li>~/faiss/faiss/gpu/impl/scan</li>
+          <li>~/go/pkg/mod/…/go-urn@v1.4.0/scim</li>
+          <li>~/go/pkg/mod/…/gopls@v0.21.1/internal/vulncheck/scan</li>
+          <li>~/go/pkg/mod/…/vuln@v1.1.4/internal/scan</li>
+          <li>~/go/pkg/mod/…/vuln@v1.1.4/scan</li>
+        </ul>
+      </div>
+      <div class="col">
+        <h3>Typing <code>sc</code> with M8</h3>
+        <ul class="mono" style="font-size: 13px">
+          <li>~/assimp/include/assimp/scene.h</li>
+          <li>~/assimp/port/PyAssimp/scripts</li>
+          <li>~/assimp/scripts</li>
+          <li>~/workspace/…/scripts</li>
+          <li>~/workspace/engine/validation/schemas</li>
+          <li>~/workspace/…/scripts</li>
+          <li>~/workspace/torchlight/scripts</li>
+        </ul>
+      </div>
+    </div>
+    <p>To leave a folder out completely, add <code>exclude = ~/Android/Sdk</code> to the
+      configuration file and restart the daemon: the folder is no longer read or watched, and its
+      saved entries are removed by the start-up check. See
+      <a href="adr/0047-place-ranking-and-excluded-folders.md">ADR 0047</a> and the
+      <a href="reports/m8-place-ranking-health-report.html">M8 health report</a>.</p>
   </section>
 
   <!-- Staying up to date ──────────────────────────────────────────────── -->
@@ -1681,7 +1778,7 @@
         <h3><span class="sw data"></span>In memory, inside the daemon</h3>
         <ul>
           <li><strong>Files &amp; folders snapshot:</strong> every indexed path, the lookup tables for the
-            four channels, and a tree of folders (each folder stored once).</li>
+            four channels, and a tree of folders (each folder stored once, with its place penalty).</li>
           <li><strong>Apps &amp; settings snapshot:</strong> names, generic names and keywords from
             <code>.desktop</code> entries.</li>
           <li><strong>Usage summary:</strong> how often and how recently you opened things, and which
@@ -1698,8 +1795,9 @@
           <li><code>~/.local/share/torchlight/catalog.db</code>: the SQLite database. Tables
             <code>files</code>, <code>roots</code>, <code>searches</code>, <code>opens</code>,
             <code>desktop_opens</code> and <code>meta</code>. Paths are stored as raw bytes.</li>
-          <li><code>~/.config/torchlight/config</code>: which folders to index (<code>root =</code>)
-            and which hidden folders to include anyway (<code>allow =</code>).</li>
+          <li><code>~/.config/torchlight/config</code>: which folders to index (<code>root =</code>),
+            which hidden folders to include anyway (<code>allow =</code>) and which folders never to
+            index (<code>exclude =</code>).</li>
           <li><code>$XDG_RUNTIME_DIR/torchlight.sock</code>: the socket, readable only by you, plus lock
             files that stop a second daemon from starting.</li>
         </ul>
@@ -1724,7 +1822,7 @@
         on your machine, is kept for 30 days by default (<code>--history-days</code>), and can be turned
         off (<code>--no-history</code>) or erased (<code>torchlight history-clear</code>). Hidden folders
         and <code>node_modules</code>, <code>target</code>, <code>build</code> and <code>__pycache__</code>
-        are skipped unless you allow them.</p>
+        are skipped unless you allow them, and folders you exclude are never read.</p>
     </div>
   </section>
 
@@ -2083,7 +2181,7 @@
         </div>
         <div class="layer-groups">
           <div class="group"><span class="group-name">index (search engine)</span>
-            <div class="chips"><span class="chip">tokenize</span><span class="chip">dirtree</span><span class="chip">prefix</span><span class="chip">subseq</span><span class="chip">trigram</span><span class="chip">typo</span><span class="chip">fuzzy</span><span class="chip key">lexical</span><span class="chip key">catalog</span><span class="chip">desktop</span><span class="chip">usage</span><span class="chip">rank</span><span class="chip">embed</span><span class="chip">vector</span><span class="chip">potion</span></div></div>
+            <div class="chips"><span class="chip">tokenize</span><span class="chip">dirtree</span><span class="chip">place</span><span class="chip">prefix</span><span class="chip">subseq</span><span class="chip">trigram</span><span class="chip">typo</span><span class="chip">fuzzy</span><span class="chip key">lexical</span><span class="chip key">catalog</span><span class="chip">desktop</span><span class="chip">usage</span><span class="chip">rank</span><span class="chip">embed</span><span class="chip">vector</span><span class="chip">potion</span></div></div>
           <div class="group"><span class="group-name">fs</span>
             <div class="chips"><span class="chip">crawl</span><span class="chip">watch</span><span class="chip">mounts</span></div></div>
           <div class="group"><span class="group-name">storage</span>
@@ -2135,6 +2233,9 @@
       <dt>MB</dt><dd>Megabyte. Memory and disk figures are measured in MiB (1,048,576 bytes) and written as MB, as in the project's other docs.</dd>
       <dt>Steady and peak memory</dt><dd>Steady is what the daemon occupies while nothing happens; peak is the most it reaches, usually during a rebuild.</dd>
       <dt>Frecency</dt><dd>A score that mixes how <em>fre</em>quently and how re<em>cently</em> you opened something.</dd>
+      <dt>Place penalty</dt><dd>A few points a file result loses for where it lives: for being deep below the indexed folder, or inside installed or vendored software. It only reorders matches of similar strength.</dd>
+      <dt>Dependency tree</dt><dd>A folder of software installed or copied in by a tool rather than made by you: <code>node_modules</code>, <code>site-packages</code>, <code>vendor</code>, an SDK, a Go module cache.</dd>
+      <dt>Excluded folder</dt><dd>A folder named with <code>exclude =</code> in the configuration. Torchlight never reads or watches it, even inside an indexed or allowed folder.</dd>
       <dt>Resolve</dt><dd>Checking a result's id against the current index right before opening it.</dd>
     </dl>
   </section>

@@ -87,6 +87,19 @@ lists, which gives the exact personalized top k. One-symbol queries build
 sparse evidence for the boosted entries only. See the [usage](modules/usage/README.md)
 and [personal](modules/personal/README.md) modules.
 
+## M8: place ranking and excluded folders (implemented)
+
+[ADR 0047](adr/0047-place-ranking-and-excluded-folders.md) adds a
+query-independent prior: the `place` module turns a folder's depth below its
+indexed root, and whether it lies inside installed or vendored software, into
+a penalty that `lexical` works out per interned folder when a file engine is
+sealed, stores per entry and subtracts from each result. Penalties only lower scores, so every
+exact pruning bound is unchanged; deltas inherit the setting and compute the
+same penalties. The configuration's `exclude` paths join the state directory
+as scopes the crawler never reports or watches. See the
+[place](modules/place/README.md) and [crawl](modules/crawl/README.md) modules
+and the [M8 plan](m8-plan.md).
+
 ## Components
 
 ```
@@ -164,6 +177,9 @@ validated embedding generation (`emb_gen`) together, without mixing model versio
    For large non-path batches, union basename bitmap candidates, channel hits
    and matching parent entries, then score using preallocated worker scratch.
    `fuzzy` scores subsequence matches and edit-distance matches separately.
+   File results then lose their parent folder's precomputed place penalty
+   (depth and dependency trees, at most 256, inside their tier; M8,
+   [ADR 0047](adr/0047-place-ranking-and-excluded-folders.md)).
 3. With history enabled, the search thread adds bounded usage boosts through
    the used-set side query (M5, ADR 0033); the daemon sends the
    `lexical` phase response immediately, or a terminal `final` in lexical-only mode.

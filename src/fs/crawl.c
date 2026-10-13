@@ -1,6 +1,6 @@
 /* fts-based physical scans with one stat per entry: default exclusions,
- * allowlist traversal, and unreadable scopes reported separately from
- * excluded trees. */
+ * excluded scopes, allowlist traversal, and unreadable scopes reported
+ * separately from excluded trees. */
 #include "torchlight/crawl.h"
 #include "torchlight/path.h"
 #include <errno.h>
@@ -13,9 +13,8 @@
 /* A directory link count that tells fts nothing about subdirectories. */
 #define CRAWL_UNKNOWN_LINKS 1
 struct tl_crawl {
-    char *exclude;
-    char **allow;
-    size_t allow_count;
+    char **exclude, **allow;
+    size_t exclude_count, allow_count;
 };
 /* What a walk does with a path: report it, pass through it to reach an
  * allowlisted directory below, or leave it (and its subtree) alone. */
@@ -23,39 +22,64 @@ enum scope { SCOPE_INDEX, SCOPE_TRANSIT, SCOPE_SKIP };
 /* A full root walk, a scoped walk of one indexed directory's whole subtree,
  * or of that directory and its direct children only. */
 enum walk_mode { WALK_ROOT, WALK_TREE, WALK_CHILDREN };
-tl_status crawl_create(const char *exclude, const char *const *allow, size_t allow_count,
-                       tl_crawl **out) {
-    if (out == NULL || (allow == NULL && allow_count != 0))
+static bool valid_list(const char *const *paths, size_t count) {
+    if (paths == NULL)
+        return count == 0;
+    for (size_t i = 0; i < count; i++) {
+        if (paths[i] == NULL)
+            return false;
+    }
+    return true;
+}
+/* Copy count strings into a new array at *out; *copied counts the copies so
+ * the caller can free a partial list. */
+static bool copy_list(const char *const *paths, size_t count, char ***out, size_t *copied) {
+    *out = calloc(count == 0 ? 1 : count, sizeof(char *));
+    if (*out == NULL)
+        return false;
+    for (; *copied < count; (*copied)++) {
+        if (((*out)[*copied] = strdup(paths[*copied])) == NULL)
+            return false;
+    }
+    return true;
+}
+tl_status crawl_create(const char *const *exclude, size_t exclude_count, const char *const *allow,
+                       size_t allow_count, tl_crawl **out) {
+    if (out == NULL)
         return TL_INVALID;
     *out = NULL;
-    for (size_t i = 0; i < allow_count; i++) {
-        if (allow[i] == NULL)
-            return TL_INVALID;
-    }
+    if (!valid_list(exclude, exclude_count) || !valid_list(allow, allow_count))
+        return TL_INVALID;
     tl_crawl *crawler = calloc(1, sizeof(*crawler));
     if (crawler == NULL)
         return TL_NOMEM;
-    crawler->allow = calloc(allow_count == 0 ? 1 : allow_count, sizeof(char *));
-    bool ok = crawler->allow != NULL;
-    if (ok && exclude != NULL)
-        ok = (crawler->exclude = strdup(exclude)) != NULL;
-    for (; ok && crawler->allow_count < allow_count; crawler->allow_count++)
-        ok = (crawler->allow[crawler->allow_count] = strdup(allow[crawler->allow_count])) != NULL;
-    if (!ok) {
+    if (!copy_list(exclude, exclude_count, &crawler->exclude, &crawler->exclude_count) ||
+        !copy_list(allow, allow_count, &crawler->allow, &crawler->allow_count)) {
         crawl_destroy(crawler);
         return TL_NOMEM;
     }
     *out = crawler;
     return TL_OK;
 }
+static void free_list(char **paths, size_t count) {
+    for (size_t i = 0; paths != NULL && i < count; i++)
+        free(paths[i]);
+    free(paths);
+}
 void crawl_destroy(tl_crawl *crawler) {
     if (crawler == NULL)
         return;
-    for (size_t i = 0; i < crawler->allow_count; i++)
-        free(crawler->allow[i]);
-    free(crawler->allow);
-    free(crawler->exclude);
+    free_list(crawler->exclude, crawler->exclude_count);
+    free_list(crawler->allow, crawler->allow_count);
     free(crawler);
+}
+/* Whether path is an excluded scope or lies below one. */
+static bool excluded(const tl_crawl *crawler, const char *path) {
+    for (size_t i = 0; i < crawler->exclude_count; i++) {
+        if (path_within(path, crawler->exclude[i]))
+            return true;
+    }
+    return false;
 }
 static bool ignored_name(const char *name) {
     return name[0] == '.' || strcmp(name, "node_modules") == 0 || strcmp(name, "target") == 0 ||
@@ -82,7 +106,7 @@ static bool leads_to_allowed(const tl_crawl *crawler, const char *path) {
  * the way to one. Allowlisted directories apply the defaults below them. */
 static enum scope classify(const tl_crawl *crawler, const char *path, const char *name, bool is_dir,
                            bool parent_transit) {
-    if (path_within(path, crawler->exclude))
+    if (excluded(crawler, path))
         return SCOPE_SKIP;
     if (is_dir && allowed_exactly(crawler, path))
         return SCOPE_INDEX;
@@ -193,12 +217,11 @@ static tl_status visit(tl_crawl *crawler, FTS *walk, FTSENT *entry, enum walk_mo
         fts_set(walk, entry, FTS_SKIP) != 0)
         return TL_IO;
     /* The root is always walked (explicit roots override name defaults), but
-     * the excluded scope wins even there. */
-    enum scope scope =
-        entry->fts_level == 0
-            ? (path_within(entry->fts_path, crawler->exclude) ? SCOPE_SKIP : SCOPE_INDEX)
-            : classify(crawler, entry->fts_path, entry->fts_name, directory(entry),
-                       entry->fts_parent->fts_number == SCOPE_TRANSIT);
+     * excluded scopes win even there. */
+    enum scope scope = entry->fts_level == 0
+                           ? (excluded(crawler, entry->fts_path) ? SCOPE_SKIP : SCOPE_INDEX)
+                           : classify(crawler, entry->fts_path, entry->fts_name, directory(entry),
+                                      entry->fts_parent->fts_number == SCOPE_TRANSIT);
     if (scope == SCOPE_SKIP) {
         if (entry->fts_info == FTS_D && fts_set(walk, entry, FTS_SKIP) != 0)
             return TL_IO;
@@ -263,7 +286,7 @@ tl_status crawl_scope(tl_crawl *crawler, const char *directory, bool recursive,
 }
 bool crawl_covers(const tl_crawl *crawler, const char *outer, const char *inner) {
     if (crawler == NULL || outer == NULL || inner == NULL || !path_within(inner, outer) ||
-        path_within(outer, crawler->exclude))
+        excluded(crawler, outer))
         return false;
     size_t length = strlen(inner);
     char *path = strdup(inner);

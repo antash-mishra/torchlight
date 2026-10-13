@@ -1,0 +1,20 @@
+{
+ "date": "2026-10-12",
+ "what": "torchlight index of the 213k home mirror (debug CLI), fresh database, twice each",
+ "none": {
+  "entries": 213287,
+  "wall_s": [
+   4.0,
+   4.39
+  ],
+  "db_mib": 90.4
+ },
+ "exclude ~/Android/Sdk and ~/go/pkg/mod": {
+  "entries": 34989,
+  "wall_s": [
+   0.68,
+   0.69
+  ],
+  "db_mib": 14.8
+ }
+}

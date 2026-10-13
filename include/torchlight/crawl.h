@@ -1,5 +1,6 @@
 /* Physical filesystem walking with explicit roots, default exclusions, an
- * allowlist for hidden/ignored directories and a never-crawled state scope. */
+ * allowlist for hidden/ignored directories and never-crawled excluded scopes
+ * (Torchlight's own state, and folders a person excludes). */
 #ifndef TORCHLIGHT_CRAWL_H
 #define TORCHLIGHT_CRAWL_H
 #include "torchlight/common.h"
@@ -28,13 +29,14 @@ typedef struct {
     bool device_boundary;
 } tl_crawl_entry;
 typedef tl_status (*tl_crawl_callback)(void *context, const tl_crawl_entry *entry);
-/** Create a crawler. exclude (optional) is a scope never crawled, not even
- * below allowlisted or root directories (Torchlight's own state). allow lists
- * allow_count directories re-included despite the hidden/ignored-name
- * defaults. All paths should be absolute and canonical; they are copied.
- * out NULL on TL_INVALID/TL_NOMEM. */
-tl_status crawl_create(const char *exclude, const char *const *allow, size_t allow_count,
-                       tl_crawl **out);
+/** Create a crawler. exclude lists exclude_count scopes never crawled, not
+ * even below allowlisted or root directories: Torchlight's own state and the
+ * configured `exclude` paths. allow lists allow_count directories re-included
+ * despite the hidden/ignored-name defaults. All paths should be absolute and
+ * canonical; they are copied. out NULL on TL_INVALID (NULL list with a
+ * nonzero count, or a NULL item) or TL_NOMEM. */
+tl_status crawl_create(const char *const *exclude, size_t exclude_count, const char *const *allow,
+                       size_t allow_count, tl_crawl **out);
 /** Free crawler; NULL allowed, no errors. */
 void crawl_destroy(tl_crawl *crawler);
 /** Walk canonical root physically, including symlink entries but not targets.
@@ -44,7 +46,8 @@ void crawl_destroy(tl_crawl *crawler);
  * hidden files are retained; the root itself is always walked. An allowlisted
  * directory is indexed like any other; its hidden or ignored ancestors below
  * root are traversed without being reported, following only paths that lead
- * to allowlisted directories. The exclude scope always wins.
+ * to allowlisted directories. Excluded scopes always win, even at the root:
+ * a root inside one reports nothing.
  *
  * Below the root, unreadable directories and failed stats do not stop the
  * walk: they are reported with unreadable set, so the caller can keep their

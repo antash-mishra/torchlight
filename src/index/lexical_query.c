@@ -14,6 +14,7 @@
 #include "lexical_internal.h"
 #include "torchlight/fuzzy.h"
 #include "torchlight/parallel.h"
+#include "torchlight/place.h"
 #include "torchlight/subseq.h"
 #include <limits.h>
 #include <stdlib.h>
@@ -22,6 +23,12 @@ enum {
     LEXICAL_EXACT_PATH = 20000000,
     LEXICAL_EXACT_BASENAME = 10000000,
     LEXICAL_ROOT_SCORE = 1,
+    /* A matched entry never scores below this, whatever its place penalty:
+     * weak parent-only matches deep in a dependency tree stay results. */
+    LEXICAL_MIN_MATCH_SCORE = 1,
+    /* Lowest score of the exact-basename tier once its place penalty is
+     * taken (lexical_set_place_ranking). */
+    LEXICAL_EXACT_BASENAME_FLOOR = LEXICAL_EXACT_BASENAME - PLACE_PENALTY_MAX,
     /* Added to basename subsequence scores (fuzzy_score) so they outrank
      * subsequences inside parent directory names. */
     LEXICAL_BASENAME_BONUS = 1500,
@@ -70,8 +77,12 @@ _Static_assert((long long)LEXICAL_MAX_WORDS *(PREFIX_BASENAME_SCORE + LEXICAL_PR
                                               PREFIX_COMPLETE_BONUS + LEXICAL_BASENAME_BONUS +
                                               LEXICAL_LENGTH_BONUS_MAX + 256) +
                        72LL * LEXICAL_QUERY_SYMBOLS + LEXICAL_BOOST_MAX <
-                   LEXICAL_EXACT_BASENAME,
-               "boosted word scores cannot reach exact-match priority");
+                   LEXICAL_EXACT_BASENAME_FLOOR,
+               "boosted word scores cannot reach a penalized exact name");
+/* Place penalties reorder results inside a channel tier, never across one:
+ * initials (4500) to token prefix (5000) is the smallest gap. */
+_Static_assert(PLACE_PENALTY_MAX < PREFIX_TOKEN_SCORE - PREFIX_INITIALS_SCORE,
+               "place penalties stay below the smallest channel tier gap");
 /* Personal boosts reorder entries inside an exact tier, never across tiers. */
 _Static_assert(LEXICAL_EXACT_BASENAME + LEXICAL_BOOST_MAX < LEXICAL_EXACT_PATH,
                "boosted exact names stay below exact paths");
@@ -740,19 +751,34 @@ static int length_bonus(const tl_lexical *engine, size_t slot) {
     uint32_t length = engine->columns.name_lengths[slot];
     return length >= LEXICAL_LENGTH_BONUS_MAX ? 0 : LEXICAL_LENGTH_BONUS_MAX - (int)length;
 }
+/* Place penalty of slot's parent directory; zero without place ranking. */
+static int place_of(const tl_lexical *engine, size_t slot) {
+    return engine->place_penalties == NULL ? 0 : engine->place_penalties[slot];
+}
+/* Ranking score of an ordinary (not exact) match: the short-name bonus
+ * added, the place penalty taken. A penalty only lowers scores, so every
+ * upper bound used for pruning stays valid unchanged. */
+static int ordinary_score(const tl_lexical *engine, size_t slot, int score) {
+    int ranked = score + length_bonus(engine, slot) - place_of(engine, slot);
+    return ranked < LEXICAL_MIN_MATCH_SCORE ? LEXICAL_MIN_MATCH_SCORE : ranked;
+}
 static bool exact_name(const tl_lexical *engine, size_t slot, tl_text query) {
     const struct lexical_columns *columns = &engine->columns;
     return columns->name_lengths[slot] == query.length &&
            memcmp(columns->symbols + columns->name_offsets[slot], query.symbols,
                   query.length * sizeof(uint32_t)) == 0;
 }
+/* Exact-basename score of slot: the tier, ordered inside by place. */
+static int exact_name_score(const tl_lexical *engine, size_t slot) {
+    return LEXICAL_EXACT_BASENAME - place_of(engine, slot);
+}
 /* Final ranking score of a matched entry: exact basenames get priority,
- * everything else gains the short-name bonus. */
+ * everything else gains the short-name bonus; both lose their place penalty. */
 static int final_score(const tl_lexical_workspace *workspace, size_t slot, int score) {
     const tl_lexical *engine = workspace->engine;
     if (exact_name(engine, slot, workspace->trimmed))
-        return LEXICAL_EXACT_BASENAME;
-    return score + length_bonus(engine, slot);
+        return exact_name_score(engine, slot);
+    return ordinary_score(engine, slot, score);
 }
 static void heap_push(tl_lexical_workspace *workspace, struct heap_item item, size_t capacity);
 /* Record a match of the first word: straight into the heap for single-word
@@ -797,8 +823,9 @@ static tl_status try_skip_scan(tl_lexical_workspace *workspace, const struct wor
         size_t slot = workspace->touched[i];
         int score = workspace->batch[i].score;
         /* A strong boosted hit counts too: the side pass ranks it at least as
-         * high, so it still keeps every unhit entry out of the results. */
-        if (score + length_bonus(engine, slot) > bound && !is_tombstone(workspace, slot))
+         * high, so it still keeps every unhit entry out of the results. Its
+         * place penalty counts against it: bound is an unpenalized maximum. */
+        if (ordinary_score(engine, slot, score) > bound && !is_tombstone(workspace, slot))
             strong++;
         push_match(workspace, slot, score, false, capacity);
     }
@@ -1116,7 +1143,8 @@ static tl_status on_exact_name(void *context, size_t slot, int score) {
         !exact_name(workspace->engine, slot, workspace->trimmed))
         return TL_OK;
     workspace->seen[slot] = workspace->epoch;
-    heap_push(workspace, (struct heap_item){LEXICAL_EXACT_BASENAME, (uint32_t)slot},
+    heap_push(workspace,
+              (struct heap_item){exact_name_score(workspace->engine, slot), (uint32_t)slot},
               names->capacity);
     return TL_OK;
 }
@@ -1234,7 +1262,7 @@ static size_t push_exact_boosted(tl_lexical_workspace *workspace, size_t count, 
         uint32_t slot = workspace->side[i];
         uint32_t rank = engine->columns.path_rank[slot];
         int tier = rank >= workspace->exact_lo && rank < workspace->exact_hi ? LEXICAL_EXACT_PATH
-                   : exact_name(engine, slot, workspace->trimmed) ? LEXICAL_EXACT_BASENAME
+                   : exact_name(engine, slot, workspace->trimmed) ? exact_name_score(engine, slot)
                                                                   : 0;
         if (tier != 0) {
             heap_push(workspace, (struct heap_item){tier + workspace->side_boosts[i], slot},
@@ -1575,7 +1603,7 @@ tl_status lexical_query(const tl_lexical *engine, tl_lexical_workspace *workspac
 tl_lexical_exactness lexical_exactness(const tl_result *result) {
     if (result == NULL)
         return LEXICAL_ORDINARY;
-    return result->score >= LEXICAL_EXACT_PATH       ? LEXICAL_EXACT_RAW_PATH
-           : result->score >= LEXICAL_EXACT_BASENAME ? LEXICAL_EXACT_NAME
-                                                     : LEXICAL_ORDINARY;
+    return result->score >= LEXICAL_EXACT_PATH             ? LEXICAL_EXACT_RAW_PATH
+           : result->score >= LEXICAL_EXACT_BASENAME_FLOOR ? LEXICAL_EXACT_NAME
+                                                           : LEXICAL_ORDINARY;
 }

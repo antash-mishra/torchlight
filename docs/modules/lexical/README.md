@@ -1,9 +1,10 @@
 # lexical
 
-> **Status:** Implemented (M3 Part 2; M6 cancellation, Frizbee scoring, cross-query word caches and delta segments; M5 personal boosts): explicit fields, prefix edits, optimal alignment and first-token completion
+> **Status:** Implemented (M3 Part 2; M6 cancellation, Frizbee scoring, cross-query word caches and delta segments; M5 personal boosts; M8 place ranking): explicit fields, prefix edits, optimal alignment and first-token completion
 > **Source:** `src/index/lexical.c` (build), `src/index/lexical_query.c` (search),
 > `src/index/lexical_internal.h` · **Header:** `include/torchlight/lexical.h`
-> **Tests:** `tests/unit/test_lexical.c`, `tests/alloc/query.c`
+> **Tests:** `tests/unit/test_lexical.c`, `tests/unit/test_lexical_boost.c`,
+> `tests/unit/test_lexical_place.c`, `tests/alloc/query.c`
 
 ## Behavior and ownership
 
@@ -63,9 +64,10 @@ than 64 symbols.
 
 A word's score is the best of its evidence; word scores add up. Parent context
 is the nearest matching ancestor. Basenames up to 63 symbols gain
-`64 - length` so that shorter names win otherwise-equal matches. Exact raw paths
-(20,000,000) and exact normalized basenames (10,000,000) have priority. Ties
-order by raw path bytes, then id (a precomputed path rank).
+`64 - length` so that shorter names win otherwise-equal matches. With place
+ranking (below) each result then loses its parent directory's place penalty.
+Exact raw paths (20,000,000) and exact normalized basenames (10,000,000) have
+priority. Ties order by raw path bytes, then id (a precomputed path rank).
 
 An unsealed builder may use `lexical_set_prefix_bonus` to add a bounded per-word
 bonus to basename/token/initials prefix hits. The default is zero, preserving
@@ -246,3 +248,45 @@ results with brute-force boosted evaluation:
 At 500k synthetic paths, typing p95 was 4.63 ms without boosts, 4.81 ms with
 1000 boosted entries, 4.99 ms with 2048 and 5.13 ms with 4000, on a loaded
 reference machine (2026-10-08, `tests/bench/results/2026-10-08-m5-personal.txt`).
+
+## Place ranking (M8)
+
+`lexical_set_place_ranking(engine, true)` before sealing turns on the
+[place](../place/README.md) prior ([ADR 0047](../../adr/0047-place-ranking-and-excluded-folders.md)).
+`lexical_finish` then walks the directory tree once, parents before children,
+carrying each directory's place down with `place_child` (using the same
+`usable` flags as parent matching), and stores each entry's parent
+`place_penalty` as a 16-bit value per slot: 2 bytes per entry. Storing it
+per entry rather than per directory saves a second scattered load for every
+scored entry: in an 18-run A/B at 500k, typing p95 was 4.91 ms per directory
+and 4.77 ms per entry, against 4.75 ms without place ranking. A query reads
+one value per result:
+
+- an ordinary match scores `match + short-name bonus - penalty`, at least 1;
+- an exact basename scores `10,000,000 - penalty`; `lexical_exactness` treats
+  everything from `10,000,000 - PLACE_PENALTY_MAX` up as an exact name;
+- exact raw paths and indexed roots (the empty query) are not penalized;
+- personal boosts add on top, inside the same tier.
+
+The penalty is at most 256, below the smallest gap between channel tiers
+(a static assertion), so it reorders matches of similar strength only. The
+floor of 1 is a guard for future scorers: today the weakest matches (letters
+scattered through a folder name or across a path) score about 270 or more,
+so no test can reach it (the one M8 mutation check that survives).
+
+**Exactness.** A penalty only lowers scores. Every pruning shortcut (the
+single-word scan skip, the multiword hit bound, deferred parent-only entries,
+side-pass pruning) compares an upper bound for entries not yet scored with
+real scores, so the bounds stay valid unchanged and are not weakened. The
+scan skip's count of strong hits uses penalized scores, because it compares
+them with the unpenalized bound. Seal-time one-symbol answers are computed
+after the penalties exist. `test_lexical_place.c` compares results with a
+brute-force ranking (place-off scores minus each entry's penalty) at
+capacities 1, 5, 10 and 200, with boosts and tombstones, on a 700-entry engine
+and a 70,000-entry engine that scores in parallel.
+
+**Segments.** `lexical_set_reference` copies the reference's setting, so a
+delta ranks like its base. A directory's place depends only on its path and
+the roots (the reference's roots bound a delta's usable flags too), so an
+entry gets the same penalty in a delta as after a full rebuild. The desktop
+engine leaves place ranking off.

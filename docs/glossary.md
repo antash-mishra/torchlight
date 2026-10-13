@@ -95,6 +95,10 @@
 | **Deferred candidates** | Multiword candidates matching the first word only through a parent directory; scored only if the results so far cannot already rule them out. |
 | **Symbol cache** | Results for the 36 one-symbol queries `a`–`z`/`0`–`9`, computed when an engine is sealed. |
 | **Allowlist (`allow`)** | Configured hidden or ignored directories that are indexed anyway; their hidden ancestors are traversed but not indexed. |
+| **Excluded scope (`exclude`)** | A folder that is never crawled or watched, even below a root or an allowlisted folder: Torchlight's own state directory, and every configured `exclude` path (M8). Its saved entries are pruned by the next full scan. |
+| **Place penalty** | A query-independent penalty (0 to 256) a file result loses for where it lives: 24 per folder beyond three below the indexed root, plus 128 inside a dependency tree. It reorders matches of similar strength inside their channel tier (`place` module, M8). |
+| **Dependency tree** | Everything below a folder that by convention holds installed or vendored software: `node_modules`, `site-packages`, `vendor`, `third_party`, `sysroot`, `sdk`, Go module folders (`name@v1.2.3`) or versioned install folders (`27.0.12077973`). The marker folder itself is not in the tree. |
+| **Place ranking** | The per-engine setting that applies place penalties (`lexical_set_place_ranking`): on for file catalogs, off for the desktop catalog, inherited by delta segments. |
 | **Configuration sync** | `torchlight index` without roots: scan configured roots, keep unavailable ones, and forget roots no longer configured. |
 | **Known-item query** | A benchmark query generated from one target entry (exact, prefix, abbreviation, typo, partial typo or parent + name) and judged by whether that entry is retrieved. |
 | **Kept scope** | A path whose saved entries (itself and everything below it) a scan must not prune: an unreadable path, or a registered root nested in the scanned root that the scan did not visit. |

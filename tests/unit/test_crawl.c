@@ -1,4 +1,5 @@
-/* Crawler errors, unreadable scopes, allowlist traversal and root coverage. */
+/* Crawler errors, unreadable scopes, allowlist traversal, excluded scopes and
+ * root coverage. */
 #include "test.h"
 #include "torchlight/crawl.h"
 #include <fcntl.h>
@@ -39,7 +40,7 @@ static void unreadable_directory_is_reported(void) {
     CHECK(snprintf(sibling, sizeof(sibling), "%s/sibling", root) < (int)sizeof(sibling));
     CHECK(mkdir(locked, 0700) == 0 && mkdir(sibling, 0700) == 0 && chmod(locked, 0) == 0);
     tl_crawl *crawler = NULL;
-    CHECK(crawl_create(NULL, NULL, 0, &crawler) == TL_OK);
+    CHECK(crawl_create(NULL, 0, NULL, 0, &crawler) == TL_OK);
     struct observed observed = {0};
     tl_status status = crawl_run(crawler, root, observe, &observed);
     crawl_destroy(crawler);
@@ -90,7 +91,7 @@ static void allowlist_traversal(void) {
     snprintf(allowed, sizeof(allowed), "%s/.config/nvim", root);
     const char *allow[] = {allowed};
     tl_crawl *crawler = NULL;
-    CHECK(crawl_create(NULL, allow, 1, &crawler) == TL_OK);
+    CHECK(crawl_create(NULL, 0, allow, 1, &crawler) == TL_OK);
     struct listing listing = {0};
     CHECK(crawl_run(crawler, root, list_path, &listing) == TL_OK);
     CHECK(listed(&listing, root, "/.config/nvim") &&
@@ -140,7 +141,7 @@ static void scoped_walks(void) {
     make(root, "/a/top.txt", false);
     snprintf(scope, sizeof(scope), "%s/a", root);
     tl_crawl *crawler = NULL;
-    CHECK(crawl_create(NULL, NULL, 0, &crawler) == TL_OK);
+    CHECK(crawl_create(NULL, 0, NULL, 0, &crawler) == TL_OK);
     struct listing children = {0}, tree = {0};
     CHECK(crawl_scope(crawler, scope, false, no_roots, &children) == TL_OK);
     CHECK(children.count == 3 && listed(&children, root, "/a") && listed(&children, root, "/a/b") &&
@@ -187,7 +188,7 @@ static void device_boundaries(void) {
     FILE *created = fopen(file, "w");
     CHECK(created != NULL && fclose(created) == 0);
     tl_crawl *crawler = NULL;
-    CHECK(crawl_create(NULL, NULL, 0, &crawler) == TL_OK);
+    CHECK(crawl_create(NULL, 0, NULL, 0, &crawler) == TL_OK);
     struct boundaries seen = {0};
     CHECK(crawl_run(crawler, root, observe_boundary, &seen) == TL_OK);
     CHECK(seen.entries == 3 && seen.boundaries == 1 && seen.start);
@@ -231,7 +232,7 @@ static void one_stat_records(void) {
     snprintf(path, sizeof(path), "%s/a", root);
     CHECK(symlink(path, link) == 0);
     tl_crawl *crawler = NULL;
-    CHECK(crawl_create(NULL, NULL, 0, &crawler) == TL_OK);
+    CHECK(crawl_create(NULL, 0, NULL, 0, &crawler) == TL_OK);
     struct records records = {0};
     CHECK(crawl_run(crawler, root, compare_record, &records) == TL_OK);
     CHECK(records.entries == 6 && records.matched == 6);
@@ -246,12 +247,63 @@ static void one_stat_records(void) {
     }
     CHECK(rmdir(root) == 0);
 }
+static void remove_all(const char *root, const char *const *suffixes, size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        char path[160];
+        snprintf(path, sizeof(path), "%s%s", root, suffixes[i]);
+        CHECK(remove(path) == 0);
+    }
+    CHECK(rmdir(root) == 0);
+}
+/* Configured exclusions: excluded subtrees are never reported, an exclusion
+ * beats the allowlist, a root inside one reports nothing, and coverage and
+ * scoped walks follow the same rule. */
+static void excluded_scopes(void) {
+    char root[] = "/tmp/torchlight-exclude-XXXXXX", scopes[3][96], allowed[96], path[160];
+    CHECK(mkdtemp(root) != NULL);
+    const char *dirs[] = {"/keep", "/sdk", "/other", "/other/sdk2", "/.config", "/.config/nvim"};
+    for (size_t i = 0; i < 6; i++)
+        make(root, dirs[i], true);
+    const char *files[] = {"/keep/a.txt", "/sdk/lib.so", "/other/sdk2/x", "/.config/nvim/init"};
+    for (size_t i = 0; i < 4; i++)
+        make(root, files[i], false);
+    snprintf(scopes[0], sizeof(scopes[0]), "%s/sdk", root);
+    snprintf(scopes[1], sizeof(scopes[1]), "%s/other/sdk2", root);
+    snprintf(scopes[2], sizeof(scopes[2]), "%s/.config", root);
+    snprintf(allowed, sizeof(allowed), "%s/.config/nvim", root);
+    const char *exclude[] = {scopes[0], scopes[1], scopes[2]}, *allow[] = {allowed};
+    tl_crawl *crawler = NULL;
+    CHECK(crawl_create(exclude, 3, allow, 1, &crawler) == TL_OK);
+    struct listing listing = {0};
+    CHECK(crawl_run(crawler, root, list_path, &listing) == TL_OK);
+    CHECK(listing.count == 4 && listed(&listing, root, "") && listed(&listing, root, "/keep") &&
+          listed(&listing, root, "/keep/a.txt") && listed(&listing, root, "/other"));
+    CHECK(!crawl_covers(crawler, root, scopes[0]) && !crawl_covers(crawler, root, allowed));
+    snprintf(path, sizeof(path), "%s/keep", root);
+    CHECK(crawl_covers(crawler, root, path) && !crawl_covers(crawler, scopes[0], scopes[0]));
+    /* A scoped walk of the parent skips the excluded child. */
+    snprintf(path, sizeof(path), "%s/other", root);
+    listing = (struct listing){0};
+    CHECK(crawl_scope(crawler, path, true, list_path, &listing) == TL_OK);
+    CHECK(listing.count == 1 && listed(&listing, root, "/other"));
+    /* A root inside an exclusion is walked but reports nothing. */
+    listing = (struct listing){0};
+    CHECK(crawl_run(crawler, scopes[0], list_path, &listing) == TL_OK && listing.count == 0);
+    crawl_destroy(crawler);
+    const char *invalid[] = {NULL};
+    CHECK(crawl_create(NULL, 1, NULL, 0, &crawler) == TL_INVALID && crawler == NULL);
+    CHECK(crawl_create(invalid, 1, NULL, 0, &crawler) == TL_INVALID && crawler == NULL);
+    const char *cleanup[] = {"/keep/a.txt",   "/sdk/lib.so", "/other/sdk2/x", "/.config/nvim/init",
+                             "/.config/nvim", "/.config",    "/other/sdk2",   "/other",
+                             "/sdk",          "/keep"};
+    remove_all(root, cleanup, 10);
+}
 void test_crawl(void) {
     one_stat_records();
     device_boundaries();
     scoped_walks();
     tl_crawl *crawler = NULL;
-    CHECK(crawl_create(NULL, NULL, 0, &crawler) == TL_OK);
+    CHECK(crawl_create(NULL, 0, NULL, 0, &crawler) == TL_OK);
     size_t count = 0;
     CHECK(crawl_run(crawler, "/a/torchlight/nonexistent/root", stop_scan, &count) == TL_IO &&
           count == 0);
@@ -260,6 +312,7 @@ void test_crawl(void) {
     crawl_destroy(crawler);
     unreadable_directory_is_reported();
     allowlist_traversal();
+    excluded_scopes();
     const char *invalid[] = {NULL};
-    CHECK(crawl_create(NULL, invalid, 1, &crawler) == TL_INVALID && crawler == NULL);
+    CHECK(crawl_create(NULL, 0, invalid, 1, &crawler) == TL_INVALID && crawler == NULL);
 }
