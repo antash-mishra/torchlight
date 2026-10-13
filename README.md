@@ -3,7 +3,7 @@
 A Spotlight-style launcher for Linux, written in C. Press a shortcut, type a few
 letters, and open an application, a settings panel, a file or a folder.
 
-![The Torchlight popup showing results for "term": the Terminal app with one of its windows, two files and a folder](docs/ui/native-results.png)
+![The Torchlight popup showing results for "term": the Terminal app with one of its windows, two files and a folder, with the selected file's size, modified time and actions in a panel beside them](docs/ui/native-preview.png)
 
 - **Forgiving search.** Matches prefixes, initials, abbreviations (`prjnts` finds
   `projectNotes.md`), one-letter typos (`raedme` finds `README.md`) and folder
@@ -18,7 +18,8 @@ letters, and open an application, a settings panel, a file or a folder.
   your machine and can be turned off or cleared.
 - **A look of its own.** The GTK 4 popup borrows teletext's page design and sets
   it on calm Nordic surfaces, light or dark to match your desktop: a page header
-  with a ticking clock, an inverse-video selection and colored key links, with
+  with a ticking clock, results grouped by kind, an inverse-video selection, a
+  preview panel with the selected item's details and colored key links, with
   short motion that never slows typing. It is fully keyboard driven, and
   high-contrast themes keep their own colors.
 - **Private.** Only names and paths are indexed; file contents are never read.

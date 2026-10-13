@@ -61,7 +61,8 @@ CPPCHECK ?= cppcheck
 GTK_CPPFLAGS = $(subst -I,-isystem ,$(shell $(PKG_CONFIG) --cflags 'gtk4 >= 4.14' x11))
 GTK_LDLIBS = $(shell $(PKG_CONFIG) --libs 'gtk4 >= 4.14' x11)
 # The presentation's widgets, which the native view test builds on its own.
-VIEW_SOURCES = ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c ui/gtk/header.c ui/gtk/index_strip.c
+VIEW_SOURCES = ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c ui/gtk/header.c ui/gtk/index_strip.c \
+               ui/gtk/preview.c
 UI_SOURCES = ui/gtk/model.c ui/gtk/windows.c ui/gtk/windows_x11.c ui/gtk/actions.c ui/gtk/launcher.c $(VIEW_SOURCES) src/bin/torchlight-gtk.c
 POPUP_FIXTURE_SOURCE = tests/fixtures/popup_probe.c
 WINDOW_FIXTURE_SOURCE = tests/fixtures/window_app.c
@@ -217,6 +218,8 @@ test-ui: all build/test_popup_probe.so build/test_window_app
 	python3 tests/test_popup.py --xdotool $(XDOTOOL)
 test-ui-isolated: all build/test_popup_probe.so build/test_popup_view build/test_window_app
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --matrix
+	# A wide screen gives the popup room for its preview panel (ADR 0048).
+	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --screen 1280x800x24
 bench-ui: all build/test_popup_probe.so build/torchlightd-release build/bench_fixture
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --bench
 

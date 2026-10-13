@@ -1,7 +1,7 @@
 # 0048. Tekst: the popup's own look
 
-- **Status:** Accepted; the look, type, motion and grouped results are implemented.
-  A preview panel is part of the same design and follows in its own change.
+- **Status:** Accepted; implemented: the look, type, motion, grouped results and the
+  preview panel.
 - **Date:** 2026-10-13
 
 ## Context
@@ -41,7 +41,7 @@ something; it appears as small square blocks, never as a wash.
    | Token | Snø | Mørketid | Use |
    |---|---|---|---|
    | surface | `#f4f5f1` | `#171a1d` | background |
-   | panel | `#ebede7` | `#1c2024` | tooltips, later the preview |
+   | panel | `#ebede7` | `#1c2024` | the preview panel, tooltips |
    | ink | `#1d2226` | `#e8ebe6` | text, the selection block |
    | muted | `#626b72` | `#979fa5` | system text |
    | faint | `#a0a7ab` | `#5f686e` | placeholder, dotted rule |
@@ -94,6 +94,19 @@ something; it appears as small square blocks, never as a wash.
     header (the group's color block, name and count, in Bedstead) stands above
     each group. Headers are not list rows, so arrow keys, selection retention and
     the windows listed under applications work as before.
+11. **Preview panel.** When the work area has room for an 880-pixel popup, a
+    320-pixel panel on the panel color sits right of the results and describes the
+    selected item: its icon, its name in bold Schibsted Grotesk and its kind behind
+    its color block (a file's type, from its name), then what Torchlight knows (a
+    file's size, modified time and folder; a folder's items, modified time and
+    place; an application's or settings panel's description and an application's
+    open windows), then the selected item's actions with their keys. Narrower work
+    areas keep the 680-pixel list alone. What needs the disk (a stat, a folder
+    listing of names only, up to 999, and a desktop entry) is read on a worker
+    thread once the selection rests for 70ms, so arrow keys and typing never wait
+    for it; new results show their first row's preview at once, so the window grows
+    once. Another item of the same result, such as one of its windows, updates the
+    panel in place.
 
 Motion follows ADR 0034's rules: nothing waits for an effect, decorative motion
 never loops, and disabled GTK animations turn it all off (the clock still ticks).
@@ -106,6 +119,8 @@ The opening is the only motion that is not a response to input.
 - **Results:** rows rise into place top to bottom, 16ms apart (190ms each).
 - **Arrow keys:** the block glides (130ms); its edge changes to the new row's
   color and the row's text inverts.
+- **Preview:** when the selection rests on a new result, the panel redraws line by
+  line, like a page arriving (170ms each, 22ms apart).
 - **Enter:** the block flashes twice, teletext's flash attribute (300ms).
 - **Close:** a CRT switch-off: the page squeezes to a bright line, then the line
   shrinks away (200ms).
@@ -147,6 +162,17 @@ The opening is the only motion that is not a response to input.
 - Grouping can list a row below a lower-ranked row of another kind: with a file,
   an app and a second file, both files come before the app. The best result, and
   so Enter, is unchanged.
+- On wide work areas the popup is 880 pixels wide instead of 680. With few results
+  its height follows the preview panel, which scrolls past the monitor budget.
+- The wider popup and the panel cost time under software rendering: in alternating
+  runs on the private X server with GTK's Cairo renderer, the median
+  input-to-results paint was about 38–41ms with the panel, 32ms for an 880-pixel
+  list without it and 29ms for the 680-pixel list. Unlike the shadow, the panel is content, so it stays
+  under every renderer. GPU rendering, as on the target desktop, was not measured.
+- The preview reads the selected item from disk, which the popup never did before:
+  a stat, up to 1,000 names of a folder and a desktop entry, on a GIO worker thread
+  and cancelled when the selection moves. On a slow mount the details arrive late;
+  nothing waits for them.
 - This supersedes ADR 0034's colors, font, field ring and highlight tint, and ADR
   0036's footer hints. ADR 0034's motion rules, ADR 0035's open windows and ADR
   0036's one-line rows stand.

@@ -1,7 +1,7 @@
 # ui
 
-> **Status:** Implemented (M3 + Tekst look, motion and grouped results + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, light and dark palettes; the preview panel of ADR 0048 is next
-> **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track,header,index_strip}.c`, `ui/gtk/popup.css`, `ui/gtk/palette-{light,dark}.css`, `src/bin/torchlight-gtk.c`; fonts in `third_party/fonts`; open windows in [windows](../windows/README.md)
+> **Status:** Implemented (M3 + Tekst look, motion, grouped results and preview panel + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, light and dark palettes, preview details read off the main thread
+> **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track,header,index_strip,preview}.c`, `ui/gtk/popup.css`, `ui/gtk/palette-{light,dark}.css`, `src/bin/torchlight-gtk.c`; fonts in `third_party/fonts`; open windows in [windows](../windows/README.md)
 > **Headers:** `include/torchlight/{launcher,popup,async,windows}.h`
 > **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/unit/test_windows.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`
 
@@ -65,6 +65,23 @@ header function puts a section header (`popup_view_group_header`: color block,
 name, `popup_model_group_count`) above each group's first result. Headers are not
 list rows, so list positions, arrow keys and selection retention are unchanged;
 scrolling up to a group's first row brings its header into view too.
+
+When the work area has room, the launcher makes the surface
+`POPUP_VIEW_PREVIEW_WIDTH` (880) wide instead of `POPUP_VIEW_LIST_WIDTH` (680), and
+`popup_view_configure` shows the preview panel (`preview.c`, in its own scroller
+capped at the monitor budget) beside the results. On each selection the launcher
+passes `popup_view_set_preview` the selected item, its result and the window
+titles listed under an application; the view adds the row's icon. The panel copies
+what it is given. A new result waits until the selection rests for 70ms, except
+for new results (the launcher passes `at_once`), then its lines rise in and a GTask
+worker reads what needs the disk: a file's type (from its name, through the MIME
+database), size and modified time (one `g_file_query_info`), a folder's items
+(names only, which GIO lists without a stat each, stopping past 999) and an
+application's description (its desktop entry). The task holds the panel; a new
+show, clear or dispose cancels it and its late result is dropped. Another item of
+the result shown (one of its windows, New window) redraws in place and keeps the
+details already read. The actions it lists follow the launcher's keys: Open or
+Switch to window, Show in folder or Show desktop file, Copy path.
 
 Each row is one line: a 24px icon, the name (its natural width up to 40
 characters, end-ellipsized) and, for files and folders, the short folder,

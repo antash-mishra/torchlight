@@ -271,6 +271,14 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
         for key in ["entry_x", "entry_y", "entry_width"]:
             assert result[key] == idle[key], (key, idle, result)
         assert driver.geometry()["Y"] == empty_geometry["Y"], "Results moved window top"
+        # A work area with room for 880 logical pixels shows the preview panel beside the
+        # results, describing the selected result; narrower ones never show it.
+        wide = screen_width // int(driver.env.get("GDK_SCALE", "1")) - 48 >= 880
+        if wide:
+            driver.frame(lambda f: f["query"] == "display" and f["preview_visible"]
+                         and f["preview_name"] == "Display", after=result["paint_us"])
+        else:
+            assert not result["preview_visible"], result
         quiet = driver.frame(lambda f: f["query"] == "display" and not f["typing"], after=result["paint_us"] + 1)
         assert quiet["entry_y"] == idle["entry_y"]
         empty_entry()

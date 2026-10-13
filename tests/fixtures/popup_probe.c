@@ -8,7 +8,7 @@
 #include <string.h>
 struct popup_probe {
     char *filename;
-    GtkWidget *entry, *list, *status, *retry, *search, *footer, *scroll, *surface;
+    GtkWidget *entry, *list, *status, *retry, *search, *footer, *scroll, *surface, *preview;
     gint64 changed;
     unsigned retry_clicks;
     bool painted;
@@ -79,6 +79,20 @@ static GtkWidget *find_named(GtkWidget *parent, const char *name) {
     }
     return NULL;
 }
+/* The first visible label with css_class beneath parent, or NULL. */
+static GtkWidget *find_label(GtkWidget *parent, const char *css_class) {
+    if (!gtk_widget_get_visible(parent))
+        return NULL;
+    if (GTK_IS_LABEL(parent) && gtk_widget_has_css_class(parent, css_class))
+        return parent;
+    for (GtkWidget *child = gtk_widget_get_first_child(parent); child != NULL;
+         child = gtk_widget_get_next_sibling(child)) {
+        GtkWidget *found = find_label(child, css_class);
+        if (found != NULL)
+            return found;
+    }
+    return NULL;
+}
 static void entry_changed(GtkEditable *entry, gpointer context) {
     (void)entry;
     struct popup_probe *probe = context;
@@ -96,6 +110,9 @@ static void write_frame(struct popup_probe *probe, bool ready) {
     char *encoded_query = g_base64_encode((const guchar *)query, strlen(query));
     const char *status = gtk_label_get_text(GTK_LABEL(probe->status));
     char *encoded_status = g_base64_encode((const guchar *)status, strlen(status));
+    GtkWidget *preview_name = find_label(probe->preview, "preview-name");
+    const char *name = preview_name != NULL ? gtk_label_get_text(GTK_LABEL(preview_name)) : "";
+    char *encoded_name = g_base64_encode((const guchar *)name, strlen(name));
     size_t rows = 0;
     for (GtkWidget *child = gtk_widget_get_first_child(probe->list); child != NULL;
          child = gtk_widget_get_next_sibling(child))
@@ -116,7 +133,8 @@ static void write_frame(struct popup_probe *probe, bool ready) {
             "\"retry_focus\":%s,\"retry_clicks\":%u,\"selected\":%d,"
             "\"results_visible\":%s,\"footer_visible\":%s,\"typing\":%s,"
             "\"entry_x\":%.1f,\"entry_y\":%.1f,\"entry_width\":%.1f,\"clear_icon\":%s,"
-            "\"shadow_left\":%d,\"shadow_top\":%d}\n",
+            "\"shadow_left\":%d,\"shadow_top\":%d,\"preview_visible\":%s,"
+            "\"preview_name_b64\":\"%s\"}\n",
             (long long)painted, (long long)probe->changed, probe->painted ? "false" : "true",
             ready ? "true" : "false", rows, encoded_query, encoded_status,
             gtk_widget_get_visible(probe->retry) ? "true" : "false",
@@ -130,7 +148,8 @@ static void write_frame(struct popup_probe *probe, bool ready) {
                     GTK_IMAGE_EMPTY
                 ? "false"
                 : "true",
-            gtk_widget_get_margin_start(probe->surface), gtk_widget_get_margin_top(probe->surface));
+            gtk_widget_get_margin_start(probe->surface), gtk_widget_get_margin_top(probe->surface),
+            gtk_widget_get_visible(probe->preview) ? "true" : "false", encoded_name);
         if (written < 0)
             fputs("Could not record popup frame\n", stderr);
         if (fclose(file) != 0)
@@ -138,6 +157,7 @@ static void write_frame(struct popup_probe *probe, bool ready) {
     }
     g_free(encoded_query);
     g_free(encoded_status);
+    g_free(encoded_name);
 }
 static void after_paint(GdkFrameClock *clock, gpointer context) {
     (void)clock;
@@ -174,10 +194,12 @@ void gtk_window_present(GtkWindow *window) {
     probe->footer = find_named(GTK_WIDGET(window), "popup-footer");
     probe->scroll = find_named(GTK_WIDGET(window), "popup-results");
     probe->surface = find_named(GTK_WIDGET(window), "popup-surface");
+    probe->preview = find_named(GTK_WIDGET(window), "popup-preview");
     GdkFrameClock *clock = gtk_widget_get_frame_clock(GTK_WIDGET(window));
     if (probe->entry == NULL || probe->list == NULL || !GTK_IS_LABEL(probe->status) ||
         probe->retry == NULL || probe->search == NULL || probe->footer == NULL ||
-        probe->scroll == NULL || probe->surface == NULL || clock == NULL) {
+        probe->scroll == NULL || probe->surface == NULL || probe->preview == NULL ||
+        clock == NULL) {
         probe_destroy(probe);
         return;
     }

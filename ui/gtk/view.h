@@ -2,12 +2,17 @@
 #ifndef TORCHLIGHT_GTK_VIEW_H
 #define TORCHLIGHT_GTK_VIEW_H
 #include "index_strip.h"
+#include "preview.h"
 #include "torchlight/common.h"
 #include "torchlight/popup.h"
 #include <gtk/gtk.h>
+/* The visible surface's width with the results alone, and with the preview panel beside
+ * them; the launcher picks the wide one when the work area has room for it. */
+#define POPUP_VIEW_LIST_WIDTH 680
+#define POPUP_VIEW_PREVIEW_WIDTH 880
 typedef struct popup_view tl_popup_view;
 typedef struct {
-    GtkWidget *root, *entry, *list, *scroll, *status, *retry;
+    GtkWidget *root, *entry, *list, *scroll, *status, *retry, *preview;
 } tl_popup_widgets;
 /** How a result row appears: first results cascade in, later new rows fade. */
 typedef enum { POPUP_ENTER_NONE, POPUP_ENTER_CASCADE, POPUP_ENTER_FADE } tl_popup_entrance;
@@ -61,15 +66,22 @@ void popup_view_set_searching(tl_popup_view *view, bool searching);
  * clear the flash after failure. Main thread; live view. No errors. */
 void popup_view_set_launching(tl_popup_view *view, bool launching);
 /** Fit chrome and the result viewport into a logical monitor budget: width is the
- * visible surface's, height_limit the whole window's. Also decides, from the display,
- * the window's renderer and the theme, whether the surface has a halo margin
- * (popup_view_margins); call it after realizing the window. Main thread; live view,
- * positive width/height. No ownership transfer or errors. */
+ * visible surface's, height_limit the whole window's. A width of at least
+ * POPUP_VIEW_PREVIEW_WIDTH shows the preview panel beside the results. Also decides, from
+ * the display, the window's renderer and the theme, whether the surface has a shadow
+ * margin (popup_view_margins); call it after realizing the window. Main thread; live
+ * view, positive width/height. No ownership transfer or errors. */
 void popup_view_configure(tl_popup_view *view, int width, int height_limit);
 /** Return the shadow margin chosen by the last popup_view_configure; the window
  * must be this much larger than the surface on each side. Clicks in it reach the
  * windows beneath. Main thread; live view. No ownership transfer or errors. */
 tl_popup_margins popup_view_margins(tl_popup_view *view);
+/** Describe the borrowed selected item in the preview panel (see popup_preview_show),
+ * with the same icon as its row; a NULL preview or row clears it. A new result shows
+ * once the selection rests, or at once with at_once (new results, so the window grows
+ * once). Only a wide popup shows the panel, so a narrow one clears it and reads nothing.
+ * Main thread; live view. No errors. */
+void popup_view_set_preview(tl_popup_view *view, const tl_popup_preview *preview, bool at_once);
 /** Show the borrowed index state in the idle strip under an empty query. Main
  * thread; live view. No ownership transfer or errors. */
 void popup_view_set_index(tl_popup_view *view, const tl_popup_index *index);

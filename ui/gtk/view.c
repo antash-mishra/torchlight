@@ -1,6 +1,6 @@
 /* Tekst GTK presentation (ADR 0048): a teletext page header, the query and its rule, an
- * idle index strip, results under an inverse-video selection, a Fastext footer and
- * bounded motion. */
+ * idle index strip, results under an inverse-video selection with a preview panel beside
+ * them on a wide popup, a Fastext footer and bounded motion. */
 #include "view.h"
 #include "header.h"
 #include "path_label.h"
@@ -29,6 +29,8 @@
 /* Room for "10 results" before optional key hints give way. */
 #define STATUS_CHARS 10
 #define SEARCH_ICON_SIZE 18
+/* The preview panel's width beside the results; the list keeps the rest. */
+#define PREVIEW_WIDTH 320
 /* Room for popup.css's shadow (10px down, 24px blur, -6px spread). The sides fit within
  * the 48px the launcher leaves inside the work area. */
 #define SHADOW_SIDE 20
@@ -45,7 +47,7 @@ static const char *const KINDS[] = {"kind-app", "kind-setting", "kind-folder", "
 struct popup_view {
     tl_popup_widgets widgets;
     GtkWidget *window, *field, *footer, *message, *message_box, *text, *reveal, *close, *icons,
-        *spinner, *track, *header, *strip, *copy, *copy_label;
+        *spinner, *track, *header, *strip, *copy, *copy_label, *preview_scroll;
     GtkSettings *settings;
     GdkDisplay *display;
     /* The stylesheet and the light or dark palette it takes its colours from. */
@@ -57,7 +59,8 @@ struct popup_view {
     size_t results, tip;
     /* The visible surface's width from the last configure, for fitting the idle strip. */
     int width;
-    bool active, animations, dark;
+    /* Whether the last configure left room for the preview panel. */
+    bool active, animations, dark, wide;
 };
 static void remove_timer(guint *timer) {
     if (*timer != 0)
@@ -281,6 +284,23 @@ static void settings_changed(GObject *object, GParamSpec *parameter, gpointer co
     apply_palette(view, prefers_dark(view->settings, theme));
     g_free(theme);
 }
+/* The preview panel scrolls on its own when it is taller than the monitor allows. */
+static GtkWidget *create_preview(tl_popup_view *view) {
+    view->widgets.preview = popup_preview_new();
+    view->preview_scroll = gtk_scrolled_window_new();
+    gtk_widget_set_name(view->preview_scroll, "popup-preview");
+    gtk_widget_add_css_class(view->preview_scroll, "preview");
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(view->preview_scroll), GTK_POLICY_NEVER,
+                                   GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(view->preview_scroll),
+                                                     true);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(view->preview_scroll), view->widgets.preview);
+    gtk_widget_set_size_request(view->preview_scroll, PREVIEW_WIDTH, -1);
+    gtk_widget_set_hexpand(view->preview_scroll, false);
+    gtk_widget_set_visible(view->preview_scroll, false);
+    return view->preview_scroll;
+}
+/* The results, with the preview panel beside them on a wide popup. */
 static GtkWidget *create_results(tl_popup_view *view) {
     view->widgets.list = gtk_list_box_new();
     gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(view->widgets.list), true);
@@ -295,8 +315,12 @@ static GtkWidget *create_results(tl_popup_view *view) {
     gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(view->widgets.scroll),
                                                VISIBLE_ROWS * ROW_HEIGHT + LIST_PADDING);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(view->widgets.scroll), view->track);
+    gtk_widget_set_hexpand(view->widgets.scroll, true);
     gtk_widget_set_visible(view->widgets.scroll, false);
-    return view->widgets.scroll;
+    GtkWidget *body = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_box_append(GTK_BOX(body), view->widgets.scroll);
+    gtk_box_append(GTK_BOX(body), create_preview(view));
+    return body;
 }
 static void build_content(tl_popup_view *view) {
     view->widgets.root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -425,6 +449,9 @@ void popup_view_set_results(tl_popup_view *view, size_t count) {
     view->results = count;
     popup_header_set_count(view->header, count);
     gtk_widget_set_visible(view->widgets.scroll, count != 0);
+    gtk_widget_set_visible(view->preview_scroll, count != 0 && view->wide);
+    if (count == 0)
+        popup_preview_clear(view->widgets.preview);
     gtk_widget_set_visible(view->footer, count != 0);
     if (count != 0)
         gtk_widget_add_css_class(view->widgets.root, "has-results");
@@ -443,12 +470,17 @@ static GIcon *file_icon(const tl_popup_row *row) {
     g_free(type);
     return icon;
 }
-static GtkWidget *result_icon(const tl_popup_row *row) {
+/* A new reference to row's icon: an application's own, or the file type's. */
+static GIcon *row_icon(const tl_popup_row *row) {
     GIcon *icon = NULL;
     if (row->application && row->icon[0] != 0)
         icon = g_icon_new_for_string(row->icon, NULL);
     if (icon == NULL)
         icon = row->application ? g_themed_icon_new("application-x-executable") : file_icon(row);
+    return icon;
+}
+static GtkWidget *result_icon(const tl_popup_row *row) {
+    GIcon *icon = row_icon(row);
     GtkWidget *image = gtk_image_new_from_gicon(icon);
     g_object_unref(icon);
     gtk_image_set_pixel_size(GTK_IMAGE(image), RESULT_ICON_SIZE);
@@ -628,6 +660,9 @@ static void fit_hints(tl_popup_view *view, int width) {
 void popup_view_configure(tl_popup_view *view, int width, int height_limit) {
     update_shadow(view);
     view->width = width;
+    view->wide = width >= POPUP_VIEW_PREVIEW_WIDTH;
+    if (!view->wide)
+        popup_preview_clear(view->widgets.preview);
     popup_index_strip_fit(view->strip, width);
     if (width < COMPACT_WIDTH)
         gtk_widget_add_css_class(view->widgets.root, "compact");
@@ -637,17 +672,32 @@ void popup_view_configure(tl_popup_view *view, int width, int height_limit) {
     gtk_widget_set_visible(view->footer, true);
     fit_hints(view, width);
     gtk_widget_set_visible(view->widgets.scroll, false);
+    gtk_widget_set_visible(view->preview_scroll, false);
     int minimum, natural;
     gtk_widget_measure(view->widgets.root, GTK_ORIENTATION_VERTICAL, width, &minimum, &natural,
                        NULL, NULL);
     gtk_widget_set_visible(view->footer, visible);
     gtk_widget_set_visible(view->widgets.scroll, view->results != 0);
+    gtk_widget_set_visible(view->preview_scroll, view->results != 0 && view->wide);
+    int budget = MAX(32, height_limit - natural);
     gtk_scrolled_window_set_max_content_height(
         GTK_SCROLLED_WINDOW(view->widgets.scroll),
-        MIN(VISIBLE_ROWS * ROW_HEIGHT + LIST_PADDING, MAX(32, height_limit - natural)));
+        MIN(VISIBLE_ROWS * ROW_HEIGHT + LIST_PADDING, budget));
+    gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(view->preview_scroll), budget);
 }
 tl_popup_margins popup_view_margins(tl_popup_view *view) {
     return view->margins;
+}
+void popup_view_set_preview(tl_popup_view *view, const tl_popup_preview *preview, bool at_once) {
+    if (!view->wide || preview == NULL || preview->row == NULL) {
+        popup_preview_clear(view->widgets.preview);
+        return;
+    }
+    GIcon *icon = row_icon(preview->row);
+    popup_preview_show(view->widgets.preview, preview, icon);
+    g_object_unref(icon);
+    if (at_once)
+        popup_preview_flush(view->widgets.preview);
 }
 void popup_view_set_index(tl_popup_view *view, const tl_popup_index *index) {
     popup_index_strip_set(view->strip, index);

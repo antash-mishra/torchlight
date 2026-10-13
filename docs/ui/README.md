@@ -1,7 +1,8 @@
 # Native popup captures
 
 These are actual GTK snapshots of the popup window from `tests/gtk/test_view.c`,
-rendered through Cairo with animations disabled. They use Mint-Y icons and the
+drawn to PNG through Cairo with animations disabled (the preview capture instead waits
+for its lines to finish rising). They use Mint-Y icons and the
 desktop's 13pt interface font size; the stylesheet sets Schibsted Grotesk and
 Bedstead (installed from `third_party/fonts`) and the Mørketid palette of
 [ADR 0048](../adr/0048-tekst-popup.md), chosen because the Mint-Y-Dark theme's name
@@ -17,6 +18,9 @@ separately.
 - [Results: an application with a window, files and a folder](native-results.png)
 - [The same results in high contrast](native-results-contrast.png), which uses the
   theme's colors and no shadow
+- [The preview panel](native-preview.png) beside the same results on an 880-pixel
+  popup, describing the selected file (a temporary file the test writes, so its
+  size and time are the test's)
 
 Replay after building `build/test_popup_view`, on a display with a compositing
 window manager (for example `metacity --sm-disable` on a private Xvfb display)
@@ -30,11 +34,11 @@ For the high-contrast capture, run the same command with `GTK_THEME=HighContrast
 and a temporary capture directory, and keep its `native-results.png` as
 `native-results-contrast.png`.
 
-[Validation results](validation.json) record the theme/scale matrix, AT-SPI checks
-and native sanitizer checks for this presentation (`make test-ui-isolated` and
-`python3 tests/run_popup_checks.py --a11y`; both need Xvfb and xdotool). The native
-view test disables LeakSanitizer for GTK/font caches; ASan and UBSan still check
-memory errors and timer teardown.
+[Validation results](validation.json) record the theme/scale matrix, a wide-screen run
+with the preview panel, AT-SPI checks and native sanitizer checks for this
+presentation (`make test-ui-isolated` and `python3 tests/run_popup_checks.py --a11y`;
+both need Xvfb and xdotool). The native view test disables LeakSanitizer for GTK/font
+caches; ASan and UBSan still check memory errors and timer teardown.
 
 See [the GUI specification](../m3-gui-design.md) and
 [ADR 0048](../adr/0048-tekst-popup.md).

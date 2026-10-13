@@ -146,6 +146,9 @@
   folder, yellow Copy path, cyan Close), after teletext's four colored links.
 - **Idle strip:** The line under an empty popup query that says what the index is
   doing: up to date, updating or degraded; folders watched; the last scan's time.
+- **Preview panel:** The part of a wide popup beside the results that describes the
+  selected item: its name and kind, what Torchlight knows about it (size, modified
+  time, folder, items, description, open windows) and its actions with their keys.
 - **Result group:** One of the popup's sections (Apps, Settings, Folders, Files).
   Groups are listed where their best result ranks, under a header with the group's
   color block, name and count.

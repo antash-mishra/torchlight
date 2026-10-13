@@ -1,12 +1,17 @@
 /* Native presentation regressions: real allocations, gliding selection, motion timers,
- * Tekst's header, idle strip and Fastext footer, and paths. */
+ * Tekst's header, idle strip, Fastext footer and preview panel, and paths. */
 #include "../../ui/gtk/header.h"
 #include "../../ui/gtk/index_strip.h"
 #include "../../ui/gtk/path_label.h"
 #include "../../ui/gtk/view.h"
 #include "../unit/test.h"
+#include <glib/gstdio.h>
+#include <stdio.h>
 #include <string.h>
-#define SURFACE_WIDTH 680
+#define SURFACE_WIDTH POPUP_VIEW_LIST_WIDTH
+#define WIDE_WIDTH POPUP_VIEW_PREVIEW_WIDTH
+/* The preview test's file: about the size of a page of notes. */
+#define PREVIEW_BYTES 4215
 static void settle(int milliseconds) {
     gint64 deadline = g_get_monotonic_time() + (gint64)milliseconds * 1000;
     do {
@@ -36,11 +41,18 @@ static graphene_rect_t bounds(GtkWidget *widget) {
 static void capture(tl_popup_widgets widgets, const char *artifact) {
     const char *directory = g_getenv("TORCHLIGHT_TEST_VIEW_CAPTURE");
     GtkWidget *window = GTK_WIDGET(gtk_widget_get_root(widgets.root));
+    /* A loaded machine can map and allocate the window late; snapshot it once it has. */
+    for (int waited = 0;
+         waited < 2000 && (!gtk_widget_get_mapped(window) || gtk_widget_get_width(window) == 0);
+         waited += 10)
+        settle(10);
     int width = gtk_widget_get_width(window), height = gtk_widget_get_height(window);
     GtkSnapshot *snapshot = gtk_snapshot_new();
     GdkPaintable *paintable = gtk_widget_paintable_new(window);
     gdk_paintable_snapshot(paintable, GDK_SNAPSHOT(snapshot), width, height);
     GskRenderNode *node = gtk_snapshot_free_to_node(snapshot);
+    if (node == NULL)
+        fprintf(stderr, "capture %s: the window drew nothing\n", artifact);
     CHECK(node != NULL);
     cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
     cairo_t *cr = cairo_create(surface);
@@ -68,8 +80,14 @@ static void check_path(const char *full, size_t keep, const char *expected) {
     pango_layout_get_pixel_size(layout, &width, NULL);
     gtk_window_set_default_size(GTK_WINDOW(window), width, 30);
     gtk_window_present(GTK_WINDOW(window));
+    /* The label is fitted on allocation, which a loaded machine can delay past a fixed
+     * wait; give it up to two seconds. */
+    GtkWidget *label = gtk_widget_get_first_child(path);
+    for (int waited = 0;
+         waited < 2000 && strcmp(gtk_label_get_text(GTK_LABEL(label)), expected) != 0; waited += 10)
+        settle(10);
     settle(80);
-    CHECK(strcmp(gtk_label_get_text(GTK_LABEL(gtk_widget_get_first_child(path))), expected) == 0);
+    CHECK(strcmp(gtk_label_get_text(GTK_LABEL(label)), expected) == 0);
     CHECK(strcmp(gtk_widget_get_tooltip_text(path), full) == 0);
     g_object_unref(layout);
     gtk_window_destroy(GTK_WINDOW(window));
@@ -283,6 +301,8 @@ static void check_results(tl_popup_view *view, tl_popup_widgets widgets) {
           before.size.width == after.size.width);
     CHECK(gtk_widget_get_visible(widgets.scroll));
     CHECK(gtk_widget_get_visible(find_named(widgets.root, "popup-footer")));
+    /* A narrow popup has no room for the preview panel. */
+    CHECK(!gtk_widget_get_visible(find_named(widgets.root, "popup-preview")));
     GtkWidget *track = find_named(widgets.root, "popup-highlight");
     graphene_rect_t highlight = bounds(track);
     graphene_rect_t selected = bounds(row);
@@ -384,10 +404,10 @@ static void capture_header(GtkListBoxRow *row, GtkListBoxRow *before, gpointer c
     gtk_list_box_row_set_header(row, starts ? popup_view_group_header(groups[index], counts[index])
                                             : NULL);
 }
-/* A representative list for the docs capture: an application with a window and New
+/* A representative list for the docs captures: an application with a window and New
  * window, then two files and a folder, each group under its header; the block rests
  * on the first file. */
-static void capture_results(tl_popup_view *view, tl_popup_widgets widgets) {
+static void fill_capture(tl_popup_view *view, tl_popup_widgets widgets) {
     gtk_list_box_set_header_func(GTK_LIST_BOX(widgets.list), capture_header, NULL, NULL);
     tl_popup_row app = {.id = 1, .application = true};
     g_strlcpy(app.name, "Terminal", sizeof(app.name));
@@ -415,12 +435,18 @@ static void capture_results(tl_popup_view *view, tl_popup_widgets widgets) {
     popup_view_set_results(view, G_N_ELEMENTS(files) + 1);
     select_index(view, widgets, 3, false);
     popup_view_set_status(view, "");
-    settle(800);
-    capture(widgets, "results");
+}
+static void clear_capture(tl_popup_view *view, tl_popup_widgets widgets) {
     popup_view_set_results(view, 0);
     gtk_list_box_remove_all(GTK_LIST_BOX(widgets.list));
     gtk_list_box_set_header_func(GTK_LIST_BOX(widgets.list), NULL, NULL, NULL);
     popup_view_select(view, NULL, false);
+}
+static void capture_results(tl_popup_view *view, tl_popup_widgets widgets) {
+    fill_capture(view, widgets);
+    settle(800);
+    capture(widgets, "results");
+    clear_capture(view, widgets);
 }
 /* With a compositor and a GPU renderer the surface sits inside a transparent shadow
  * margin, and the window grows by it; otherwise the surface fills the window. */
@@ -574,6 +600,177 @@ static void test_view(void) {
     g_object_unref(window);
     settle(800); /* Destroying with pending holds and fades must never call freed context. */
 }
+/* Wait up to two seconds for the preview's style_class label to say something, as the
+ * worker's details arrive. */
+static const char *await_text(GtkWidget *panel, const char *style_class) {
+    for (int waited = 0; waited < 2000; waited += 10) {
+        const char *text = popup_preview_text(panel, style_class);
+        if (text != NULL && text[0] != 0)
+            return text;
+        settle(10);
+    }
+    return "";
+}
+/* The capture list's first file, read from path. */
+static tl_popup_row preview_file(const char *path) {
+    tl_popup_row row = {.id = 3};
+    g_strlcpy(row.name, "terminal-notes.md", sizeof(row.name));
+    g_strlcpy(row.display, "~/workspace/torchlight/docs/terminal-notes.md", sizeof(row.display));
+    g_strlcpy(row.path, path, sizeof(row.path));
+    return row;
+}
+/* The panel sits right of the results inside the surface and never asks for more width
+ * than the surface has. The window manager may still clamp the window to a smaller
+ * screen, so the surface's own request is checked, not the window's width. */
+static void check_preview_geometry(tl_popup_widgets widgets) {
+    GtkWidget *panel = find_named(widgets.root, "popup-preview");
+    CHECK(gtk_widget_get_visible(panel));
+    graphene_rect_t list = bounds(widgets.scroll), side = bounds(panel);
+    graphene_rect_t surface = bounds(widgets.root);
+    CHECK(side.origin.x >= list.origin.x + list.size.width - 1);
+    CHECK(side.origin.x + side.size.width <= surface.origin.x + surface.size.width + 1);
+    CHECK(side.size.width > 0 && list.size.width > side.size.width);
+    int minimum = 0, natural = 0;
+    gtk_widget_measure(widgets.root, GTK_ORIENTATION_HORIZONTAL, -1, &minimum, &natural, NULL,
+                       NULL);
+    CHECK(minimum <= WIDE_WIDTH && natural <= WIDE_WIDTH);
+}
+/* A file waits for the selection to rest, shows its name, folder and actions, then the
+ * size, modified time and type a worker reads. */
+static void check_preview_file(tl_popup_view *view, tl_popup_widgets widgets, const char *path) {
+    tl_popup_row row = preview_file(path);
+    popup_view_set_preview(view, &(tl_popup_preview){.row = &row}, false);
+    CHECK(popup_preview_text(widgets.preview, "preview-name") == NULL);
+    settle(150);
+    CHECK(strcmp(popup_preview_text(widgets.preview, "preview-name"), "terminal-notes.md") == 0);
+    CHECK(strcmp(popup_preview_text(widgets.preview, "preview-folder"),
+                 "~/workspace/torchlight/docs") == 0);
+    CHECK(label_with(widgets.preview, "Show in folder") != NULL &&
+          label_with(widgets.preview, "Copy path") != NULL);
+    char *size = g_format_size(PREVIEW_BYTES);
+    CHECK(strcmp(await_text(widgets.preview, "preview-size"), size) == 0);
+    g_free(size);
+    CHECK(await_text(widgets.preview, "preview-modified")[0] != 0);
+    /* The type comes from the name, through the MIME database. */
+    CHECK(strcmp(popup_preview_text(widgets.preview, "preview-type"), "File") != 0);
+    check_preview_geometry(widgets);
+    settle(400); /* Let the lines finish rising before the docs capture. */
+    capture(widgets, "preview");
+}
+/* A folder, shown at once as new results are: its items (hidden ones aside), modified
+ * time and place. Moving on before the selection rests shows only where it stopped. */
+static void check_preview_folder(tl_popup_view *view, tl_popup_widgets widgets, const char *file,
+                                 const char *path) {
+    tl_popup_row row = {.id = 5, .folder = true}, other = preview_file(file);
+    g_strlcpy(row.name, "terminals", sizeof(row.name));
+    g_strlcpy(row.display, "~/Pictures/terminals", sizeof(row.display));
+    g_strlcpy(row.path, path, sizeof(row.path));
+    popup_view_set_preview(view, &(tl_popup_preview){.row = &row}, true);
+    CHECK(strcmp(popup_preview_text(widgets.preview, "preview-name"), "terminals") == 0);
+    CHECK(strcmp(popup_preview_text(widgets.preview, "preview-type"), "Folder") == 0);
+    CHECK(strcmp(popup_preview_text(widgets.preview, "preview-where"), "~/Pictures/terminals") ==
+          0);
+    CHECK(strcmp(await_text(widgets.preview, "preview-items"), "2") == 0);
+    popup_view_set_preview(view, &(tl_popup_preview){.row = &other}, false);
+    popup_view_set_preview(view, &(tl_popup_preview){.row = &row}, false);
+    settle(150);
+    CHECK(strcmp(popup_preview_text(widgets.preview, "preview-name"), "terminals") == 0);
+}
+/* An application: its description from the desktop entry, open windows and actions. Its
+ * New window child updates the panel at once and keeps the description already read. */
+static void check_preview_app(tl_popup_view *view, tl_popup_widgets widgets, const char *desktop) {
+    tl_popup_row row = {.id = 1, .application = true};
+    g_strlcpy(row.name, "Notes", sizeof(row.name));
+    g_strlcpy(row.icon, "accessories-text-editor", sizeof(row.icon));
+    g_strlcpy(row.path, desktop, sizeof(row.path));
+    tl_popup_preview preview = {
+        .row = &row, .windows = {"PLAN.md"}, .window_count = 1, .windows_open = 3};
+    popup_view_set_preview(view, &preview, true);
+    CHECK(strcmp(popup_preview_text(widgets.preview, "preview-type"), "Application") == 0);
+    CHECK(label_with(widgets.preview, "PLAN.md") != NULL &&
+          label_with(widgets.preview, "2 more") != NULL);
+    CHECK(label_with(widgets.preview, "Switch to window") != NULL &&
+          label_with(widgets.preview, "Show desktop file") != NULL);
+    CHECK(strcmp(await_text(widgets.preview, "preview-description"), "Write things down") == 0);
+    /* The same item again, as each keystroke that keeps the top result sends it: the panel
+     * is not rebuilt, which would cost every results paint. */
+    GtkWidget *head = gtk_widget_get_first_child(widgets.preview);
+    popup_view_set_preview(view, &preview, false);
+    CHECK(gtk_widget_get_first_child(widgets.preview) == head);
+    preview.kind = POPUP_ITEM_NEW_WINDOW;
+    popup_view_set_preview(view, &preview, false);
+    CHECK(label_with(widgets.preview, "Open a new window") != NULL &&
+          label_with(widgets.preview, "Show desktop file") == NULL);
+    CHECK(strcmp(popup_preview_text(widgets.preview, "preview-description"), "Write things down") ==
+          0);
+}
+/* No results clear the panel; a narrow popup hides it and reads nothing. */
+static void check_preview_narrow(tl_popup_view *view, tl_popup_widgets widgets, const char *file) {
+    tl_popup_row row = preview_file(file);
+    popup_view_set_results(view, 0);
+    CHECK(popup_preview_text(widgets.preview, "preview-name") == NULL);
+    popup_view_configure(view, SURFACE_WIDTH, 800);
+    popup_view_set_results(view, 1);
+    popup_view_set_preview(view, &(tl_popup_preview){.row = &row}, true);
+    CHECK(!gtk_widget_get_visible(find_named(widgets.root, "popup-preview")));
+    CHECK(popup_preview_text(widgets.preview, "preview-name") == NULL);
+    /* Wide again, then destroyed while the worker reads: it must not touch freed state. */
+    popup_view_configure(view, WIDE_WIDTH, 800);
+    popup_view_set_preview(view, &(tl_popup_preview){.row = &row}, true);
+}
+/* Temporary files for the preview: a file of PREVIEW_BYTES, a desktop entry and a hidden
+ * file, so the folder shows two items. Returns the owned folder path. */
+static char *preview_files(char **file, char **desktop) {
+    char *directory = g_dir_make_tmp("torchlight-preview-XXXXXX", NULL);
+    CHECK(directory != NULL);
+    *file = g_build_filename(directory, "notes.md", NULL);
+    *desktop = g_build_filename(directory, "notes.desktop", NULL);
+    char *hidden = g_build_filename(directory, ".notes.swp", NULL);
+    char *page = g_strnfill(PREVIEW_BYTES, 'x');
+    CHECK(g_file_set_contents(*file, page, PREVIEW_BYTES, NULL));
+    CHECK(g_file_set_contents(*desktop,
+                              "[Desktop Entry]\nType=Application\nName=Notes\n"
+                              "Comment=Write things down\nExec=true\n",
+                              -1, NULL));
+    CHECK(g_file_set_contents(hidden, "", 0, NULL));
+    g_free(page);
+    g_free(hidden);
+    return directory;
+}
+static void remove_preview_files(char *directory, char *file, char *desktop) {
+    char *hidden = g_build_filename(directory, ".notes.swp", NULL);
+    CHECK(g_remove(file) == 0 && g_remove(desktop) == 0 && g_remove(hidden) == 0);
+    CHECK(g_rmdir(directory) == 0);
+    g_free(hidden);
+    g_free(directory);
+    g_free(file);
+    g_free(desktop);
+}
+/* The preview panel beside the results on a wide popup. */
+static void test_preview(void) {
+    char *file = NULL, *desktop = NULL, *directory = preview_files(&file, &desktop);
+    GtkWidget *window = new_window();
+    tl_popup_view *view = NULL;
+    CHECK(popup_view_create(window, &view) == TL_OK);
+    tl_popup_widgets widgets = popup_view_widgets(view);
+    gtk_widget_realize(window);
+    popup_view_configure(view, WIDE_WIDTH, 800);
+    tl_popup_margins margins = popup_view_margins(view);
+    gtk_window_set_default_size(GTK_WINDOW(window), WIDE_WIDTH + margins.left + margins.right, -1);
+    gtk_window_present(GTK_WINDOW(window));
+    popup_view_set_active(view, true);
+    fill_capture(view, widgets);
+    check_preview_file(view, widgets, file);
+    check_preview_folder(view, widgets, file, directory);
+    check_preview_app(view, widgets, desktop);
+    clear_capture(view, widgets);
+    check_preview_narrow(view, widgets, file);
+    gtk_window_destroy(GTK_WINDOW(window));
+    popup_view_destroy(view);
+    g_object_unref(window);
+    settle(300);
+    remove_preview_files(directory, file, desktop);
+}
 int main(void) {
     gtk_init();
     test_paths();
@@ -582,9 +779,10 @@ int main(void) {
     test_group_header();
     test_index_strip();
     test_view();
+    test_preview();
     test_forced_dark();
     test_forced_contrast();
     puts("Native view: path fitting, icons, entrances, glide, motion timers, header, idle strip, "
-         "group headers, palettes, shadow and geometry passed.");
+         "group headers, preview panel, palettes, shadow and geometry passed.");
     return 0;
 }

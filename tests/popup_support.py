@@ -40,7 +40,7 @@ class PopupDriver:
                 if not line or not line.endswith("\n"):
                     break
                 item = json.loads(line)
-                for key in ["query", "status"]:
+                for key in ["query", "status", "preview_name"]:
                     item[key] = base64.b64decode(item.pop(key + "_b64")).decode()
                 self.observed.append(item)
                 self.offset = stream.tell()

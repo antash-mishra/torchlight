@@ -107,11 +107,48 @@ static void update_header(GtkListBoxRow *row, GtkListBoxRow *before, gpointer co
         row, starts ? popup_view_group_header(group, popup_model_group_count(popup->model, group))
                     : NULL);
 }
+/* The titles the list shows under the selected item's application, most recent first,
+ * and how many windows it has open. */
+static void preview_windows(const struct popup *popup, tl_popup_preview *preview,
+                            char titles[POPUP_WINDOWS_SHOWN][WINDOWS_TITLE_BYTES]) {
+    size_t index = popup_model_position(popup->model);
+    const tl_popup_item *item = popup_model_item(popup->model, index);
+    while (item != NULL && item->kind != POPUP_ITEM_RESULT && index > 0)
+        item = popup_model_item(popup->model, --index);
+    if (item == NULL || item->kind != POPUP_ITEM_RESULT)
+        return;
+    preview->windows_open = item->windows;
+    for (const tl_popup_item *child = popup_model_item(popup->model, ++index);
+         child != NULL && child->kind != POPUP_ITEM_RESULT &&
+         preview->window_count < POPUP_WINDOWS_SHOWN;
+         child = popup_model_item(popup->model, ++index)) {
+        if (child->kind != POPUP_ITEM_WINDOW)
+            continue;
+        child_text(popup, child, titles[preview->window_count], WINDOWS_TITLE_BYTES);
+        preview->windows[preview->window_count] = titles[preview->window_count];
+        preview->window_count++;
+    }
+}
+/* Describe the selected item beside the list; at_once skips waiting for the selection
+ * to rest. */
+static void show_preview(struct popup *popup, bool at_once) {
+    const tl_popup_item *item = popup_model_selected_item(popup->model);
+    tl_popup_preview preview = {.row = popup_model_selected(popup->model)};
+    char titles[POPUP_WINDOWS_SHOWN][WINDOWS_TITLE_BYTES];
+    if (item != NULL && preview.row != NULL) {
+        preview.kind = item->kind;
+        preview_windows(popup, &preview, titles);
+    }
+    popup_view_set_preview(popup->view, &preview, at_once);
+}
+/* Select the model's item; a glide also lets the preview wait for the selection to rest,
+ * while a jump (new results) shows it at once. */
 static void select_row(struct popup *popup, bool glide) {
     GtkListBoxRow *row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(popup->list),
                                                        (int)popup_model_position(popup->model));
     gtk_list_box_select_row(GTK_LIST_BOX(popup->list), row);
     popup_view_select(popup->view, row == NULL ? NULL : GTK_WIDGET(row), glide);
+    show_preview(popup, !glide);
     const tl_popup_item *item = popup_model_selected_item(popup->model);
     char text[WINDOWS_TITLE_BYTES];
     if (item != NULL && item->kind != POPUP_ITEM_RESULT)
@@ -661,9 +698,12 @@ static void place_window(GtkWidget *widget, gpointer context) {
         if (pointer_x < geometry.x || pointer_x >= geometry.x + geometry.width ||
             pointer_y < geometry.y || pointer_y >= geometry.y + geometry.height)
             continue;
-        int width = MIN(680, MAX(240, area.width - 48));
+        /* Wide enough work areas get the preview panel beside the results. */
+        int room = area.width - 48;
+        int width = room >= POPUP_VIEW_PREVIEW_WIDTH ? POPUP_VIEW_PREVIEW_WIDTH
+                                                     : MIN(POPUP_VIEW_LIST_WIDTH, MAX(240, room));
         popup_view_configure(popup->view, width, area.height * 7 / 10);
-        /* The window adds the halo margin around the visible surface. */
+        /* The window adds the shadow margin around the visible surface. */
         tl_popup_margins margins = popup_view_margins(popup->view);
         int outer = width + margins.left + margins.right;
         gtk_window_set_default_size(GTK_WINDOW(popup->window), outer, -1);
@@ -685,7 +725,7 @@ static tl_status build_window(struct popup *popup) {
     gtk_window_set_title(GTK_WINDOW(popup->window), "Torchlight");
     gtk_window_set_decorated(GTK_WINDOW(popup->window), false);
     gtk_window_set_resizable(GTK_WINDOW(popup->window), false);
-    gtk_window_set_default_size(GTK_WINDOW(popup->window), 680, -1);
+    gtk_window_set_default_size(GTK_WINDOW(popup->window), POPUP_VIEW_LIST_WIDTH, -1);
     gtk_widget_add_css_class(popup->window, "torchlight");
     tl_status result = popup_view_create(popup->window, &popup->view);
     if (result != TL_OK)
