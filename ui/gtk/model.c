@@ -179,31 +179,50 @@ static void append_children(tl_popup_model *model, size_t row, size_t windows, b
                                            .windows = windows - shown});
     append_item(model, (tl_popup_item){.kind = POPUP_ITEM_NEW_WINDOW, .row = row});
 }
+/* Row r's item, then its children when its application lists its windows. */
+static void append_result(tl_popup_model *model, size_t r) {
+    size_t windows = 0, first = 0;
+    for (size_t w = windows_count(model->windows); w-- > 0;)
+        if (model->owners[w] == r) {
+            windows++;
+            first = w;
+        }
+    /* Every application lists its windows, so a running one is visible at
+     * any rank; a collapse choice hides them for this request. */
+    size_t choice = expansion_index(model, model->rows[r].id);
+    expansion_state state =
+        choice < model->choice_count ? model->choices[choice].state : EXPANSION_SHOWN;
+    bool expanded = windows != 0 && state != EXPANSION_COLLAPSED;
+    append_item(model, (tl_popup_item){.kind = POPUP_ITEM_RESULT,
+                                       .row = r,
+                                       .window = first,
+                                       .windows = windows,
+                                       .expanded = expanded});
+    if (expanded)
+        append_children(model, r, windows, state == EXPANSION_ALL);
+}
+/* Groups in the order of their best row, so the strongest result stays first. */
+static size_t group_order(const tl_popup_model *model, tl_popup_group order[POPUP_GROUPS]) {
+    size_t count = 0;
+    for (size_t r = 0; r < model->count; r++) {
+        tl_popup_group group = popup_row_group(&model->rows[r]);
+        bool seen = false;
+        for (size_t i = 0; i < count; i++)
+            seen = seen || order[i] == group;
+        if (!seen)
+            order[count++] = group;
+    }
+    return count;
+}
 static void build_items(tl_popup_model *model) {
     assign_windows(model);
     model->item_count = 0;
-    size_t count = windows_count(model->windows);
-    for (size_t r = 0; r < model->count; r++) {
-        size_t windows = 0, first = 0;
-        for (size_t w = count; w-- > 0;)
-            if (model->owners[w] == r) {
-                windows++;
-                first = w;
-            }
-        /* Every application lists its windows, so a running one is visible at
-         * any rank; a collapse choice hides them for this request. */
-        size_t choice = expansion_index(model, model->rows[r].id);
-        expansion_state state =
-            choice < model->choice_count ? model->choices[choice].state : EXPANSION_SHOWN;
-        bool expanded = windows != 0 && state != EXPANSION_COLLAPSED;
-        append_item(model, (tl_popup_item){.kind = POPUP_ITEM_RESULT,
-                                           .row = r,
-                                           .window = first,
-                                           .windows = windows,
-                                           .expanded = expanded});
-        if (expanded)
-            append_children(model, r, windows, state == EXPANSION_ALL);
-    }
+    tl_popup_group order[POPUP_GROUPS];
+    size_t groups = group_order(model, order);
+    for (size_t g = 0; g < groups; g++)
+        for (size_t r = 0; r < model->count; r++)
+            if (popup_row_group(&model->rows[r]) == order[g])
+                append_result(model, r);
 }
 static struct item_key item_key(const tl_popup_model *model, size_t index) {
     const tl_popup_item *item = &model->items[index];
@@ -442,6 +461,18 @@ bool popup_model_collapse(tl_popup_model *model) {
     model->position = find_item(model, &key);
     model->deliberate = true;
     return true;
+}
+tl_popup_group popup_row_group(const tl_popup_row *row) {
+    return row->settings      ? POPUP_GROUP_SETTINGS
+           : row->application ? POPUP_GROUP_APPS
+           : row->folder      ? POPUP_GROUP_FOLDERS
+                              : POPUP_GROUP_FILES;
+}
+size_t popup_model_group_count(const tl_popup_model *model, tl_popup_group group) {
+    size_t count = 0;
+    for (size_t r = 0; model != NULL && r < model->count; r++)
+        count += popup_row_group(&model->rows[r]) == group;
+    return count;
 }
 const tl_popup_row *popup_model_row(const tl_popup_model *model, size_t index) {
     return model != NULL && index < model->count ? &model->rows[index] : NULL;

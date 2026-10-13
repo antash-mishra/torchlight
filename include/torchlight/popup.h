@@ -21,6 +21,14 @@ typedef struct {
     char wm_class[WINDOWS_CLASS_BYTES]; /* application StartupWMClass, may be empty */
     bool application, settings, folder;
 } tl_popup_row;
+/** The sections results are listed in. A group's place follows its best row's rank. */
+typedef enum {
+    POPUP_GROUP_APPS,
+    POPUP_GROUP_SETTINGS,
+    POPUP_GROUP_FOLDERS,
+    POPUP_GROUP_FILES,
+    POPUP_GROUPS
+} tl_popup_group;
 /** What a list item shows: a result, or a child listed beneath an application. */
 typedef enum {
     POPUP_ITEM_RESULT,
@@ -78,8 +86,11 @@ const tl_popup_item *popup_model_selected_item(const tl_popup_model *model);
  * the item is gone. No errors or ownership transfer. */
 void popup_model_set_windows(tl_popup_model *model, const tl_windows *windows);
 /** Count list items: results and the children of expanded applications, in
- * display order (windows most recent first, then more windows, then new
- * window). Zero for NULL; no errors. */
+ * display order. Results are grouped (apps, settings, folders, files), groups in
+ * the order of their best-ranked row and rows in rank order within a group, so
+ * the strongest result stays first; each expanded application is followed by
+ * its windows (most recent first), then more windows, then new window. Zero for
+ * NULL; no errors. */
 size_t popup_model_item_count(const tl_popup_model *model);
 /** Borrow the list item at index until the next mutation; NULL if absent. */
 const tl_popup_item *popup_model_item(const tl_popup_model *model, size_t index);
@@ -92,6 +103,11 @@ bool popup_model_expand(tl_popup_model *model);
  * until the next begin/clear, and select that result as deliberate. Returns
  * whether the list changed; no errors. */
 bool popup_model_collapse(tl_popup_model *model);
+/** Return the group borrowed row is listed under: settings panels, applications,
+ * folders or files. No errors or ownership changes. */
+tl_popup_group popup_row_group(const tl_popup_row *row);
+/** Count result rows (not children) in group; zero for NULL. No errors. */
+size_t popup_model_group_count(const tl_popup_model *model, tl_popup_group group);
 /** Borrow row at index until next mutation; NULL for absent index. */
 const tl_popup_row *popup_model_row(const tl_popup_model *model, size_t index);
 /** Return how many leading bytes of row index's display parent must stay visible

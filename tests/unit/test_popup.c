@@ -108,7 +108,8 @@ static void select_item(tl_popup_model *model, size_t index) {
     CHECK(popup_model_position(model) == index);
 }
 /* Every application lists its windows wherever it ranks: three, more windows
- * and new window for Chrome; VS Code and the web app at rows 2 and 4 too. */
+ * and new window for Chrome; VS Code and the web app (rows 2 and 4) too. The
+ * apps come first as a group, then the file, then the settings panel. */
 static void expect_chrome_children(const tl_popup_model *model) {
     const tl_popup_item *chrome = popup_model_item(model, 0);
     CHECK(chrome->kind == POPUP_ITEM_RESULT && chrome->windows == 8 && chrome->expanded);
@@ -119,15 +120,17 @@ static void expect_chrome_children(const tl_popup_model *model) {
     expect_item(model, 4, POPUP_ITEM_MORE_WINDOWS, 0, 0);
     CHECK(popup_model_item(model, 4)->windows == 5);
     expect_item(model, 5, POPUP_ITEM_NEW_WINDOW, 0, 0);
-    expect_item(model, 6, POPUP_ITEM_RESULT, 1, 0);
-    const tl_popup_item *code = popup_model_item(model, 7);
-    CHECK(code->kind == POPUP_ITEM_RESULT && code->windows == 1 && code->expanded);
-    expect_item(model, 8, POPUP_ITEM_WINDOW, 2, 200);
-    expect_item(model, 9, POPUP_ITEM_NEW_WINDOW, 2, 0);
-    CHECK(popup_model_item(model, 10)->windows == 0); /* settings */
-    CHECK(popup_model_item(model, 11)->windows == 1 && popup_model_item(model, 11)->expanded);
-    expect_item(model, 12, POPUP_ITEM_WINDOW, 4, 300);
-    expect_item(model, 13, POPUP_ITEM_NEW_WINDOW, 4, 0);
+    const tl_popup_item *code = popup_model_item(model, 6);
+    CHECK(code->kind == POPUP_ITEM_RESULT && code->row == 2 && code->windows == 1 &&
+          code->expanded);
+    expect_item(model, 7, POPUP_ITEM_WINDOW, 2, 200);
+    expect_item(model, 8, POPUP_ITEM_NEW_WINDOW, 2, 0);
+    const tl_popup_item *web = popup_model_item(model, 9);
+    CHECK(web->row == 4 && web->windows == 1 && web->expanded);
+    expect_item(model, 10, POPUP_ITEM_WINDOW, 4, 300);
+    expect_item(model, 11, POPUP_ITEM_NEW_WINDOW, 4, 0);
+    expect_item(model, 12, POPUP_ITEM_RESULT, 1, 0);
+    CHECK(popup_model_item(model, 13)->row == 3 && popup_model_item(model, 13)->windows == 0);
     CHECK(popup_model_item_count(model) == 14);
 }
 static void test_expansion(tl_popup_model *model) {
@@ -141,16 +144,16 @@ static void test_expansion(tl_popup_model *model) {
     CHECK(popup_model_item_count(model) == 9 && !popup_model_collapse(model));
     CHECK(popup_model_expand(model) && popup_model_item_count(model) == 14);
     CHECK(!popup_model_expand(model) && popup_model_position(model) == 0);
-    select_item(model, 6);
+    select_item(model, 12);
     CHECK(!popup_model_expand(model)); /* files have no windows */
     /* A lower-ranked application collapses and expands in place. */
-    select_item(model, 7);
+    select_item(model, 6);
     CHECK(!popup_model_expand(model) && popup_model_collapse(model));
-    CHECK(popup_model_position(model) == 7 && popup_model_item_count(model) == 12);
-    CHECK(popup_model_expand(model) && popup_model_position(model) == 7);
-    expect_item(model, 8, POPUP_ITEM_WINDOW, 2, 200);
-    expect_item(model, 9, POPUP_ITEM_NEW_WINDOW, 2, 0);
-    select_item(model, 10);
+    CHECK(popup_model_position(model) == 6 && popup_model_item_count(model) == 12);
+    CHECK(popup_model_expand(model) && popup_model_position(model) == 6);
+    expect_item(model, 7, POPUP_ITEM_WINDOW, 2, 200);
+    expect_item(model, 8, POPUP_ITEM_NEW_WINDOW, 2, 0);
+    select_item(model, 13);
     CHECK(!popup_model_expand(model) && !popup_model_collapse(model));
 }
 static void test_hierarchy(tl_popup_model *model) {
@@ -191,6 +194,41 @@ static void test_hierarchy(tl_popup_model *model) {
     windows_destroy(later);
     windows_destroy(windows);
 }
+/* Results list by group: each group where its best row ranks, rank order inside. */
+static void test_groups(tl_popup_model *model) {
+    CHECK(popup_model_begin(model, "9") == TL_OK);
+    apply(model,
+          "{\"version\":1,\"request_id\":\"9\",\"phase\":\"final\",\"status\":\"ok\","
+          "\"results\":[{\"id\":\"21\",\"kind\":\"file\",\"display\":\"/a\",\"path\":\"/a\"},"
+          "{\"id\":\"22\",\"kind\":\"application\",\"display\":\"/b.desktop\","
+          "\"path\":\"/b.desktop\",\"name\":\"B\",\"desktop_id\":\"b.desktop\","
+          "\"desktop_revision\":\"1\"},"
+          "{\"id\":\"23\",\"kind\":\"folder\",\"display\":\"/c\",\"path\":\"/c\"},"
+          "{\"id\":\"24\",\"kind\":\"file\",\"display\":\"/d\",\"path\":\"/d\"},"
+          "{\"id\":\"25\",\"kind\":\"settings\",\"display\":\"/e.desktop\","
+          "\"path\":\"/e.desktop\",\"name\":\"E\",\"desktop_id\":\"e.desktop\","
+          "\"desktop_revision\":\"1\"},"
+          "{\"id\":\"26\",\"kind\":\"application\",\"display\":\"/f.desktop\","
+          "\"path\":\"/f.desktop\",\"name\":\"F\",\"desktop_id\":\"f.desktop\","
+          "\"desktop_revision\":\"1\"}]}");
+    const size_t rows[] = {0, 3, 1, 5, 2, 4};
+    for (size_t i = 0; i < 6; i++)
+        expect_item(model, i, POPUP_ITEM_RESULT, rows[i], 0);
+    CHECK(popup_row_group(popup_model_row(model, 0)) == POPUP_GROUP_FILES);
+    CHECK(popup_row_group(popup_model_row(model, 1)) == POPUP_GROUP_APPS);
+    CHECK(popup_row_group(popup_model_row(model, 2)) == POPUP_GROUP_FOLDERS);
+    CHECK(popup_row_group(popup_model_row(model, 4)) == POPUP_GROUP_SETTINGS);
+    CHECK(popup_model_group_count(model, POPUP_GROUP_FILES) == 2);
+    CHECK(popup_model_group_count(model, POPUP_GROUP_APPS) == 2);
+    CHECK(popup_model_group_count(model, POPUP_GROUP_FOLDERS) == 1);
+    CHECK(popup_model_group_count(model, POPUP_GROUP_SETTINGS) == 1);
+    CHECK(popup_model_group_count(NULL, POPUP_GROUP_FILES) == 0);
+    /* The best result stays selected first; moving follows the grouped order. */
+    CHECK(popup_model_selected(model)->id == 21);
+    popup_model_move(model, 1);
+    CHECK(popup_model_selected(model)->id == 24);
+    popup_model_clear(model);
+}
 void test_popup(void) {
     tl_popup_model *model = NULL;
     CHECK(popup_model_create(&model) == TL_OK);
@@ -228,5 +266,6 @@ void test_popup(void) {
     test_cleared(model, bytes);
     test_distinct(model);
     test_hierarchy(model);
+    test_groups(model);
     popup_model_destroy(model);
 }

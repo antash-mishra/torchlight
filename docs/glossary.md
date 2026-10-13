@@ -146,6 +146,9 @@
   folder, yellow Copy path, cyan Close), after teletext's four colored links.
 - **Idle strip:** The line under an empty popup query that says what the index is
   doing: up to date, updating or degraded; folders watched; the last scan's time.
+- **Result group:** One of the popup's sections (Apps, Settings, Folders, Files).
+  Groups are listed where their best result ranks, under a header with the group's
+  color block, name and count.
 - **Shadow margin:** The transparent border the popup window adds around its
   visible surface when a compositor can show transparency and GTK renders on the
   GPU. The shadow is drawn there, and clicks in it reach the windows beneath.

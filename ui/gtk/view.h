@@ -35,6 +35,11 @@ void popup_view_set_results(tl_popup_view *view, size_t count);
  * allocation failure; no row retained. */
 GtkWidget *popup_view_result(const tl_popup_row *row, size_t path_keep, tl_popup_entrance entrance,
                              size_t index);
+/** Build a floating section header for group: its teletext color block, name
+ * ("Apps", "Settings", "Folders" or "Files") and count of results. Hidden from
+ * assistive technology, which reads each row. Main thread; the caller sets it as
+ * a list row's header. No errors. */
+GtkWidget *popup_view_group_header(tl_popup_group group, size_t count);
 /** Build a compact floating list row beneath borrowed application parent for a
  * child item kind: an open window (its title), more windows or new window. The
  * row's content carries the kind as a style class ("window", "more-windows" or

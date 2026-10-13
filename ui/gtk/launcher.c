@@ -89,6 +89,24 @@ static void child_text(const struct popup *popup, const tl_popup_item *item, cha
     if (text[0] == 0 && item->kind == POPUP_ITEM_WINDOW)
         g_strlcpy(text, "Untitled window", size);
 }
+/* The group of the result at list row index, or POPUP_GROUPS for none. */
+static tl_popup_group row_group(const struct popup *popup, GtkListBoxRow *row) {
+    int index = row == NULL ? -1 : gtk_list_box_row_get_index(row);
+    const tl_popup_item *item = index < 0 ? NULL : popup_model_item(popup->model, (size_t)index);
+    return item == NULL ? POPUP_GROUPS : popup_row_group(popup_model_row(popup->model, item->row));
+}
+/* A section header above the first result of each group; children never start one. */
+static void update_header(GtkListBoxRow *row, GtkListBoxRow *before, gpointer context) {
+    struct popup *popup = context;
+    int index = gtk_list_box_row_get_index(row);
+    const tl_popup_item *item = index < 0 ? NULL : popup_model_item(popup->model, (size_t)index);
+    tl_popup_group group = row_group(popup, row);
+    bool starts =
+        item != NULL && item->kind == POPUP_ITEM_RESULT && row_group(popup, before) != group;
+    gtk_list_box_row_set_header(
+        row, starts ? popup_view_group_header(group, popup_model_group_count(popup->model, group))
+                    : NULL);
+}
 static void select_row(struct popup *popup, bool glide) {
     GtkListBoxRow *row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(popup->list),
                                                        (int)popup_model_position(popup->model));
@@ -105,12 +123,16 @@ static void select_row(struct popup *popup, bool glide) {
             GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_MEDIUM);
     if (row == NULL)
         return;
-    graphene_rect_t bounds;
+    graphene_rect_t bounds, header;
     if (!gtk_widget_compute_bounds(GTK_WIDGET(row), popup->list, &bounds))
         return;
     GtkAdjustment *adjustment =
         gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(popup->scroll));
     double top = (double)bounds.origin.y, bottom = top + (double)bounds.size.height;
+    /* Scrolling up to a group's first row shows its section header too. */
+    GtkWidget *above = gtk_list_box_row_get_header(row);
+    if (above != NULL && gtk_widget_compute_bounds(above, popup->list, &header))
+        top = MIN(top, (double)header.origin.y);
     double value = gtk_adjustment_get_value(adjustment);
     double page = gtk_adjustment_get_page_size(adjustment);
     if (top < value)
@@ -679,6 +701,7 @@ static tl_status build_window(struct popup *popup) {
     gtk_widget_add_controller(popup->window, keys);
     g_signal_connect(popup->entry, "changed", G_CALLBACK(changed), popup);
     g_signal_connect(popup->list, "row-activated", G_CALLBACK(row_activated), popup);
+    gtk_list_box_set_header_func(GTK_LIST_BOX(popup->list), update_header, popup, NULL);
     g_signal_connect(popup->retry, "clicked", G_CALLBACK(retry_clicked), popup);
     g_signal_connect(popup->window, "close-request", G_CALLBACK(close_requested), popup);
     g_signal_connect(popup->window, "notify::is-active", G_CALLBACK(active_changed), popup);

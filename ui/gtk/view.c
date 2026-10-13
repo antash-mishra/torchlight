@@ -477,6 +477,29 @@ static void add_entrance(GtkWidget *result, tl_popup_entrance entrance, size_t i
     if (written > 0 && (size_t)written < sizeof(class))
         gtk_widget_add_css_class(result, class);
 }
+/* A section header above a group's first row: its color block, name and count. */
+GtkWidget *popup_view_group_header(tl_popup_group group, size_t count) {
+    static const char *const NAMES[] = {"Apps", "Settings", "Folders", "Files"};
+    static const char *const COLOURS[] = {"cyan", "magenta", "yellow", "blue"};
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_widget_add_css_class(box, "group-header");
+    GtkWidget *block = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_add_css_class(block, "block");
+    gtk_widget_add_css_class(block, COLOURS[group < POPUP_GROUPS ? group : POPUP_GROUP_FILES]);
+    gtk_widget_set_valign(block, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(box), block);
+    gtk_box_append(GTK_BOX(box),
+                   label(NAMES[group < POPUP_GROUPS ? group : POPUP_GROUP_FILES], "group-name"));
+    char text[32];
+    int written = snprintf(text, sizeof(text), "%zu", count);
+    GtkWidget *number =
+        label(written > 0 && (size_t)written < sizeof(text) ? text : "", "group-count");
+    gtk_widget_set_hexpand(number, true);
+    gtk_label_set_xalign(GTK_LABEL(number), 1);
+    gtk_box_append(GTK_BOX(box), number);
+    gtk_accessible_update_state(GTK_ACCESSIBLE(box), GTK_ACCESSIBLE_STATE_HIDDEN, true, -1);
+    return box;
+}
 /* What a row is: settings, application, folder or file. */
 static const char *kind_class(const tl_popup_row *row) {
     return row->settings      ? "kind-setting"

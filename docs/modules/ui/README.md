@@ -1,6 +1,6 @@
 # ui
 
-> **Status:** Implemented (M3 + Tekst look and motion + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, light and dark palettes; grouped results and the preview panel of ADR 0048 are next
+> **Status:** Implemented (M3 + Tekst look, motion and grouped results + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, light and dark palettes; the preview panel of ADR 0048 is next
 > **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track,header,index_strip}.c`, `ui/gtk/popup.css`, `ui/gtk/palette-{light,dark}.css`, `src/bin/torchlight-gtk.c`; fonts in `third_party/fonts`; open windows in [windows](../windows/README.md)
 > **Headers:** `include/torchlight/{launcher,popup,async,windows}.h`
 > **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/unit/test_windows.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`
@@ -57,6 +57,14 @@ Copy path and Esc Close, each behind its teletext color. Ctrl+C with no query te
 selected copies the selected file's or folder's display path to the clipboard,
 and `popup_view_set_copied` makes the link say "Copied" for 1.2s; with selected
 text, the entry copies it as usual.
+
+Results are grouped ([ADR 0048](../../adr/0048-tekst-popup.md)): the model lists
+the groups (apps, settings, folders, files; `popup_row_group`) in the order of
+their best-ranked row and keeps rank order inside each, and the launcher's list
+header function puts a section header (`popup_view_group_header`: color block,
+name, `popup_model_group_count`) above each group's first result. Headers are not
+list rows, so list positions, arrow keys and selection retention are unchanged;
+scrolling up to a group's first row brings its header into view too.
 
 Each row is one line: a 24px icon, the name (its natural width up to 40
 characters, end-ellipsized) and, for files and folders, the short folder,

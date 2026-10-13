@@ -30,6 +30,14 @@ def wait_for(predicate, timeout=15):
 def windows():
     return set(xdo('search', '--onlyvisible', '--name', '.*', check=False).splitlines())
 
+def display_order(rows):
+    """The popup lists results by group (ADR 0048), each group where its best row ranks."""
+    group = lambda row: {'application': 0, 'settings': 1, 'folder': 2}.get(row.get('kind'), 3)
+    first = {}
+    for index, row in enumerate(rows):
+        first.setdefault(group(row), index)
+    return sorted(rows, key=lambda row: first[group(row)])
+
 with tempfile.TemporaryDirectory(prefix='torchlight-native-') as directory:
     base = Path(directory)
     (base/'files').mkdir()
@@ -69,7 +77,7 @@ with tempfile.TemporaryDirectory(prefix='torchlight-native-') as directory:
             xdo('key','ctrl+a')
             xdo('type','--clearmodifiers','--delay','1',text)
             time.sleep(.3)
-            rows=query(text)
+            rows=display_order(query(text))
             selected=next(i for i,row in enumerate(rows) if row.get('desktop_id')==expected)
             for _ in range(selected):
                 xdo('key','Down')

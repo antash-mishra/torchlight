@@ -1,7 +1,7 @@
 # 0048. Tekst: the popup's own look
 
-- **Status:** Accepted; the look, type and motion are implemented. Grouped results and
-  a preview panel are part of the same design and follow in their own changes.
+- **Status:** Accepted; the look, type, motion and grouped results are implemented.
+  A preview panel is part of the same design and follows in its own change.
 - **Date:** 2026-10-13
 
 ## Context
@@ -88,6 +88,12 @@ something; it appears as small square blocks, never as a wash.
    server, blurred shadows under the software (Cairo) renderer raised the median
    input-to-results paint from 32ms to 51ms, against 34ms without them.
 9. **High contrast** uses the theme's own colors, with no shadow.
+10. **Grouped results.** Results are listed in sections, Apps, Settings, Folders and
+    Files, each group placed where its best row ranks and its rows in rank order,
+    so the strongest result is still first and Enter still opens it. A section
+    header (the group's color block, name and count, in Bedstead) stands above
+    each group. Headers are not list rows, so arrow keys, selection retention and
+    the windows listed under applications work as before.
 
 Motion follows ADR 0034's rules: nothing waits for an effect, decorative motion
 never loops, and disabled GTK animations turn it all off (the clock still ticks).
@@ -138,6 +144,9 @@ The opening is the only motion that is not a response to input.
   palettes) to keep each within ISO C's 4,095-byte string literal limit.
 - Ctrl+C now copies a path when no query text is selected; with a selection it
   still copies the text.
+- Grouping can list a row below a lower-ranked row of another kind: with a file,
+  an app and a second file, both files come before the app. The best result, and
+  so Enter, is unchanged.
 - This supersedes ADR 0034's colors, font, field ring and highlight tint, and ADR
   0036's footer hints. ADR 0034's motion rules, ADR 0035's open windows and ADR
   0036's one-line rows stand.

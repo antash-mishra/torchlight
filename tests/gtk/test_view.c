@@ -192,6 +192,20 @@ static void test_children(void) {
     g_object_unref(more);
     g_object_unref(added);
 }
+/* A section header: its color block, name and count, hidden from screen readers. */
+static void test_group_header(void) {
+    GtkWidget *header = g_object_ref_sink(popup_view_group_header(POPUP_GROUP_SETTINGS, 3));
+    CHECK(gtk_widget_has_css_class(header, "group-header"));
+    GtkWidget *block = gtk_widget_get_first_child(header);
+    CHECK(gtk_widget_has_css_class(block, "block") && gtk_widget_has_css_class(block, "magenta"));
+    CHECK(strcmp(label_text(header, "group-name"), "Settings") == 0);
+    CHECK(strcmp(label_text(header, "group-count"), "3") == 0);
+    g_object_unref(header);
+    header = g_object_ref_sink(popup_view_group_header(POPUP_GROUP_FILES, 12));
+    CHECK(strcmp(label_text(header, "group-name"), "Files") == 0);
+    CHECK(gtk_widget_has_css_class(gtk_widget_get_first_child(header), "blue"));
+    g_object_unref(header);
+}
 static void check_editing(tl_popup_widgets widgets) {
     /* The first show offers the plain prompt; later shows rotate through tips. */
     CHECK(strcmp(gtk_entry_get_placeholder_text(GTK_ENTRY(widgets.entry)),
@@ -356,9 +370,25 @@ static void check_motion(tl_popup_view *view, tl_popup_widgets widgets, GtkWidge
     settle(300);
     CHECK(gtk_widget_get_visible(window) && !gtk_widget_has_css_class(widgets.root, "closing"));
 }
+/* Section headers for the capture's rows, as the launcher sets them: Apps above the
+ * application, Files above the two files and Folders above the folder. */
+static void capture_header(GtkListBoxRow *row, GtkListBoxRow *before, gpointer context) {
+    (void)before;
+    (void)context;
+    static const tl_popup_group groups[] = {POPUP_GROUP_APPS,  POPUP_GROUPS, POPUP_GROUPS,
+                                            POPUP_GROUP_FILES, POPUP_GROUPS, POPUP_GROUP_FOLDERS};
+    static const size_t counts[] = {1, 0, 0, 2, 0, 1};
+    int index = gtk_list_box_row_get_index(row);
+    bool starts =
+        index >= 0 && (size_t)index < G_N_ELEMENTS(groups) && groups[index] != POPUP_GROUPS;
+    gtk_list_box_row_set_header(row, starts ? popup_view_group_header(groups[index], counts[index])
+                                            : NULL);
+}
 /* A representative list for the docs capture: an application with a window and New
- * window, then two files and a folder; the beam rests on the first file. */
+ * window, then two files and a folder, each group under its header; the block rests
+ * on the first file. */
 static void capture_results(tl_popup_view *view, tl_popup_widgets widgets) {
+    gtk_list_box_set_header_func(GTK_LIST_BOX(widgets.list), capture_header, NULL, NULL);
     tl_popup_row app = {.id = 1, .application = true};
     g_strlcpy(app.name, "Terminal", sizeof(app.name));
     g_strlcpy(app.icon, "utilities-terminal", sizeof(app.icon));
@@ -389,6 +419,7 @@ static void capture_results(tl_popup_view *view, tl_popup_widgets widgets) {
     capture(widgets, "results");
     popup_view_set_results(view, 0);
     gtk_list_box_remove_all(GTK_LIST_BOX(widgets.list));
+    gtk_list_box_set_header_func(GTK_LIST_BOX(widgets.list), NULL, NULL, NULL);
     popup_view_select(view, NULL, false);
 }
 /* With a compositor and a GPU renderer the surface sits inside a transparent shadow
@@ -548,11 +579,12 @@ int main(void) {
     test_paths();
     test_rows();
     test_children();
+    test_group_header();
     test_index_strip();
     test_view();
     test_forced_dark();
     test_forced_contrast();
     puts("Native view: path fitting, icons, entrances, glide, motion timers, header, idle strip, "
-         "palettes, shadow and geometry passed.");
+         "group headers, palettes, shadow and geometry passed.");
     return 0;
 }

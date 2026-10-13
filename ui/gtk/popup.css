@@ -52,6 +52,9 @@ window.torchlight { background: transparent; }
 .torchlight .selection-highlight.kind-file { box-shadow: inset 4px 0 @tk_blue; }
 .torchlight .selection-highlight.kind-window { box-shadow: inset 4px 0 @tk_green; }
 .torchlight .result { padding: 0 12px 0 14px; }
+/* Section headers: a color block, the group's name and its count. */
+.torchlight .group-header { padding: 8px 12px 4px 14px; font-size: 0.75em; color: @tk_muted; }
+.torchlight .group-count { color: @tk_faint; }
 .torchlight .result-name { color: @tk_ink; transition: color 110ms ease-out; }
 .torchlight .result-detail { font-size: 0.75em; color: @tk_muted; transition: color 110ms ease-out; }
 .torchlight list > row:selected .result-name, .torchlight list > row:selected .child-action, .torchlight list > row:selected .child .result-icon { color: @tk_sel_ink; }
@@ -106,7 +109,7 @@ tooltip.background { background-color: @tk_panel; color: @tk_ink; border: 1px so
  * High contrast drops the palette for the theme's own colours. */
 .torchlight .launcher-surface.high-contrast { background-color: @theme_bg_color; color: @theme_fg_color; border-color: @theme_fg_color; box-shadow: none; }
 .torchlight .high-contrast .selection-highlight { background-color: @theme_selected_bg_color; box-shadow: none; }
-.torchlight .high-contrast .query-entry, .torchlight .high-contrast .result-name, .torchlight .high-contrast .result.child .result-name, .torchlight .high-contrast .result-detail, .torchlight .high-contrast .child-action, .torchlight .high-contrast .page-header, .torchlight .high-contrast .clock, .torchlight .high-contrast .index-strip, .torchlight .high-contrast .footer, .torchlight .high-contrast .keycap, .torchlight .high-contrast .inline-status, .torchlight .high-contrast .search-icon, .torchlight .high-contrast .retry { color: @theme_fg_color; caret-color: @theme_fg_color; }
+.torchlight .high-contrast .group-header, .torchlight .high-contrast .group-count, .torchlight .high-contrast .query-entry, .torchlight .high-contrast .result-name, .torchlight .high-contrast .result.child .result-name, .torchlight .high-contrast .result-detail, .torchlight .high-contrast .child-action, .torchlight .high-contrast .page-header, .torchlight .high-contrast .clock, .torchlight .high-contrast .index-strip, .torchlight .high-contrast .footer, .torchlight .high-contrast .keycap, .torchlight .high-contrast .inline-status, .torchlight .high-contrast .search-icon, .torchlight .high-contrast .retry { color: @theme_fg_color; caret-color: @theme_fg_color; }
 .torchlight .high-contrast list > row:selected .result-name, .torchlight .high-contrast list > row:selected .result-detail, .torchlight .high-contrast list > row:selected .child-action { color: @theme_selected_fg_color; }
 .torchlight .high-contrast .search-rule-ink { background-color: @theme_fg_color; }
 .torchlight .high-contrast .footer { border-top-color: @theme_fg_color; }
