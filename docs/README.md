@@ -6,9 +6,12 @@ built and what comes next, open [Built and next](system-overview.html).
 The implemented M3 popup follows the [GUI specification](m3-gui-design.md) and
 [interactive design preview](m3-gui-preview.html), including Cinnamon X11 focus,
 keyboard actions, status/error states and asynchronous IPC requirements.
-The GTK popup follows the desktop theme (light or dark, accent and font) with
-short, bounded motion; see [ADR 0034](adr/0034-theme-following-popup-with-motion.md),
-the [design study](popup-directions.html) and [native captures](ui/native-results.png).
+The GTK popup has its own look, a torch in the dark: a night-blue surface with a
+lit rim and halo, Ubuntu Sans type, a horizon line that lights while typing and a
+gliding amber beam on the selected result, with short, bounded motion; see
+[ADR 0048](adr/0048-torch-in-the-dark-popup.md), which replaced the theme-following
+look of [ADR 0034](adr/0034-theme-following-popup-with-motion.md), and the
+[native captures](ui/native-results.png).
 Running applications list their open windows beneath their result, with a New
 window action ([ADR 0035](adr/0035-open-windows-under-applications.md)). Results
 take one line each, with a short folder ([ADR 0036](adr/0036-one-line-results.md)).
@@ -232,7 +235,8 @@ the root [README](../README.md) for commands, and
   and adds bounded boosts through an exact used-set side query (implemented).
 - [0034: Theme-following popup with bounded motion](adr/0034-theme-following-popup-with-motion.md)
   replaces the Quiet System look with theme colors, the desktop font, file-type
-  icons and a gliding selection, plus a torch sweep and other non-blocking motion.
+  icons and a gliding selection, plus a torch sweep and other non-blocking motion;
+  its colors and font are superseded by 0048.
 - [0035: Open windows under application results](adr/0035-open-windows-under-applications.md)
   lists every running application's open X11 windows beneath its result; Enter
   switches to the most recent window, and New window runs the entry's desktop
@@ -271,6 +275,10 @@ the root [README](../README.md) for commands, and
 - [0047: Rank files by place, and let people exclude folders](adr/0047-place-ranking-and-excluded-folders.md)
   gives each file a small penalty for depth and for lying inside installed or
   vendored software, inside its match tier, and adds an `exclude` setting.
+- [0048: A torch in the dark: the popup's own look](adr/0048-torch-in-the-dark-popup.md)
+  replaces the theme-following popup with a night palette, a lit rim and halo,
+  Ubuntu Sans, a horizon line and an amber selection beam; high contrast keeps
+  the theme's colors.
 
 ## Keeping docs current
 

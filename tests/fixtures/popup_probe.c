@@ -8,7 +8,7 @@
 #include <string.h>
 struct popup_probe {
     char *filename;
-    GtkWidget *entry, *list, *status, *retry, *search, *footer, *scroll;
+    GtkWidget *entry, *list, *status, *retry, *search, *footer, *scroll, *surface;
     gint64 changed;
     unsigned retry_clicks;
     bool painted;
@@ -115,7 +115,8 @@ static void write_frame(struct popup_probe *probe, bool ready) {
             "\"status_b64\":\"%s\",\"retry\":%s,"
             "\"retry_focus\":%s,\"retry_clicks\":%u,\"selected\":%d,"
             "\"results_visible\":%s,\"footer_visible\":%s,\"typing\":%s,"
-            "\"entry_x\":%.1f,\"entry_y\":%.1f,\"entry_width\":%.1f,\"clear_icon\":%s}\n",
+            "\"entry_x\":%.1f,\"entry_y\":%.1f,\"entry_width\":%.1f,\"clear_icon\":%s,"
+            "\"halo_left\":%d,\"halo_top\":%d}\n",
             (long long)painted, (long long)probe->changed, probe->painted ? "false" : "true",
             ready ? "true" : "false", rows, encoded_query, encoded_status,
             gtk_widget_get_visible(probe->retry) ? "true" : "false",
@@ -128,7 +129,8 @@ static void write_frame(struct popup_probe *probe, bool ready) {
             gtk_entry_get_icon_storage_type(GTK_ENTRY(probe->entry), GTK_ENTRY_ICON_SECONDARY) ==
                     GTK_IMAGE_EMPTY
                 ? "false"
-                : "true");
+                : "true",
+            gtk_widget_get_margin_start(probe->surface), gtk_widget_get_margin_top(probe->surface));
         if (written < 0)
             fputs("Could not record popup frame\n", stderr);
         if (fclose(file) != 0)
@@ -171,10 +173,11 @@ void gtk_window_present(GtkWindow *window) {
     probe->search = find_named(GTK_WIDGET(window), "popup-search");
     probe->footer = find_named(GTK_WIDGET(window), "popup-footer");
     probe->scroll = find_named(GTK_WIDGET(window), "popup-results");
+    probe->surface = find_named(GTK_WIDGET(window), "popup-surface");
     GdkFrameClock *clock = gtk_widget_get_frame_clock(GTK_WIDGET(window));
     if (probe->entry == NULL || probe->list == NULL || !GTK_IS_LABEL(probe->status) ||
         probe->retry == NULL || probe->search == NULL || probe->footer == NULL ||
-        probe->scroll == NULL || clock == NULL) {
+        probe->scroll == NULL || probe->surface == NULL || clock == NULL) {
         probe_destroy(probe);
         return;
     }

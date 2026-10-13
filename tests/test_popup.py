@@ -39,6 +39,10 @@ if args.matrix:
         ("contrast-200", dict(GTK_THEME="HighContrast", GDK_SCALE="2", GDK_DPI_SCALE="1")),
         ("pointer-on-panel", dict(GTK_THEME="Adwaita", GDK_SCALE="1", GDK_DPI_SCALE="1",
                                   TORCHLIGHT_TEST_PANEL="1")),
+        # GL rendering (software Mesa on the private display) gives the popup its halo
+        # margin, so the pointer pass-through check runs here.
+        ("gl-halo", dict(GTK_THEME="Adwaita:dark", GDK_SCALE="1", GDK_DPI_SCALE="1",
+                         GSK_RENDERER="ngl")),
     ]
     measurements = []
     for label, overrides in configurations:
@@ -105,7 +109,8 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
     path = base / "torchlight.sock"
     database = base / "catalog.db"
     env = dict(os.environ, XDG_DATA_HOME=str(apps.parent), XDG_DATA_DIRS=str(base / "empty"),
-               XDG_CURRENT_DESKTOP="X-Cinnamon", GSK_RENDERER="cairo",
+               XDG_CURRENT_DESKTOP="X-Cinnamon",
+               GSK_RENDERER=os.environ.get("GSK_RENDERER", "cairo"),
                PATH=str(base) + os.pathsep + os.environ["PATH"])
     owner = subprocess.run(["gdbus", "call", "--session", "--dest", "org.freedesktop.DBus",
                             "--object-path", "/org/freedesktop/DBus", "--method",
@@ -245,6 +250,20 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
         empty_entry()
         idle = driver.read_frames()[-1]
         assert not idle["results_visible"] and not idle["footer_visible"] and not idle["clear_icon"], idle
+        if idle["halo_left"]:
+            # The transparent halo margin passes the pointer through to what lies beneath.
+            scale = int(driver.env.get("GDK_SCALE", "1"))
+            def window_at(x, y):
+                xdo("mousemove", x, y)
+                location = dict(line.split("=", 1) for line in
+                                xdo("getmouselocation", "--shell").splitlines())
+                return location["WINDOW"]
+            pointer = dict(line.split("=", 1) for line in
+                           xdo("getmouselocation", "--shell").splitlines())
+            margin_y = geometry["Y"] + (idle["halo_top"] + 20) * scale
+            assert window_at(geometry["X"] + idle["halo_left"] * scale // 2, margin_y) != window
+            assert window_at(geometry["X"] + geometry["WIDTH"] // 2, margin_y) == window
+            xdo("mousemove", pointer["X"], pointer["Y"])
         empty_geometry = driver.geometry()
         # Growth follows the fixed search anchor; typing never moves or narrows it.
         result = type_query("display")

@@ -2,8 +2,9 @@
 
 **Status: implemented; see [M3 verification](m3-completion.md) for acceptance coverage.** Follow the launcher behavior
 in [PLAN.md](../PLAN.md#milestones) and the visual/interaction specification below.
-The native presentation follows the desktop theme with bounded motion, accepted in
-[ADR 0034](adr/0034-theme-following-popup-with-motion.md), which replaced the
+The native presentation is a torch in the dark with bounded motion, accepted in
+[ADR 0048](adr/0048-torch-in-the-dark-popup.md). It replaced the theme-following
+look of [ADR 0034](adr/0034-theme-following-popup-with-motion.md), which had replaced the
 Quiet System look of [ADR 0027](adr/0027-quiet-system-native-popup.md). The
 [older interactive preview](m3-gui-preview.html) records the original M3 study;
 [current native captures](ui/native-empty.png) reflect the implemented layout.
@@ -16,18 +17,18 @@ activation and focus there first; document Wayland results separately during M3.
 
 | Element | Specification in logical pixels |
 |---|---|
-| Window | 680 wide; clamp to monitor work area minus 48; maximum height 70% of the work area. No title bar or resize handle. |
+| Window | Surface 680 wide; clamp to monitor work area minus 48; maximum height 70% of the work area. No title bar or resize handle. With a compositor and GTK's GL or Vulkan renderer the window adds a transparent halo margin (20 at the sides, 18 above, 28 below) whose clicks pass to the windows beneath; software rendering keeps the lit rim without it. |
 | Placement | Horizontally centered on the active monitor, near its upper third. Placement is a window-system request, verified in the target session. |
-| Surface | Theme background and foreground (`@theme_bg_color`, `@theme_fg_color`), a faint foreground border and outer radius 10. The selected-background color is the accent. The desktop font applies; no text is smaller than 0.9em. |
-| Search | Empty popup 70 high: a 44-high field with 12px padding (10 on narrow screens). A symbolic search icon, then a plain input with placeholder `Search apps, settings, files and folders` and GTK's native caret. No clear icon. No-match/offline feedback and Retry sit at the field's end. |
+| Surface | Always dark: Night `#0e1424` (lighter `#172036` at the top), Ink `#e8ecf8` text, Haze `#8a94b4` secondary text, Lumen `#ffb547` light, Dusk `#5c6cff` where light fades. Outer radius 16. A 1px lit rim, amber at the top left to indigo at the bottom right, and with the halo margin a matching halo and shadow. Ubuntu Sans (fallbacks Ubuntu, Noto Sans, Cantarell) at sizes relative to the desktop font; no text is smaller than 0.9em. High contrast uses the theme's colors with no halo or glows. |
+| Search | Empty popup 70 high: a 48-high borderless field with 10px padding (8 on narrow screens), ending in a 1px horizon line: absent on the empty popup, Haze with results, amber to indigo while typing. An 18px symbolic search icon, then a plain input in Light at 1.5em with placeholder `Search apps, settings, files and folders` and an amber caret. No clear icon. No-match/offline feedback and an amber Retry sit at the field's end. |
 | Results | Request ten; show up to eleven one-line rows before scrolling, reduced by the monitor budget. Each row 40 high, with a 24px full-color icon and 12px gaps. No hover tint: the selection is the only highlight. |
-| Row text | Name in the body size, end-ellipsized past 40 characters when space is short. Files and folders then show their short folder at 0.9em, dimmed and right-aligned: `~` for home and at most the last two folders, plus the folder that tells same-named rows apart when they would otherwise look identical. Apps and settings show their name alone. See [ADR 0036](adr/0036-one-line-results.md). |
-| Selection | One accent-tinted highlight under the rows glides between rows; the footer names Enter, so the row carries no keycap. High contrast uses full-strength foreground for secondary text and the border. |
-| Footer | Visible only with results. Status messages left (no result count, which is announced instead); keycap hints right (Open, Show in Folder, Close). Close, then Show in Folder, hide when they would widen the popup; Show in Folder also hides on narrow screens. |
+| Row text | Name in the body size, end-ellipsized past 40 characters when space is short. Files and folders then show their short folder at 0.9em in the condensed width, dimmed and right-aligned: `~` for home and at most the last two folders, plus the folder that tells same-named rows apart when they would otherwise look identical. Apps and settings show their name alone. See [ADR 0036](adr/0036-one-line-results.md). |
+| Selection | One beam under the rows glides between rows: a 3px amber rail with a glow at the left, light falling off to the right. The selected name warms to `#fff4e2`; other rows' icons are dimmed 10%. The footer names Enter, so the row carries no keycap. An application's windows and actions hang from a guide line under its icon. High contrast uses the theme's selection colors and full-strength foreground for secondary text and the border. |
+| Footer | Visible only with results, on a slightly darker base plate. Status messages left (no result count, which is announced instead); keycap hints right (Open, Show in Folder, Close). Close, then Show in Folder, hide when they would widen the popup; Show in Folder also hides on narrow screens. |
 
 Use GTK4 widgets and the icon theme: `folder`, file-type icons guessed from the
 name alone (unplaced names keep `text-x-generic`), and desktop entries' own icons.
-Honor desktop scale factors, fonts, cursor preferences and disabled animations.
+Honor desktop scale factors, font sizes, cursor preferences and disabled animations.
 The search field stays fixed as matches appear or change. No shader or image
 artwork is included. Do not expose scores, `catalog_gen`, wire fields or
 performance counters.
@@ -36,13 +37,13 @@ Motion never delays input, results or actions, and never loops:
 
 | Effect | Behavior |
 |---|---|
-| Open | Surface fades in from 6px above over 160ms. |
-| Torch sweep | Once per show, a band of accent light crosses the search field (560ms, after 60ms). |
-| Typing glow | The field ring brightens on input (120ms), holds until 700ms idle, then fades over 420ms; continuous input extends one hold. Arrow navigation does not trigger it. |
-| Results | First results fade up 18ms apart (140ms each, at most eight steps); later renders fade in only new rows (100ms). |
+| Open | Surface fades in, rising 10px from 97% scale, over 200ms; with the halo margin the halo flares and settles (640ms). This is the only motion that is not a response to input. |
+| Torch sweep | Once per show, one band of light crosses the popup, lighting the rim's edges and the horizon line together (560ms, after 120ms). |
+| Typing glow | The horizon line and search icon light on input (120ms), hold until 700ms idle, then fade over 420ms; continuous input extends one hold. Arrow navigation does not trigger it. |
+| Results | First results are revealed from 10px left, 18ms apart (160ms each, at most eight steps); later renders fade in only new rows (100ms). |
 | Selection | The highlight glides to the new row over 130ms; it jumps when results first appear. |
 | Searching | After 120ms pending, the search icon crossfades to a spinner until results render. |
-| Launch | The selected row flashes and its icon pulses while resolving; failure clears it. |
+| Launch | The beam brightens across the selected row and its icon pulses while resolving; failure clears it. |
 | Dismiss | Work is canceled at once; the window hides after a 110ms fade. Reopening cancels the hide. |
 
 Disabled GTK animations remove all of these and make dismissal immediate.

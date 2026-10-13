@@ -3,8 +3,10 @@
 #include "../../ui/gtk/view.h"
 #include "../unit/test.h"
 #include <string.h>
-/* Search area (44px field + 12px padding on each side) plus the 1px surface border. */
+/* Search area (a 48px field ending in its 1px horizon, 10px padding on each side)
+ * plus the 1px surface border. */
 #define EMPTY_HEIGHT 70
+#define SURFACE_WIDTH 680
 static void settle(int milliseconds) {
     gint64 deadline = g_get_monotonic_time() + (gint64)milliseconds * 1000;
     do {
@@ -29,13 +31,14 @@ static graphene_rect_t bounds(GtkWidget *widget) {
     CHECK(gtk_widget_compute_bounds(widget, GTK_WIDGET(gtk_widget_get_root(widget)), &result));
     return result;
 }
-/* Render the popup surface; with TORCHLIGHT_TEST_VIEW_CAPTURE set, save it for the docs. */
+/* Render the popup window, halo included; with TORCHLIGHT_TEST_VIEW_CAPTURE set, save
+ * it for the docs. */
 static void capture(tl_popup_widgets widgets, const char *artifact) {
     const char *directory = g_getenv("TORCHLIGHT_TEST_VIEW_CAPTURE");
-    int width = (int)bounds(widgets.root).size.width,
-        height = (int)bounds(widgets.root).size.height;
+    GtkWidget *window = GTK_WIDGET(gtk_widget_get_root(widgets.root));
+    int width = gtk_widget_get_width(window), height = gtk_widget_get_height(window);
     GtkSnapshot *snapshot = gtk_snapshot_new();
-    GdkPaintable *paintable = gtk_widget_paintable_new(widgets.root);
+    GdkPaintable *paintable = gtk_widget_paintable_new(window);
     gdk_paintable_snapshot(paintable, GDK_SNAPSHOT(snapshot), width, height);
     GskRenderNode *node = gtk_snapshot_free_to_node(snapshot);
     CHECK(node != NULL);
@@ -160,18 +163,21 @@ static void test_children(void) {
     CHECK(GTK_IS_LIST_BOX_ROW(window) && gtk_widget_has_css_class(window, "child-row"));
     GtkWidget *box = gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(window));
     CHECK(gtk_widget_has_css_class(box, "child") && gtk_widget_has_css_class(box, "enter-1"));
+    CHECK(gtk_widget_has_css_class(box, "window") && !gtk_widget_has_css_class(box, "new-window"));
     CHECK(strcmp(icon_name(box), "google-chrome") == 0);
     CHECK(strcmp(label_text(window, "result-name"), "Docs") == 0);
     GtkWidget *more = g_object_ref_sink(popup_view_child(
         &app, POPUP_ITEM_MORE_WINDOWS, "Show 3 more windows", POPUP_ENTER_FADE, 6));
     box = gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(more));
     CHECK(strcmp(icon_name(box), "view-more-symbolic") == 0 &&
-          gtk_widget_has_css_class(box, "fresh"));
+          gtk_widget_has_css_class(box, "fresh") && gtk_widget_has_css_class(box, "more-windows"));
     CHECK(strcmp(label_text(more, "child-action"), "Show 3 more windows") == 0);
     GtkWidget *added = g_object_ref_sink(
         popup_view_child(&app, POPUP_ITEM_NEW_WINDOW, "New window", POPUP_ENTER_NONE, 7));
-    CHECK(strcmp(icon_name(gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(added))),
-                 "list-add-symbolic") == 0);
+    box = gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(added));
+    /* New window ends its application's guide line. */
+    CHECK(strcmp(icon_name(box), "list-add-symbolic") == 0 &&
+          gtk_widget_has_css_class(box, "new-window"));
     g_object_unref(plain);
     g_object_unref(window);
     g_object_unref(more);
@@ -185,7 +191,7 @@ static void check_editing(tl_popup_widgets widgets) {
     gtk_editable_set_position(GTK_EDITABLE(widgets.entry), -1);
     settle(40);
     /* An oversized paste stays editable without widening the fixed popup. */
-    CHECK((int)bounds(widgets.root).size.width == 680);
+    CHECK((int)bounds(widgets.root).size.width == SURFACE_WIDTH);
     CHECK(strlen(gtk_editable_get_text(GTK_EDITABLE(widgets.entry))) == 300);
     g_free(paste);
 }
@@ -244,7 +250,6 @@ static void check_results(tl_popup_view *view, tl_popup_widgets widgets) {
     graphene_rect_t highlight = bounds(find_named(widgets.root, "popup-highlight"));
     graphene_rect_t selected = bounds(row);
     CHECK(graphene_rect_equal(&highlight, &selected));
-    capture(widgets, "results");
     popup_view_set_results(view, 0);
     gtk_list_box_remove_all(GTK_LIST_BOX(widgets.list));
     popup_view_select(view, NULL, false);
@@ -312,14 +317,88 @@ static void check_motion(tl_popup_view *view, tl_popup_widgets widgets, GtkWidge
     settle(300);
     CHECK(gtk_widget_get_visible(window) && !gtk_widget_has_css_class(widgets.root, "closing"));
 }
+/* A representative list for the docs capture: an application with a window and New
+ * window, then two files and a folder; the beam rests on the first file. */
+static void capture_results(tl_popup_view *view, tl_popup_widgets widgets) {
+    tl_popup_row app = {.id = 1, .application = true};
+    g_strlcpy(app.name, "Terminal", sizeof(app.name));
+    g_strlcpy(app.icon, "utilities-terminal", sizeof(app.icon));
+    const char *files[][2] = {
+        {"terminal-notes.md", "~/workspace/torchlight/docs/terminal-notes.md"},
+        {"terminal.c", "~/workspace/torchlight/ui/gtk/terminal.c"},
+        {"terminals", "~/Pictures/terminals"}};
+    gtk_editable_set_text(GTK_EDITABLE(widgets.entry), "term");
+    gtk_list_box_append(GTK_LIST_BOX(widgets.list),
+                        popup_view_result(&app, 0, POPUP_ENTER_NONE, 0));
+    gtk_list_box_append(
+        GTK_LIST_BOX(widgets.list),
+        popup_view_child(&app, POPUP_ITEM_WINDOW, "~/workspace/torchlight", POPUP_ENTER_NONE, 1));
+    gtk_list_box_append(
+        GTK_LIST_BOX(widgets.list),
+        popup_view_child(&app, POPUP_ITEM_NEW_WINDOW, "New window", POPUP_ENTER_NONE, 2));
+    for (size_t i = 0; i < G_N_ELEMENTS(files); i++) {
+        tl_popup_row row = {.id = i + 2, .folder = i == 2};
+        g_strlcpy(row.name, files[i][0], sizeof(row.name));
+        g_strlcpy(row.display, files[i][1], sizeof(row.display));
+        gtk_list_box_append(GTK_LIST_BOX(widgets.list),
+                            popup_view_result(&row, 0, POPUP_ENTER_NONE, i + 3));
+    }
+    popup_view_set_results(view, G_N_ELEMENTS(files) + 1);
+    select_index(view, widgets, 3, false);
+    popup_view_set_status(view, "");
+    settle(800);
+    capture(widgets, "results");
+    popup_view_set_results(view, 0);
+    gtk_list_box_remove_all(GTK_LIST_BOX(widgets.list));
+    popup_view_select(view, NULL, false);
+}
+/* With a compositor and a GPU renderer the surface sits inside a transparent halo
+ * margin, and the window grows by it; otherwise the surface fills the window. */
+static void check_halo(tl_popup_view *view, tl_popup_widgets widgets) {
+    tl_popup_margins margins = popup_view_margins(view);
+    bool halo = gtk_widget_has_css_class(widgets.root, "glow");
+    GtkWidget *window = GTK_WIDGET(gtk_widget_get_root(widgets.root));
+    GdkDisplay *display = gtk_widget_get_display(window);
+    GskRenderer *renderer = gtk_native_get_renderer(GTK_NATIVE(window));
+    /* Software rendering redraws blurred shadows on every resize, so it gets no halo. */
+    CHECK(halo == (gdk_display_is_composited(display) && gdk_display_is_rgba(display) &&
+                   !GSK_IS_CAIRO_RENDERER(renderer) &&
+                   !gtk_widget_has_css_class(widgets.root, "high-contrast")));
+    if (halo)
+        CHECK(margins.left > 0 && margins.left == margins.right && margins.top > 0 &&
+              margins.bottom > margins.top);
+    else
+        CHECK(margins.left == 0 && margins.right == 0 && margins.top == 0 && margins.bottom == 0);
+    graphene_rect_t surface = bounds(widgets.root);
+    CHECK((int)surface.origin.x == margins.left && (int)surface.origin.y == margins.top);
+    CHECK(gtk_widget_get_width(window) == SURFACE_WIDTH + margins.left + margins.right);
+}
 static GtkWidget *new_window(void) {
     GtkWidget *window = gtk_window_new();
     g_object_ref_sink(window);
     gtk_window_set_decorated(GTK_WINDOW(window), false);
     gtk_window_set_resizable(GTK_WINDOW(window), false);
     gtk_widget_add_css_class(window, "torchlight");
-    gtk_window_set_default_size(GTK_WINDOW(window), 680, -1);
+    gtk_window_set_default_size(GTK_WINDOW(window), SURFACE_WIDTH, -1);
     return window;
+}
+/* GTK_THEME overrides the theme setting without changing it; a forced high-contrast
+ * theme must still drop the night palette and its halo. */
+static void test_forced_contrast(void) {
+    g_setenv("GTK_THEME", "HighContrast", true);
+    GtkWidget *window = new_window();
+    tl_popup_view *view = NULL;
+    CHECK(popup_view_create(window, &view) == TL_OK);
+    tl_popup_widgets widgets = popup_view_widgets(view);
+    popup_view_configure(view, SURFACE_WIDTH, 800);
+    tl_popup_margins margins = popup_view_margins(view);
+    CHECK(gtk_widget_has_css_class(widgets.root, "high-contrast"));
+    CHECK(!gtk_widget_has_css_class(widgets.root, "glow") && margins.left == 0 &&
+          margins.bottom == 0);
+    gtk_window_destroy(GTK_WINDOW(window));
+    popup_view_destroy(view);
+    g_object_unref(window);
+    g_unsetenv("GTK_THEME");
 }
 static void test_view(void) {
     GtkWidget *window = new_window();
@@ -327,8 +406,13 @@ static void test_view(void) {
     CHECK(popup_view_create(NULL, &view) == TL_INVALID && view == NULL);
     CHECK(popup_view_create(window, &view) == TL_OK);
     tl_popup_widgets widgets = popup_view_widgets(view);
-    /* As the launcher does on map: fit hints and the viewport to the work area. */
-    popup_view_configure(view, 680, 800);
+    /* As the launcher does: realize, fit hints and the viewport to the work area, then
+     * size the window for the surface and its halo margin. */
+    gtk_widget_realize(window);
+    popup_view_configure(view, SURFACE_WIDTH, 800);
+    tl_popup_margins margins = popup_view_margins(view);
+    gtk_window_set_default_size(GTK_WINDOW(window), SURFACE_WIDTH + margins.left + margins.right,
+                                -1);
     GtkSettings *settings = gtk_widget_get_settings(window);
     g_object_set(settings, "gtk-enable-animations", false, NULL);
     gtk_window_present(GTK_WINDOW(window));
@@ -337,6 +421,7 @@ static void test_view(void) {
     CHECK(!gtk_widget_has_css_class(widgets.root, "opening"));
     settle(100);
     CHECK((int)bounds(widgets.root).size.height == EMPTY_HEIGHT);
+    check_halo(view, widgets);
     capture(widgets, "empty");
     CHECK(!gtk_widget_get_visible(widgets.scroll));
     CHECK(!gtk_widget_get_visible(find_named(widgets.root, "popup-footer")));
@@ -344,6 +429,7 @@ static void test_view(void) {
           GTK_IMAGE_EMPTY);
     check_editing(widgets);
     check_results(view, widgets);
+    capture_results(view, widgets);
     check_feedback(view, widgets);
     check_searching(view, widgets);
     popup_view_dismiss(view);
@@ -367,6 +453,8 @@ int main(void) {
     test_rows();
     test_children();
     test_view();
-    puts("Native view: path fitting, icons, entrances, glide, motion timers and geometry passed.");
+    test_forced_contrast();
+    puts("Native view: path fitting, icons, entrances, glide, motion timers, halo and geometry "
+         "passed.");
     return 0;
 }

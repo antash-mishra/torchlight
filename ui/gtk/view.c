@@ -1,11 +1,12 @@
-/* Theme-following GTK presentation: native search field, gliding selection and bounded motion. */
+/* Torch-in-the-dark GTK presentation: lit rim and halo, horizon line, gliding beam and
+ * bounded motion. */
 #include "view.h"
 #include "path_label.h"
 #include "selection_track.h"
 #include <stdio.h>
 #include <string.h>
 #define TYPING_IDLE_MS 700
-/* Longest opening effect (torch sweep: 60ms delay + 560ms) plus a frame of slack. */
+/* Longest opening effect (torch sweep: 120ms delay + 560ms) plus a frame of slack. */
 #define OPENING_MS 700
 /* Matches the popup-close keyframes; the window hides when the fade has finished. */
 #define CLOSING_MS 110
@@ -23,7 +24,13 @@
 #define CHILD_ICON_SIZE 16
 /* Room for "10 results" before optional key hints give way. */
 #define STATUS_CHARS 10
-#define SEARCH_ICON_SIZE 16
+#define SEARCH_ICON_SIZE 18
+/* Room for popup.css's halo (18px and 20px blurs, offset toward their corners and
+ * flaring on open) and the shadow below (12px down, 24px blur). The sides fit within
+ * the 48px the launcher leaves inside the work area. */
+#define HALO_SIDE 20
+#define HALO_TOP 18
+#define HALO_BOTTOM 28
 struct popup_view {
     tl_popup_widgets widgets;
     GtkWidget *window, *field, *footer, *message, *message_box, *text, *reveal, *close, *icons,
@@ -31,6 +38,9 @@ struct popup_view {
     GtkSettings *settings;
     GdkDisplay *display;
     GtkCssProvider *css;
+    /* The window's surface while realized, for its input region; weak. */
+    GdkSurface *surface;
+    tl_popup_margins margins;
     guint typing_timer, opening_timer, closing_timer;
     size_t results;
     bool active, animations;
@@ -185,6 +195,12 @@ static void settings_changed(GObject *object, GParamSpec *parameter, gpointer co
     gboolean enabled;
     char *theme = NULL;
     g_object_get(view->settings, "gtk-enable-animations", &enabled, "gtk-theme-name", &theme, NULL);
+    /* GTK_THEME overrides the setting without changing it, as GTK itself resolves it. */
+    const char *forced = g_getenv("GTK_THEME");
+    if (forced != NULL && forced[0] != 0) {
+        g_free(theme);
+        theme = g_strdup(forced);
+    }
     view->animations = enabled != 0;
     if (view->animations)
         gtk_widget_remove_css_class(view->widgets.root, "quiet-motion");
@@ -217,12 +233,64 @@ static void build_content(tl_popup_view *view) {
     view->widgets.root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     g_object_ref_sink(view->widgets.root);
     gtk_widget_add_css_class(view->widgets.root, "launcher-surface");
+    gtk_widget_set_name(view->widgets.root, "popup-surface");
     gtk_widget_set_overflow(view->widgets.root, GTK_OVERFLOW_HIDDEN);
     view->settings = g_object_ref(gtk_widget_get_settings(view->window));
     gtk_box_append(GTK_BOX(view->widgets.root), create_search(view));
     gtk_box_append(GTK_BOX(view->widgets.root), create_results(view));
     gtk_box_append(GTK_BOX(view->widgets.root), create_footer(view));
     gtk_window_set_child(GTK_WINDOW(view->window), view->widgets.root);
+}
+/* Clicks in the transparent halo margin reach the windows beneath, as if the
+ * window ended at the visible surface. */
+static void apply_input_region(tl_popup_view *view, int width, int height) {
+    if (view->surface == NULL)
+        return;
+    const tl_popup_margins *margins = &view->margins;
+    cairo_rectangle_int_t visible = {margins->left, margins->top,
+                                     MAX(1, width - margins->left - margins->right),
+                                     MAX(1, height - margins->top - margins->bottom)};
+    cairo_region_t *region = cairo_region_create_rectangle(&visible);
+    gdk_surface_set_input_region(view->surface, region);
+    cairo_region_destroy(region);
+}
+static void surface_layout(GdkSurface *surface, int width, int height, gpointer context) {
+    (void)surface;
+    apply_input_region(context, width, height);
+}
+static void window_realized(GtkWidget *window, gpointer context) {
+    tl_popup_view *view = context;
+    if (view->surface != NULL)
+        return;
+    view->surface = gtk_native_get_surface(GTK_NATIVE(window));
+    g_object_add_weak_pointer(G_OBJECT(view->surface), (gpointer *)&view->surface);
+    g_signal_connect(view->surface, "layout", G_CALLBACK(surface_layout), view);
+}
+/* The halo needs a transparent window, so a compositor and an RGBA visual, and a GPU
+ * renderer: GTK's software renderer blurs and uploads each shadow on every full
+ * redraw, which added about 20ms to a results paint on a private X server. High
+ * contrast keeps a plain surface that fills its window. */
+static bool halo_available(tl_popup_view *view) {
+    GskRenderer *renderer = gtk_native_get_renderer(GTK_NATIVE(view->window));
+    return gdk_display_is_composited(view->display) && gdk_display_is_rgba(view->display) &&
+           renderer != NULL && !GSK_IS_CAIRO_RENDERER(renderer) &&
+           !gtk_widget_has_css_class(view->widgets.root, "high-contrast");
+}
+static void update_halo(tl_popup_view *view) {
+    bool halo = halo_available(view);
+    view->margins = halo ? (tl_popup_margins){HALO_SIDE, HALO_SIDE, HALO_TOP, HALO_BOTTOM}
+                         : (tl_popup_margins){0, 0, 0, 0};
+    gtk_widget_set_margin_start(view->widgets.root, view->margins.left);
+    gtk_widget_set_margin_end(view->widgets.root, view->margins.right);
+    gtk_widget_set_margin_top(view->widgets.root, view->margins.top);
+    gtk_widget_set_margin_bottom(view->widgets.root, view->margins.bottom);
+    if (halo)
+        gtk_widget_add_css_class(view->widgets.root, "glow");
+    else
+        gtk_widget_remove_css_class(view->widgets.root, "glow");
+    if (view->surface != NULL)
+        apply_input_region(view, gdk_surface_get_width(view->surface),
+                           gdk_surface_get_height(view->surface));
 }
 static void install_style(tl_popup_view *view) {
     view->display = g_object_ref(gtk_widget_get_display(view->window));
@@ -238,6 +306,9 @@ static void connect_signals(tl_popup_view *view) {
     g_signal_connect(view->settings, "notify::gtk-enable-animations", G_CALLBACK(settings_changed),
                      view);
     g_signal_connect(view->settings, "notify::gtk-theme-name", G_CALLBACK(settings_changed), view);
+    g_signal_connect(view->window, "realize", G_CALLBACK(window_realized), view);
+    if (gtk_widget_get_realized(view->window))
+        window_realized(view->window, view);
 }
 tl_status popup_view_create(GtkWidget *window, tl_popup_view **out) {
     if (out == NULL)
@@ -253,6 +324,7 @@ tl_status popup_view_create(GtkWidget *window, tl_popup_view **out) {
     install_style(view);
     connect_signals(view);
     settings_changed(NULL, NULL, view);
+    update_halo(view);
     *out = view;
     return TL_OK;
 }
@@ -368,11 +440,18 @@ static GtkWidget *child_icon(const tl_popup_row *parent, tl_popup_item_kind kind
     gtk_widget_add_css_class(image, "result-icon");
     return image;
 }
+/* New window is always a group's last child, so its guide line ends there. */
+static const char *child_class(tl_popup_item_kind kind) {
+    return kind == POPUP_ITEM_NEW_WINDOW     ? "new-window"
+           : kind == POPUP_ITEM_MORE_WINDOWS ? "more-windows"
+                                             : "window";
+}
 GtkWidget *popup_view_child(const tl_popup_row *parent, tl_popup_item_kind kind, const char *text,
                             tl_popup_entrance entrance, size_t index) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_widget_add_css_class(box, "result");
     gtk_widget_add_css_class(box, "child");
+    gtk_widget_add_css_class(box, child_class(kind));
     add_entrance(box, entrance, index);
     gtk_box_append(GTK_BOX(box), child_icon(parent, kind));
     GtkWidget *name = label(text, kind == POPUP_ITEM_WINDOW ? "result-name" : "child-action");
@@ -417,15 +496,16 @@ static void fit_hints(tl_popup_view *view, int width) {
     gtk_widget_set_visible(view->reveal, width >= COMPACT_WIDTH);
     for (size_t i = 0; i < G_N_ELEMENTS(optional); i++) {
         int minimum, natural;
-        /* Measure the whole surface so its border and padding are counted too. */
+        /* Measure the whole surface so its border, padding and halo margin count too. */
         gtk_widget_measure(view->widgets.root, GTK_ORIENTATION_HORIZONTAL, -1, &minimum, &natural,
                            NULL, NULL);
-        if (minimum <= width)
+        if (minimum <= width + view->margins.left + view->margins.right)
             return;
         gtk_widget_set_visible(optional[i], false);
     }
 }
 void popup_view_configure(tl_popup_view *view, int width, int height_limit) {
+    update_halo(view);
     if (width < COMPACT_WIDTH)
         gtk_widget_add_css_class(view->widgets.root, "compact");
     else
@@ -442,6 +522,9 @@ void popup_view_configure(tl_popup_view *view, int width, int height_limit) {
     gtk_scrolled_window_set_max_content_height(
         GTK_SCROLLED_WINDOW(view->widgets.scroll),
         MIN(VISIBLE_ROWS * ROW_HEIGHT + LIST_PADDING, MAX(32, height_limit - natural)));
+}
+tl_popup_margins popup_view_margins(tl_popup_view *view) {
+    return view->margins;
 }
 static gboolean opening_finished(gpointer context) {
     tl_popup_view *view = context;
@@ -496,6 +579,12 @@ void popup_view_destroy(tl_popup_view *view) {
     g_signal_handlers_disconnect_by_data(view->widgets.entry, view);
     g_signal_handlers_disconnect_by_data(view->widgets.retry, view);
     g_signal_handlers_disconnect_by_data(view->text, view);
+    /* The window is already destroyed (it is never realized again); its surface
+     * normally went with it, clearing the weak pointer. */
+    if (view->surface != NULL) {
+        g_signal_handlers_disconnect_by_data(view->surface, view);
+        g_object_remove_weak_pointer(G_OBJECT(view->surface), (gpointer *)&view->surface);
+    }
     gtk_style_context_remove_provider_for_display(view->display, GTK_STYLE_PROVIDER(view->css));
     g_object_unref(view->css);
     g_object_unref(view->display);

@@ -142,7 +142,14 @@
 - **Distinct prefix:** The leading part of a result's parent path, through the
   first folder where it differs from another visible result of the same kind and
   name. The popup keeps it visible when shortening paths.
+- **Beam:** The popup's selection highlight: an amber rail at the selected row's
+  left edge, with light falling off across the row. The selection track glides it.
+- **Halo margin:** The transparent border the popup window adds around its visible
+  surface when a compositor can show transparency and GTK renders on the GPU. The
+  halo and shadow are drawn there, and clicks in it reach the windows beneath.
+- **Horizon:** The 1px line under the popup's query that separates it from the
+  results and lights amber while typing.
 - **Selection track:** The popup widget that draws one selection highlight beneath
   the result list and glides it between rows on the frame clock.
-- **Torch sweep:** The popup's opening effect: a band of accent light crosses the
-  search field once each time the popup is shown.
+- **Torch sweep:** The popup's opening effect: one band of light crosses the popup
+  each time it is shown, lighting the rim's edges and the horizon line.

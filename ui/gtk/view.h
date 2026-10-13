@@ -10,6 +10,12 @@ typedef struct {
 } tl_popup_widgets;
 /** How a result row appears: first results cascade in, later new rows fade. */
 typedef enum { POPUP_ENTER_NONE, POPUP_ENTER_CASCADE, POPUP_ENTER_FADE } tl_popup_entrance;
+/** The transparent margin around the visible surface, in logical pixels, where its
+ * halo and shadow are drawn. All zero without a compositor, with GTK's software
+ * (Cairo) renderer or in high contrast. */
+typedef struct {
+    int left, right, top, bottom;
+} tl_popup_margins;
 /** Create an owned view on the GTK main thread. Borrow window until destroy.
  * Installs its child. TL_INVALID/NOMEM; out NULL on error. Widgets stay borrowed. */
 tl_status popup_view_create(GtkWidget *window, tl_popup_view **out);
@@ -29,10 +35,11 @@ void popup_view_set_results(tl_popup_view *view, size_t count);
 GtkWidget *popup_view_result(const tl_popup_row *row, size_t path_keep, tl_popup_entrance entrance,
                              size_t index);
 /** Build a compact floating list row beneath borrowed application parent for a
- * child item kind: an open window (its title), more windows or new window. text
- * is borrowed single-line UTF-8 and copied; entrance and index choose the
- * appearance animation. Returns a GtkListBoxRow for the caller to append. Main
- * thread; no row retained or errors. */
+ * child item kind: an open window (its title), more windows or new window. The
+ * row's content carries the kind as a style class ("window", "more-windows" or
+ * "new-window", which ends the group's guide line). text is borrowed single-line
+ * UTF-8 and copied; entrance and index choose the appearance animation. Returns a
+ * GtkListBoxRow for the caller to append. Main thread; no row retained or errors. */
 GtkWidget *popup_view_child(const tl_popup_row *parent, tl_popup_item_kind kind, const char *text,
                             tl_popup_entrance entrance, size_t index);
 /** Move the selection highlight to borrowed list row, or hide it for NULL. glide
@@ -45,9 +52,16 @@ void popup_view_set_searching(tl_popup_view *view, bool searching);
 /** Flash the selected row while its action is being resolved and launched, or
  * clear the flash after failure. Main thread; live view. No errors. */
 void popup_view_set_launching(tl_popup_view *view, bool launching);
-/** Fit chrome and the result viewport into a logical monitor budget. Main
- * thread; live view, positive width/height. No ownership transfer or errors. */
+/** Fit chrome and the result viewport into a logical monitor budget: width is the
+ * visible surface's, height_limit the whole window's. Also decides, from the display,
+ * the window's renderer and the theme, whether the surface has a halo margin
+ * (popup_view_margins); call it after realizing the window. Main thread; live view,
+ * positive width/height. No ownership transfer or errors. */
 void popup_view_configure(tl_popup_view *view, int width, int height_limit);
+/** Return the halo margin chosen by the last popup_view_configure; the window must
+ * be this much larger than the surface on each side. Clicks in it reach the windows
+ * beneath. Main thread; live view. No ownership transfer or errors. */
+tl_popup_margins popup_view_margins(tl_popup_view *view);
 /** Start/stop presentation with window visibility. Active plays the opening
  * effects; any call cancels typing, opening and pending dismissal timers and
  * keeps the window visible. Main thread; live view. No ownership/errors. */

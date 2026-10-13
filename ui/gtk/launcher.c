@@ -602,13 +602,16 @@ static void place_window(GtkWidget *widget, gpointer context) {
             pointer_y < geometry.y || pointer_y >= geometry.y + geometry.height)
             continue;
         int width = MIN(680, MAX(240, area.width - 48));
-        gtk_window_set_default_size(GTK_WINDOW(popup->window), width, -1);
         popup_view_configure(popup->view, width, area.height * 7 / 10);
+        /* The window adds the halo margin around the visible surface. */
+        tl_popup_margins margins = popup_view_margins(popup->view);
+        int outer = width + margins.left + margins.right;
+        gtk_window_set_default_size(GTK_WINDOW(popup->window), outer, -1);
         GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(popup->window));
         if (surface == NULL)
             break;
         XMoveWindow(xdisplay, gdk_x11_surface_get_xid(surface),
-                    (area.x + (area.width - width) / 2) * scale,
+                    (area.x + (area.width - outer) / 2) * scale,
                     (area.y + area.height / 5) * scale);
         XFlush(xdisplay);
         break;

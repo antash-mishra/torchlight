@@ -1,6 +1,6 @@
 # 0034. Theme-following popup with bounded motion
 
-- **Status:** Accepted; row text, path shortening and footer hints superseded by [0036](0036-one-line-results.md)
+- **Status:** Accepted; row text, path shortening and footer hints superseded by [0036](0036-one-line-results.md); colors, font, field ring and highlight tint superseded by [0048](0048-torch-in-the-dark-popup.md)
 - **Date:** 2026-10-09
 
 ## Context
