@@ -11,10 +11,9 @@ letters, and open an application, a settings panel, a file or a folder.
 - **Fast and always current.** A resident daemon keeps the index in memory and
   follows file changes as they happen. Typing stays under about 5 ms at the 95th
   percentile with 500,000 paths ([evaluation](docs/evaluation.md)).
-- **Switch to open windows.** Running apps list their open windows beneath them
-  (on X11, and on GNOME's Wayland session through a small GNOME Shell extension
-  that comes with the package). Enter switches to the most recent one; pick
-  another or open a new window from the list.
+- **Switch to open windows.** Running apps list their open windows beneath them,
+  on X11 and on the common Wayland desktops (see below). Enter switches to the
+  most recent one; pick another or open a new window from the list.
 - **Learns what you use.** Files and apps you open rank higher. History stays on
   your machine and can be turned off or cleared.
 - **A look of its own.** The GTK 4 popup borrows teletext's page design and sets
@@ -26,8 +25,21 @@ letters, and open an application, a settings panel, a file or a folder.
 - **Private.** Only names and paths are indexed; file contents are never read.
 
 Tested on Linux Mint (Cinnamon, X11), and on Wayland with Weston. On Wayland the
-desktop decides where the popup opens. Open windows are listed there on GNOME only, from
-your next login after installing.
+desktop decides where the popup opens. Open windows are listed on these desktops:
+
+| Desktop | Open windows | How |
+|---|---|---|
+| Any desktop on X11 | Yes | The window manager's list |
+| GNOME on Wayland | Yes, from your next login after installing | A small GNOME Shell extension that comes with the package |
+| KDE Plasma 5.27 and 6 on Wayland | Yes | Short scripts that KWin runs |
+| Cinnamon on Wayland | Yes | A small Cinnamon extension that comes with the package |
+| Sway, Hyprland, labwc (Budgie, LXQt, Xfce), Wayfire, niri | Yes | The desktop's task bar protocol |
+| COSMIC | Yes | COSMIC's window protocols |
+| Other Wayland compositors (Weston, kiosks) | No | They offer no way to see other windows |
+
+The popup turns the GNOME and Cinnamon extensions on by itself the first time it opens;
+if you turn one off later, it stays off. Hyprland, niri and Wayfire use the same protocol
+as Sway and labwc but were not tested on their own.
 
 ## Install
 

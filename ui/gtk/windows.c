@@ -116,14 +116,19 @@ static bool desktop_name(const char *desktop_id, const char *name, bool canonica
     }
     return strcmp(desktop_id + length, DESKTOP_SUFFIX) == 0;
 }
+/* Whether a window's WM_CLASS part equals StartupWMClass wm_class. */
+static bool same_class(const tl_window *window, const char *name, const char *wm_class) {
+    return window->fold_case ? g_ascii_strcasecmp(name, wm_class) == 0
+                             : strcmp(name, wm_class) == 0;
+}
 tl_windows_evidence windows_evidence(const tl_window *window, const char *desktop_id,
                                      const char *wm_class) {
     if (window == NULL || desktop_id == NULL)
         return WINDOWS_EVIDENCE_NONE;
     if (wm_class != NULL && wm_class[0] != 0) {
-        if (strcmp(window->instance, wm_class) == 0)
+        if (same_class(window, window->instance, wm_class))
             return WINDOWS_EVIDENCE_INSTANCE;
-        if (strcmp(window->class_name, wm_class) == 0)
+        if (same_class(window, window->class_name, wm_class))
             return WINDOWS_EVIDENCE_CLASS;
     }
     if (desktop_name(desktop_id, window->app_id, false))

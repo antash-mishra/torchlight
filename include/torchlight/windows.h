@@ -25,6 +25,9 @@ typedef struct {
     char instance[WINDOWS_CLASS_BYTES], class_name[WINDOWS_CLASS_BYTES];
     char app_id[WINDOWS_CLASS_BYTES];
     char title[WINDOWS_TITLE_BYTES]; /* valid single-line UTF-8, may be empty */
+    /* The window system lower-cased WM_CLASS (KWin 5 does), so StartupWMClass is compared
+     * with the instance and class ignoring ASCII case. */
+    bool fold_case;
 } tl_window;
 /** A window system. context is owned by the source and released by destroy.
  * list writes up to capacity windows, most recently used first, and the count;
@@ -62,7 +65,8 @@ tl_status windows_activate(tl_windows *windows, size_t index);
 /** Rate how strongly window belongs to the application with borrowed desktop_id
  * (such as "google-chrome.desktop") and optional StartupWMClass wm_class (NULL
  * or empty when absent). Comparisons are exact, apart from the desktop-name
- * rule, which also tries the instance lowercased with spaces as hyphens. No
+ * rule, which also tries the instance lowercased with spaces as hyphens, and
+ * StartupWMClass for a window with fold_case, which ignores ASCII case. No
  * errors; NULL window or desktop_id gives WINDOWS_EVIDENCE_NONE. */
 tl_windows_evidence windows_evidence(const tl_window *window, const char *desktop_id,
                                      const char *wm_class);

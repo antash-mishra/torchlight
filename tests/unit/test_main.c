@@ -4,7 +4,9 @@ int main(void) {
     test_desktop();
     test_popup();
     test_windows();
-    test_windows_gnome();
+    test_windows_shell();
+    test_windows_track();
+    test_windows_kwin();
     test_actions();
     test_config();
     test_core();

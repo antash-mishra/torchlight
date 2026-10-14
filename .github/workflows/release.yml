@@ -149,3 +149,4 @@ jobs:
           torchlight --version | grep -qx "torchlight $version"
           torchlightd --version
           test -f /usr/share/gnome-shell/extensions/torchlight@antash-mishra.github.io/metadata.json
+          test -f /usr/share/cinnamon/extensions/torchlight@antash-mishra.github.io/extension.js

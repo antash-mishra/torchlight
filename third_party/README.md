@@ -44,3 +44,15 @@ then `make test` and `make bench`.
 | License | SIL Open Font License 1.1 (`fonts/schibsted-grotesk/OFL.txt`); Bedstead is public domain (CC0 1.0) |
 | Copied | 2026-10-13, `SchibstedGrotesk[wght].ttf` (renamed `SchibstedGrotesk-VF.ttf`) and `bedstead.otf` |
 | Used for | The popup's typefaces, see [ADR 0048](../docs/adr/0048-tekst-popup.md) and `fonts/README.md`; `make install` installs them to `share/fonts/torchlight` |
+
+## wayland-protocols
+
+| Field | Value |
+|---|---|
+| Upstream | `wlr-foreign-toplevel-management-unstable-v1.xml`: https://gitlab.freedesktop.org/wlroots/wlr-protocols, commit `bf4fc79abc359eea5a0edec0ac6d4a2b2955f82a` (`unstable/`); `ext-foreign-toplevel-list-v1.xml` and `ext-workspace-v1.xml`: https://gitlab.freedesktop.org/wayland/wayland-protocols, tag `1.49` (`staging/`); `cosmic-toplevel-info-unstable-v1.xml`, `cosmic-toplevel-management-unstable-v1.xml` and `cosmic-workspace-unstable-v1.xml`: https://github.com/pop-os/cosmic-protocols, commit `c0cff4db14c37ed954983158e4055aa94c7741d9` (`unstable/`) |
+| License | HPND-sell-variant (the notice in each file's `<copyright>`) |
+| Copied | 2026-10-14, the six files, flattened into one folder |
+| Used for | The popup's Wayland window source, see [ADR 0052](../docs/adr/0052-open-windows-through-wayland-taskbar-protocols.md): `make` generates their client code into `build/ui/wayland/` with `wayland-scanner`. The two workspace protocols are only there because COSMIC's toplevel protocols refer to their objects. |
+
+To update: replace a file with its upstream version, record the new commit or tag here,
+and run `make test-ui-desktops` with the desktops that use it.

@@ -21,9 +21,10 @@ Machines without GTK can build and install just the daemon and command line
 with `make headless` and `make install-headless` ([ADR 0037](adr/0037-headless-build.md)).
 Releases ship as a `.deb` with a signed APT repository that keeps installations up to
 date ([ADR 0050](adr/0050-deb-and-signed-apt-repository.md)); [Releasing](release.md)
-says how to publish one. The [Wayland windows plan](wayland-windows-plan.md) (proposed)
-brings the open-window list from X11 and GNOME to the other Wayland desktops: the
-wlroots family, COSMIC, KDE Plasma and Cinnamon.
+says how to publish one. The [Wayland windows plan](wayland-windows-plan.md) brought the
+open-window list from X11 and GNOME to the other Wayland desktops: the wlroots family and
+COSMIC through their task bar protocols, KDE Plasma through KWin scripts, and Cinnamon
+through an extension (ADRs 0052 to 0054).
 The [M7 plan](m7-plan.md) profiles indexing headlessly and plans two
 phases. Phase 1 implements full scans only for a reason, with periodic
 rescans limited to the folders inotify cannot cover
@@ -297,6 +298,16 @@ the root [README](../README.md) for commands, and
   packages Torchlight for Mint 22 and Ubuntu 24.04+, publishes releases from a tag to a
   signed APT repository on GitHub Pages, and has the daemon and popup restart onto
   updates.
+- [0052: Open windows through Wayland task bar protocols](adr/0052-open-windows-through-wayland-taskbar-protocols.md)
+  lists and switches windows on Sway, Hyprland, labwc, Wayfire, niri and COSMIC through
+  the compositor's task bar protocol, keeping the order of use from activations, and
+  chooses each session's window source by what it offers.
+- [0053: Open windows through KWin scripts](adr/0053-open-windows-through-kwin-scripts.md)
+  lists and switches windows on KDE Plasma 5.27 and 6 with short scripts that KWin runs
+  and that report back over D-Bus.
+- [0054: Open windows on Cinnamon's Wayland session](adr/0054-open-windows-on-cinnamon-wayland.md)
+  ports the GNOME Shell extension to Cinnamon, which the popup turns on once, and gives
+  the popup a fresh surface for each showing where GTK cannot release the old one.
 
 ## Keeping docs current
 

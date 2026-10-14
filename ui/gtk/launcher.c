@@ -5,8 +5,8 @@
 #include "torchlight/popup.h"
 #include "torchlight/version.h"
 #include "view.h"
-#include "windows_gnome.h"
-#include "windows_x11.h"
+#include "wayland_globals.h"
+#include "windows_session.h"
 #include <gio/gdesktopappinfo.h>
 #include <gtk/gtk.h>
 #ifdef GDK_WINDOWING_X11
@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+/* The gtk_shell1 version from which GTK 4 can release a hidden window's gtk_surface1. */
+#define GTK_SHELL_RELEASE_VERSION 4
 #define POPUP_DEBOUNCE_MS 16
 #define POPUP_PENDING_MS 120
 #define POPUP_STATUS_MS 2000
@@ -827,21 +829,15 @@ static void watch_binary(struct popup *popup) {
     popup->binary_inode = running.st_ino;
     g_signal_connect(popup->binary_monitor, "changed", G_CALLBACK(binary_changed), popup);
 }
-/* Open windows come from X11, or on GNOME's Wayland session from Torchlight's GNOME Shell
- * extension, which the launcher enables once for the person (ADR 0051). Other Wayland
- * desktops have no source and list no windows. If even the empty snapshot cannot be
- * allocated, the launcher runs without one. */
+/* Open windows come from X11, a Wayland compositor's task bar protocol, or the desktop's own
+ * interface: Torchlight's GNOME Shell or Cinnamon extension, which the launcher turns on once
+ * for the person, or KWin scripts (ADR 0051 to 0054). Desktops offering none of these list
+ * no windows. If even the empty snapshot cannot be allocated, the launcher runs without one. */
 static void create_windows(struct popup *popup) {
     tl_window_source source;
-    bool listed = windows_x11_source(popup->window, &source) == TL_OK;
-    if (!listed && windows_gnome_desktop(g_getenv("XDG_CURRENT_DESKTOP")) &&
-        windows_gnome_source(NULL, &source) == TL_OK) {
-        listed = true;
-        char *marker =
-            g_build_filename(g_get_user_state_dir(), "torchlight", "gnome-extension-enabled", NULL);
-        windows_gnome_enable_once(NULL, marker);
-        g_free(marker);
-    }
+    char *state = g_build_filename(g_get_user_state_dir(), "torchlight", NULL);
+    bool listed = windows_session_source(popup->window, state, &source) == TL_OK;
+    g_free(state);
     if (windows_create(listed ? &source : NULL, &popup->windows) != TL_OK && listed)
         source.destroy(source.context);
 }
@@ -855,6 +851,10 @@ static tl_status build_window(struct popup *popup) {
     tl_status result = popup_view_create(popup->window, &popup->view);
     if (result != TL_OK)
         return result;
+    /* GTK 4 releases a hidden window's gtk_surface1 only from gtk_shell1 version 4 on;
+     * Cinnamon's compositor offers version 3. */
+    uint32_t shell = wayland_global_version(gtk_widget_get_display(popup->window), "gtk_shell1");
+    popup_view_set_fresh_surfaces(popup->view, shell != 0 && shell < GTK_SHELL_RELEASE_VERSION);
     tl_popup_widgets widgets = popup_view_widgets(popup->view);
     popup->entry = widgets.entry;
     popup->list = widgets.list;

@@ -54,6 +54,8 @@ struct popup_view {
     GtkCssProvider *css, *palette;
     /* The window's surface while realized, for its input region; weak. */
     GdkSurface *surface;
+    /* Drop the surface on each hide (popup_view_set_fresh_surfaces). */
+    bool fresh_surfaces;
     tl_popup_margins margins;
     guint typing_timer, opening_timer, closing_timer, copied_timer;
     size_t results, tip;
@@ -746,20 +748,29 @@ void popup_view_set_active(tl_popup_view *view, bool active) {
     gtk_widget_add_css_class(view->widgets.root, "opening");
     view->opening_timer = g_timeout_add(OPENING_MS, opening_finished, view);
 }
+/* Hide the window, dropping its surface too when the next show needs a fresh one. */
+static void hide_window(tl_popup_view *view) {
+    gtk_widget_set_visible(view->window, false);
+    if (view->fresh_surfaces)
+        gtk_widget_unrealize(view->window);
+}
 static gboolean closing_finished(gpointer context) {
     tl_popup_view *view = context;
     view->closing_timer = 0;
     /* Hide before restoring opacity so no full-opacity frame can be drawn. */
-    gtk_widget_set_visible(view->window, false);
+    hide_window(view);
     gtk_widget_remove_css_class(view->widgets.root, "closing");
     return G_SOURCE_REMOVE;
+}
+void popup_view_set_fresh_surfaces(tl_popup_view *view, bool fresh) {
+    view->fresh_surfaces = fresh;
 }
 void popup_view_dismiss(tl_popup_view *view) {
     bool fade = view->active && view->animations && gtk_widget_get_mapped(view->window);
     popup_view_set_active(view, false);
     popup_view_set_searching(view, false);
     if (!fade) {
-        gtk_widget_set_visible(view->window, false);
+        hide_window(view);
         return;
     }
     gtk_widget_add_css_class(view->widgets.root, "closing");

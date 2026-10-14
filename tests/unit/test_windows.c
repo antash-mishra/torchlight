@@ -119,6 +119,13 @@ static void test_evidence(void) {
     CHECK(windows_evidence(&code, "code-insiders.desktop", NULL) == WINDOWS_EVIDENCE_NONE);
     CHECK(windows_evidence(&code, "cod.desktop", NULL) == WINDOWS_EVIDENCE_NONE);
     CHECK(windows_evidence(&code, "code.desktop.desktop", NULL) == WINDOWS_EVIDENCE_NONE);
+    /* KWin 5 lower-cases WM_CLASS; such windows compare StartupWMClass ignoring case. */
+    tl_window files = window(8, "org.gnome.nautilus", "org.gnome.nautilus", "", "");
+    CHECK(windows_evidence(&files, "org.gnome.Nautilus.desktop", "org.gnome.Nautilus") ==
+          WINDOWS_EVIDENCE_NONE);
+    files.fold_case = true;
+    CHECK(windows_evidence(&files, "org.gnome.Nautilus.desktop", "org.gnome.Nautilus") ==
+          WINDOWS_EVIDENCE_INSTANCE);
     tl_window empty = window(7, "", "", "", "");
     CHECK(windows_evidence(&empty, ".desktop", "") == WINDOWS_EVIDENCE_NONE);
     CHECK(windows_evidence(NULL, "code.desktop", NULL) == WINDOWS_EVIDENCE_NONE);

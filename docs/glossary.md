@@ -142,11 +142,21 @@
 - **Distinct prefix:** The leading part of a result's parent path, through the
   first folder where it differs from another visible result of the same kind and
   name. The popup keeps it visible when shortening paths.
+- **Cinnamon extension (Torchlight's):** The Cinnamon port of the GNOME Shell extension,
+  in `ui/cinnamon/`, for Cinnamon's Wayland session (ADR 0054). The popup turns it on once
+  by adding it to Cinnamon's `enabled-extensions`.
 - **Fastext links:** The popup footer's colored key links (red Open, green Show in
   folder, yellow Copy path, cyan Close), after teletext's four colored links.
+- **Foreign toplevel:** Wayland's name for another application's window, as a task bar
+  sees it through `zwlr_foreign_toplevel_manager_v1` (the wlroots family) or
+  `ext_foreign_toplevel_list_v1` (COSMIC). The popup's Wayland window source reads them
+  (ADR 0052).
 - **GNOME Shell extension (Torchlight's):** The small extension in `ui/gnome-shell/`
   that lets the popup list and switch windows on GNOME's Wayland session, where
   applications cannot see each other's windows (ADR 0051). The popup enables it once.
+- **KWin script:** JavaScript that KWin loads over D-Bus and runs inside itself; the popup
+  lists and switches windows on KDE Plasma with short ones that report back over D-Bus
+  (ADR 0053).
 - **Idle strip:** The line under an empty popup query that says what the index is
   doing: up to date, updating or degraded; folders watched; the last scan's time.
 - **Preview panel:** The part of a wide popup beside the results that describes the
@@ -157,6 +167,9 @@
 - **Result group:** One of the popup's sections (Apps, Settings, Folders, Files).
   Groups are listed where their best result ranks, under a header with the group's
   color block, name and count.
+- **Session window source:** The open-window source that suits the session the popup runs
+  in, chosen by `windows_session_source`: X11, a Wayland task bar protocol, or the desktop
+  shell's own interface (ADR 0052).
 - **Shadow margin:** The transparent border the popup window adds around its
   visible surface when a compositor can show transparency and GTK renders on the
   GPU. The shadow is drawn there, and clicks in it reach the windows beneath.

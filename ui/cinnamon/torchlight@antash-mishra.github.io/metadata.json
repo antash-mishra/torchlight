@@ -1,0 +1,7 @@
+{
+  "uuid": "torchlight@antash-mishra.github.io",
+  "name": "Torchlight",
+  "description": "Lets the Torchlight launcher list each application's open windows and switch to one on Wayland, where applications cannot see other applications' windows.",
+  "cinnamon-version": ["6.0"],
+  "url": "https://github.com/antash-mishra/torchlight"
+}

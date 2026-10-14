@@ -97,6 +97,12 @@ void popup_view_set_active(tl_popup_view *view, bool active);
  * are enabled and the window is mapped. set_active and destroy cancel a pending
  * hide. Main thread; live view. No ownership transfer or errors. */
 void popup_view_dismiss(tl_popup_view *view);
+/** Whether each hide also drops the window's surface (unrealizes it), so that the next
+ * show creates a new one. Compositors whose gtk_shell1 is older than version 4, such as
+ * Cinnamon's, need it: GTK 4 cannot release a hidden window's gtk_surface1 there, and asking
+ * for one again on the same surface is a protocol error that disconnects the popup. Off by
+ * default. Main thread; live view. No errors. */
+void popup_view_set_fresh_surfaces(tl_popup_view *view, bool fresh);
 /** Cancel timers/signals and free owned view; NULL allowed. Main thread, call
  * after destroying its window. All borrowed widget handles expire. */
 void popup_view_destroy(tl_popup_view *view);

@@ -1,9 +1,13 @@
 # Open windows on every Wayland desktop: plan
 
-**Status: proposed (2026-10-14).** Nothing here is built yet. Each mechanism below was
-tried on this machine with throwaway test clients (see [What was checked](#what-was-checked-2026-10-14)),
-except Hyprland, niri, Wayfire and Plasma 6, which are taken from their sources and are
-covered by [CI](#5-checks-that-cannot-run-here).
+**Status: implemented (2026-10-14),** as planned: ADRs
+[0052](adr/0052-open-windows-through-wayland-taskbar-protocols.md) (task bar protocols and
+choosing the source), [0053](adr/0053-open-windows-through-kwin-scripts.md) (KWin scripts)
+and [0054](adr/0054-open-windows-on-cinnamon-wayland.md) (Cinnamon). Each mechanism below
+was first tried on this machine with throwaway test clients (see
+[What was checked](#what-was-checked-2026-10-14)), except Hyprland, niri and Wayfire, which
+are taken from their sources (see [part 5](#5-checks-that-cannot-run-here)); see
+[Results](#results-2026-10-14) for what building it changed.
 
 ## In simple words
 
@@ -40,6 +44,7 @@ A throwaway client listed the windows and switched between them.
 | labwc 0.7.1 (Ubuntu 24.04) | headless, unpacked | yes | yes | Same results as Sway. |
 | COSMIC compositor (Pop!_OS archive, built for 24.04) | nested on Xvfb | yes | yes | The window state only arrives when the compositor renders, so the test needs `LIBGL_ALWAYS_SOFTWARE=1`. Ubuntu 24.04's `wayland-scanner` warns about COSMIC's newer `deprecated-since` XML attribute but generates working code. |
 | KWin 5.27 (Ubuntu 24.04) | `kwin_wayland --virtual`, 128 packages (31 MB) unpacked | yes | yes | A script's results come back through `callDBus`. Load, run and unload took 15 ms, including starting three `gdbus` processes. The script object is at `/<id>`. X11 class names arrive lower-cased (`xlogo`). Scripts cannot read `workspace.stackingOrder`, but each window's own `stackingOrder` works. |
+| KWin 6.7.5 (KDE neon's archive, built for 24.04) | `kwin_wayland --virtual`, 148 packages (118 MB) unpacked | yes | yes | The same ES5 script works: `windowList` and `activeWindow` replace `clientList` and `activeClient`, and the script object is at `/Scripting/Script<id>`. X11 class names keep their case (`XLogo`). |
 | Cinnamon 6.4 (installed) | `cinnamon --wayland --nested` on Xvfb | yes | yes | Adding the extension to `org.cinnamon enabled-extensions` loads it at once, with no new login. Cinnamon's window manager has no `list_all_windows`; `global.get_window_actors()` works instead. |
 | GTK popup on Sway | headless | n/a | n/a | The popup floats by itself because its size is fixed, so Sway does not tile it. |
 
@@ -49,10 +54,6 @@ These were taken from sources, not run here:
   (the protocol headers in Arch's hyprland 0.55 package).
 - **niri:** has had the wlr protocol since 0.1.1.
 - **Wayfire:** its `foreign-toplevel` plugin is in the default plugin list.
-- **Plasma 6:** KWin's source and kdotool give `workspace.windowList()`, a writable
-  `workspace.activeWindow`, each window's `stackingOrder`, `desktopFileName`,
-  `resourceClass` (no longer lower-cased) and `internalId`, and the script object at
-  `/Scripting/Script<id>`.
 - **COSMIC:** offers its protocols to every unsandboxed client (`client_not_sandboxed` in
   cosmic-comp's `state.rs`).
 
@@ -135,8 +136,8 @@ restricts scripting.
 
 **Tests.**
 - **Unit test:** a fake KWin on a private bus, like the fake GNOME Shell.
-- **`make test-ui-kwin`:** runs headless KWin 5.27 here (`TORCHLIGHT_KWIN_ROOT`).
-- **Plasma 6:** runs in CI.
+- **`make test-ui-kwin`:** runs headless KWin here (`TORCHLIGHT_KWIN_ROOT`): 5.27 from
+  Ubuntu 24.04, and 6.7 from KDE neon's archive, which is built for Ubuntu 24.04.
 
 **Effort:** about 1.5 days.
 
@@ -175,11 +176,10 @@ say which door exists. The order:
 
 ## 5. Checks that cannot run here
 
-Plasma 6 and Hyprland are not in Ubuntu 24.04. A separate GitHub Actions workflow runs the
-same end-to-end test in containers that have them: Arch Linux has Hyprland, Plasma 6 and
-niri. It runs weekly and on demand, not on every release, so a flaky desktop never blocks
-a release. Hyprland renders with OpenGL and may need a GPU device that CI machines lack.
-If so, it is checked on a real machine before each release that touches it.
+Plasma 6 is not in Ubuntu 24.04, but KDE neon builds it for 24.04, so it runs here like
+KWin 5.27. Hyprland, niri and Wayfire are not run end to end before the release. They speak
+the same wlr protocol as Sway and labwc, which are, and there is no CI workflow for them
+(decided 2026-10-14).
 
 ## 6. Packaging and docs
 
@@ -196,7 +196,7 @@ If so, it is checked on a real machine before each release that touches it.
 
 1. Part 1 (wlroots family and COSMIC): most desktops per line of code, and all of it can
    be tested here.
-2. Part 2 (KDE), with the CI workflow for Plasma 6 and Hyprland.
+2. Part 2 (KDE).
 3. Part 3 (Cinnamon on Wayland).
 
 About 5 days in all. All three parts ship together in one release.
@@ -210,12 +210,34 @@ About 5 days in all. All three parts ship together in one release.
 - **Sandboxed installs** (Flatpak, Snap). Compositors hide these doors from sandboxed
   apps, and Torchlight ships as a `.deb`.
 
-## Decisions
+## Decisions (2026-10-14)
 
-Decided (2026-10-14): all three parts ship together in one release, not part by part.
+1. All three parts ship together in one release, not part by part.
+2. Part 1 links `libwayland-client` and vendors the protocol files, rather than covering
+   only Sway and Hyprland through their sockets.
+3. No GitHub Actions workflow for Plasma 6 and Hyprland (see
+   [part 5](#5-checks-that-cannot-run-here)).
 
-Still open:
+## Results (2026-10-14)
 
-1. Link `libwayland-client` and vendor the protocol files for part 1. The alternative
-   covers only Sway and Hyprland, through their sockets.
-2. Add the weekly GitHub Actions workflow with Arch containers for Plasma 6 and Hyprland.
+All three parts were built and ship together. `tests/test_windows_desktops.py` (`make
+test-ui-desktops`) checks them end to end on headless Sway 1.9 and labwc 0.7.1, KWin 5.27
+and 6.7.5, and nested COSMIC and Cinnamon 6.4. On each one the popup lists two windows
+under their application, most recent first; the session's source switches to the older
+one; and the popup then lists it first. GNOME keeps its own test.
+
+Building it changed a few things from the plan:
+
+- **Package test:** `make test-packaging` only uses a stand-in package, so the release
+  workflow's install check looks for the Cinnamon extension instead.
+- **COSMIC crash:** COSMIC's compositor panics on the toplevel manager's `destroy` request,
+  which takes the whole session down. The source never sends it.
+- **Window order:** windows not yet seen active keep the compositor's own order. wlroots
+  already announces the newest first, and the planned newest-first rule inverted it.
+- **Popup on Cinnamon's Wayland session:** the popup was disconnected the second time it
+  showed, because GTK 4 cannot release a hidden window's `gtk_surface1` with Cinnamon's
+  `gtk_shell1` version 3. It now drops its surface on each hide there (ADR 0054).
+- **KDE class names:** Plasma 5.27 lower-cases X11 class names, so its windows carry
+  `fold_case`, and `StartupWMClass` is compared ignoring case for them.
+- **Choosing the source:** it lives in `windows_session.c`, and the GNOME source became
+  `windows_shell.c`, shared with Cinnamon.

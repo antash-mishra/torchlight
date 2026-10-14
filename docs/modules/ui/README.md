@@ -1,7 +1,7 @@
 # ui
 
-> **Status:** Implemented (M3 + Tekst look, motion, grouped results and preview panel + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, light and dark palettes, preview details read off the main thread, Wayland sizing (headless Weston)
-> **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track,header,index_strip,preview}.c`, `ui/gtk/popup.css`, `ui/gtk/palette-{light,dark}.css`, `src/bin/torchlight-gtk.c`; fonts in `third_party/fonts`; open windows in [windows](../windows/README.md)
+> **Status:** Implemented (M3 + Tekst look, motion, grouped results and preview panel + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, light and dark palettes, preview details read off the main thread, Wayland sizing (headless Weston), window switching on Wayland desktops and repeated showing on Cinnamon's Wayland session (`tests/test_windows_desktops.py`)
+> **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track,header,index_strip,preview,wayland_globals}.c`, `ui/gtk/popup.css`, `ui/gtk/palette-{light,dark}.css`, `src/bin/torchlight-gtk.c`; fonts in `third_party/fonts`; open windows in [windows](../windows/README.md)
 > **Headers:** `include/torchlight/{launcher,popup,async,windows}.h`
 > **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/unit/test_windows.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/test_popup_wayland.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`
 
@@ -170,8 +170,8 @@ left the client list reports "That window has closed" and refreshes the list.
 New window resolves like a launch, then the worker runs the entry's
 `new-window` or `new-empty-window` desktop action, or a normal launch without
 one. More windows lists every window in place. Ctrl+Enter on an application
-keeps revealing its desktop file. Without X11 there are no windows and nothing
-else changes.
+keeps revealing its desktop file. Where the session offers no window source
+there are no windows and nothing else changes.
 
 Actions first resolve the id. A separate GTask performs desktop revision checking,
 GAppInfo launch, argv xdg-open or FileManager1.ShowItems with parent fallback.
@@ -202,10 +202,18 @@ on, or the first monitor until the surface has entered one (`enter-monitor` size
 again), with the same width rules and 70% of the monitor's height, since Wayland has
 no work area. The compositor places it. `tests/test_popup_wayland.py` checks this on a
 headless Weston, typing through AT-SPI, and skips without Weston. Focus on toggle
-follows the compositor's activation policy. Open windows are listed on X11 and, through
-Torchlight's GNOME Shell extension, on GNOME's Wayland session: the launcher picks the
-GNOME source when the display is not X11 and `XDG_CURRENT_DESKTOP` names GNOME, and
-enables the extension once ([ADR 0051](../../adr/0051-open-windows-on-gnome-wayland.md)).
+follows the compositor's activation policy. Open windows are listed on X11 and on
+Wayland through the compositor's task bar protocol (Sway, Hyprland, labwc, Wayfire, niri,
+COSMIC), KWin scripts (KDE Plasma) or Torchlight's GNOME Shell and Cinnamon extensions,
+which the launcher turns on once; `windows_session_source` picks the source when the
+launcher builds its window ([windows](../windows/README.md), ADRs
+[0051](../../adr/0051-open-windows-on-gnome-wayland.md) to
+[0054](../../adr/0054-open-windows-on-cinnamon-wayland.md)). Where the compositor's
+`gtk_shell1` is older than version 4 (Cinnamon's), GTK 4 cannot release a hidden window's
+`gtk_surface1`, and showing it again was a protocol error that disconnected the popup. There
+`popup_view_set_fresh_surfaces` unrealizes the window on each hide, so each show starts a
+new surface ([ADR 0054](../../adr/0054-open-windows-on-cinnamon-wayland.md);
+`wayland_global_version` in `ui/gtk/wayland_globals.c` reads the version).
 
 The resident popup picks up updates by itself
 ([ADR 0050](../../adr/0050-deb-and-signed-apt-repository.md)): the primary instance

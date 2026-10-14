@@ -1,14 +1,14 @@
-/* GNOME Shell window source against a fake GNOME Shell on a private bus: listing order,
- * the launcher's own window left out, cleaned titles, activation, an absent extension, and
- * enabling the extension once. */
-#include "../../ui/gtk/windows_gnome.h"
+/* Shell extension window source against a fake GNOME Shell and a fake Cinnamon on a private
+ * bus: listing order, the launcher's own window left out, cleaned titles, activation, an
+ * absent extension, telling which shell runs, and enabling the extension once in each. */
+#include "../../ui/gtk/windows_shell.h"
 #include "test.h"
+#include "test_bus.h"
+#define G_SETTINGS_ENABLE_BACKEND
 #include <gio/gio.h>
+#include <gio/gsettingsbackend.h>
 #include <glib/gstdio.h>
-#include <signal.h>
 #include <string.h>
-#include <sys/wait.h>
-#include <unistd.h>
 #define WINDOWS_XML                                                                                \
     "<node><interface name='org.torchlight.Windows'>"                                              \
     "<method name='List'><arg type='a(tssss)' direction='out'/></method>"                          \
@@ -22,14 +22,15 @@
     "<arg type='b' direction='out'/></method>"                                                     \
     "<property name='UserExtensionsEnabled' type='b' access='read'/>"                              \
     "</interface></node>"
-/* A stand-in for GNOME Shell with Torchlight's extension, served on its own thread. */
+/* A stand-in for GNOME Shell or Cinnamon with Torchlight's extension, served on its own
+ * thread under the shell's bus name. */
 struct fake_shell {
     GMutex lock;
     GCond ready;
     GMainContext *context;
     GMainLoop *loop;
     GThread *thread;
-    const char *address;
+    const char *address, *name;
     bool started, windows_exported, known, enabled, user_extensions;
     int enable_calls;
     guint64 activated;
@@ -112,32 +113,15 @@ static void export(GDBusConnection *bus, struct fake_shell *shell, const char *x
                                             NULL) != 0);
     g_dbus_node_info_unref(node);
 }
-static void own_name(GDBusConnection *bus, const char *name) {
-    GVariant *reply = g_dbus_connection_call_sync(
-        bus, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName",
-        g_variant_new("(su)", name, 0), G_VARIANT_TYPE("(u)"), G_DBUS_CALL_FLAGS_NONE, -1, NULL,
-        NULL);
-    CHECK(reply != NULL);
-    g_variant_unref(reply);
-}
-static GDBusConnection *connect_bus(const char *address) {
-    GDBusConnection *bus =
-        g_dbus_connection_new_for_address_sync(address,
-                                               G_DBUS_CONNECTION_FLAGS_AUTHENTICATION_CLIENT |
-                                                   G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION,
-                                               NULL, NULL, NULL);
-    CHECK(bus != NULL);
-    return bus;
-}
 static gpointer serve(gpointer data) {
     struct fake_shell *shell = data;
     g_main_context_push_thread_default(shell->context);
-    GDBusConnection *bus = connect_bus(shell->address);
+    GDBusConnection *bus = test_bus_connect(shell->address);
     if (shell->windows_exported)
         export(bus, shell, WINDOWS_XML, "/org/torchlight/Windows");
     /* As GNOME Shell 46 serves it: on its own name, at /org/gnome/Shell. */
     export(bus, shell, EXTENSIONS_XML, "/org/gnome/Shell");
-    own_name(bus, "org.gnome.Shell");
+    test_bus_own(bus, shell->name);
     g_mutex_lock(&shell->lock);
     shell->started = true;
     g_cond_signal(&shell->ready);
@@ -148,10 +132,11 @@ static gpointer serve(gpointer data) {
     g_main_context_pop_thread_default(shell->context);
     return NULL;
 }
-static void start_shell(struct fake_shell *shell, const char *address) {
+static void start_shell(struct fake_shell *shell, const char *address, const char *name) {
     g_mutex_init(&shell->lock);
     g_cond_init(&shell->ready);
     shell->address = address;
+    shell->name = name;
     shell->context = g_main_context_new();
     shell->loop = g_main_loop_new(shell->context, false);
     shell->thread = g_thread_new("fake-gnome-shell", serve, shell);
@@ -170,7 +155,7 @@ static void stop_shell(struct fake_shell *shell) {
 }
 static void check_listing(GDBusConnection *client, struct fake_shell *shell) {
     tl_window_source source;
-    CHECK(windows_gnome_source(client, &source) == TL_OK);
+    CHECK(windows_shell_source(client, shell->name, &source) == TL_OK);
     tl_windows *windows = NULL;
     CHECK(windows_create(&source, &windows) == TL_OK);
     CHECK(windows_refresh(windows) == TL_OK);
@@ -193,10 +178,10 @@ static void check_listing(GDBusConnection *client, struct fake_shell *shell) {
 /* Without the extension running there are no windows, and no waiting. */
 static void check_absent(const char *address) {
     struct fake_shell shell = {.windows_exported = false};
-    start_shell(&shell, address);
-    GDBusConnection *client = connect_bus(address);
+    start_shell(&shell, address, WINDOWS_SHELL_GNOME);
+    GDBusConnection *client = test_bus_connect(address);
     tl_window_source source;
-    CHECK(windows_gnome_source(client, &source) == TL_OK);
+    CHECK(windows_shell_source(client, WINDOWS_SHELL_GNOME, &source) == TL_OK);
     tl_window out[2];
     size_t count = 1;
     CHECK(source.list(source.context, out, 2, &count) == TL_IO && count == 0);
@@ -224,18 +209,18 @@ static void check_enable_once(GDBusConnection *client, struct fake_shell *shell)
     char *folder = g_dir_make_tmp("torchlight-gnome-XXXXXX", NULL);
     char *marker = g_build_filename(folder, "state", "gnome-extension-enabled", NULL);
     /* Not found yet (installed after login): nothing to do. */
-    windows_gnome_enable_once(client, marker);
+    windows_shell_enable_gnome_once(client, marker);
     CHECK(enable_calls(shell) == 0 && !g_file_test(marker, G_FILE_TEST_EXISTS));
     /* Found, but the person switched extensions off: left alone. */
     set_extension(shell, true, false, false);
-    windows_gnome_enable_once(client, marker);
+    windows_shell_enable_gnome_once(client, marker);
     CHECK(enable_calls(shell) == 0 && !g_file_test(marker, G_FILE_TEST_EXISTS));
     set_extension(shell, true, false, true);
-    windows_gnome_enable_once(client, marker);
+    windows_shell_enable_gnome_once(client, marker);
     CHECK(enable_calls(shell) == 1 && g_file_test(marker, G_FILE_TEST_EXISTS));
     /* Once enabled, a person's own later disable stands. */
     set_extension(shell, true, false, true);
-    windows_gnome_enable_once(client, marker);
+    windows_shell_enable_gnome_once(client, marker);
     CHECK(enable_calls(shell) == 1);
     CHECK(g_remove(marker) == 0);
     char *state = g_path_get_dirname(marker);
@@ -244,43 +229,119 @@ static void check_enable_once(GDBusConnection *client, struct fake_shell *shell)
     g_free(marker);
     g_free(folder);
 }
-/* A private session bus: dbus-daemon printing its address on a pipe. It is spawned and
- * reaped directly, so GLib starts no child-watch thread that would outlive the test. */
-static GPid start_bus(char *address, size_t capacity) {
-    char *argv[] = {"dbus-daemon", "--session", "--nofork", "--print-address=1", NULL};
-    GPid pid = 0;
-    int out = -1;
-    CHECK(g_spawn_async_with_pipes(NULL, argv, NULL,
-                                   G_SPAWN_SEARCH_PATH | G_SPAWN_DO_NOT_REAP_CHILD, NULL, NULL,
-                                   &pid, NULL, &out, NULL, NULL));
-    size_t used = 0;
-    while (used + 1 < capacity && read(out, address + used, 1) == 1 && address[used] != '\n')
-        used++;
-    address[used] = 0;
-    close(out);
-    CHECK(used > 0);
-    return pid;
+/* Cinnamon's enabled-extensions key, in a schema compiled for the test. */
+#define CINNAMON_SCHEMA "org.torchlight.test.cinnamon"
+#define CINNAMON_SCHEMA_XML                                                                        \
+    "<schemalist><schema id='" CINNAMON_SCHEMA "' path='/org/torchlight/test/cinnamon/'>"          \
+    "<key name='enabled-extensions' type='as'><default>['other@example']</default></key>"          \
+    "</schema></schemalist>"
+/* Settings held in memory, so the test never touches the person's own. */
+static GSettings *cinnamon_settings(const char *folder) {
+    char *xml = g_build_filename(folder, CINNAMON_SCHEMA ".gschema.xml", NULL);
+    CHECK(g_file_set_contents(xml, CINNAMON_SCHEMA_XML, -1, NULL));
+    char *argv[] = {"glib-compile-schemas", (char *)folder, NULL};
+    int status = 0;
+    CHECK(
+        g_spawn_sync(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL, &status, NULL));
+    CHECK(g_spawn_check_wait_status(status, NULL));
+    GSettingsSchemaSource *schemas =
+        g_settings_schema_source_new_from_directory(folder, NULL, true, NULL);
+    CHECK(schemas != NULL);
+    GSettingsSchema *schema = g_settings_schema_source_lookup(schemas, CINNAMON_SCHEMA, false);
+    CHECK(schema != NULL);
+    GSettingsBackend *backend = g_memory_settings_backend_new();
+    GSettings *settings = g_settings_new_full(schema, backend, NULL);
+    g_object_unref(backend);
+    g_settings_schema_unref(schema);
+    g_settings_schema_source_unref(schemas);
+    CHECK(g_remove(xml) == 0);
+    g_free(xml);
+    char *compiled = g_build_filename(folder, "gschemas.compiled", NULL);
+    CHECK(g_remove(compiled) == 0);
+    g_free(compiled);
+    return settings;
 }
-static void stop_bus(GPid pid) {
-    CHECK(kill(pid, SIGTERM) == 0);
-    CHECK(waitpid(pid, NULL, 0) == pid);
-    g_spawn_close_pid(pid);
+static bool cinnamon_lists(GSettings *settings, const char *uuid) {
+    char **enabled = g_settings_get_strv(settings, "enabled-extensions");
+    bool listed = g_strv_contains((const char *const *)enabled, uuid);
+    g_strfreev(enabled);
+    return listed;
 }
-void test_windows_gnome(void) {
-    CHECK(windows_gnome_desktop("ubuntu:GNOME") && windows_gnome_desktop("gnome"));
-    CHECK(!windows_gnome_desktop("X-Cinnamon") && !windows_gnome_desktop(NULL));
-    CHECK(!windows_gnome_desktop("GNOME-Flashback") &&
-          windows_gnome_desktop("GNOME-Flashback:GNOME"));
+static void check_cinnamon_enable_once(void) {
+    char *folder = g_dir_make_tmp("torchlight-cinnamon-XXXXXX", NULL);
+    GSettings *settings = cinnamon_settings(folder);
+    char *data = g_build_filename(folder, "data", NULL);
+    const char *const data_dirs[] = {"/nonexistent", data, NULL};
+    char *marker = g_build_filename(folder, "state", "cinnamon-extension-enabled", NULL);
+    /* Not installed in any data folder: Cinnamon could not load it, so it is not listed. */
+    windows_shell_enable_cinnamon_once(settings, data_dirs, marker);
+    CHECK(!cinnamon_lists(settings, WINDOWS_SHELL_EXTENSION));
+    CHECK(!g_file_test(marker, G_FILE_TEST_EXISTS));
+    char *extension =
+        g_build_filename(data, "cinnamon", "extensions", WINDOWS_SHELL_EXTENSION, NULL);
+    char *metadata = g_build_filename(extension, "metadata.json", NULL);
+    CHECK(g_mkdir_with_parents(extension, 0700) == 0 &&
+          g_file_set_contents(metadata, "{}", -1, NULL));
+    windows_shell_enable_cinnamon_once(settings, data_dirs, marker);
+    CHECK(cinnamon_lists(settings, WINDOWS_SHELL_EXTENSION) &&
+          cinnamon_lists(settings, "other@example"));
+    CHECK(g_file_test(marker, G_FILE_TEST_EXISTS));
+    /* Once enabled, a person's own later disable stands. */
+    const char *const other[] = {"other@example", NULL};
+    CHECK(g_settings_set_strv(settings, "enabled-extensions", other));
+    windows_shell_enable_cinnamon_once(settings, data_dirs, marker);
+    CHECK(!cinnamon_lists(settings, WINDOWS_SHELL_EXTENSION));
+    /* Already listed by the person: only the marker is written, with no duplicate. */
+    CHECK(g_remove(marker) == 0);
+    const char *const both[] = {WINDOWS_SHELL_EXTENSION, "other@example", NULL};
+    CHECK(g_settings_set_strv(settings, "enabled-extensions", both));
+    windows_shell_enable_cinnamon_once(settings, data_dirs, marker);
+    char **enabled = g_settings_get_strv(settings, "enabled-extensions");
+    CHECK(g_strv_length(enabled) == 2 && g_file_test(marker, G_FILE_TEST_EXISTS));
+    g_strfreev(enabled);
+    g_object_unref(settings);
+    char *state = g_path_get_dirname(marker);
+    CHECK(g_remove(marker) == 0 && g_rmdir(state) == 0 && g_remove(metadata) == 0);
+    char *extensions = g_path_get_dirname(extension), *cinnamon = g_path_get_dirname(extensions);
+    CHECK(g_rmdir(extension) == 0 && g_rmdir(extensions) == 0 && g_rmdir(cinnamon) == 0);
+    CHECK(g_rmdir(data) == 0 && g_rmdir(folder) == 0);
+    g_free(cinnamon);
+    g_free(extensions);
+    g_free(state);
+    g_free(metadata);
+    g_free(extension);
+    g_free(marker);
+    g_free(data);
+    g_free(folder);
+}
+void test_windows_shell(void) {
+    CHECK(windows_shell_desktop("ubuntu:GNOME", "GNOME") &&
+          windows_shell_desktop("gnome", "GNOME"));
+    CHECK(!windows_shell_desktop("X-Cinnamon", "GNOME") && !windows_shell_desktop(NULL, "GNOME"));
+    CHECK(!windows_shell_desktop("GNOME-Flashback", "GNOME") &&
+          windows_shell_desktop("GNOME-Flashback:GNOME", "GNOME"));
+    CHECK(windows_shell_desktop("X-Cinnamon", "X-Cinnamon") && !windows_shell_desktop("KDE", NULL));
+    check_cinnamon_enable_once();
     char address[512];
-    GPid bus = start_bus(address, sizeof(address));
+    GPid bus = test_bus_start(address, sizeof(address));
     check_absent(address);
-    struct fake_shell shell = {.windows_exported = true};
-    start_shell(&shell, address);
-    GDBusConnection *client = connect_bus(address);
-    check_listing(client, &shell);
-    check_enable_once(client, &shell);
+    struct fake_shell gnome = {.windows_exported = true};
+    start_shell(&gnome, address, WINDOWS_SHELL_GNOME);
+    GDBusConnection *client = test_bus_connect(address);
+    CHECK(windows_shell_name_owned(client, WINDOWS_SHELL_GNOME));
+    CHECK(!windows_shell_name_owned(client, WINDOWS_SHELL_CINNAMON));
+    CHECK(!windows_shell_name_owned(client, NULL));
+    check_listing(client, &gnome);
+    check_enable_once(client, &gnome);
+    /* Cinnamon's extension serves the same interface on Cinnamon's own name. */
+    struct fake_shell cinnamon = {.windows_exported = true};
+    start_shell(&cinnamon, address, WINDOWS_SHELL_CINNAMON);
+    CHECK(windows_shell_name_owned(client, WINDOWS_SHELL_CINNAMON));
+    check_listing(client, &cinnamon);
+    CHECK(windows_shell_source(client, NULL, &(tl_window_source){0}) == TL_INVALID);
     CHECK(g_dbus_connection_close_sync(client, NULL, NULL));
     g_object_unref(client);
-    stop_shell(&shell);
-    stop_bus(bus);
+    stop_shell(&cinnamon);
+    stop_shell(&gnome);
+    test_bus_stop(bus);
 }

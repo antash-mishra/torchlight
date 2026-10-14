@@ -85,16 +85,23 @@ binding works regardless of the desktop's PATH. Repeated invocation toggles the
 focused popup; invoking it while hidden shows and focuses the search entry.
 
 The target is Cinnamon X11. On Wayland, bind the same command in the desktop's own
-shortcut settings (GNOME: Settings → Keyboard → Custom Shortcuts; KDE: System
-Settings → Shortcuts → Custom Shortcuts). The popup sizes itself for its monitor, but
-the compositor decides where it opens and whether it takes focus
-([ADR 0049](adr/0049-popup-on-wayland.md)). On GNOME, open windows are listed through
-Torchlight's GNOME Shell extension, installed with the package or `make install`: log out
-and back in once so GNOME finds it, and the popup enables it the first time it opens
-([ADR 0051](adr/0051-open-windows-on-gnome-wayland.md)). Other Wayland desktops list no
-windows. No global key interception or
-unsupported positioning is attempted. The user's existing shortcut choices are
-preserved.
+shortcut settings. The popup sizes itself for its monitor, but the compositor decides
+where it opens and whether it takes focus ([ADR 0049](adr/0049-popup-on-wayland.md)).
+No global key interception or unsupported positioning is attempted. The user's existing
+shortcut choices are preserved.
+
+| Desktop | Shortcut | Open windows |
+|---|---|---|
+| GNOME | Settings → Keyboard → Custom Shortcuts | Through Torchlight's GNOME Shell extension, installed with the package or `make install`: log out and back in once so GNOME finds it; the popup enables it the first time it opens ([ADR 0051](adr/0051-open-windows-on-gnome-wayland.md)) |
+| KDE Plasma | System Settings → Shortcuts → Custom Shortcuts | Through short KWin scripts; nothing to set up ([ADR 0053](adr/0053-open-windows-through-kwin-scripts.md)) |
+| Cinnamon (Wayland session) | System Settings → Keyboard → Shortcuts → Custom Shortcuts | Through Torchlight's Cinnamon extension, installed with the package or `make install`; the popup turns it on the first time it opens, with no new login ([ADR 0054](adr/0054-open-windows-on-cinnamon-wayland.md)) |
+| COSMIC | Settings → Keyboard → Keyboard Shortcuts → Custom Shortcuts | Through COSMIC's window protocols; nothing to set up ([ADR 0052](adr/0052-open-windows-through-wayland-taskbar-protocols.md)) |
+| Sway | `bindsym Mod4+space exec torchlight-gtk --toggle` in `~/.config/sway/config` | Through the task bar protocol; nothing to set up. Sway floats the popup because its size is fixed |
+| Hyprland | `bind = SUPER, space, exec, torchlight-gtk --toggle` in `~/.config/hypr/hyprland.conf` | Through the task bar protocol. If Hyprland tiles the popup, add a window rule that floats the class `org.torchlight.Launcher` |
+| labwc (Budgie, LXQt, Xfce) | A `<keybind key="W-space">` with an `Execute` action for `torchlight-gtk --toggle` in `~/.config/labwc/rc.xml`, or the desktop's own shortcut settings | Through the task bar protocol; nothing to set up |
+
+Use the full path of `torchlight-gtk` when it is not on the desktop's `PATH` (as with
+`make install` into `~/.local/bin`).
 
 ## Verification
 

@@ -2,6 +2,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-14
+- **Amended by:** [0052](0052-open-windows-through-wayland-taskbar-protocols.md) (the source
+  is chosen by the shell's bus name before `XDG_CURRENT_DESKTOP`) and
+  [0054](0054-open-windows-on-cinnamon-wayland.md) (`windows_gnome.c` became
+  `windows_shell.c`, shared with Cinnamon)
 
 ## Context
 

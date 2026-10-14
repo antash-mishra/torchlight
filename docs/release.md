@@ -41,6 +41,8 @@ tag the fixed commit and push the tag again.
 | Package layout and scripts | `packaging/deb/` (`build_deb.sh`, `postinst`, `prerm`, `postrm`, `control.in`, `copyright`) |
 | Repository publishing | `packaging/deb/publish_apt.sh`, run by `.github/workflows/release.yml` |
 | GNOME Shell extension | `ui/gnome-shell/torchlight@antash-mishra.github.io/`; add each new GNOME release to `shell-version` in its `metadata.json` once `make test-ui-gnome` passes on it |
+| Cinnamon extension | `ui/cinnamon/torchlight@antash-mishra.github.io/`; its `cinnamon-version` is a minimum, so new Cinnamon releases need no change, but run `make test-ui-desktops` on them |
+| Wayland protocol files | `third_party/wayland-protocols/`, whose sources and commits are in `third_party/README.md` |
 | Published repository | the `gh-pages` branch, served at `https://antash-mishra.github.io/torchlight/apt`, which redirects over HTTPS to the account's custom domain (`https://antash.dev/torchlight/apt`); installations use the github.io address so that a domain change does not break them |
 | Public key | `packaging/deb/torchlight-archive-keyring.gpg`, also published with the repository |
 | Private key | the `APT_SIGNING_KEY` Actions secret, backed up in `~/.local/share/torchlight-release/` on the maintainer's machine |

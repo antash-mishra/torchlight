@@ -57,15 +57,39 @@ SAN_FLAGS = -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pi
 CLANG_TIDY ?= clang-tidy
 CPPCHECK ?= cppcheck
 .PHONY: all headless test lint lint-headless format bench bench-vector eval-vector bench-daemon profile-daemon bench-scenarios clean
-# Only GTK recipes expand these, so headless targets never require GTK or X11.
-GTK_CPPFLAGS = $(subst -I,-isystem ,$(shell $(PKG_CONFIG) --cflags 'gtk4 >= 4.14' x11))
-GTK_LDLIBS = $(shell $(PKG_CONFIG) --libs 'gtk4 >= 4.14' x11)
+# Only GTK recipes expand these, so headless targets never require GTK, X11 or Wayland.
+GTK_CPPFLAGS = $(subst -I,-isystem ,$(shell $(PKG_CONFIG) --cflags 'gtk4 >= 4.14' x11 wayland-client)) \
+               -isystem $(WAYLAND_GENERATED)
+GTK_LDLIBS = $(shell $(PKG_CONFIG) --libs 'gtk4 >= 4.14' x11 wayland-client)
+# Client code for the compositors' task bar protocols (ADR 0052), generated from the files
+# vendored in third_party/wayland-protocols. COSMIC's files mark old messages with an
+# attribute that Ubuntu 24.04's wayland-scanner predates; it warns but generates the same
+# code, so its output is shown only when it fails.
+WAYLAND_SCANNER ?= $(shell $(PKG_CONFIG) --variable=wayland_scanner wayland-scanner)
+WAYLAND_GENERATED = build/ui/wayland
+WAYLAND_PROTOCOLS = wlr-foreign-toplevel-management-unstable-v1 ext-foreign-toplevel-list-v1 \
+                    ext-workspace-v1 cosmic-workspace-unstable-v1 cosmic-toplevel-info-unstable-v1 \
+                    cosmic-toplevel-management-unstable-v1
+WAYLAND_CODE = $(WAYLAND_PROTOCOLS:%=$(WAYLAND_GENERATED)/%-protocol.c)
+WAYLAND_HEADERS = $(WAYLAND_PROTOCOLS:%=$(WAYLAND_GENERATED)/%-client.h)
+$(WAYLAND_GENERATED)/%-protocol.c: third_party/wayland-protocols/%.xml
+	@mkdir -p $(@D)
+	$(WAYLAND_SCANNER) private-code $< $@ 2>$@.log || { cat $@.log; exit 1; }
+$(WAYLAND_GENERATED)/%-client.h: third_party/wayland-protocols/%.xml
+	@mkdir -p $(@D)
+	$(WAYLAND_SCANNER) client-header $< $@ 2>$@.log || { cat $@.log; exit 1; }
 # The presentation's widgets, which the native view test builds on its own.
 VIEW_SOURCES = ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c ui/gtk/header.c ui/gtk/index_strip.c \
                ui/gtk/preview.c
-UI_SOURCES = ui/gtk/model.c ui/gtk/windows.c ui/gtk/windows_x11.c ui/gtk/windows_gnome.c ui/gtk/actions.c ui/gtk/launcher.c $(VIEW_SOURCES) src/bin/torchlight-gtk.c
+# The open-window sources, one per kind of session (ADR 0052), and how one is chosen.
+WINDOW_SOURCES = ui/gtk/windows.c ui/gtk/windows_x11.c ui/gtk/windows_shell.c ui/gtk/windows_kwin.c \
+                 ui/gtk/windows_track.c ui/gtk/windows_wayland.c ui/gtk/windows_session.c
+UI_SOURCES = ui/gtk/model.c $(WINDOW_SOURCES) ui/gtk/actions.c ui/gtk/launcher.c $(VIEW_SOURCES) \
+             ui/gtk/wayland_globals.c src/bin/torchlight-gtk.c
 POPUP_FIXTURE_SOURCE = tests/fixtures/popup_probe.c
 WINDOW_FIXTURE_SOURCE = tests/fixtures/window_app.c
+# Lists and switches windows through the session's window source, for the desktop tests.
+WINDOW_SOURCES_FIXTURE = tests/fixtures/window_sources.c
 all: headless build/torchlight-gtk
 # Daemon and CLI only, for servers and systems without GTK 4.14 (ADR 0037).
 headless: build/torchlight build/torchlightd
@@ -82,8 +106,8 @@ build/ui/gtk/resources.c: ui/gtk/resources.xml ui/gtk/popup.css
 build/ui/gtk/palettes.c: ui/gtk/palettes.xml ui/gtk/palette-light.css ui/gtk/palette-dark.css
 	@mkdir -p $(@D)
 	glib-compile-resources --sourcedir=ui/gtk --generate-source --target=$@ --c-name=torchlight_palettes $<
-build/torchlight-gtk: $(OBJECTS) $(UI_SOURCES) $(UI_HEADERS) $(UI_RESOURCES) $(HEADERS) $(FRIZBEE_LIB)
-	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(UI_SOURCES) $(UI_RESOURCES) $(OBJECTS) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
+build/torchlight-gtk: $(OBJECTS) $(UI_SOURCES) $(UI_HEADERS) $(UI_RESOURCES) $(WAYLAND_CODE) $(WAYLAND_HEADERS) $(HEADERS) $(FRIZBEE_LIB)
+	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(UI_SOURCES) $(UI_RESOURCES) $(WAYLAND_CODE) $(OBJECTS) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
 build/test_popup_view: $(VIEW_SOURCES) tests/gtk/test_view.c $(UI_HEADERS) $(UI_RESOURCES) $(FRIZBEE_LIB)
 	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(SAN_FLAGS) $(VIEW_SOURCES) tests/gtk/test_view.c $(UI_RESOURCES) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
 build/test_popup_probe.so: $(POPUP_FIXTURE_SOURCE)
@@ -92,6 +116,9 @@ build/test_popup_probe.so: $(POPUP_FIXTURE_SOURCE)
 build/test_window_app: $(WINDOW_FIXTURE_SOURCE)
 	@mkdir -p build
 	$(CC) $(GTK_CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $< $(shell $(PKG_CONFIG) --libs x11) -o $@
+build/test_window_sources: $(WINDOW_SOURCES_FIXTURE) $(WINDOW_SOURCES) $(UI_HEADERS) $(HEADERS) $(WAYLAND_CODE) $(WAYLAND_HEADERS)
+	@mkdir -p build
+	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $< $(WINDOW_SOURCES) $(WAYLAND_CODE) src/core/json.c src/core/common.c $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
 build/torchlight: $(OBJECTS) build/src/bin/torchlight.o $(FRIZBEE_LIB)
 	$(CC) $(CFLAGS) $(WARNINGS) $^ $(LDFLAGS) $(LDLIBS) -o $@
 build/torchlightd: $(OBJECTS) build/src/bin/torchlightd.o $(FRIZBEE_LIB)
@@ -99,9 +126,13 @@ build/torchlightd: $(OBJECTS) build/src/bin/torchlightd.o $(FRIZBEE_LIB)
 build/%.o: %.c $(HEADERS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -MMD -MP -c $< -o $@
-build/tests: $(SOURCES) ui/gtk/model.c ui/gtk/windows.c ui/gtk/windows_gnome.c ui/gtk/actions.c $(TEST_SOURCES) $(HEADERS) ui/gtk/actions.h ui/gtk/windows_gnome.h tests/unit/test.h $(FRIZBEE_LIB)
+# The popup's GTK-free parts, unit-tested with the engine.
+UNIT_UI_SOURCES = ui/gtk/model.c ui/gtk/windows.c ui/gtk/windows_shell.c ui/gtk/windows_kwin.c \
+                  ui/gtk/windows_track.c ui/gtk/actions.c
+UNIT_UI_HEADERS = ui/gtk/actions.h ui/gtk/windows_shell.h ui/gtk/windows_kwin.h ui/gtk/windows_track.h
+build/tests: $(SOURCES) $(UNIT_UI_SOURCES) $(TEST_SOURCES) $(HEADERS) $(UNIT_UI_HEADERS) tests/unit/test.h $(FRIZBEE_LIB)
 	@mkdir -p build
-	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $(SAN_FLAGS) $(SOURCES) ui/gtk/model.c ui/gtk/windows.c ui/gtk/windows_gnome.c ui/gtk/actions.c $(TEST_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
+	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $(SAN_FLAGS) $(SOURCES) $(UNIT_UI_SOURCES) $(TEST_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
 build/torchlight-sanitized: $(SOURCES) src/bin/torchlight.c $(HEADERS) $(FRIZBEE_LIB)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $(SAN_FLAGS) $(SOURCES) src/bin/torchlight.c $(LDFLAGS) $(LDLIBS) -o $@
@@ -130,11 +161,11 @@ lint-headless:
 	@command -v $(CPPCHECK) >/dev/null || { echo 'cppcheck is required'; exit 1; }
 	$(CLANG_TIDY) $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(VECTOR_EVAL_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE) $(SAMPLER_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
 	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(VECTOR_EVAL_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE) $(SAMPLER_SOURCE)
-lint: lint-headless
-	$(CLANG_TIDY) $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(WINDOW_FIXTURE_SOURCE) tests/gtk/test_view.c --warnings-as-errors='*' -- $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 $(WARNINGS)
-	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE --library=gtk -Iinclude $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(WINDOW_FIXTURE_SOURCE) tests/gtk/test_view.c
+lint: lint-headless $(WAYLAND_HEADERS)
+	$(CLANG_TIDY) $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(WINDOW_FIXTURE_SOURCE) $(WINDOW_SOURCES_FIXTURE) tests/gtk/test_view.c --warnings-as-errors='*' -- $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 $(WARNINGS)
+	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE --library=gtk -Iinclude $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(WINDOW_FIXTURE_SOURCE) $(WINDOW_SOURCES_FIXTURE) tests/gtk/test_view.c
 format:
-	clang-format -i tests/gtk/test_view.c $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(WINDOW_FIXTURE_SOURCE) $(UI_HEADERS) $(SOURCES) $(BIN_SOURCES) $(HEADERS) tests/unit/*.h $(TEST_SOURCES) tests/bench/*.c tests/bench/*.h $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE) $(SAMPLER_SOURCE)
+	clang-format -i tests/gtk/test_view.c $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(WINDOW_FIXTURE_SOURCE) $(WINDOW_SOURCES_FIXTURE) $(UI_HEADERS) $(SOURCES) $(BIN_SOURCES) $(HEADERS) tests/unit/*.h $(TEST_SOURCES) tests/bench/*.c tests/bench/*.h $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE) $(SAMPLER_SOURCE)
 build/bench_lexical: $(SOURCES) $(BENCH_SOURCES) $(HEADERS) $(wildcard tests/bench/*.h) $(FRIZBEE_LIB)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) $(SOURCES) $(BENCH_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
@@ -196,12 +227,13 @@ clean:
 	$(RM) -r build
 -include $(OBJECTS:.o=.d) build/src/bin/torchlight.d build/src/bin/torchlightd.d
 
-# Torchlight's GNOME Shell extension, which lists windows on GNOME's Wayland session (ADR 0051).
+# Torchlight's GNOME Shell and Cinnamon extensions, which list windows on those desktops'
+# Wayland sessions (ADR 0051, ADR 0054); both use the same UUID.
 GNOME_EXTENSION = torchlight@antash-mishra.github.io
 # Staged installs are reviewable with DESTDIR; prefix defaults to per-user tools.
 PREFIX ?= $(HOME)/.local
 DESTDIR ?=
-.PHONY: install install-headless test-ui test-ui-isolated test-ui-wayland test-ui-gnome bench-ui
+.PHONY: install install-headless test-ui test-ui-isolated test-ui-wayland test-ui-gnome test-ui-desktops bench-ui
 XVFB ?= Xvfb
 XDOTOOL ?= xdotool
 install: all
@@ -213,6 +245,8 @@ install: all
 	install -m 644 third_party/fonts/schibsted-grotesk/SchibstedGrotesk-VF.ttf third_party/fonts/bedstead/bedstead.otf $(DESTDIR)$(PREFIX)/share/fonts/torchlight/
 	install -d $(DESTDIR)$(PREFIX)/share/gnome-shell/extensions/$(GNOME_EXTENSION)
 	install -m 644 ui/gnome-shell/$(GNOME_EXTENSION)/metadata.json ui/gnome-shell/$(GNOME_EXTENSION)/extension.js $(DESTDIR)$(PREFIX)/share/gnome-shell/extensions/$(GNOME_EXTENSION)/
+	install -d $(DESTDIR)$(PREFIX)/share/cinnamon/extensions/$(GNOME_EXTENSION)
+	install -m 644 ui/cinnamon/$(GNOME_EXTENSION)/metadata.json ui/cinnamon/$(GNOME_EXTENSION)/extension.js $(DESTDIR)$(PREFIX)/share/cinnamon/extensions/$(GNOME_EXTENSION)/
 # Same unit name, but started with the user manager instead of a graphical session.
 install-headless: headless
 	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/lib/systemd/user
@@ -228,9 +262,9 @@ release: build/release/torchlight build/release/torchlightd build/release/torchl
 build/release/torchlight build/release/torchlightd: build/release/%: $(SOURCES) src/bin/%.c $(HEADERS) $(FRIZBEE_LIB)
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(RELEASE_CFLAGS) $(WARNINGS) $(SOURCES) src/bin/$*.c $(LDFLAGS) $(RELEASE_LDFLAGS) $(LDLIBS) -o $@
-build/release/torchlight-gtk: $(SOURCES) $(UI_SOURCES) $(UI_HEADERS) $(UI_RESOURCES) $(HEADERS) $(FRIZBEE_LIB)
+build/release/torchlight-gtk: $(SOURCES) $(UI_SOURCES) $(UI_HEADERS) $(UI_RESOURCES) $(WAYLAND_CODE) $(WAYLAND_HEADERS) $(HEADERS) $(FRIZBEE_LIB)
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(RELEASE_CFLAGS) $(WARNINGS) $(UI_SOURCES) $(UI_RESOURCES) $(SOURCES) $(LDFLAGS) $(RELEASE_LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
+	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(RELEASE_CFLAGS) $(WARNINGS) $(UI_SOURCES) $(UI_RESOURCES) $(WAYLAND_CODE) $(SOURCES) $(LDFLAGS) $(RELEASE_LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
 # build/deb/torchlight_VERSION_ARCH.deb; needs dpkg-dev.
 deb: release
 	packaging/deb/build_deb.sh build/deb
@@ -240,12 +274,13 @@ test-packaging:
 	python3 tests/test_packaging.py
 test-ui: all build/test_popup_probe.so build/test_window_app
 	python3 tests/test_popup.py --xdotool $(XDOTOOL)
-test-ui-isolated: all build/test_popup_probe.so build/test_popup_view build/test_window_app
+test-ui-isolated: all build/test_popup_probe.so build/test_popup_view build/test_window_app build/test_window_sources
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --matrix
 	# A wide screen gives the popup room for its preview panel (ADR 0048).
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --screen 1280x800x24
 	python3 tests/test_popup_wayland.py
 	python3 tests/test_windows_gnome_shell.py
+	python3 tests/test_windows_desktops.py
 # Native Wayland on a headless Weston (ADR 0049); skips when Weston is not installed.
 test-ui-wayland: all
 	python3 tests/test_popup_wayland.py
@@ -253,6 +288,10 @@ test-ui-wayland: all
 # when GNOME Shell is not installed.
 test-ui-gnome: all
 	python3 tests/test_windows_gnome_shell.py
+# Open windows on Sway, labwc, COSMIC, KWin and Cinnamon (ADR 0052 to 0054); skips each
+# desktop that is not installed (see the test's header for unpacked ones).
+test-ui-desktops: all build/test_window_sources
+	python3 tests/test_windows_desktops.py
 bench-ui: all build/test_popup_probe.so build/torchlightd-release build/bench_fixture
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --bench
 

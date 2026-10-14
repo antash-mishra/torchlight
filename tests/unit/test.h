@@ -28,8 +28,13 @@ void test_desktop(void);
 void test_popup(void);
 /** Run window snapshot, application evidence and title shortening checks. */
 void test_windows(void);
-/** Run the GNOME Shell window source against a fake shell on a private bus. */
-void test_windows_gnome(void);
+/** Run the shell extension window source against fake GNOME Shell and Cinnamon instances on
+ * a private bus, and enabling the extension once in each. */
+void test_windows_shell(void);
+/** Run window tracking for the Wayland window source: order, names and removal. */
+void test_windows_track(void);
+/** Run the KWin script window source against a fake KWin on a private bus. */
+void test_windows_kwin(void);
 /** Return a refreshed snapshot over a fake source copying count borrowed windows
  * (at most WINDOWS_MAX); free with windows_destroy. Aborts on unexpected errors. */
 tl_windows *test_windows_fixture(const tl_window *windows, size_t count);

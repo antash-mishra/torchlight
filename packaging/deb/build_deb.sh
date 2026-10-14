@@ -39,11 +39,14 @@ install -D -m 644 "$root/third_party/fonts/schibsted-grotesk/SchibstedGrotesk-VF
 install -D -m 644 "$root/third_party/fonts/bedstead/bedstead.otf" \
     "$pkg/usr/share/fonts/truetype/torchlight/bedstead.otf"
 
-# The GNOME Shell extension that lists windows on GNOME's Wayland session (ADR 0051).
+# The GNOME Shell and Cinnamon extensions that list windows on those desktops' Wayland
+# sessions (ADR 0051, ADR 0054).
 extension=torchlight@antash-mishra.github.io
 for file in metadata.json extension.js; do
     install -D -m 644 "$root/ui/gnome-shell/$extension/$file" \
         "$pkg/usr/share/gnome-shell/extensions/$extension/$file"
+    install -D -m 644 "$root/ui/cinnamon/$extension/$file" \
+        "$pkg/usr/share/cinnamon/extensions/$extension/$file"
 done
 
 # The repository that brings updates, and the key that signs it.
