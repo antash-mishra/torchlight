@@ -2,6 +2,11 @@
 
 Each release's notes are taken from its section here (docs/release.md).
 
+## 0.1.4 (2026-10-14)
+
+- The popup's page header shows how long each search took, in teletext cyan beside the
+  clock, instead of the number of results.
+
 ## 0.1.3 (2026-10-14)
 
 - Running applications list their open windows, and Enter switches between them, on the
