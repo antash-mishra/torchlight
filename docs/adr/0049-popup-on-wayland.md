@@ -33,7 +33,8 @@ Wayland also gives clients no portable way to list other applications' windows
    work area, so the whole monitor counts.
 2. **Placement stays with the compositor.** No layer-shell: it would add a library
    dependency and still leave GNOME, the most common Wayland desktop, to the
-   compositor. GNOME and KDE open new windows near the middle of the screen.
+   compositor. Where it opens follows the compositor's placement policy, which differs
+   between desktops, their settings and the windows already open.
 3. **A natural width for wrapped preview text.** The preview panel's wrapping labels
    ask for about 28 characters of width, roughly the panel's own. They had asked for
    one character so that long text could not widen the panel, but GTK sizes Wayland
