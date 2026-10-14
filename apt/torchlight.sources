@@ -1,0 +1,8 @@
+# Torchlight's APT repository (docs/release.md). Installed by the torchlight package so
+# that the system's update manager offers new versions; delete this file to stop that.
+Types: deb
+URIs: https://antash-mishra.github.io/torchlight/apt
+Suites: stable
+Components: main
+Architectures: amd64
+Signed-By: /usr/share/keyrings/torchlight-archive-keyring.gpg

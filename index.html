@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Torchlight</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1d2226; --muted: #626b72; --surface: #f4f5f1; --panel: #ebede7; --cyan: #24838f; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #e8ebe6; --muted: #979fa5; --surface: #171a1d; --panel: #1c2024; --cyan: #5fb6c1; } }
+  body { margin: 0; background: var(--surface); color: var(--ink); font: 16px/1.55 system-ui, sans-serif; }
+  main { max-width: 44rem; margin: 0 auto; padding: 48px 16px 64px; }
+  h1 { font-size: 2rem; margin: 0 0 4px; letter-spacing: -0.02em; }
+  h2 { font-size: 1.1rem; margin: 32px 0 8px; }
+  p { margin: 8px 0; }
+  .page { font-family: ui-monospace, monospace; color: var(--muted); }
+  pre { background: var(--panel); padding: 12px 14px; border-radius: 8px; overflow-x: auto; font-size: 0.9rem; }
+  a { color: var(--cyan); }
+</style>
+</head>
+<body>
+<main>
+  <p class="page">P100 Torchlight</p>
+  <h1>Torchlight</h1>
+  <p>A Spotlight-style launcher for Linux: press a shortcut, type a few letters, and open an
+  application, a settings panel, a file or a folder. For Linux Mint 22 and Ubuntu 24.04 or
+  newer, on 64-bit PCs.</p>
+
+  <h2>Install</h2>
+  <p>Download the <code>.deb</code> from the
+  <a href="https://github.com/antash-mishra/torchlight/releases/latest">latest release</a> and
+  open it, or install it from a terminal:</p>
+  <pre>sudo apt install ./torchlight_*_amd64.deb</pre>
+  <p>The package adds this site's signed APT repository, so your update manager installs new
+  versions like any other update.</p>
+
+  <h2>Or add the repository yourself</h2>
+  <pre>sudo curl -fsSLo /usr/share/keyrings/torchlight-archive-keyring.gpg \
+  https://antash-mishra.github.io/torchlight/apt/torchlight-archive-keyring.gpg
+sudo curl -fsSLo /etc/apt/sources.list.d/torchlight.sources \
+  https://antash-mishra.github.io/torchlight/apt/torchlight.sources
+sudo apt update && sudo apt install torchlight</pre>
+
+  <h2>Then</h2>
+  <p>Bind <code>torchlight-gtk --toggle</code> to a keyboard shortcut in your desktop's settings
+  (Cinnamon: Keyboard, Shortcuts, Custom Shortcuts). The search daemon starts with your
+  session.</p>
+  <p><a href="https://github.com/antash-mishra/torchlight">Source and documentation</a></p>
+</main>
+</body>
+</html>
