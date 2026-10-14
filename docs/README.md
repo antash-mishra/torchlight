@@ -21,7 +21,9 @@ Machines without GTK can build and install just the daemon and command line
 with `make headless` and `make install-headless` ([ADR 0037](adr/0037-headless-build.md)).
 Releases ship as a `.deb` with a signed APT repository that keeps installations up to
 date ([ADR 0050](adr/0050-deb-and-signed-apt-repository.md)); [Releasing](release.md)
-says how to publish one.
+says how to publish one. The [Wayland windows plan](wayland-windows-plan.md) (proposed)
+brings the open-window list from X11 and GNOME to the other Wayland desktops: the
+wlroots family, COSMIC, KDE Plasma and Cinnamon.
 The [M7 plan](m7-plan.md) profiles indexing headlessly and plans two
 phases. Phase 1 implements full scans only for a reason, with periodic
 rescans limited to the folders inotify cannot cover
