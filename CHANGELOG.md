@@ -2,6 +2,16 @@
 
 Each release's notes are taken from its section here (docs/release.md).
 
+## 0.1.3 (2026-10-14)
+
+- Running applications list their open windows, and Enter switches between them, on the
+  other common Wayland desktops too: KDE Plasma 5.27 and 6, Cinnamon, COSMIC, Sway,
+  Hyprland, labwc (Budgie, LXQt and Xfce) and Wayfire. Nothing needs setting up. On
+  Cinnamon the popup turns on a small extension that comes with the package the first time
+  it opens, and leaves it off if you turn it off later.
+- On Cinnamon's Wayland session the popup no longer closes for good when it is shown a
+  second time.
+
 ## 0.1.2 (2026-10-14)
 
 - On GNOME's Wayland session the popup lists each running application's open windows
