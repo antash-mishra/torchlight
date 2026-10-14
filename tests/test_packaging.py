@@ -1,8 +1,10 @@
 """Repository publishing checks for packaging/deb/publish_apt.sh: build a stand-in .deb,
 publish it into a site folder given by a relative path (as the release workflow does) and
 signed by a throwaway key, then check as an ordinary user that apt accepts the repository
-and finds the package, and rejects it when it trusts another key. Skips when dpkg-deb,
-apt-ftparchive or gpg is missing.
+and finds the package, and rejects it when it trusts another key. Also runs the package's
+maintainer scripts with stand-in systemctl and deb-systemd-helper commands, checking what
+they do on first install, upgrade, removal and purge. Skips when dpkg-deb, apt-ftparchive
+or gpg is missing.
 
 usage: test_packaging.py
 """
@@ -64,6 +66,39 @@ def apt_update(base, site, keyring):
     return update.returncode == 0, update.stdout + update.stderr, policy.stdout
 
 
+def maintainer_calls(base, script, *arguments):
+    """Run a maintainer script with stand-ins that log their calls; one user (1000) is
+    logged in. Returns the logged calls."""
+    stubs = base / "stubs"
+    stubs.mkdir(exist_ok=True)
+    log = base / "calls.log"
+    log.write_text("")
+    for name, reply in [("systemctl", 'case "$*" in *list-units*) echo "user@1000.service loaded active running User Manager for UID 1000";; esac'),
+                        ("deb-systemd-helper", "")]:
+        stub = stubs / name
+        stub.write_text(f'#!/bin/sh\necho "{name} $*" >> "{log}"\n{reply}\nexit 0\n')
+        stub.chmod(0o755)
+    env = dict(os.environ, PATH=f"{stubs}:{os.environ['PATH']}")
+    run(["sh", str(repo / "packaging/deb" / script), *arguments], env=env)
+    return log.read_text().splitlines()
+
+
+def check_maintainer_scripts(base):
+    user = "systemctl --quiet --user --machine 1000@"
+    first = maintainer_calls(base, "postinst", "configure")
+    assert "deb-systemd-helper --user enable torchlightd.service" in first, first
+    assert f"{user} daemon-reload" in first and f"{user} start torchlightd.service" in first, first
+    upgrade = maintainer_calls(base, "postinst", "configure", "0.0.9")
+    assert f"{user} try-restart torchlightd.service" in upgrade, upgrade
+    assert f"{user} start torchlightd.service" not in upgrade, upgrade
+    assert f"{user} stop torchlightd.service" in maintainer_calls(base, "prerm", "remove")
+    assert maintainer_calls(base, "prerm", "upgrade", "0.1.0") == []
+    assert maintainer_calls(base, "postrm", "remove") == ["deb-systemd-helper --user mask torchlightd.service"]
+    assert maintainer_calls(base, "postrm", "purge") == [
+        "deb-systemd-helper --user purge torchlightd.service",
+        "deb-systemd-helper --user unmask torchlightd.service"]
+
+
 with tempfile.TemporaryDirectory(prefix="torchlight-packaging-") as temporary:
     base = Path(temporary)
     fingerprint = throwaway_key(base / "gnupg")
@@ -85,5 +120,6 @@ with tempfile.TemporaryDirectory(prefix="torchlight-packaging-") as temporary:
     # The release key did not sign this repository, so apt must refuse it.
     ok, log, policy = apt_update(base, site, repo / "packaging/deb/torchlight-archive-keyring.gpg")
     assert not ok and "NO_PUBKEY" in log, log
+    check_maintainer_scripts(base)
 print("Packaging check passed: published through a relative path, signed, accepted by apt, "
-      "refused with another key")
+      "refused with another key; maintainer scripts enable, start, restart and stop the daemon")
