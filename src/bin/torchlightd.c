@@ -2,6 +2,7 @@
  * wire the reusable service module. */
 #include "torchlight/daemon.h"
 #include "torchlight/semantic.h"
+#include "torchlight/version.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -98,12 +99,16 @@ static tl_status parse(int argc, char **argv, tl_daemon_options *options, const 
     return TL_OK;
 }
 int main(int argc, char **argv) {
+    if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+        printf("torchlightd %s\n", TORCHLIGHT_VERSION);
+        return 0;
+    }
     set_allocator_policy();
     tl_daemon_options options;
     const char *database = NULL, *file = NULL;
     tl_status status = parse(argc, argv, &options, &database, &file);
     if (status != TL_OK) {
-        fputs("Usage: torchlightd [--db PATH] [--config PATH] [--socket PATH]\n"
+        fputs("Usage: torchlightd [--version] [--db PATH] [--config PATH] [--socket PATH]\n"
               "  [--no-history] [--history-days N] [--rescan-ms N] [--repair-ms N]\n"
               "  [--watch-capacity N] [--max-entries N] [--max-path-bytes N]\n"
               "  [--model PATH.tlm] [--semantic-deadline-ms N]\n",

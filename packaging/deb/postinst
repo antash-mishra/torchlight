@@ -1,0 +1,40 @@
+#!/bin/sh
+# Enable the per-user search daemon for every user, and start it (first install) or restart
+# it (upgrade) for the users who are logged in, so an update takes effect at once. The
+# popup restarts itself onto a new version the next time it is hidden.
+set -e
+
+# Each logged-in user has a user@UID.service manager; act on the daemon in each one.
+user_daemons() {
+    action=$1
+    command -v systemctl >/dev/null 2>&1 || return 0
+    for uid in $(systemctl --no-legend --quiet list-units 'user@*' 2>/dev/null |
+                 sed -n -r 's/.*user@([0-9]+)\.service.*/\1/p'); do
+        systemctl --quiet --user --machine "$uid@" daemon-reload 2>/dev/null || true
+        systemctl --quiet --user --machine "$uid@" "$action" torchlightd.service 2>/dev/null || true
+    done
+}
+
+case "$1" in
+configure|abort-upgrade|abort-deconfigure|abort-remove)
+    if command -v deb-systemd-helper >/dev/null 2>&1; then
+        deb-systemd-helper --user unmask torchlightd.service >/dev/null || true
+        # was-enabled defaults to true, so a new installation enables the daemon.
+        if deb-systemd-helper --quiet --user was-enabled torchlightd.service; then
+            deb-systemd-helper --user enable torchlightd.service >/dev/null || true
+        else
+            deb-systemd-helper --user update-state torchlightd.service >/dev/null || true
+        fi
+    fi
+    ;;
+esac
+
+if [ "$1" = configure ]; then
+    if [ -z "${2:-}" ]; then
+        user_daemons start
+    else
+        user_daemons try-restart
+    fi
+fi
+
+exit 0

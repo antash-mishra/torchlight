@@ -47,10 +47,18 @@ static void capture(tl_popup_widgets widgets, const char *artifact) {
          waited += 10)
         settle(10);
     int width = gtk_widget_get_width(window), height = gtk_widget_get_height(window);
-    GtkSnapshot *snapshot = gtk_snapshot_new();
-    GdkPaintable *paintable = gtk_widget_paintable_new(window);
-    gdk_paintable_snapshot(paintable, GDK_SNAPSHOT(snapshot), width, height);
-    GskRenderNode *node = gtk_snapshot_free_to_node(snapshot);
+    /* The paintable copies the window's last drawn frame, which a redraw (the header clock
+     * ticks every second) drops until the next frame; try again after it. */
+    GskRenderNode *node = NULL;
+    for (int attempt = 0; node == NULL && attempt < 100; attempt++) {
+        if (attempt != 0)
+            settle(20);
+        GtkSnapshot *snapshot = gtk_snapshot_new();
+        GdkPaintable *paintable = gtk_widget_paintable_new(window);
+        gdk_paintable_snapshot(paintable, GDK_SNAPSHOT(snapshot), width, height);
+        node = gtk_snapshot_free_to_node(snapshot);
+        g_object_unref(paintable);
+    }
     if (node == NULL)
         fprintf(stderr, "capture %s: the window drew nothing\n", artifact);
     CHECK(node != NULL);
@@ -66,7 +74,6 @@ static void capture(tl_popup_widgets widgets, const char *artifact) {
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
     gsk_render_node_unref(node);
-    g_object_unref(paintable);
 }
 static void check_path(const char *full, size_t keep, const char *expected) {
     GtkWidget *window = gtk_window_new(), *path = popup_path_label_new(full, keep);
@@ -692,6 +699,14 @@ static void check_preview_app(tl_popup_view *view, tl_popup_widgets widgets, con
     CHECK(label_with(widgets.preview, "Switch to window") != NULL &&
           label_with(widgets.preview, "Show desktop file") != NULL);
     CHECK(strcmp(await_text(widgets.preview, "preview-description"), "Write things down") == 0);
+    /* GTK sizes Wayland windows from heights measured without a width. Wrapped text must
+     * not fold one character per line then: that made a 545px panel for 210px of text. */
+    int minimum = 0, unbounded = 0, bounded = 0;
+    gtk_widget_measure(widgets.preview, GTK_ORIENTATION_VERTICAL, -1, &minimum, &unbounded, NULL,
+                       NULL);
+    gtk_widget_measure(widgets.preview, GTK_ORIENTATION_VERTICAL,
+                       gtk_widget_get_width(widgets.preview), &minimum, &bounded, NULL, NULL);
+    CHECK(bounded > 0 && unbounded <= bounded * 3 / 2);
     /* The same item again, as each keystroke that keeps the top result sends it: the panel
      * is not rebuilt, which would cost every results paint. */
     GtkWidget *head = gtk_widget_get_first_child(widgets.preview);

@@ -1,9 +1,9 @@
 # ui
 
-> **Status:** Implemented (M3 + Tekst look, motion, grouped results and preview panel + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, light and dark palettes, preview details read off the main thread
+> **Status:** Implemented (M3 + Tekst look, motion, grouped results and preview panel + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, light and dark palettes, preview details read off the main thread, Wayland sizing (headless Weston)
 > **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track,header,index_strip,preview}.c`, `ui/gtk/popup.css`, `ui/gtk/palette-{light,dark}.css`, `src/bin/torchlight-gtk.c`; fonts in `third_party/fonts`; open windows in [windows](../windows/README.md)
 > **Headers:** `include/torchlight/{launcher,popup,async,windows}.h`
-> **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/unit/test_windows.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`
+> **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/unit/test_windows.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/test_popup_wayland.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`
 
 The thin executable owns an opaque launcher. GtkApplication enforces one instance;
 `torchlight-gtk --toggle` shows/focuses or dismisses its window. Showing clears the
@@ -196,7 +196,22 @@ an initially oversized window at scale 2. Monitor selection uses full geometry,
 so the pointer may be over a panel while placement still uses the work area.
 A simulated reserved-panel regression checks this placement with the pointer
 outside the work area.
-Wayland focus/placement is compositor-controlled and remains unverified.
+On Wayland ([ADR 0049](../../adr/0049-popup-on-wayland.md)) clients cannot position
+their windows, so the launcher only sizes the popup: for the monitor its surface is
+on, or the first monitor until the surface has entered one (`enter-monitor` sizes it
+again), with the same width rules and 70% of the monitor's height, since Wayland has
+no work area. The compositor places it. `tests/test_popup_wayland.py` checks this on a
+headless Weston, typing through AT-SPI, and skips without Weston. Focus on toggle
+follows the compositor's activation policy, and open windows are listed only on X11.
+
+The resident popup picks up updates by itself
+([ADR 0050](../../adr/0050-deb-and-signed-apt-repository.md)): the primary instance
+watches its own executable (`/proc/self/exe`'s path, with a `GFileMonitor`) and, when the
+file there is replaced by another one (a different device or inode, as dpkg's rename or a
+rebuild leaves), quits at once if hidden or when `close_popup` next hides it, so the next
+`--toggle` starts the new version. `torchlight-gtk --version` prints the version from
+`include/torchlight/version.h`. The X11 acceptance test runs a copy of the popup and
+replaces it at the end to check this.
 
 The isolated test session owns a private Xvfb display, window manager and bus.
 It does not auto-start unrelated portal/secret services. A test-only preload

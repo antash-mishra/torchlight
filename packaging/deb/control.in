@@ -1,0 +1,19 @@
+Package: torchlight
+Version: @VERSION@
+Architecture: @ARCH@
+Maintainer: antash-mishra <mishraantash34@gmail.com>
+Installed-Size: @SIZE@
+Depends: @DEPENDS@
+Recommends: fontconfig, xdg-utils
+Section: utils
+Priority: optional
+Homepage: https://github.com/antash-mishra/torchlight
+Description: Spotlight-style launcher: find apps, settings, files and folders
+ Press a shortcut, type a few letters and open an application, a settings
+ panel, a file or a folder. A resident per-user daemon keeps the index of
+ file names and paths in memory and follows changes as they happen; file
+ contents are never read. The GTK 4 popup lists running applications' open
+ windows (on X11) and shows the selected item's details beside the results.
+ .
+ Installing this package also adds Torchlight's signed APT repository, so the
+ system's update manager installs new versions.

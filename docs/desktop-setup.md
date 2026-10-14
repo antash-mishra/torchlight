@@ -84,9 +84,13 @@ available shortcut such as Super+Space. Use the absolute executable path so the
 binding works regardless of the desktop's PATH. Repeated invocation toggles the
 focused popup; invoking it while hidden shows and focuses the search entry.
 
-The target is Cinnamon X11. GTK's focus and placement requests on Wayland depend
-on compositor policy; no global key interception or unsupported positioning is
-attempted. The user's existing shortcut choices are preserved.
+The target is Cinnamon X11. On Wayland, bind the same command in the desktop's own
+shortcut settings (GNOME: Settings → Keyboard → Custom Shortcuts; KDE: System
+Settings → Shortcuts → Custom Shortcuts). The popup sizes itself for its monitor, but
+the compositor decides where it opens and whether it takes focus, and open windows are
+not listed ([ADR 0049](adr/0049-popup-on-wayland.md)). No global key interception or
+unsupported positioning is attempted. The user's existing shortcut choices are
+preserved.
 
 ## Verification
 

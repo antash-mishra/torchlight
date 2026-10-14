@@ -1,0 +1,15 @@
+#!/bin/sh
+# Disable the per-user daemon on removal and forget it on purge, as debhelper does for
+# user units. Each user's index (~/.local/share/torchlight) is theirs and stays.
+set -e
+
+if [ "$1" = remove ] && command -v deb-systemd-helper >/dev/null 2>&1; then
+    deb-systemd-helper --user mask torchlightd.service >/dev/null || true
+fi
+
+if [ "$1" = purge ] && command -v deb-systemd-helper >/dev/null 2>&1; then
+    deb-systemd-helper --user purge torchlightd.service >/dev/null || true
+    deb-systemd-helper --user unmask torchlightd.service >/dev/null || true
+fi
+
+exit 0

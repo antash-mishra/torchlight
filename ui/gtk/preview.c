@@ -21,6 +21,8 @@
 #define RISE_STEPS 8U
 /* Fact names take this many characters so their values line up (Bedstead is fixed width). */
 #define FACT_NAME_CHARS 9
+/* About the panel's text width in characters at the body size. */
+#define WRAP_CHARS 28
 /* A folder's items are counted up to this many; more shows as "999+". */
 #define ITEMS_MAX 999
 #define COUNT_BYTES 48
@@ -95,13 +97,15 @@ static GtkWidget *text(const char *value, const char *style_class) {
     gtk_widget_add_css_class(label, style_class);
     return label;
 }
-/* Wrapping labels ask for one character of natural width, so long text wraps within the
- * panel instead of widening it. */
+/* Wrapping labels ask for about the panel's width in characters. They wrap at whatever
+ * width the panel gives them; the cap keeps long text from widening it, and a height
+ * measured without a width (GTK sizes Wayland windows that way) stays near the real one
+ * instead of folding the text one character per line. */
 static GtkWidget *wrapping(const char *value, const char *style_class) {
     GtkWidget *label = text(value, style_class);
     gtk_label_set_wrap(GTK_LABEL(label), true);
     gtk_label_set_wrap_mode(GTK_LABEL(label), PANGO_WRAP_WORD_CHAR);
-    gtk_label_set_max_width_chars(GTK_LABEL(label), 1);
+    gtk_label_set_max_width_chars(GTK_LABEL(label), WRAP_CHARS);
     return label;
 }
 /* A teletext colour block; decoration, so assistive technology skips it. */

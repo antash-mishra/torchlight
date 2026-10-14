@@ -149,6 +149,8 @@
 - **Preview panel:** The part of a wide popup beside the results that describes the
   selected item: its name and kind, what Torchlight knows about it (size, modified
   time, folder, items, description, open windows) and its actions with their keys.
+- **Release key:** The OpenPGP key that signs Torchlight's APT repository (ADR 0050).
+  The package installs its public half; installations accept only updates it signed.
 - **Result group:** One of the popup's sections (Apps, Settings, Folders, Files).
   Groups are listed where their best result ranks, under a header with the group's
   color block, name and count.

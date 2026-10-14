@@ -33,6 +33,7 @@ make test       # unit tests (ASan + UBSan)
 make lint       # clang-tidy + cppcheck
 make format     # clang-format
 make bench      # latency + ranking benchmarks (BENCH_PATHS=file adds a real corpus)
+make deb        # optimized .deb package; releases are tagged (docs/release.md)
 ```
 
 `make` also compiles the vendored Frizbee matcher (`third_party/frizbee`) with

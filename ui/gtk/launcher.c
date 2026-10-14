@@ -3,6 +3,7 @@
 #include "actions.h"
 #include "torchlight/async.h"
 #include "torchlight/popup.h"
+#include "torchlight/version.h"
 #include "view.h"
 #include "windows_x11.h"
 #include <gio/gdesktopappinfo.h>
@@ -13,9 +14,16 @@
 #endif
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 #define POPUP_DEBOUNCE_MS 16
 #define POPUP_PENDING_MS 120
 #define POPUP_STATUS_MS 2000
+/* Usable width the popup leaves free, so it never touches the monitor's edges. */
+#define POPUP_SIDE_ROOM 48
+/* The narrowest surface, for tiny or heavily scaled screens. */
+#define POPUP_MIN_WIDTH 240
+/* The popup's tallest extent, as a share of the monitor's usable height. */
+#define POPUP_HEIGHT_PERCENT 70
 /* A list item's identity across re-renders: its result, kind and window. */
 struct shown_item {
     uint64_t id, handle;
@@ -38,6 +46,13 @@ struct popup {
     /* Items currently on screen, so a re-render animates only rows that are new. */
     struct shown_item shown[POPUP_ITEMS];
     size_t shown_count;
+    /* The executable this instance runs. When an update or rebuild replaces it, the
+     * instance ends once hidden, so the next shortcut press starts the new version. */
+    GFileMonitor *binary_monitor;
+    char *binary_path;
+    dev_t binary_device;
+    ino_t binary_inode;
+    bool replaced;
 };
 static void start_query(struct popup *popup);
 static void set_status(struct popup *popup, const char *text) {
@@ -71,6 +86,8 @@ static void close_popup(struct popup *popup) {
         g_cancellable_cancel(popup->launch_cancel);
     /* Work is canceled above at once; only the window's fade-out remains. */
     popup_view_dismiss(popup->view);
+    if (popup->replaced)
+        g_application_quit(G_APPLICATION(popup->application));
 }
 /* What a child item says: a window's short title, or the action it offers. */
 static void child_text(const struct popup *popup, const tl_popup_item *item, char *text,
@@ -670,20 +687,52 @@ static gboolean poll_status(gpointer context) {
     request_status(context);
     return G_SOURCE_CONTINUE;
 }
-static void place_window(GtkWidget *widget, gpointer context) {
-    struct popup *popup = context;
-    (void)widget;
+/* Size the popup for a monitor's usable area: wide areas get the preview panel, and the
+ * window adds the shadow margin around the surface. Returns the window's width. */
+static int fit_to_area(struct popup *popup, const GdkRectangle *area) {
+    int room = area->width - POPUP_SIDE_ROOM;
+    int width = room >= POPUP_VIEW_PREVIEW_WIDTH
+                    ? POPUP_VIEW_PREVIEW_WIDTH
+                    : MIN(POPUP_VIEW_LIST_WIDTH, MAX(POPUP_MIN_WIDTH, room));
+    popup_view_configure(popup->view, width, area->height * POPUP_HEIGHT_PERCENT / 100);
+    tl_popup_margins margins = popup_view_margins(popup->view);
+    int outer = width + margins.left + margins.right;
+    gtk_window_set_default_size(GTK_WINDOW(popup->window), outer, -1);
+    return outer;
+}
+/* Wayland lets the compositor place windows, so the popup only takes its size from the
+ * monitor it is on, or from the first monitor until it has entered one. */
+static void fit_to_monitor(struct popup *popup) {
+    GdkDisplay *display = gtk_widget_get_display(popup->window);
+    GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(popup->window));
+    GdkMonitor *monitor =
+        surface != NULL ? gdk_display_get_monitor_at_surface(display, surface) : NULL;
+    if (monitor != NULL)
+        g_object_ref(monitor);
+    GListModel *monitors = gdk_display_get_monitors(display);
+    if (monitor == NULL && g_list_model_get_n_items(monitors) != 0)
+        monitor = g_list_model_get_item(monitors, 0);
+    if (monitor == NULL)
+        return;
+    GdkRectangle area;
+    gdk_monitor_get_geometry(monitor, &area);
+    g_object_unref(monitor);
+    fit_to_area(popup, &area);
+}
 #ifdef GDK_WINDOWING_X11
+/* X11: fit the work area of the monitor under the pointer and centre the popup near its
+ * top. Returns false on other displays. */
+static bool place_on_x11(struct popup *popup) {
     GdkDisplay *display = gtk_widget_get_display(popup->window);
     if (!GDK_IS_X11_DISPLAY(display))
-        return;
+        return false;
     Display *xdisplay = gdk_x11_display_get_xdisplay(display);
     Window root = DefaultRootWindow(xdisplay), child, root_return;
     int pointer_x = 0, pointer_y = 0, local_x, local_y;
     unsigned mask;
     if (!XQueryPointer(xdisplay, root, &root_return, &child, &pointer_x, &pointer_y, &local_x,
                        &local_y, &mask))
-        return;
+        return true;
     int scale = gtk_widget_get_scale_factor(popup->window);
     pointer_x /= scale;
     pointer_y /= scale;
@@ -698,15 +747,7 @@ static void place_window(GtkWidget *widget, gpointer context) {
         if (pointer_x < geometry.x || pointer_x >= geometry.x + geometry.width ||
             pointer_y < geometry.y || pointer_y >= geometry.y + geometry.height)
             continue;
-        /* Wide enough work areas get the preview panel beside the results. */
-        int room = area.width - 48;
-        int width = room >= POPUP_VIEW_PREVIEW_WIDTH ? POPUP_VIEW_PREVIEW_WIDTH
-                                                     : MIN(POPUP_VIEW_LIST_WIDTH, MAX(240, room));
-        popup_view_configure(popup->view, width, area.height * 7 / 10);
-        /* The window adds the shadow margin around the visible surface. */
-        tl_popup_margins margins = popup_view_margins(popup->view);
-        int outer = width + margins.left + margins.right;
-        gtk_window_set_default_size(GTK_WINDOW(popup->window), outer, -1);
+        int outer = fit_to_area(popup, &area);
         GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(popup->window));
         if (surface == NULL)
             break;
@@ -716,9 +757,74 @@ static void place_window(GtkWidget *widget, gpointer context) {
         XFlush(xdisplay);
         break;
     }
-#else
-    (void)popup;
+    return true;
+}
 #endif
+static void place_window(GtkWidget *widget, gpointer context) {
+    struct popup *popup = context;
+    (void)widget;
+#ifdef GDK_WINDOWING_X11
+    if (place_on_x11(popup))
+        return;
+#endif
+    fit_to_monitor(popup);
+}
+/* A Wayland surface learns its monitor only once it is shown; refit for that monitor. */
+static void entered_monitor(GdkSurface *surface, GdkMonitor *monitor, gpointer context) {
+    (void)surface;
+    (void)monitor;
+    fit_to_monitor(context);
+}
+static void window_realized(GtkWidget *window, gpointer context) {
+#ifdef GDK_WINDOWING_X11
+    if (GDK_IS_X11_DISPLAY(gtk_widget_get_display(window)))
+        return;
+#endif
+    g_signal_connect(gtk_native_get_surface(GTK_NATIVE(window)), "enter-monitor",
+                     G_CALLBACK(entered_monitor), context);
+}
+/* Whether the file this instance was started from has been replaced, as a package update
+ * or a rebuild does: its path now names another file, or none. */
+static bool binary_replaced(const struct popup *popup) {
+    struct stat now;
+    return stat(popup->binary_path, &now) != 0 || now.st_dev != popup->binary_device ||
+           now.st_ino != popup->binary_inode;
+}
+static void binary_changed(GFileMonitor *monitor, GFile *file, GFile *other,
+                           GFileMonitorEvent event, gpointer context) {
+    (void)monitor;
+    (void)file;
+    (void)other;
+    (void)event;
+    struct popup *popup = context;
+    if (popup->replaced || !binary_replaced(popup))
+        return;
+    popup->replaced = true;
+    /* A shown popup keeps working; close_popup ends it once the person is done. */
+    if (!popup->visible)
+        g_application_quit(G_APPLICATION(popup->application));
+}
+/* Watch the running executable so updates take effect at the next show. Without /proc or
+ * a file monitor the popup keeps running its current version. */
+static void watch_binary(struct popup *popup) {
+    struct stat running;
+    char *path = g_file_read_link("/proc/self/exe", NULL);
+    if (path == NULL || g_str_has_suffix(path, " (deleted)") ||
+        stat("/proc/self/exe", &running) != 0) {
+        g_free(path);
+        return;
+    }
+    GFile *file = g_file_new_for_path(path);
+    popup->binary_monitor = g_file_monitor_file(file, G_FILE_MONITOR_WATCH_MOVES, NULL, NULL);
+    g_object_unref(file);
+    if (popup->binary_monitor == NULL) {
+        g_free(path);
+        return;
+    }
+    popup->binary_path = path;
+    popup->binary_device = running.st_dev;
+    popup->binary_inode = running.st_ino;
+    g_signal_connect(popup->binary_monitor, "changed", G_CALLBACK(binary_changed), popup);
 }
 static tl_status build_window(struct popup *popup) {
     popup->window = gtk_application_window_new(popup->application);
@@ -746,7 +852,9 @@ static tl_status build_window(struct popup *popup) {
     g_signal_connect(popup->window, "close-request", G_CALLBACK(close_requested), popup);
     g_signal_connect(popup->window, "notify::is-active", G_CALLBACK(active_changed), popup);
     g_signal_connect(popup->window, "map", G_CALLBACK(place_window), popup);
+    g_signal_connect(popup->window, "realize", G_CALLBACK(window_realized), popup);
     popup->status_timer = g_timeout_add(POPUP_STATUS_MS, poll_status, popup);
+    watch_binary(popup);
     /* Without an X11 display there is no source and no windows are listed. If
      * even the empty snapshot cannot be allocated, the launcher runs without one. */
     tl_window_source source;
@@ -819,6 +927,7 @@ tl_status launcher_create(tl_launcher **out) {
     }
     popup->application =
         gtk_application_new("org.torchlight.Launcher", G_APPLICATION_HANDLES_COMMAND_LINE);
+    g_application_set_version(G_APPLICATION(popup->application), TORCHLIGHT_VERSION);
     g_application_add_main_option(G_APPLICATION(popup->application), "toggle", 0,
                                   G_OPTION_FLAG_NONE, G_OPTION_ARG_NONE,
                                   "Show or hide the launcher", NULL);
@@ -863,6 +972,10 @@ void launcher_destroy(tl_launcher *popup) {
     if (popup->window != NULL)
         gtk_window_destroy(GTK_WINDOW(popup->window));
     popup_view_destroy(popup->view);
+    if (popup->binary_monitor != NULL)
+        g_file_monitor_cancel(popup->binary_monitor);
+    g_clear_object(&popup->binary_monitor);
+    g_free(popup->binary_path);
     g_object_unref(popup->application);
     ipc_path_destroy(popup->socket_path);
     popup_model_destroy(popup->model);

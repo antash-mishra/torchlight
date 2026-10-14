@@ -19,6 +19,9 @@ window action ([ADR 0035](adr/0035-open-windows-under-applications.md)). Results
 take one line each, with a short folder ([ADR 0036](adr/0036-one-line-results.md)).
 Machines without GTK can build and install just the daemon and command line
 with `make headless` and `make install-headless` ([ADR 0037](adr/0037-headless-build.md)).
+Releases ship as a `.deb` with a signed APT repository that keeps installations up to
+date ([ADR 0050](adr/0050-deb-and-signed-apt-repository.md)); [Releasing](release.md)
+says how to publish one.
 The [M7 plan](m7-plan.md) profiles indexing headlessly and plans two
 phases. Phase 1 implements full scans only for a reason, with periodic
 rescans limited to the folders inotify cannot cover
@@ -282,6 +285,13 @@ the root [README](../README.md) for commands, and
   Nordic light and dark palettes, Schibsted Grotesk and Bedstead type, an idle
   index strip, Fastext links with Copy path and a CRT switch-off; high contrast
   keeps the theme's colors.
+- [0049: The popup on Wayland](adr/0049-popup-on-wayland.md) sizes the popup for its
+  monitor on Wayland as on X11, leaves placement to the compositor (no layer-shell),
+  and adds a headless Weston acceptance test.
+- [0050: A .deb and a signed APT repository](adr/0050-deb-and-signed-apt-repository.md)
+  packages Torchlight for Mint 22 and Ubuntu 24.04+, publishes releases from a tag to a
+  signed APT repository on GitHub Pages, and has the daemon and popup restart onto
+  updates.
 
 ## Keeping docs current
 

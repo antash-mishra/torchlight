@@ -5,6 +5,7 @@
 #include "torchlight/lexical.h"
 #include "torchlight/store.h"
 #include "torchlight/tokenize.h"
+#include "torchlight/version.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,6 +38,7 @@ static void usage(void) {
           "       torchlight status|reconcile|history-clear [--socket PATH]\n"
           "       torchlight resolve [--socket PATH] [--json | --null] FILE_ID\n"
           "       torchlight record [--socket PATH] FILE_ID EVENT_ID [SEARCH_ID]\n"
+          "       torchlight --version\n"
           "Without ROOT, index syncs the catalog to the configured roots.\n",
           stderr);
 }
@@ -429,6 +431,10 @@ static tl_status open_config(const struct options *options, tl_config **config) 
     return status;
 }
 int main(int argc, char **argv) {
+    if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+        printf("torchlight %s\n", TORCHLIGHT_VERSION);
+        return 0;
+    }
     struct options options = {0};
     tl_status status = parse(argc, argv, &options);
     if (status != TL_OK) {

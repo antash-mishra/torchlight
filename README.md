@@ -24,8 +24,26 @@ letters, and open an application, a settings panel, a file or a folder.
   high-contrast themes keep their own colors.
 - **Private.** Only names and paths are indexed; file contents are never read.
 
-Tested on Linux Mint (Cinnamon, X11). On Wayland, window placement and focus are
-up to the compositor.
+Tested on Linux Mint (Cinnamon, X11), and on Wayland with Weston. On Wayland the
+desktop decides where the popup opens, and open windows are not listed.
+
+## Install
+
+On Linux Mint 22 or Ubuntu 24.04 or newer (64-bit PCs), download
+`torchlight_VERSION_amd64.deb` from the
+[latest release](https://github.com/antash-mishra/torchlight/releases/latest) and open
+it, or install it from a terminal:
+
+```sh
+sudo apt install ./torchlight_*_amd64.deb
+```
+
+The package also adds Torchlight's signed APT repository, so your update manager installs
+new versions like any other update. The search daemon starts for everyone logged in.
+Then bind `torchlight-gtk --toggle` to a keyboard shortcut (Cinnamon: System Settings →
+Keyboard → Shortcuts → Custom Shortcuts). To add the repository yourself instead, see
+[the project site](https://antash-mishra.github.io/torchlight/). On other systems, build
+it from source.
 
 ## Build
 
@@ -43,12 +61,15 @@ newer is required.
 ```sh
 make                             # debug build: build/torchlight, torchlightd, torchlight-gtk
 make build/torchlightd-release   # optimized daemon, about half the tail latency
+make deb                         # optimized .deb in build/deb (needs dpkg-dev)
 ```
+
+Releases are published by tagging a version; see [docs/release.md](docs/release.md).
 
 The first `make` compiles Frizbee offline, which takes about four minutes; later
 builds reuse it.
 
-## Install and set up the desktop launcher
+## Install a source build and set up the desktop launcher
 
 ```sh
 make install                     # installs into ~/.local (set PREFIX to change it)
@@ -189,6 +210,7 @@ make format             # clang-format
 make bench              # search latency and ranking quality at 50k and 500k paths
 make bench-daemon       # daemon startup, IPC, indexing load, update lag and memory
 make test-ui-isolated   # popup acceptance on a private X display (needs xvfb, xdotool, metacity)
+make test-ui-wayland    # popup acceptance on a headless Wayland compositor (needs weston)
 make bench-ui           # popup paint timing during a 500k rebuild
 make test-ui            # popup keyboard acceptance on your own X11 session (needs xdotool)
 ```
@@ -202,9 +224,9 @@ Lint needs `clang-format`, `clang-tidy` and `cppcheck`. A local `machine.mk`
 make bench BENCH_PATHS=/tmp/usr.paths
 ```
 
-After rebuilding, restart the daemon (`systemctl --user restart torchlightd`) and
-quit any running popup (`pkill -x torchlight-gtk`) so your next shortcut press
-starts the new one.
+After rebuilding, restart the daemon (`systemctl --user restart torchlightd`). The
+popup notices that its program file was replaced and quits the next time it is hidden,
+so your next shortcut press starts the new one.
 
 Contributors should read [CLAUDE.md](CLAUDE.md) for the code rules.
 

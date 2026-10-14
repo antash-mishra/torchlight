@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import sqlite3
 import subprocess
@@ -67,6 +68,9 @@ if args.matrix:
 
 with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
     base = Path(directory)
+    # Run a copy of the popup, so the update check at the end can replace it.
+    shutil.copy2(launcher, base / "torchlight-gtk")
+    launcher = str(base / "torchlight-gtk")
     root = base / "files"
     root.mkdir()
     (root / "Keyboard notes.txt").touch()
@@ -419,6 +423,18 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
         empty_entry()
         assert_no_blank_searches()
         xdo("key", "Escape")
+        wait_for(lambda: not focused())
+        # An update replaces the popup's executable (dpkg renames the new file over it):
+        # the hidden popup ends, and the next shortcut press starts the new version.
+        shutil.copy2(launcher, launcher + ".new")
+        os.replace(launcher + ".new", launcher)
+        wait_for(lambda: gui.poll() is not None)
+        assert gui.returncode == 0, gui.returncode
+        gui = subprocess.Popen([launcher, "--socket", str(path), "--toggle"], env=driver.env,
+                               stdout=gui_log, stderr=gui_log)
+        wait_for(focused)
+        xdo("key", "Escape")
+        wait_for(lambda: not focused())
         from statistics import median
         measurements = dict(first_focus_ms=round(first_focus, 3), first_paint_ms=round(first_paint, 3),
                             repeat_focus_ms=round(repeat_focus, 3), geometry=geometry,
@@ -429,7 +445,7 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
         print(f"X11 popup passed: first paint {first_paint:.1f} ms, repeat focus {repeat_focus:.1f} ms, "
               f"median input-to-results paint {median(driver.input_ms):.1f} ms")
         print(geometry)
-        print("Keyboard launches, empty/cleared queries, errors, restart/Retry, geometry and history passed.")
+        print("Keyboard launches, empty/cleared queries, errors, restart/Retry, geometry, history and update pickup passed.")
     finally:
         if gui is not None:
             gui.terminate()

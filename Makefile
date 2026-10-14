@@ -199,7 +199,7 @@ clean:
 # Staged installs are reviewable with DESTDIR; prefix defaults to per-user tools.
 PREFIX ?= $(HOME)/.local
 DESTDIR ?=
-.PHONY: install install-headless test-ui test-ui-isolated bench-ui
+.PHONY: install install-headless test-ui test-ui-isolated test-ui-wayland bench-ui
 XVFB ?= Xvfb
 XDOTOOL ?= xdotool
 install: all
@@ -214,12 +214,32 @@ install-headless: headless
 	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/lib/systemd/user
 	install -m 755 build/torchlight build/torchlightd $(DESTDIR)$(PREFIX)/bin/
 	install -m 644 packaging/torchlightd-headless.service $(DESTDIR)$(PREFIX)/lib/systemd/user/torchlightd.service
+# Optimized, hardened binaries for packages (docs/release.md); `make` stays a debug build.
+# Ubuntu's hardening flags, without link-time optimization.
+RELEASE_CFLAGS = -std=c17 -O2 -g -pthread -fno-omit-frame-pointer -fstack-protector-strong \
+                 -fstack-clash-protection -fcf-protection -D_FORTIFY_SOURCE=3 -DNDEBUG
+RELEASE_LDFLAGS = -Wl,-z,relro,-z,now
+.PHONY: release deb
+release: build/release/torchlight build/release/torchlightd build/release/torchlight-gtk
+build/release/torchlight build/release/torchlightd: build/release/%: $(SOURCES) src/bin/%.c $(HEADERS) $(FRIZBEE_LIB)
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(RELEASE_CFLAGS) $(WARNINGS) $(SOURCES) src/bin/$*.c $(LDFLAGS) $(RELEASE_LDFLAGS) $(LDLIBS) -o $@
+build/release/torchlight-gtk: $(SOURCES) $(UI_SOURCES) $(UI_HEADERS) $(UI_RESOURCES) $(HEADERS) $(FRIZBEE_LIB)
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(RELEASE_CFLAGS) $(WARNINGS) $(UI_SOURCES) $(UI_RESOURCES) $(SOURCES) $(LDFLAGS) $(RELEASE_LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
+# build/deb/torchlight_VERSION_ARCH.deb; needs dpkg-dev.
+deb: release
+	packaging/deb/build_deb.sh build/deb
 test-ui: all build/test_popup_probe.so build/test_window_app
 	python3 tests/test_popup.py --xdotool $(XDOTOOL)
 test-ui-isolated: all build/test_popup_probe.so build/test_popup_view build/test_window_app
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --matrix
 	# A wide screen gives the popup room for its preview panel (ADR 0048).
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --screen 1280x800x24
+	python3 tests/test_popup_wayland.py
+# Native Wayland on a headless Weston (ADR 0049); skips when Weston is not installed.
+test-ui-wayland: all
+	python3 tests/test_popup_wayland.py
 bench-ui: all build/test_popup_probe.so build/torchlightd-release build/bench_fixture
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --bench
 
