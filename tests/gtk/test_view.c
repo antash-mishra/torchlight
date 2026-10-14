@@ -165,16 +165,21 @@ static void test_rows(void) {
     g_object_unref(plain);
     g_object_unref(folder);
 }
-static const char *label_text(GtkWidget *widget, const char *class) {
+/* The first label beneath widget with style class, or NULL. */
+static GtkWidget *class_label(GtkWidget *widget, const char *class) {
     if (GTK_IS_LABEL(widget) && gtk_widget_has_css_class(widget, class))
-        return gtk_label_get_text(GTK_LABEL(widget));
+        return widget;
     for (GtkWidget *child = gtk_widget_get_first_child(widget); child != NULL;
          child = gtk_widget_get_next_sibling(child)) {
-        const char *text = label_text(child, class);
-        if (text != NULL)
-            return text;
+        GtkWidget *found = class_label(child, class);
+        if (found != NULL)
+            return found;
     }
     return NULL;
+}
+static const char *label_text(GtkWidget *widget, const char *class) {
+    GtkWidget *label = class_label(widget, class);
+    return label != NULL ? gtk_label_get_text(GTK_LABEL(label)) : NULL;
 }
 /* Application rows are plain; their children are compact rows with their own icons. */
 static void test_children(void) {
@@ -492,6 +497,26 @@ static void capture_results(tl_popup_view *view, tl_popup_widgets widgets) {
     capture(widgets, "results");
     clear_capture(view, widgets);
 }
+/* The color of the name in the row at index, once its style has caught up. */
+static GdkRGBA name_color(tl_popup_widgets widgets, int index) {
+    GtkListBoxRow *row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(widgets.list), index);
+    settle(100);
+    GdkRGBA color;
+    gtk_widget_get_color(class_label(GTK_WIDGET(row), "result-name"), &color);
+    return color;
+}
+/* The selection is inverse video: a window's name beneath its application takes the
+ * selection's ink like any selected name, not the muted color it has unselected. */
+static void check_selected_child(tl_popup_view *view, tl_popup_widgets widgets) {
+    fill_capture(view, widgets);
+    select_index(view, widgets, 0, false);
+    GdkRGBA selected = name_color(widgets, 0), unselected = name_color(widgets, 1);
+    CHECK(!gdk_rgba_equal(&selected, &unselected));
+    select_index(view, widgets, 1, false);
+    GdkRGBA window = name_color(widgets, 1);
+    CHECK(gdk_rgba_equal(&window, &selected));
+    clear_capture(view, widgets);
+}
 /* With a compositor and a GPU renderer the surface sits inside a transparent shadow
  * margin, and the window grows by it; otherwise the surface fills the window. */
 static void check_shadow(tl_popup_view *view, tl_popup_widgets widgets) {
@@ -635,6 +660,7 @@ static void test_view(void) {
                  "Try raedme: typos are fine") == 0);
     check_results(view, widgets);
     capture_results(view, widgets);
+    check_selected_child(view, widgets);
     check_feedback(view, widgets);
     check_searching(view, widgets);
     popup_view_dismiss(view);
@@ -844,6 +870,7 @@ int main(void) {
     test_forced_dark();
     test_forced_contrast();
     puts("Native view: path fitting, icons, entrances, glide, motion timers, header, search time, "
-         "idle strip, group headers, preview panel, palettes, shadow and geometry passed.");
+         "idle strip, group headers, preview panel, palettes, selection ink, shadow and geometry "
+         "passed.");
     return 0;
 }

@@ -58,7 +58,7 @@ window.torchlight { background: transparent; }
 .torchlight .group-count { color: @tk_faint; }
 .torchlight .result-name { color: @tk_ink; transition: color 110ms ease-out; }
 .torchlight .result-detail { font-size: 0.75em; color: @tk_muted; transition: color 110ms ease-out; }
-.torchlight list > row:selected .result-name, .torchlight list > row:selected .child-action, .torchlight list > row:selected .child .result-icon { color: @tk_sel_ink; }
+.torchlight list > row:selected .result-name, .torchlight list > row:selected .result.child .result-name, .torchlight list > row:selected .child-action, .torchlight list > row:selected .child .result-icon { color: @tk_sel_ink; }
 .torchlight list > row:selected .result-detail { color: alpha(@tk_sel_ink, 0.66); }
 /* An application's windows and actions sit beneath it, their icons under its name. */
 .torchlight list > row.child-row, .torchlight list > row.child-row:hover:not(:selected) { min-height: 32px; }

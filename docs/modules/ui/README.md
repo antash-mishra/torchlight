@@ -98,7 +98,8 @@ unplaced names keep `text-x-generic`). The launcher remembers which ids are on
 screen, so first results rise in top to bottom and later renders fade in only new
 rows. `selection_track` wraps the list box and draws one inverse-video block
 beneath transparent rows; `popup_view_select` gives the block the target row's
-kind class, so its left edge takes that kind's color. It glides 130ms on a
+kind class, so its left edge takes that kind's color. Selected names, a window's
+beneath its application too, take the block's ink. It glides 130ms on a
 frame-clock tick callback, jumps when results first appear or relayout, and hides
 at once when cleared. The view's `set_searching` crossfades the icon to a spinner
 after the 120ms pending timer; `set_launching` makes the block flash twice until
@@ -237,7 +238,8 @@ highlight geometry and an observed intermediate glide, file-type icons, entrance
 classes, opening/closing timers, spinner and launch states, large pasted queries,
 Unicode and distinguishing paths, geometry and timer destruction, rows and child
 rows with their kind classes and the selection block taking the selected row's
-kind, application rows without a window count, the header's search time (its
+kind, a selected window's name taking the block's ink, application rows without
+a window count, the header's search time (its
 formatting, fixed width and narrow-popup rule, and no result count beside it) and ticking
 clock, the idle strip's states and fitting (shown only under an empty query), the
 placeholder tips, the Copy path confirmation, the light or dark palette class and

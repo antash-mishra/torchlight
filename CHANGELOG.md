@@ -5,6 +5,8 @@ Each release's notes are taken from its section here (docs/release.md).
 ## Unreleased
 
 - Torchlight is open source, under the MIT License.
+- A selected window, beneath its application, is easy to read again: its title takes the
+  selection's text color instead of staying gray.
 
 ## 0.1.4 (2026-10-14)
 
