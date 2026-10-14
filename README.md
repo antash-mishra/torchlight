@@ -3,7 +3,7 @@
 A Spotlight-style launcher for Linux, written in C. Press a shortcut, type a few
 letters, and open an application, a settings panel, a file or a folder.
 
-![The Torchlight popup showing results for "term": the Terminal app with one of its windows, two files and a folder, with the selected file's size, modified time and actions in a panel beside them](docs/ui/native-preview.png)
+![A recording of the Torchlight popup: "term" finds the Terminal app with its two open windows, "raedme" still finds README.md, "work notes" finds the notes folder inside Work, and "disp" finds the Display settings](docs/ui/demo.gif)
 
 - **Forgiving search.** Matches prefixes, initials, abbreviations (`prjnts` finds
   `projectNotes.md`), one-letter typos (`raedme` finds `README.md`) and folder

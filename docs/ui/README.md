@@ -40,5 +40,23 @@ presentation (`make test-ui-isolated` and `python3 tests/run_popup_checks.py --a
 both need Xvfb and xdotool). The native view test disables LeakSanitizer for GTK/font
 caches; ASan and UBSan still check memory errors and timer teardown.
 
+## The README's demo
+
+[demo.gif](demo.gif) records the real popup and daemon on a private X display, typing
+a few searches the way a person would. Everything in it is made up: a home folder at
+`/home/demo`, a handful of applications and settings panels, and two Terminal windows,
+so nothing from the recording machine shows. It starts on the first search's results,
+the only frame a viewer with animation off sees, and loops from there. To record it again
+after `make`:
+
+```sh
+python3 scripts/record_demo.py
+```
+
+It needs no root (it runs in a user and mount namespace), but needs Xvfb, metacity,
+xdotool, xsetroot, ffmpeg, the GTK 4 Python bindings and the popup's fonts. It records
+with GTK's Cairo renderer, which keeps up with typing on a busy machine but draws no
+shadow.
+
 See [the GUI specification](../m3-gui-design.md) and
 [ADR 0048](../adr/0048-tekst-popup.md).
