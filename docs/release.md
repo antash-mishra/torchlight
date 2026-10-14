@@ -46,6 +46,8 @@ tag the fixed commit and push the tag again.
 | Published repository | the `gh-pages` branch, served at `https://antash-mishra.github.io/torchlight/apt`, which redirects over HTTPS to the account's custom domain (`https://antash.dev/torchlight/apt`); installations use the github.io address so that a domain change does not break them |
 | Public key | `packaging/deb/torchlight-archive-keyring.gpg`, also published with the repository |
 | Private key | the `APT_SIGNING_KEY` Actions secret, backed up in `~/.local/share/torchlight-release/` on the maintainer's machine |
+| Who can change `master` and release | Two repository rulesets: **master** (no deletion, no force pushes, changes only through pull requests, and only the maintainer may update it, so only the maintainer merges) and **Release tags** (only the maintainer may create, move or delete `v*` tags, which are what start the release workflow). The repository admin bypasses both, so the maintainer still pushes and tags directly. |
+| License | `LICENSE` (MIT); the package's `copyright` file repeats it for Debian |
 
 The release key is an ed25519 OpenPGP key without expiry, fingerprint
 `6A36 424D 0E32 058F 1024  F8FB BC78 7234 43BA 2945`. Keep a copy of

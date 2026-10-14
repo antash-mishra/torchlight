@@ -2,6 +2,10 @@
 
 Each release's notes are taken from its section here (docs/release.md).
 
+## Unreleased
+
+- Torchlight is open source, under the MIT License.
+
 ## 0.1.4 (2026-10-14)
 
 - The popup's page header shows how long each search took, in teletext cyan beside the

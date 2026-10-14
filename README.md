@@ -242,7 +242,20 @@ After rebuilding, restart the daemon (`systemctl --user restart torchlightd`). T
 popup notices that its program file was replaced and quits the next time it is hidden,
 so your next shortcut press starts the new one.
 
-Contributors should read [CLAUDE.md](CLAUDE.md) for the code rules.
+## Contributing
+
+Pull requests are welcome. Fork the repository, make your change on a branch, and open a
+pull request against `master`; read [CLAUDE.md](CLAUDE.md) for the code rules, and run
+`make test` and `make lint` first. The maintainer reviews and merges pull requests and
+publishes releases: `master` and release tags (`v*`) accept changes only from the
+maintainer, through the repository's rulesets.
+
+## License
+
+Torchlight is released under the [MIT License](LICENSE). Bundled third-party parts keep
+their own licenses, listed in [third_party/README.md](third_party/README.md): the Frizbee
+matcher (MIT), the fonts (SIL Open Font License 1.1 and public domain) and the Wayland
+protocol files (HPND-sell-variant).
 
 ## Documentation
 
