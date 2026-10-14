@@ -1,0 +1,20 @@
+Architectures: amd64
+Codename: stable
+Components: main
+Date: Wed, 14 Oct 2026 07:27:28 +0000
+Description: Torchlight launcher
+Label: Torchlight
+Origin: Torchlight
+Suite: stable
+MD5Sum:
+ 58987cce1fc2ef62f731cec20afb42a6             1453 main/binary-amd64/Packages
+ c53a8a6191ca9be6318c39ac533b4a36              901 main/binary-amd64/Packages.gz
+SHA1:
+ 593a81c8e12bb9336505c84be19473fe08619196             1453 main/binary-amd64/Packages
+ a94a7d39a9bf1265332fd011585af18ec6207e81              901 main/binary-amd64/Packages.gz
+SHA256:
+ 25905184c613153a3024a35bd9777ed4046e3cf42df166bb70d13825944d6d8b             1453 main/binary-amd64/Packages
+ c7efab9f6c322a43b518c5b02e053f8acd1aa102d3954c23d835e828be36a213              901 main/binary-amd64/Packages.gz
+SHA512:
+ 1860625dd0e92b438da49e3d649345dbd4820fd973bfbc467409ec5f3163bda759d84efc8b96190a37439a8bc8226eae225de7298bc278a7e9e447bb96051ade             1453 main/binary-amd64/Packages
+ 1ad0ead18ce0ff8dc1688dce21d26152cdb3a590ed5b8e0330bd6e5b4871e31279148937e26f1787b7d3d814e63f95c4307e1fdc70529f42fa960dd443f2b8db              901 main/binary-amd64/Packages.gz

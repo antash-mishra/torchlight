@@ -1,0 +1,26 @@
+Package: torchlight
+Architecture: amd64
+Version: 0.1.0
+Priority: optional
+Section: utils
+Maintainer: antash-mishra <mishraantash34@gmail.com>
+Installed-Size: 28608
+Depends: libc6 (>= 2.39), libcairo2 (>= 1.10.0), libgcc-s1 (>= 4.2), libglib2.0-0t64 (>= 2.79.2), libgraphene-1.0-0 (>= 1.5.4), libgtk-4-1 (>= 4.13.8), libpango-1.0-0 (>= 1.14.0), libsqlite3-0 (>= 3.20.0), libutf8proc3 (>= 2.9.0), libx11-6, systemd
+Recommends: fontconfig, xdg-utils
+Filename: pool/main/t/torchlight/torchlight_0.1.0_amd64.deb
+Size: 5688568
+MD5sum: ffbd80df4e4803c3c63645f4d4e4e439
+SHA1: f3f6d80a6fca7916ea1e462c80c7a2909e24763f
+SHA256: 71a7e296b737784241d66fee78f79ca08052bc949d9fd5c9097e9f7c6ce3e0b4
+SHA512: ec88899a61a9e493eee3971d2fd9b4bd8445e93beb9aea8adb5f71b5c3ecd6cc8408b6a178365d3f18fce4d765bbccf1953ae8c6d0f7c63b2e2c29ba4b46dcf2
+Homepage: https://github.com/antash-mishra/torchlight
+Description: Spotlight-style launcher: find apps, settings, files and folders
+ Press a shortcut, type a few letters and open an application, a settings
+ panel, a file or a folder. A resident per-user daemon keeps the index of
+ file names and paths in memory and follows changes as they happen; file
+ contents are never read. The GTK 4 popup lists running applications' open
+ windows (on X11) and shows the selected item's details beside the results.
+ .
+ Installing this package also adds Torchlight's signed APT repository, so the
+ system's update manager installs new versions.
+
