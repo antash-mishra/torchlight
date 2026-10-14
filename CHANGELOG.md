@@ -2,6 +2,13 @@
 
 Each release's notes are taken from its section here (docs/release.md).
 
+## 0.1.2 (2026-10-14)
+
+- On GNOME's Wayland session the popup lists each running application's open windows
+  and switches between them, as on X11, through a small GNOME Shell extension that comes
+  with the package. Log out and back in once after installing; the popup turns the
+  extension on the first time it opens, and leaves it off if you turn it off later.
+
 ## 0.1.0 (2026-10-14)
 
 The first packaged release, for Linux Mint 22 and Ubuntu 24.04 or newer.

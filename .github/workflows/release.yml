@@ -1,7 +1,8 @@
 # Publish a release when a version tag (v0.1.0) is pushed: test, lint and build the .deb on
 # Ubuntu 24.04, attach it to a GitHub release, add it to the signed APT repository on GitHub
-# Pages (which installed copies update from), then install it on a clean machine and check
-# that the repository serves it. See docs/release.md.
+# Pages (which installed copies update from), then, on a clean machine, install the previous
+# release and update it from the repository as the update manager would. See
+# docs/release.md.
 name: Release
 
 on:
@@ -34,7 +35,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential pkg-config \
             libsqlite3-dev libutf8proc-dev libgtk-4-dev libglib2.0-dev libx11-dev \
-            dpkg-dev clang-tidy cppcheck
+            dpkg-dev clang-tidy cppcheck dbus-daemon dbus-session-bus-common
 
       - name: Install Rust 1.89
         run: rustup toolchain install 1.89.0 --profile minimal && rustup default 1.89.0
@@ -110,29 +111,41 @@ jobs:
     needs: publish
     runs-on: ubuntu-24.04
     steps:
-      - name: Install the released .deb on a clean machine
+      - name: Install the previous release, as an existing user has it
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern '*.deb'
+          # The newest release before this one; none for the first release.
+          previous=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 20 \
+            --json tagName --jq "[.[].tagName | select(. != \"$GITHUB_REF_NAME\")][0] // empty")
+          echo "Previous release: ${previous:-none}"
+          mkdir -p previous current
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern '*.deb' --dir current
           sudo apt-get update
-          sudo apt-get install -y ./torchlight_*.deb
-          torchlight --version
-          torchlightd --version
+          if [ -n "$previous" ]; then
+            gh release download "$previous" --repo "$GITHUB_REPOSITORY" --pattern '*.deb' --dir previous
+            sudo apt-get install -y ./previous/torchlight_*.deb
+          else
+            sudo apt-get install -y ./current/torchlight_*.deb
+          fi
           test -f /etc/apt/sources.list.d/torchlight.sources
+          torchlight --version
 
-      - name: Check that the APT repository serves it, signed
+      - name: Update from the APT repository, as the update manager does
         run: |
           version=${GITHUB_REF_NAME#v}
           # GitHub Pages deploys the pushed branch within a few minutes.
           for attempt in $(seq 1 40); do
             if sudo apt-get update --error-on=any >/dev/null 2>&1 &&
                apt-cache madison torchlight | grep -q "$version .*antash-mishra.github.io/torchlight/apt"; then
-              apt-cache policy torchlight
-              exit 0
+              break
             fi
             sleep 15
           done
           sudo apt-get update --error-on=any
           apt-cache policy torchlight
-          exit 1
+          sudo apt-get install -y torchlight
+          test "$(dpkg-query -W -f='${Version}' torchlight)" = "$version"
+          torchlight --version | grep -qx "torchlight $version"
+          torchlightd --version
+          test -f /usr/share/gnome-shell/extensions/torchlight@antash-mishra.github.io/metadata.json

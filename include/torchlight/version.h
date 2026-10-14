@@ -2,5 +2,5 @@
  * it from this line, and a release tag must match it (docs/release.md). */
 #ifndef TORCHLIGHT_VERSION_H
 #define TORCHLIGHT_VERSION_H
-#define TORCHLIGHT_VERSION "0.1.0"
+#define TORCHLIGHT_VERSION "0.1.2"
 #endif
