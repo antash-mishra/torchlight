@@ -9,8 +9,9 @@ manager. See [ADR 0050](adr/0050-deb-and-signed-apt-repository.md) for the desig
 1. Set the version in `include/torchlight/version.h` (for example `0.1.1`) and add a
    `## 0.1.1 (YYYY-MM-DD)` section at the top of `CHANGELOG.md`. The release notes are
    that section.
-2. Run `make test`, `make lint` and `make test-ui-isolated`. The release workflow runs the
-   first two again, but not the UI checks, which need a display.
+2. Run `make test`, `make lint`, `make test-packaging` and `make test-ui-isolated`. The
+   release workflow runs the first three again, but not the UI checks, which need a
+   display.
 3. Commit, then tag and push:
 
    ```sh
@@ -27,8 +28,10 @@ Installed copies see the new version at their next update check. When it is inst
 each logged-in user's daemon restarts at once, and the popup restarts the next time it
 is hidden.
 
-A failed run can be re-run from the Actions tab. If the release was created but the
-repository step failed, delete the release (`gh release delete v0.1.1`) before re-running.
+A failed run can be re-run from the Actions tab (**Re-run failed jobs**); a GitHub release
+made by an earlier attempt is reused. A fix to the workflow or the publishing scripts needs
+a new commit: delete the release and the tag (`gh release delete v0.1.1 --cleanup-tag`),
+tag the fixed commit and push the tag again.
 
 ## What lives where
 

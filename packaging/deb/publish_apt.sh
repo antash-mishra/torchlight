@@ -12,6 +12,9 @@ site=${1:?usage: publish_apt.sh SITE_DIR DEB...}
 shift
 [ "$#" -gt 0 ] || { echo "publish_apt.sh: no packages given" >&2; exit 1; }
 here=$(cd "$(dirname "$0")" && pwd)
+# Absolute, because the indexes are generated from inside the repository folder.
+mkdir -p "$site"
+site=$(cd "$site" && pwd)
 apt="$site/apt"
 pool="$apt/pool/main/t/torchlight"
 mkdir -p "$pool" "$apt/dists/stable/main/binary-amd64"

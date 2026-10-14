@@ -25,7 +25,8 @@ between shortcut presses, so both would keep running old code after an update.
    three programs print it with `--version`.
 2. **A signed APT repository on GitHub Pages.** Pushing a `v*` tag runs
    `.github/workflows/release.yml`: it checks the tag against the version, runs `make
-   test` and `make lint`, builds the .deb, creates a GitHub release with it, adds it to
+   test`, `make lint` and `make test-packaging` (publishing into a scratch repository
+   that apt then verifies), builds the .deb, creates a GitHub release with it, adds it to
    the repository on the `gh-pages` branch (`packaging/deb/publish_apt.sh`, served at
    `https://antash-mishra.github.io/torchlight/apt`), and finally installs the release on
    a clean Ubuntu 24.04 machine and checks that apt fetches the signed repository. The

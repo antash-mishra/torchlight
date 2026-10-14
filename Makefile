@@ -230,6 +230,10 @@ build/release/torchlight-gtk: $(SOURCES) $(UI_SOURCES) $(UI_HEADERS) $(UI_RESOUR
 # build/deb/torchlight_VERSION_ARCH.deb; needs dpkg-dev.
 deb: release
 	packaging/deb/build_deb.sh build/deb
+# Publishing a signed APT repository, checked with apt as an ordinary user.
+.PHONY: test-packaging
+test-packaging:
+	python3 tests/test_packaging.py
 test-ui: all build/test_popup_probe.so build/test_window_app
 	python3 tests/test_popup.py --xdotool $(XDOTOOL)
 test-ui-isolated: all build/test_popup_probe.so build/test_popup_view build/test_window_app

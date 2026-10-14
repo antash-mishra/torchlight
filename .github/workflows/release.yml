@@ -48,6 +48,9 @@ jobs:
       - name: Lint
         run: make lint
 
+      - name: Check repository publishing
+        run: make test-packaging
+
       - name: Build the package
         run: make deb
 
@@ -79,7 +82,12 @@ jobs:
           awk -v heading="## $version " 'index($0, "## ") == 1 { show = index($0, heading) == 1; next } show' \
             CHANGELOG.md > notes.md
           test -s notes.md || { echo "CHANGELOG.md has no section for $version"; exit 1; }
-          gh release create "$GITHUB_REF_NAME" dist/*.deb --title "Torchlight $version" --notes-file notes.md
+          # A re-run after a later step failed finds the release already made.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.deb --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/*.deb --title "Torchlight $version" --notes-file notes.md
+          fi
 
       - name: Add it to the APT repository
         env:
