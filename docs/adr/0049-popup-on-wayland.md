@@ -60,7 +60,8 @@ Wayland also gives clients no portable way to list other applications' windows
 
 - On Wayland the popup has the same layout as on X11; where it opens depends on the
   compositor.
-- Open windows are still listed only on X11.
+- Open windows are listed on X11, and on GNOME's Wayland session through a GNOME Shell
+  extension ([ADR 0051](0051-open-windows-on-gnome-wayland.md)).
 - Whether the popup takes keyboard focus when the shortcut toggles it depends on the
   compositor's activation policy and on how the desktop's shortcut starts the command.
 - Panels are not subtracted from the monitor on Wayland; the 70% height limit and the

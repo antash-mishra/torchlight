@@ -202,7 +202,10 @@ on, or the first monitor until the surface has entered one (`enter-monitor` size
 again), with the same width rules and 70% of the monitor's height, since Wayland has
 no work area. The compositor places it. `tests/test_popup_wayland.py` checks this on a
 headless Weston, typing through AT-SPI, and skips without Weston. Focus on toggle
-follows the compositor's activation policy, and open windows are listed only on X11.
+follows the compositor's activation policy. Open windows are listed on X11 and, through
+Torchlight's GNOME Shell extension, on GNOME's Wayland session: the launcher picks the
+GNOME source when the display is not X11 and `XDG_CURRENT_DESKTOP` names GNOME, and
+enables the extension once ([ADR 0051](../../adr/0051-open-windows-on-gnome-wayland.md)).
 
 The resident popup picks up updates by itself
 ([ADR 0050](../../adr/0050-deb-and-signed-apt-repository.md)): the primary instance

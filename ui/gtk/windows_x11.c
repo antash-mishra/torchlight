@@ -105,38 +105,6 @@ static bool listable(const struct x11_source *source, Display *display, Window w
         XFree(states);
     return !skipped;
 }
-/* Copy an exact identifier, or leave it empty when it does not fit. */
-static void copy_name(char *out, size_t capacity, const char *name) {
-    out[0] = 0;
-    if (name != NULL && strlen(name) < capacity)
-        memcpy(out, name, strlen(name) + 1);
-}
-/* Copy text as valid single-line UTF-8, controls as spaces, ending on a whole character. */
-static void copy_text(char *out, size_t capacity, const char *bytes, size_t length,
-                      bool truncated) {
-    /* A value cut by the read limit may end inside a character: drop that character. */
-    if (truncated) {
-        while (length > 0 && ((unsigned char)bytes[length - 1] & 0xC0) == 0x80)
-            length--;
-        if (length > 0)
-            length--;
-    }
-    char *valid = g_utf8_make_valid(bytes, (gssize)length);
-    size_t used = 0;
-    for (const char *p = valid; *p != 0; p = g_utf8_next_char(p)) {
-        size_t size = (size_t)(g_utf8_next_char(p) - p);
-        if (used + size >= capacity)
-            break;
-        if (g_unichar_iscntrl(g_utf8_get_char(p)))
-            out[used++] = ' ';
-        else {
-            memcpy(out + used, p, size);
-            used += size;
-        }
-    }
-    out[used] = 0;
-    g_free(valid);
-}
 /* _NET_WM_NAME, else a Latin-1 WM_NAME converted to UTF-8; empty when neither exists. */
 static void read_title(const struct x11_source *source, Display *display, Window window,
                        char *out) {
@@ -147,7 +115,7 @@ static void read_title(const struct x11_source *source, Display *display, Window
     unsigned char *data = property(display, window, source->atoms[ATOM_NAME],
                                    source->atoms[ATOM_UTF8], 8, units, &count, &truncated);
     if (data != NULL) {
-        copy_text(out, WINDOWS_TITLE_BYTES, (const char *)data, count, truncated);
+        windows_copy_text(out, WINDOWS_TITLE_BYTES, (const char *)data, count, truncated);
         XFree(data);
         return;
     }
@@ -158,7 +126,7 @@ static void read_title(const struct x11_source *source, Display *display, Window
         g_convert((const char *)data, (gssize)count, "UTF-8", "ISO-8859-1", NULL, NULL, NULL);
     XFree(data);
     if (converted != NULL)
-        copy_text(out, WINDOWS_TITLE_BYTES, converted, strlen(converted), false);
+        windows_copy_text(out, WINDOWS_TITLE_BYTES, converted, strlen(converted), false);
     g_free(converted);
 }
 static bool read_window(const struct x11_source *source, Display *display, Window window,
@@ -168,8 +136,8 @@ static bool read_window(const struct x11_source *source, Display *display, Windo
     *out = (tl_window){.handle = window};
     XClassHint hint = {0};
     if (XGetClassHint(display, window, &hint)) {
-        copy_name(out->instance, sizeof(out->instance), hint.res_name);
-        copy_name(out->class_name, sizeof(out->class_name), hint.res_class);
+        windows_copy_name(out->instance, sizeof(out->instance), hint.res_name);
+        windows_copy_name(out->class_name, sizeof(out->class_name), hint.res_class);
         if (hint.res_name != NULL)
             XFree(hint.res_name);
         if (hint.res_class != NULL)

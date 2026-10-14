@@ -63,7 +63,7 @@ GTK_LDLIBS = $(shell $(PKG_CONFIG) --libs 'gtk4 >= 4.14' x11)
 # The presentation's widgets, which the native view test builds on its own.
 VIEW_SOURCES = ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c ui/gtk/header.c ui/gtk/index_strip.c \
                ui/gtk/preview.c
-UI_SOURCES = ui/gtk/model.c ui/gtk/windows.c ui/gtk/windows_x11.c ui/gtk/actions.c ui/gtk/launcher.c $(VIEW_SOURCES) src/bin/torchlight-gtk.c
+UI_SOURCES = ui/gtk/model.c ui/gtk/windows.c ui/gtk/windows_x11.c ui/gtk/windows_gnome.c ui/gtk/actions.c ui/gtk/launcher.c $(VIEW_SOURCES) src/bin/torchlight-gtk.c
 POPUP_FIXTURE_SOURCE = tests/fixtures/popup_probe.c
 WINDOW_FIXTURE_SOURCE = tests/fixtures/window_app.c
 all: headless build/torchlight-gtk
@@ -99,9 +99,9 @@ build/torchlightd: $(OBJECTS) build/src/bin/torchlightd.o $(FRIZBEE_LIB)
 build/%.o: %.c $(HEADERS)
 	@mkdir -p $(dir $@)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -MMD -MP -c $< -o $@
-build/tests: $(SOURCES) ui/gtk/model.c ui/gtk/windows.c ui/gtk/actions.c $(TEST_SOURCES) $(HEADERS) ui/gtk/actions.h tests/unit/test.h $(FRIZBEE_LIB)
+build/tests: $(SOURCES) ui/gtk/model.c ui/gtk/windows.c ui/gtk/windows_gnome.c ui/gtk/actions.c $(TEST_SOURCES) $(HEADERS) ui/gtk/actions.h ui/gtk/windows_gnome.h tests/unit/test.h $(FRIZBEE_LIB)
 	@mkdir -p build
-	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $(SAN_FLAGS) $(SOURCES) ui/gtk/model.c ui/gtk/windows.c ui/gtk/actions.c $(TEST_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
+	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $(SAN_FLAGS) $(SOURCES) ui/gtk/model.c ui/gtk/windows.c ui/gtk/windows_gnome.c ui/gtk/actions.c $(TEST_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@
 build/torchlight-sanitized: $(SOURCES) src/bin/torchlight.c $(HEADERS) $(FRIZBEE_LIB)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $(SAN_FLAGS) $(SOURCES) src/bin/torchlight.c $(LDFLAGS) $(LDLIBS) -o $@
@@ -196,10 +196,12 @@ clean:
 	$(RM) -r build
 -include $(OBJECTS:.o=.d) build/src/bin/torchlight.d build/src/bin/torchlightd.d
 
+# Torchlight's GNOME Shell extension, which lists windows on GNOME's Wayland session (ADR 0051).
+GNOME_EXTENSION = torchlight@antash-mishra.github.io
 # Staged installs are reviewable with DESTDIR; prefix defaults to per-user tools.
 PREFIX ?= $(HOME)/.local
 DESTDIR ?=
-.PHONY: install install-headless test-ui test-ui-isolated test-ui-wayland bench-ui
+.PHONY: install install-headless test-ui test-ui-isolated test-ui-wayland test-ui-gnome bench-ui
 XVFB ?= Xvfb
 XDOTOOL ?= xdotool
 install: all
@@ -209,6 +211,8 @@ install: all
 	install -m 644 packaging/torchlightd.service $(DESTDIR)$(PREFIX)/lib/systemd/user/
 	install -d $(DESTDIR)$(PREFIX)/share/fonts/torchlight
 	install -m 644 third_party/fonts/schibsted-grotesk/SchibstedGrotesk-VF.ttf third_party/fonts/bedstead/bedstead.otf $(DESTDIR)$(PREFIX)/share/fonts/torchlight/
+	install -d $(DESTDIR)$(PREFIX)/share/gnome-shell/extensions/$(GNOME_EXTENSION)
+	install -m 644 ui/gnome-shell/$(GNOME_EXTENSION)/metadata.json ui/gnome-shell/$(GNOME_EXTENSION)/extension.js $(DESTDIR)$(PREFIX)/share/gnome-shell/extensions/$(GNOME_EXTENSION)/
 # Same unit name, but started with the user manager instead of a graphical session.
 install-headless: headless
 	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/lib/systemd/user
@@ -241,9 +245,14 @@ test-ui-isolated: all build/test_popup_probe.so build/test_popup_view build/test
 	# A wide screen gives the popup room for its preview panel (ADR 0048).
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --screen 1280x800x24
 	python3 tests/test_popup_wayland.py
+	python3 tests/test_windows_gnome_shell.py
 # Native Wayland on a headless Weston (ADR 0049); skips when Weston is not installed.
 test-ui-wayland: all
 	python3 tests/test_popup_wayland.py
+# Open windows on GNOME's Wayland session, on a headless GNOME Shell (ADR 0051); skips
+# when GNOME Shell is not installed.
+test-ui-gnome: all
+	python3 tests/test_windows_gnome_shell.py
 bench-ui: all build/test_popup_probe.so build/torchlightd-release build/bench_fixture
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --bench
 

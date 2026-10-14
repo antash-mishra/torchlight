@@ -1,5 +1,6 @@
 /* Open-window snapshots over a swappable source, application matching and title shortening. */
 #include "torchlight/windows.h"
+#include <glib.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,36 @@ struct tl_windows {
     tl_window windows[WINDOWS_MAX];
     size_t count;
 };
+void windows_copy_name(char *out, size_t capacity, const char *name) {
+    out[0] = 0;
+    if (name != NULL && strlen(name) < capacity)
+        memcpy(out, name, strlen(name) + 1);
+}
+void windows_copy_text(char *out, size_t capacity, const char *bytes, size_t length,
+                       bool truncated) {
+    /* A value cut by a read limit may end inside a character: drop that character. */
+    if (truncated) {
+        while (length > 0 && ((unsigned char)bytes[length - 1] & 0xC0) == 0x80)
+            length--;
+        if (length > 0)
+            length--;
+    }
+    char *valid = g_utf8_make_valid(bytes, (gssize)length);
+    size_t used = 0;
+    for (const char *p = valid; *p != 0; p = g_utf8_next_char(p)) {
+        size_t size = (size_t)(g_utf8_next_char(p) - p);
+        if (used + size >= capacity)
+            break;
+        if (g_unichar_iscntrl(g_utf8_get_char(p)))
+            out[used++] = ' ';
+        else {
+            memcpy(out + used, p, size);
+            used += size;
+        }
+    }
+    out[used] = 0;
+    g_free(valid);
+}
 tl_status windows_create(const tl_window_source *source, tl_windows **out) {
     if (out == NULL)
         return TL_INVALID;

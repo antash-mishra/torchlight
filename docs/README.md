@@ -288,6 +288,9 @@ the root [README](../README.md) for commands, and
 - [0049: The popup on Wayland](adr/0049-popup-on-wayland.md) sizes the popup for its
   monitor on Wayland as on X11, leaves placement to the compositor (no layer-shell),
   and adds a headless Weston acceptance test.
+- [0051: Open windows on GNOME Wayland](adr/0051-open-windows-on-gnome-wayland.md) lists
+  and switches windows on GNOME's Wayland session through a small GNOME Shell extension
+  that the package installs and the popup enables once.
 - [0050: A .deb and a signed APT repository](adr/0050-deb-and-signed-apt-repository.md)
   packages Torchlight for Mint 22 and Ubuntu 24.04+, publishes releases from a tag to a
   signed APT repository on GitHub Pages, and has the daemon and popup restart onto

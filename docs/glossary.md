@@ -144,6 +144,9 @@
   name. The popup keeps it visible when shortening paths.
 - **Fastext links:** The popup footer's colored key links (red Open, green Show in
   folder, yellow Copy path, cyan Close), after teletext's four colored links.
+- **GNOME Shell extension (Torchlight's):** The small extension in `ui/gnome-shell/`
+  that lets the popup list and switch windows on GNOME's Wayland session, where
+  applications cannot see each other's windows (ADR 0051). The popup enables it once.
 - **Idle strip:** The line under an empty popup query that says what the index is
   doing: up to date, updating or degraded; folders watched; the last scan's time.
 - **Preview panel:** The part of a wide popup beside the results that describes the

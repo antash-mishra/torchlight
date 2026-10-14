@@ -1,6 +1,7 @@
 # 0035. Open windows under application results
 
-- **Status:** Accepted; implemented (layout revised 2026-10-10)
+- **Status:** Accepted; implemented (layout revised 2026-10-10). GNOME's Wayland
+  session gained a source in [ADR 0051](0051-open-windows-on-gnome-wayland.md).
 - **Date:** 2026-10-09
 
 ## Context

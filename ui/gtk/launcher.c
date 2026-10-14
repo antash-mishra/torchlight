@@ -5,6 +5,7 @@
 #include "torchlight/popup.h"
 #include "torchlight/version.h"
 #include "view.h"
+#include "windows_gnome.h"
 #include "windows_x11.h"
 #include <gio/gdesktopappinfo.h>
 #include <gtk/gtk.h>
@@ -826,6 +827,24 @@ static void watch_binary(struct popup *popup) {
     popup->binary_inode = running.st_ino;
     g_signal_connect(popup->binary_monitor, "changed", G_CALLBACK(binary_changed), popup);
 }
+/* Open windows come from X11, or on GNOME's Wayland session from Torchlight's GNOME Shell
+ * extension, which the launcher enables once for the person (ADR 0051). Other Wayland
+ * desktops have no source and list no windows. If even the empty snapshot cannot be
+ * allocated, the launcher runs without one. */
+static void create_windows(struct popup *popup) {
+    tl_window_source source;
+    bool listed = windows_x11_source(popup->window, &source) == TL_OK;
+    if (!listed && windows_gnome_desktop(g_getenv("XDG_CURRENT_DESKTOP")) &&
+        windows_gnome_source(NULL, &source) == TL_OK) {
+        listed = true;
+        char *marker =
+            g_build_filename(g_get_user_state_dir(), "torchlight", "gnome-extension-enabled", NULL);
+        windows_gnome_enable_once(NULL, marker);
+        g_free(marker);
+    }
+    if (windows_create(listed ? &source : NULL, &popup->windows) != TL_OK && listed)
+        source.destroy(source.context);
+}
 static tl_status build_window(struct popup *popup) {
     popup->window = gtk_application_window_new(popup->application);
     gtk_window_set_title(GTK_WINDOW(popup->window), "Torchlight");
@@ -855,12 +874,7 @@ static tl_status build_window(struct popup *popup) {
     g_signal_connect(popup->window, "realize", G_CALLBACK(window_realized), popup);
     popup->status_timer = g_timeout_add(POPUP_STATUS_MS, poll_status, popup);
     watch_binary(popup);
-    /* Without an X11 display there is no source and no windows are listed. If
-     * even the empty snapshot cannot be allocated, the launcher runs without one. */
-    tl_window_source source;
-    bool x11 = windows_x11_source(popup->window, &source) == TL_OK;
-    if (windows_create(x11 ? &source : NULL, &popup->windows) != TL_OK && x11)
-        source.destroy(source.context);
+    create_windows(popup);
     return TL_OK;
 }
 static int command_line(GApplication *application, GApplicationCommandLine *command,

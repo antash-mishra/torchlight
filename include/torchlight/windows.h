@@ -2,6 +2,7 @@
 #ifndef TORCHLIGHT_WINDOWS_H
 #define TORCHLIGHT_WINDOWS_H
 #include "torchlight/common.h"
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 /* Windows kept per snapshot; the most recently used come first. */
@@ -65,6 +66,16 @@ tl_status windows_activate(tl_windows *windows, size_t index);
  * errors; NULL window or desktop_id gives WINDOWS_EVIDENCE_NONE. */
 tl_windows_evidence windows_evidence(const tl_window *window, const char *desktop_id,
                                      const char *wm_class);
+/** Copy borrowed name into out when it fits with its NUL, else leave out empty: class
+ * names and application ids are compared exactly, so a cut one would match the wrong
+ * application. A NULL name leaves out empty. For sources; no errors. */
+void windows_copy_name(char *out, size_t capacity, const char *name);
+/** Copy length borrowed bytes into out as valid single-line UTF-8, controls as spaces,
+ * ending on a whole character; truncated says the bytes were cut from a longer value, so
+ * a partial last character is dropped. out is always NUL-terminated (capacity > 0). For
+ * sources reading window titles; no errors. */
+void windows_copy_text(char *out, size_t capacity, const char *bytes, size_t length,
+                       bool truncated);
 /** Copy borrowed title into out without a trailing " - Application" suffix
  * naming app_name (also an en or em dash). The suffix is removed when it equals
  * the name, is the name's first or last words, or ends with its first word,

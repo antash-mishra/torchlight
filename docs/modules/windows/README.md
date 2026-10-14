@@ -1,9 +1,9 @@
 # windows
 
-> **Status:** Implemented (ADR 0035), verified on Xvfb with metacity and against the window properties of a real Cinnamon X11 session
-> **Source:** `ui/gtk/windows.c` (snapshot and matching), `ui/gtk/windows_x11.c` (X11 source)
-> **Headers:** `include/torchlight/windows.h`, `ui/gtk/windows_x11.h` (private)
-> **Tests:** `tests/unit/test_windows.c`, hierarchy cases in `tests/unit/test_popup.c`, `check_open_windows` in `tests/test_popup.py`
+> **Status:** Implemented (ADRs 0035 and 0051), verified on Xvfb with metacity, against the window properties of a real Cinnamon X11 session, and on a headless GNOME Shell 46 (Wayland)
+> **Source:** `ui/gtk/windows.c` (snapshot, matching, text copying), `ui/gtk/windows_x11.c` (X11 source), `ui/gtk/windows_gnome.c` (GNOME Shell source), `ui/gnome-shell/torchlight@antash-mishra.github.io/` (the GNOME Shell extension it talks to)
+> **Headers:** `include/torchlight/windows.h`, `ui/gtk/windows_x11.h` and `ui/gtk/windows_gnome.h` (private)
+> **Tests:** `tests/unit/test_windows.c`, `tests/unit/test_windows_gnome.c`, hierarchy cases in `tests/unit/test_popup.c`, `check_open_windows` in `tests/test_popup.py`, `tests/test_windows_gnome_shell.py`
 
 ## Purpose
 
@@ -33,7 +33,10 @@ popup and never with the daemon.
 | `windows_activate(windows, index)` | Ask the window manager to show and focus a window; `TL_STATE` if it has closed. |
 | `windows_evidence(window, desktop_id, wm_class)` | How strongly a window belongs to an application. |
 | `windows_short_title(title, app_name, out, size)` | Title without a trailing " - Application" suffix. |
+| `windows_copy_name(out, size, name)` / `windows_copy_text(out, size, bytes, length, truncated)` | For sources: exact identifiers (empty when too long) and titles as clean single-line UTF-8. |
 | `windows_x11_source(popup, &source)` | Private: the X11 source for the popup's display; `TL_STATE` when not X11. |
+| `windows_gnome_source(bus, &source)` | Private: the GNOME Shell source over Torchlight's extension; `TL_IO` from `list` while it is not running. |
+| `windows_gnome_enable_once(bus, marker)` | Private: enables the extension for the person once, then leaves their choice alone. |
 
 ## Design
 
@@ -65,6 +68,20 @@ manager raises and restores the window and switches workspace. Everything runs
 on GTK's own connection under GDK error traps, so a window destroyed mid-read
 only drops that window.
 
+**GNOME Shell source** ([ADR 0051](../../adr/0051-open-windows-on-gnome-wayland.md)).
+On GNOME's Wayland session, applications cannot see other applications' windows, so
+Torchlight's GNOME Shell extension does it for the popup. It exports
+`org.torchlight.Windows` at `/org/torchlight/Windows` on the shell's `org.gnome.Shell`
+name: `List` returns the shell's tab list (normal windows on every workspace, most
+recently used first) as (id, instance, class or Wayland application id, application id,
+title), and `Activate(id)` switches to the window as the overview does. The application
+id is the desktop file the shell matched the window to, without `.desktop`, so the
+application-id rule below matches it exactly; windows the shell could not match fall
+back to their GTK application id. `windows_gnome_source` calls these with GIO, waiting
+at most 250ms, never auto-starting a service, and leaves out the popup's own window
+(`org.torchlight.Launcher`). The launcher picks it when the display is not X11 and
+`XDG_CURRENT_DESKTOP` names GNOME, and calls `windows_gnome_enable_once` first.
+
 **Titles.** The suffix after the last " - ", " – " or " — " is removed when it
 names the application, ignoring ASCII case: the whole name ("Google Chrome"),
 its first or last words ("Brave" for "Brave Web Browser", "Chrome") or text
@@ -74,13 +91,14 @@ ending with its first word ("Mozilla Firefox" for "Firefox Web Browser").
 
 ```
 popup shown ─► idle ─► windows_refresh ─► X11 source (EWMH properties)
+                              │            or GNOME source ─► extension's List (D-Bus)
                               │
                               ▼
           popup_model_set_windows ─► windows_evidence per (window, application row)
                               │
                               ▼
    items: every application, up to 3 windows, more windows, new window ─► view rows
-Enter on a window ─► windows_activate ─► _NET_ACTIVE_WINDOW ─► history open (IPC)
+Enter on a window ─► windows_activate ─► _NET_ACTIVE_WINDOW, or Activate(id) ─► history open (IPC)
 ```
 
 ## Invariants
@@ -112,12 +130,24 @@ assignment and the item hierarchy, including applications below the top
 result. `tests/test_popup.py` maps real windows
 with `tests/fixtures/window_app.c` on an isolated X server and checks Enter,
 window choice, Left/Right, a window that closed after the snapshot, an
-application ranked below an exact file name and new window. Run the unit tests with `make test`, and the X11 checks with
-`make test-ui-isolated`.
+application ranked below an exact file name and new window.
+`tests/unit/test_windows_gnome.c` runs the GNOME source against a fake shell on a
+private bus: order, the popup's own window and a zero handle left out, cleaned titles,
+too-long identifiers dropped, activation of open and closed windows, an extension that
+is not running, and enabling it once (not when it was not found or extensions are off,
+and never again after a person's own disable). `tests/test_windows_gnome_shell.py` runs
+a headless GNOME Shell with the extension installed but disabled, the fixture daemon and
+the real popup: the popup enables the extension, which lists two test windows most
+recently used first and switches between them, and the popup lists both under their
+application. Run the unit tests with `make test`, the X11 checks with `make
+test-ui-isolated`, and the GNOME check with `make test-ui-gnome` (it skips without GNOME
+Shell; `TORCHLIGHT_GNOME_ROOT` points it at an unpacked one).
 
 ## Gotchas
 
-- Wayland has no source, so no windows are listed there.
+- Of the Wayland desktops, only GNOME has a source; KDE, Sway, Hyprland and Cinnamon's
+  Wayland session list no windows. On GNOME the extension works from the person's next
+  login after installing, since GNOME looks for new extensions at login.
 - Applications that declare no `StartupWMClass` and whose instance does not
   match their desktop file name get no windows.
 - Windows that open or close while the popup is visible appear at the next
@@ -126,4 +156,4 @@ application ranked below an exact file name and new window. Run the unit tests w
 ## Related
 
 - Modules: [ui](../ui/README.md), [desktop](../desktop/README.md), [ipc](../ipc/README.md)
-- ADRs: [0035](../../adr/0035-open-windows-under-applications.md)
+- ADRs: [0035](../../adr/0035-open-windows-under-applications.md), [0051](../../adr/0051-open-windows-on-gnome-wayland.md)

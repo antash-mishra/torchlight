@@ -39,6 +39,13 @@ install -D -m 644 "$root/third_party/fonts/schibsted-grotesk/SchibstedGrotesk-VF
 install -D -m 644 "$root/third_party/fonts/bedstead/bedstead.otf" \
     "$pkg/usr/share/fonts/truetype/torchlight/bedstead.otf"
 
+# The GNOME Shell extension that lists windows on GNOME's Wayland session (ADR 0051).
+extension=torchlight@antash-mishra.github.io
+for file in metadata.json extension.js; do
+    install -D -m 644 "$root/ui/gnome-shell/$extension/$file" \
+        "$pkg/usr/share/gnome-shell/extensions/$extension/$file"
+done
+
 # The repository that brings updates, and the key that signs it.
 install -D -m 644 "$here/torchlight.sources" "$pkg/etc/apt/sources.list.d/torchlight.sources"
 install -D -m 644 "$here/torchlight-archive-keyring.gpg" \

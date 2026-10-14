@@ -28,6 +28,8 @@ void test_desktop(void);
 void test_popup(void);
 /** Run window snapshot, application evidence and title shortening checks. */
 void test_windows(void);
+/** Run the GNOME Shell window source against a fake shell on a private bus. */
+void test_windows_gnome(void);
 /** Return a refreshed snapshot over a fake source copying count borrowed windows
  * (at most WINDOWS_MAX); free with windows_destroy. Aborts on unexpected errors. */
 tl_windows *test_windows_fixture(const tl_window *windows, size_t count);

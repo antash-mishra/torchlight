@@ -12,8 +12,9 @@ letters, and open an application, a settings panel, a file or a folder.
   follows file changes as they happen. Typing stays under about 5 ms at the 95th
   percentile with 500,000 paths ([evaluation](docs/evaluation.md)).
 - **Switch to open windows.** Running apps list their open windows beneath them
-  (on X11). Enter switches to the most recent one; pick another or open a new
-  window from the list.
+  (on X11, and on GNOME's Wayland session through a small GNOME Shell extension
+  that comes with the package). Enter switches to the most recent one; pick
+  another or open a new window from the list.
 - **Learns what you use.** Files and apps you open rank higher. History stays on
   your machine and can be turned off or cleared.
 - **A look of its own.** The GTK 4 popup borrows teletext's page design and sets
@@ -25,7 +26,8 @@ letters, and open an application, a settings panel, a file or a folder.
 - **Private.** Only names and paths are indexed; file contents are never read.
 
 Tested on Linux Mint (Cinnamon, X11), and on Wayland with Weston. On Wayland the
-desktop decides where the popup opens, and open windows are not listed.
+desktop decides where the popup opens. Open windows are listed there on GNOME only, from
+your next login after installing.
 
 ## Install
 
