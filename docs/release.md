@@ -37,7 +37,7 @@ repository step failed, delete the release (`gh release delete v0.1.1`) before r
 | Version | `include/torchlight/version.h` |
 | Package layout and scripts | `packaging/deb/` (`build_deb.sh`, `postinst`, `prerm`, `postrm`, `control.in`, `copyright`) |
 | Repository publishing | `packaging/deb/publish_apt.sh`, run by `.github/workflows/release.yml` |
-| Published repository | the `gh-pages` branch, served at `https://antash-mishra.github.io/torchlight/apt` |
+| Published repository | the `gh-pages` branch, served at `https://antash-mishra.github.io/torchlight/apt`, which redirects over HTTPS to the account's custom domain (`https://antash.dev/torchlight/apt`); installations use the github.io address so that a domain change does not break them |
 | Public key | `packaging/deb/torchlight-archive-keyring.gpg`, also published with the repository |
 | Private key | the `APT_SIGNING_KEY` Actions secret, backed up in `~/.local/share/torchlight-release/` on the maintainer's machine |
 
