@@ -1,20 +1,20 @@
 Architectures: amd64
 Codename: stable
 Components: main
-Date: Wed, 14 Oct 2026 09:42:25 +0000
+Date: Wed, 14 Oct 2026 12:30:57 +0000
 Description: Torchlight launcher
 Label: Torchlight
 Origin: Torchlight
 Suite: stable
 MD5Sum:
- 6c24e628f7b3e0aec4aa775916e4ae42             2906 main/binary-amd64/Packages
- a47dce4926f4cfc41b80a925ae33e5e5             1116 main/binary-amd64/Packages.gz
+ d5163741e5af622359aca1d303f6351f             4487 main/binary-amd64/Packages
+ c9107813c2bb1e09030c061f5ffdf487             1414 main/binary-amd64/Packages.gz
 SHA1:
- 14f28ef565567d1df119ec71e6bf2271cf789976             2906 main/binary-amd64/Packages
- 1e45191decfe44c0b3f2b7de71d09bbd43b0be03             1116 main/binary-amd64/Packages.gz
+ 192528e42d33a5ab9bb8cf676234afefe78066d6             4487 main/binary-amd64/Packages
+ e4b57e3be59b72e1761947d11ba770e7aed2f563             1414 main/binary-amd64/Packages.gz
 SHA256:
- cd46b16c58920217b974a12261219d27fcde558bbfbbef605b85ef5f8db7e12e             2906 main/binary-amd64/Packages
- 83506fc9b008d6fccba0068508a4a1afd69ad455f17c409f9b424fc6023e6b03             1116 main/binary-amd64/Packages.gz
+ afa2aaa87083dcc9be5c97661ee06b7981260e944a6fd547f67b22f0a1fd40f3             4487 main/binary-amd64/Packages
+ 732b3f4fc02f4d3c99c22e66de9ec32ed99a4c07e27752142d86045aab5246f7             1414 main/binary-amd64/Packages.gz
 SHA512:
- 82eea1930a27b28613be48fe6bfae38969abf4b8021d3921f7e96f05c868c153c5d193db186a7ebe3ac0700691698c862f2a842d5120122ac793341792cf1c07             2906 main/binary-amd64/Packages
- 38a7b5ef570c280dc00d2364ee31203c1323f8b9c1ce4525b111d64bb1bc270b58ed7b6b210c87c1d08fb09a5081cb73298ca14ee344b428509be6ed66c6640e             1116 main/binary-amd64/Packages.gz
+ d288f5fdd3718382cc6e157c7b6511c8740f340b98441446d8404bf108e2f21aed1a6997d7b2f42046802c1e556084c3e63f4e1cda17733f4cbe6b8c392e7c6f             4487 main/binary-amd64/Packages
+ 5ead2a82997515642df8035fd5101d7268c2f0da75e1d2ea794f73e9ab6e42d3a5283e30f290ee05b5503554b477f0ce87ad2e01ca2155caca2f9b10a04eaf98             1414 main/binary-amd64/Packages.gz
