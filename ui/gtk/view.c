@@ -447,9 +447,11 @@ void popup_view_set_status(tl_popup_view *view, const char *text) {
             GTK_ACCESSIBLE(view->results == 0 ? view->message : view->widgets.status), text,
             GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_MEDIUM);
 }
+void popup_view_set_search_time(tl_popup_view *view, uint64_t micros) {
+    popup_header_set_search_time(view->header, micros);
+}
 void popup_view_set_results(tl_popup_view *view, size_t count) {
     view->results = count;
-    popup_header_set_count(view->header, count);
     gtk_widget_set_visible(view->widgets.scroll, count != 0);
     gtk_widget_set_visible(view->preview_scroll, count != 0 && view->wide);
     if (count == 0)
@@ -659,6 +661,18 @@ static void fit_hints(tl_popup_view *view, int width) {
         gtk_widget_set_visible(optional[i], false);
     }
 }
+/* The search time is decoration: it shows only where the header still fits beside the
+ * widest clock, so large fonts and narrow screens never widen the popup (ADR 0055). */
+static void fit_search_time(tl_popup_view *view, int width) {
+    popup_header_set_widest(view->header, true);
+    popup_header_show_search_time(view->header, true);
+    int minimum, natural;
+    gtk_widget_measure(view->widgets.root, GTK_ORIENTATION_HORIZONTAL, -1, &minimum, &natural, NULL,
+                       NULL);
+    popup_header_show_search_time(view->header,
+                                  minimum <= width + view->margins.left + view->margins.right);
+    popup_header_set_widest(view->header, false);
+}
 void popup_view_configure(tl_popup_view *view, int width, int height_limit) {
     update_shadow(view);
     view->width = width;
@@ -673,6 +687,7 @@ void popup_view_configure(tl_popup_view *view, int width, int height_limit) {
     bool visible = gtk_widget_get_visible(view->footer);
     gtk_widget_set_visible(view->footer, true);
     fit_hints(view, width);
+    fit_search_time(view, width);
     gtk_widget_set_visible(view->widgets.scroll, false);
     gtk_widget_set_visible(view->preview_scroll, false);
     int minimum, natural;

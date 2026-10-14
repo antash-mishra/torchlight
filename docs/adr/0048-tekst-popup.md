@@ -3,6 +3,8 @@
 - **Status:** Accepted; implemented: the look, type, motion, grouped results and the
   preview panel.
 - **Date:** 2026-10-13
+- **Amended by:** [0055](0055-search-time-in-the-page-header.md) (the header shows how long
+  each search took instead of the result count)
 
 ## Context
 

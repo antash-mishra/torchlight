@@ -257,6 +257,10 @@ static void render(struct popup *popup) {
     render_rows(popup);
     size_t count = popup_model_count(popup->model);
     popup_view_set_results(popup->view, count);
+    /* The time stays until the next results land, so it never flickers while typing. */
+    popup_view_set_search_time(popup->view, query_empty(popup)
+                                                ? POPUP_SEARCH_TIME_UNKNOWN
+                                                : popup_model_search_us(popup->model));
     popup_view_set_searching(popup->view, false);
     gtk_widget_set_sensitive(popup->list, true);
     select_row(popup, !was_empty);

@@ -167,6 +167,9 @@
 - **Result group:** One of the popup's sections (Apps, Settings, Folders, Files).
   Groups are listed where their best result ranks, under a header with the group's
   color block, name and count.
+- **Search time:** The cyan field in the popup's page header that says how long the daemon's
+  search took (its `timing.engine_us`, shown as "3.2ms"), fixed in width and changed only
+  when results land (ADR 0055).
 - **Session window source:** The open-window source that suits the session the popup runs
   in, chosen by `windows_session_source`: X11, a Wayland task bar protocol, or the desktop
   shell's own interface (ADR 0052).

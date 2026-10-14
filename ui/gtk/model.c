@@ -30,6 +30,8 @@ struct tl_popup_model {
     struct expansion choices[POPUP_CHOICES];
     size_t choice_count;
     bool deliberate, ready, indexing, degraded;
+    /* The last response's search time; POPUP_SEARCH_TIME_UNKNOWN when it gave none. */
+    uint64_t search_us;
     tl_json_token tokens[POPUP_JSON_TOKENS];
     char scratch[POPUP_PATH_BYTES * 2];
 };
@@ -257,7 +259,10 @@ tl_status popup_model_create(tl_popup_model **out) {
     if (out == NULL)
         return TL_INVALID;
     *out = calloc(1, sizeof(**out));
-    return *out == NULL ? TL_NOMEM : TL_OK;
+    if (*out == NULL)
+        return TL_NOMEM;
+    (*out)->search_us = POPUP_SEARCH_TIME_UNKNOWN;
+    return TL_OK;
 }
 void popup_model_destroy(tl_popup_model *model) {
     free(model);
@@ -275,6 +280,7 @@ void popup_model_clear(tl_popup_model *model) {
     model->deliberate = false;
     model->indexing = false;
     model->degraded = false;
+    model->search_us = POPUP_SEARCH_TIME_UNKNOWN;
 }
 tl_status popup_model_begin(tl_popup_model *model, const char *id) {
     if (model == NULL || id == NULL || id[0] == 0)
@@ -396,6 +402,12 @@ tl_status popup_model_apply(tl_popup_model *model, const char *response, size_t 
     model->indexing = boolean_field(&json, indexing, "active");
     model->degraded = boolean_field(&json, indexing, "degraded") ||
                       boolean_field(&json, indexing, "watch_degraded");
+    size_t timing = json_member(&json, 0, "timing");
+    uint64_t search_us = 0;
+    model->search_us =
+        json_uint(&json, json_member(&json, timing, "engine_us"), &search_us) == TL_OK
+            ? search_us
+            : POPUP_SEARCH_TIME_UNKNOWN;
     model->ready = true;
     return TL_OK;
 }
@@ -544,4 +556,7 @@ bool popup_model_degraded(const tl_popup_model *model) {
 }
 const char *popup_model_search_id(const tl_popup_model *model) {
     return model == NULL ? "" : model->search_id;
+}
+uint64_t popup_model_search_us(const tl_popup_model *model) {
+    return model == NULL ? POPUP_SEARCH_TIME_UNKNOWN : model->search_us;
 }

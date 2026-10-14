@@ -308,6 +308,9 @@ the root [README](../README.md) for commands, and
 - [0054: Open windows on Cinnamon's Wayland session](adr/0054-open-windows-on-cinnamon-wayland.md)
   ports the GNOME Shell extension to Cinnamon, which the popup turns on once, and gives
   the popup a fresh surface for each showing where GTK cannot release the old one.
+- [0055: The search time instead of the result count](adr/0055-search-time-in-the-page-header.md)
+  shows how long each search took in Tekst's header, in cyan, at a fixed width, and drops
+  the header's result count.
 
 ## Keeping docs current
 

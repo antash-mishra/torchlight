@@ -54,6 +54,26 @@ static void test_distinct(tl_popup_model *model) {
     CHECK(popup_model_distinct_prefix(model, 99) == 0);
     CHECK(popup_model_distinct_prefix(NULL, 0) == 0);
 }
+/* Each response says how long its search took; one that does not, and a clear, forget it. */
+static void test_search_time(tl_popup_model *model) {
+    const char *timed =
+        "{\"version\":1,\"request_id\":\"5\",\"phase\":\"final\",\"status\":\"ok\",\"results\":["
+        "{\"id\":\"1\",\"kind\":\"file\",\"display\":\"/a\",\"path\":\"/a\"}],"
+        "\"timing\":{\"engine_us\":3217}}";
+    const char *untimed =
+        "{\"version\":1,\"request_id\":\"5\",\"phase\":\"final\",\"status\":\"ok\",\"results\":["
+        "{\"id\":\"1\",\"kind\":\"file\",\"display\":\"/a\",\"path\":\"/a\"}],"
+        "\"timing\":{\"engine_us\":\"soon\"}}";
+    CHECK(popup_model_search_us(NULL) == POPUP_SEARCH_TIME_UNKNOWN);
+    CHECK(popup_model_begin(model, "5") == TL_OK);
+    apply(model, timed);
+    CHECK(popup_model_search_us(model) == 3217);
+    apply(model, untimed);
+    CHECK(popup_model_search_us(model) == POPUP_SEARCH_TIME_UNKNOWN);
+    apply(model, timed);
+    popup_model_clear(model);
+    CHECK(popup_model_search_us(model) == POPUP_SEARCH_TIME_UNKNOWN);
+}
 /* Rows for "chrome": Chrome, a file, VS Code, a settings panel and a Chrome web app. */
 #define HIERARCHY_ROWS(phase, first, second)                                                       \
     "{\"version\":1,\"request_id\":\"7\",\"phase\":\"" phase                                       \
@@ -232,6 +252,7 @@ static void test_groups(tl_popup_model *model) {
 void test_popup(void) {
     tl_popup_model *model = NULL;
     CHECK(popup_model_create(&model) == TL_OK);
+    CHECK(popup_model_search_us(model) == POPUP_SEARCH_TIME_UNKNOWN);
     CHECK(popup_model_begin(model, "1") == TL_OK);
     const char *first =
         "{\"version\":1,\"request_id\":\"1\",\"phase\":\"lexical\",\"status\":\"ok\","
@@ -265,6 +286,7 @@ void test_popup(void) {
     CHECK(popup_model_selected(model)->id == 4);
     test_cleared(model, bytes);
     test_distinct(model);
+    test_search_time(model);
     test_hierarchy(model);
     test_groups(model);
     popup_model_destroy(model);

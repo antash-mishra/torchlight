@@ -34,6 +34,10 @@ void popup_view_set_status(tl_popup_view *view, const char *text);
 /** Update result/empty visibility from model count. Main thread; live view.
  * No ownership transfer or errors. Does not alter the entry's text. */
 void popup_view_set_results(tl_popup_view *view, size_t count);
+/** Show in the page header how long the search took, in microseconds, or nothing for
+ * POPUP_SEARCH_TIME_UNKNOWN (popup_header_set_search_time). Main thread; live view. No
+ * ownership transfer or errors. */
+void popup_view_set_search_time(tl_popup_view *view, uint64_t micros);
 /** Build a floating result widget from a borrowed validated model row. path_keep
  * is popup_model_distinct_prefix for the row; entrance and index (its position)
  * choose the appearance animation. Main thread; caller parents it. GTK handles

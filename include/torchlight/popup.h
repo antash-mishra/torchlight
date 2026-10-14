@@ -13,6 +13,8 @@
 #define POPUP_WINDOWS_SHOWN 3
 /* Every result (plus one retained row), each window once and two other children per result. */
 #define POPUP_ITEMS (3 * (POPUP_RESULTS + 1) + WINDOWS_MAX)
+/* popup_model_search_us when no response has said how long its search took. */
+#define POPUP_SEARCH_TIME_UNKNOWN UINT64_MAX
 typedef struct tl_popup_model tl_popup_model;
 typedef struct {
     uint64_t id, desktop_revision;
@@ -125,4 +127,8 @@ size_t popup_model_position(const tl_popup_model *model);
 bool popup_model_indexing(const tl_popup_model *model);
 bool popup_model_degraded(const tl_popup_model *model);
 const char *popup_model_search_id(const tl_popup_model *model);
+/** How long the daemon's search took for the last applied response, in microseconds (its
+ * timing.engine_us), or POPUP_SEARCH_TIME_UNKNOWN when that response did not say, after
+ * clear, and for NULL. No errors. */
+uint64_t popup_model_search_us(const tl_popup_model *model);
 #endif

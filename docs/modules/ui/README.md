@@ -35,9 +35,12 @@ excludes the margin, so clicks in it reach the windows beneath. High contrast (t
 theme setting, or `GTK_THEME` as GTK resolves it) uses the theme's colors and no
 shadow.
 
-The surface stacks a page header (`header.c`: `P100`, `Torchlight`, the result
-count and a clock with slash seconds, ticking on each whole second while the view
-is active), the search line, the idle strip, the results and the footer. The
+The surface stacks a page header (`header.c`: `P100`, `Torchlight`, how long the
+search took in cyan ([ADR 0055](../../adr/0055-search-time-in-the-page-header.md): the
+daemon's `timing.engine_us`, "3.2ms", fixed width, changed only when results land, and
+left out of popups too narrow for it; the header shows no result count, which the group
+headers and screen reader announcements carry) and a clock with slash seconds, ticking on each whole second while the view is active),
+the search line, the idle strip, the results and the footer. The
 search line is a borderless field (icon or spinner, the plain GtkEntry with a red
 caret, inline feedback) above a rule that is dotted at rest and drawn in ink while
 the `typing` class holds. Each `set_active` shows the next placeholder tip, the
@@ -234,7 +237,8 @@ highlight geometry and an observed intermediate glide, file-type icons, entrance
 classes, opening/closing timers, spinner and launch states, large pasted queries,
 Unicode and distinguishing paths, geometry and timer destruction, rows and child
 rows with their kind classes and the selection block taking the selected row's
-kind, application rows without a window count, the header's count and ticking
+kind, application rows without a window count, the header's search time (its
+formatting, fixed width and narrow-popup rule, and no result count beside it) and ticking
 clock, the idle strip's states and fitting (shown only under an empty query), the
 placeholder tips, the Copy path confirmation, the light or dark palette class and
 a forced dark theme, the shadow margin against the display, the renderer, the

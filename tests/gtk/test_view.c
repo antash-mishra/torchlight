@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <string.h>
 #define SURFACE_WIDTH POPUP_VIEW_LIST_WIDTH
+/* Narrower than the header with every part: as on a 400-pixel screen at scale 2. */
+#define NARROW_WIDTH 300
 #define WIDE_WIDTH POPUP_VIEW_PREVIEW_WIDTH
 /* The preview test's file: about the size of a page of notes. */
 #define PREVIEW_BYTES 4215
@@ -217,6 +219,38 @@ static void test_children(void) {
     g_object_unref(more);
     g_object_unref(added);
 }
+/* The child of parent with style class, or NULL. */
+static GtkWidget *class_child(GtkWidget *parent, const char *class) {
+    GtkWidget *child = gtk_widget_get_first_child(parent);
+    while (child != NULL && !gtk_widget_has_css_class(child, class))
+        child = gtk_widget_get_next_sibling(child);
+    return child;
+}
+/* The header's search time: rounded, and as wide for "0.4ms" as for "<0.1ms" or "140ms",
+ * so the header never shifts as it changes; empty when unknown. */
+static void test_search_time(void) {
+    GtkWidget *header = g_object_ref_sink(popup_header_new());
+    GtkWidget *field = class_child(header, "search-time");
+    CHECK(field != NULL && strcmp(popup_header_search_time(header), "") == 0);
+    static const struct {
+        uint64_t micros;
+        const char *text;
+    } TIMES[] = {{0, "<0.1ms"},     {49, "<0.1ms"},   {50, "0.1ms"},      {380, "0.4ms"},
+                 {3217, "3.2ms"},   {9949, "9.9ms"},  {9950, "10ms"},     {140400, "140ms"},
+                 {999499, "999ms"}, {999500, "1.0s"}, {12345678, "12.3s"}};
+    int width = -1;
+    for (size_t i = 0; i < G_N_ELEMENTS(TIMES); i++) {
+        popup_header_set_search_time(header, TIMES[i].micros);
+        CHECK(strcmp(popup_header_search_time(header), TIMES[i].text) == 0);
+        int natural = 0;
+        gtk_widget_measure(field, GTK_ORIENTATION_HORIZONTAL, -1, NULL, &natural, NULL, NULL);
+        CHECK(width < 0 || natural == width);
+        width = natural;
+    }
+    popup_header_set_search_time(header, POPUP_SEARCH_TIME_UNKNOWN);
+    CHECK(strcmp(popup_header_search_time(header), "") == 0);
+    g_object_unref(header);
+}
 /* A section header: its color block, name and count, hidden from screen readers. */
 static void test_group_header(void) {
     GtkWidget *header = g_object_ref_sink(popup_view_group_header(POPUP_GROUP_SETTINGS, 3));
@@ -314,11 +348,11 @@ static void check_results(tl_popup_view *view, tl_popup_widgets widgets) {
     graphene_rect_t highlight = bounds(track);
     graphene_rect_t selected = bounds(row);
     CHECK(graphene_rect_equal(&highlight, &selected));
-    /* The block's edge takes the selected row's kind; the header counts the results. */
+    /* The block's edge takes the selected row's kind. The header leaves counting to the
+     * groups (and to screen reader announcements). */
     CHECK(gtk_widget_has_css_class(track, "kind-file") &&
           !gtk_widget_has_css_class(track, "kind-app"));
-    CHECK(strcmp(label_text(find_named(widgets.root, "popup-header"), "result-count"),
-                 "1 result") == 0);
+    CHECK(label_with(find_named(widgets.root, "popup-header"), "1 result") == NULL);
     /* With a query, the idle strip gives way to the results. */
     CHECK(!gtk_widget_get_visible(find_named(widgets.root, "popup-index")));
     popup_view_set_copied(view);
@@ -335,7 +369,6 @@ static void check_results(tl_popup_view *view, tl_popup_widgets widgets) {
     graphene_rect_t header = bounds(find_named(widgets.root, "popup-header"));
     graphene_rect_t search = bounds(find_named(widgets.root, "popup-search"));
     CHECK(bounds(widgets.root).size.height < header.size.height + search.size.height + 30);
-    CHECK(strcmp(label_text(find_named(widgets.root, "popup-header"), "result-count"), "") == 0);
     CHECK(!gtk_widget_get_child_visible(find_named(widgets.root, "popup-highlight")));
 }
 /* The highlight glides through intermediate places, then rests on the new row. */
@@ -440,11 +473,15 @@ static void fill_capture(tl_popup_view *view, tl_popup_widgets widgets) {
                             popup_view_result(&row, 0, POPUP_ENTER_NONE, i + 3));
     }
     popup_view_set_results(view, G_N_ELEMENTS(files) + 1);
+    /* A search as long as a typical one on a real catalog. */
+    popup_view_set_search_time(view, 3217);
+    CHECK(strcmp(popup_header_search_time(find_named(widgets.root, "popup-header")), "3.2ms") == 0);
     select_index(view, widgets, 3, false);
     popup_view_set_status(view, "");
 }
 static void clear_capture(tl_popup_view *view, tl_popup_widgets widgets) {
     popup_view_set_results(view, 0);
+    popup_view_set_search_time(view, POPUP_SEARCH_TIME_UNKNOWN);
     gtk_list_box_remove_all(GTK_LIST_BOX(widgets.list));
     gtk_list_box_set_header_func(GTK_LIST_BOX(widgets.list), NULL, NULL, NULL);
     popup_view_select(view, NULL, false);
@@ -570,6 +607,14 @@ static void test_view(void) {
     /* Empty: the header with its clock, the query line and the idle strip, nothing else. */
     GtkWidget *header = find_named(widgets.root, "popup-header");
     CHECK(gtk_widget_get_visible(header) && strchr(popup_header_clock(header), '/') != NULL);
+    /* The search time keeps its place at the usual width, and gives way where the header
+     * would not fit beside the widest count, rather than widening the popup (ADR 0055). */
+    GtkWidget *search_time = class_child(header, "search-time");
+    CHECK(search_time != NULL && gtk_widget_get_visible(search_time));
+    popup_view_configure(view, NARROW_WIDTH, 800);
+    CHECK(!gtk_widget_get_visible(search_time));
+    popup_view_configure(view, SURFACE_WIDTH, 800);
+    CHECK(gtk_widget_get_visible(search_time));
     CHECK(gtk_widget_get_visible(find_named(widgets.root, "popup-index")));
     CHECK(gtk_widget_has_css_class(widgets.root, "dark") !=
           gtk_widget_has_css_class(widgets.root, "light"));
@@ -792,12 +837,13 @@ int main(void) {
     test_rows();
     test_children();
     test_group_header();
+    test_search_time();
     test_index_strip();
     test_view();
     test_preview();
     test_forced_dark();
     test_forced_contrast();
-    puts("Native view: path fitting, icons, entrances, glide, motion timers, header, idle strip, "
-         "group headers, preview panel, palettes, shadow and geometry passed.");
+    puts("Native view: path fitting, icons, entrances, glide, motion timers, header, search time, "
+         "idle strip, group headers, preview panel, palettes, shadow and geometry passed.");
     return 0;
 }
