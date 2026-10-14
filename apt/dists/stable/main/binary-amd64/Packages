@@ -78,3 +78,31 @@ Description: Spotlight-style launcher: find apps, settings, files and folders
  Installing this package also adds Torchlight's signed APT repository, so the
  system's update manager installs new versions.
 
+Package: torchlight
+Architecture: amd64
+Version: 0.1.4
+Priority: optional
+Section: utils
+Maintainer: antash-mishra <mishraantash34@gmail.com>
+Installed-Size: 28692
+Depends: libc6 (>= 2.39), libcairo2 (>= 1.10.0), libgcc-s1 (>= 4.2), libglib2.0-0t64 (>= 2.79.2), libgraphene-1.0-0 (>= 1.5.4), libgtk-4-1 (>= 4.13.8), libpango-1.0-0 (>= 1.14.0), libsqlite3-0 (>= 3.20.0), libutf8proc3 (>= 2.9.0), libwayland-client0 (>= 1.20.0), libx11-6, systemd
+Recommends: fontconfig, xdg-utils
+Filename: pool/main/t/torchlight/torchlight_0.1.4_amd64.deb
+Size: 5704804
+MD5sum: 7d206a603b170194c2fb0d0bb2e0e4a7
+SHA1: 5efced5fcbb92a47d7a529f27fbca87cf8bba973
+SHA256: 4eb6b972f8d69b44aa8ad6b8586d3357f93db20151c8dd5f439eb67d12c10f8d
+SHA512: a8a8067854236e9c1bffb7a6a6d5c868acc29983ac10926756adfdbad4a28f8584e7a16a1167a8ddf85af09a561a29f16abab69f28bbc5b7f3d0ffb58025ad1f
+Homepage: https://github.com/antash-mishra/torchlight
+Description: Spotlight-style launcher: find apps, settings, files and folders
+ Press a shortcut, type a few letters and open an application, a settings
+ panel, a file or a folder. A resident per-user daemon keeps the index of
+ file names and paths in memory and follows changes as they happen; file
+ contents are never read. The GTK 4 popup lists running applications' open
+ windows (on X11, and on GNOME, KDE Plasma, Cinnamon, COSMIC, Sway, Hyprland,
+ labwc and other Wayland desktops) and shows the selected item's details
+ beside the results.
+ .
+ Installing this package also adds Torchlight's signed APT repository, so the
+ system's update manager installs new versions.
+
