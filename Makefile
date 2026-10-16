@@ -233,14 +233,17 @@ GNOME_EXTENSION = torchlight@antash-mishra.github.io
 # Staged installs are reviewable with DESTDIR; prefix defaults to per-user tools.
 PREFIX ?= $(HOME)/.local
 DESTDIR ?=
+# Where systemd looks for user units under ~/.local, /usr/local and /usr alike;
+# $(PREFIX)/lib/systemd/user is not searched under ~/.local.
+USER_UNIT_DIR = $(PREFIX)/share/systemd/user
 .PHONY: install install-headless test-ui test-ui-isolated test-ui-wayland test-ui-gnome test-ui-desktops bench-ui
 XVFB ?= Xvfb
 XDOTOOL ?= xdotool
 install: all
-	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/applications $(DESTDIR)$(PREFIX)/lib/systemd/user
+	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/applications $(DESTDIR)$(USER_UNIT_DIR)
 	install -m 755 build/torchlight build/torchlightd build/torchlight-gtk $(DESTDIR)$(PREFIX)/bin/
 	install -m 644 packaging/org.torchlight.Launcher.desktop $(DESTDIR)$(PREFIX)/share/applications/
-	install -m 644 packaging/torchlightd.service $(DESTDIR)$(PREFIX)/lib/systemd/user/
+	sed 's|^ExecStart=.*|ExecStart=$(PREFIX)/bin/torchlightd|' packaging/torchlightd.service > $(DESTDIR)$(USER_UNIT_DIR)/torchlightd.service
 	install -d $(DESTDIR)$(PREFIX)/share/fonts/torchlight
 	install -m 644 third_party/fonts/schibsted-grotesk/SchibstedGrotesk-VF.ttf third_party/fonts/bedstead/bedstead.otf $(DESTDIR)$(PREFIX)/share/fonts/torchlight/
 	install -d $(DESTDIR)$(PREFIX)/share/gnome-shell/extensions/$(GNOME_EXTENSION)
@@ -249,9 +252,9 @@ install: all
 	install -m 644 ui/cinnamon/$(GNOME_EXTENSION)/metadata.json ui/cinnamon/$(GNOME_EXTENSION)/extension.js $(DESTDIR)$(PREFIX)/share/cinnamon/extensions/$(GNOME_EXTENSION)/
 # Same unit name, but started with the user manager instead of a graphical session.
 install-headless: headless
-	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/lib/systemd/user
+	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(USER_UNIT_DIR)
 	install -m 755 build/torchlight build/torchlightd $(DESTDIR)$(PREFIX)/bin/
-	install -m 644 packaging/torchlightd-headless.service $(DESTDIR)$(PREFIX)/lib/systemd/user/torchlightd.service
+	sed 's|^ExecStart=.*|ExecStart=$(PREFIX)/bin/torchlightd|' packaging/torchlightd-headless.service > $(DESTDIR)$(USER_UNIT_DIR)/torchlightd.service
 # Optimized, hardened binaries for packages (docs/release.md); `make` stays a debug build.
 # Ubuntu's hardening flags, without link-time optimization.
 RELEASE_CFLAGS = -std=c17 -O2 -g -pthread -fno-omit-frame-pointer -fstack-protector-strong \

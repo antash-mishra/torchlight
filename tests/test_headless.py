@@ -47,7 +47,18 @@ def headless_targets_skip_the_popup(temporary):
     assert "org.torchlight.Launcher.desktop" not in output
     # The headless unit replaces the graphical one under the same name.
     assert "packaging/torchlightd-headless.service" in output
-    assert "lib/systemd/user/torchlightd.service" in output
+    assert "share/systemd/user/torchlightd.service" in output
+
+def units_go_where_systemd_looks(temporary):
+    """Regression: units went to PREFIX/lib/systemd/user, which systemd does not search
+    under ~/.local. They belong in PREFIX/share/systemd/user and start the daemon from
+    the prefix they were installed to."""
+    for target in ("install", "install-headless"):
+        output, _ = dry_run(temporary, target, "PREFIX=/opt/torchlight")
+        unit = temporary / "stage/opt/torchlight/share/systemd/user/torchlightd.service"
+        assert str(unit) in output, output
+        assert "lib/systemd/user" not in output, output
+        assert "ExecStart=/opt/torchlight/bin/torchlightd" in output, output
 
 def full_build_still_uses_gtk(temporary):
     """Control case: the probe does see the popup's GTK lookups."""
@@ -60,6 +71,7 @@ temporary = Path(tempfile.mkdtemp(prefix="torchlight-headless-"))
 try:
     headless_targets_skip_the_popup(temporary)
     full_build_still_uses_gtk(temporary)
+    units_go_where_systemd_looks(temporary)
 finally:
     shutil.rmtree(temporary)
 print("Headless build tests passed.")

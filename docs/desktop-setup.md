@@ -36,7 +36,8 @@ systemctl --user status torchlightd.service
 ```
 
 The default install is `~/.local`: three executables, a launcher desktop entry
-and a systemd user unit. Ensure `~/.local/bin` is on your desktop session's PATH.
+and a systemd user unit in `~/.local/share/systemd/user`, where systemd looks for
+it. Ensure `~/.local/bin` is on your desktop session's PATH.
 The unit is associated with graphical-session.target. On desktop sessions that
 do not activate that target, add `systemctl --user start torchlightd.service` to
 the desktop's Startup Applications after importing its environment. Cinnamon's
@@ -51,9 +52,10 @@ override with `ExecStart=` followed by
 `ExecStart=%h/.local/bin/torchlightd --no-history`.
 
 `make install DESTDIR=/tmp/torchlight-install` creates a reviewable staged install.
-The supplied unit assumes the per-user default prefix; adjust ExecStart if using
-a different PREFIX. Installation does not replace desktop keyboard bindings or
-automatically enable/start services.
+The unit starts `PREFIX/bin/torchlightd`, so another `PREFIX` needs no edits; with
+`PREFIX=/usr/local` it goes to `/usr/local/share/systemd/user`, for every user.
+Installation does not replace desktop keyboard bindings or automatically
+enable/start services.
 
 ## Enable M4 semantics
 
