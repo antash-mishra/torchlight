@@ -162,6 +162,10 @@
 - **Preview panel:** The part of a wide popup beside the results that describes the
   selected item: its name and kind, what Torchlight knows about it (size, modified
   time, folder, items, description, open windows) and its actions with their keys.
+- **Portable archive:** The release's `torchlight-VERSION-linux-x86_64.tar.gz`: the same
+  binaries as the `.deb` with the files they need and `install.sh`, which installs
+  Torchlight for one person into `~/.local` on distributions other than Ubuntu's family
+  (ADR 0056).
 - **Release key:** The OpenPGP key that signs Torchlight's APT repository (ADR 0050).
   The package installs its public half; installations accept only updates it signed.
 - **Result group:** One of the popup's sections (Apps, Settings, Folders, Files).

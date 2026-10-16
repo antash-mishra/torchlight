@@ -8,7 +8,7 @@ Recommends: fontconfig, xdg-utils
 Section: utils
 Priority: optional
 Homepage: https://github.com/antash-mishra/torchlight
-Description: Spotlight-style launcher: find apps, settings, files and folders
+Description: keyboard launcher for apps, settings, files, folders and windows
  Press a shortcut, type a few letters and open an application, a settings
  panel, a file or a folder. A resident per-user daemon keeps the index of
  file names and paths in memory and follows changes as they happen; file

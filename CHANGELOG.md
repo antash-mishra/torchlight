@@ -7,6 +7,10 @@ Each release's notes are taken from its section here (docs/release.md).
 - Torchlight is open source, under the MIT License.
 - A selected window, beneath its application, is easy to read again: its title takes the
   selection's text color instead of staying gray.
+- Releases also come as a portable archive for Fedora, Arch, openSUSE, Debian 13 and other
+  distributions with GTK 4.14 or newer. Its `install.sh` sets Torchlight up just for you,
+  in `~/.local`, without root; run a newer release's installer to update, or
+  `install.sh --uninstall` to remove it.
 - `make install` puts the search daemon's service where systemd finds it
   (`~/.local/share/systemd/user`).
 

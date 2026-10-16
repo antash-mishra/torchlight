@@ -103,7 +103,27 @@ shortcut choices are preserved.
 | labwc (Budgie, LXQt, Xfce) | A `<keybind key="W-space">` with an `Execute` action for `torchlight-gtk --toggle` in `~/.config/labwc/rc.xml`, or the desktop's own shortcut settings | Through the task bar protocol; nothing to set up |
 
 Use the full path of `torchlight-gtk` when it is not on the desktop's `PATH` (as with
-`make install` into `~/.local/bin`).
+`make install` or the portable archive's installer, into `~/.local/bin`).
+
+## Open windows
+
+Running applications list their open windows beneath them in the popup, and Enter
+switches to the most recent one. Where that works:
+
+| Desktop | Open windows | How |
+|---|---|---|
+| Any desktop on X11 | Yes | The window manager's list |
+| GNOME on Wayland | Yes, from your next login after installing | A small GNOME Shell extension that comes with Torchlight |
+| KDE Plasma 5.27 and 6 on Wayland | Yes | Short scripts that KWin runs |
+| Cinnamon on Wayland | Yes | A small Cinnamon extension that comes with Torchlight |
+| Sway, Hyprland, labwc (Budgie, LXQt, Xfce), Wayfire, niri | Yes | The desktop's task bar protocol |
+| COSMIC | Yes | COSMIC's window protocols |
+| Other Wayland compositors (Weston, kiosks) | No | They offer no way to see other windows |
+
+The popup turns the GNOME and Cinnamon extensions on by itself the first time it opens;
+if you turn one off later, it stays off. Hyprland, niri and Wayfire use the same protocol
+as Sway and labwc but were not tested on their own. On Wayland the desktop decides where
+the popup opens.
 
 ## Verification
 

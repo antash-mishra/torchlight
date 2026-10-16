@@ -1,266 +1,80 @@
 # Torchlight
 
-A Spotlight-style launcher for Linux, written in C. Press a shortcut, type a few
-letters, and open an application, a settings panel, a file or a folder.
+A launcher for Linux I'm building. Hit a shortcut, type a few letters, and open an app, a
+setting, a file or a folder, or jump to a window that's already open. Written in C with
+GTK 4; works on X11 and Wayland.
 
 ![A recording of the Torchlight popup: "term" finds the Terminal app with its two open windows, "raedme" still finds README.md, "work notes" finds the notes folder inside Work, and "disp" finds the Display settings](docs/ui/demo.gif)
 
-- **Forgiving search.** Matches prefixes, initials, abbreviations (`prjnts` finds
-  `projectNotes.md`), one-letter typos (`raedme` finds `README.md`) and folder
-  context (`work notes`).
-- **Fast and always current.** A resident daemon keeps the index in memory and
-  follows file changes as they happen. Typing stays under about 5 ms at the 95th
-  percentile with 500,000 paths ([evaluation](docs/evaluation.md)).
-- **Switch to open windows.** Running apps list their open windows beneath them,
-  on X11 and on the common Wayland desktops (see below). Enter switches to the
-  most recent one; pick another or open a new window from the list.
-- **Learns what you use.** Files and apps you open rank higher. History stays on
-  your machine and can be turned off or cleared.
-- **A look of its own.** The GTK 4 popup borrows teletext's page design and sets
-  it on calm Nordic surfaces, light or dark to match your desktop: a page header
-  with a ticking clock, results grouped by kind, an inverse-video selection, a
-  preview panel with the selected item's details and colored key links, with
-  short motion that never slows typing. It is fully keyboard driven, and
-  high-contrast themes keep their own colors.
-- **Private.** Only names and paths are indexed; file contents are never read.
-
-Tested on Linux Mint (Cinnamon, X11), and on Wayland with Weston. On Wayland the
-desktop decides where the popup opens. Open windows are listed on these desktops:
-
-| Desktop | Open windows | How |
-|---|---|---|
-| Any desktop on X11 | Yes | The window manager's list |
-| GNOME on Wayland | Yes, from your next login after installing | A small GNOME Shell extension that comes with the package |
-| KDE Plasma 5.27 and 6 on Wayland | Yes | Short scripts that KWin runs |
-| Cinnamon on Wayland | Yes | A small Cinnamon extension that comes with the package |
-| Sway, Hyprland, labwc (Budgie, LXQt, Xfce), Wayfire, niri | Yes | The desktop's task bar protocol |
-| COSMIC | Yes | COSMIC's window protocols |
-| Other Wayland compositors (Weston, kiosks) | No | They offer no way to see other windows |
-
-The popup turns the GNOME and Cinnamon extensions on by itself the first time it opens;
-if you turn one off later, it stays off. Hyprland, niri and Wayfire use the same protocol
-as Sway and labwc but were not tested on their own.
+- **Typos are fine.** `raedme` finds `README.md`, `prjnts` finds `projectNotes.md`, and
+  `work notes` finds the notes folder inside Work.
+- **Fast and always current.** A small daemon keeps the index in memory and follows file
+  changes as they happen. Typing stays under about 5 ms, even with 500,000 files
+  ([evaluation](docs/evaluation.md)).
+- **Open windows.** Running apps list their windows beneath them and Enter switches to
+  one, on X11 and most Wayland desktops ([which ones](docs/desktop-setup.md#open-windows)).
+- **Private.** It learns what you open, but that history stays on your machine and can be
+  turned off. Only file names and paths are indexed, never what's inside the files.
 
 ## Install
 
-On Linux Mint 22 or Ubuntu 24.04 or newer (64-bit PCs), download
+**Ubuntu 24.04+, Linux Mint 22+ and other Ubuntu-based systems:** download
 `torchlight_VERSION_amd64.deb` from the
-[latest release](https://github.com/antash-mishra/torchlight/releases/latest) and open
-it, or install it from a terminal:
+[latest release](https://github.com/antash-mishra/torchlight/releases/latest) and install
+it:
 
 ```sh
 sudo apt install ./torchlight_*_amd64.deb
 ```
 
-The package also adds Torchlight's signed APT repository, so your update manager installs
-new versions like any other update. The search daemon starts for everyone logged in.
-Then bind `torchlight-gtk --toggle` to a keyboard shortcut (Cinnamon: System Settings →
-Keyboard → Shortcuts → Custom Shortcuts). To add the repository yourself instead, see
-[the project site](https://antash-mishra.github.io/torchlight/). On other systems, build
-it from source.
+It also adds Torchlight's APT repository, so new versions arrive with your other updates.
 
-## Build
-
-Install the build dependencies (Debian, Ubuntu, Mint):
+**Fedora, Arch, openSUSE, Debian 13 and other distributions:** download
+`torchlight-VERSION-linux-x86_64.tar.gz` from the same page and run its installer. It sets
+Torchlight up just for you, in `~/.local`, without root:
 
 ```sh
-sudo apt install build-essential pkg-config libsqlite3-dev libutf8proc-dev \
-    libgtk-4-dev libglib2.0-dev libx11-dev
+tar xf torchlight-*-linux-x86_64.tar.gz
+./torchlight-*-linux-x86_64/install.sh
 ```
 
-You also need Rust 1.89 or newer (for example from [rustup](https://rustup.rs)) to
-compile the vendored [Frizbee](third_party/README.md) fuzzy matcher. GTK 4.14 or
-newer is required.
+To update, do the same with a newer release; `install.sh --uninstall` removes it. It needs
+GTK 4.14 or newer, which distributions from 2024 on have.
 
-```sh
-make                             # debug build: build/torchlight, torchlightd, torchlight-gtk
-make build/torchlightd-release   # optimized daemon, about half the tail latency
-make deb                         # optimized .deb in build/deb (needs dpkg-dev)
-```
+Then bind `torchlight-gtk --toggle` (the installer prints its full path) to a keyboard
+shortcut such as Super+Space; [desktop setup](docs/desktop-setup.md) says where on each
+desktop. To build it yourself, see [building](docs/building.md).
 
-Releases are published by tagging a version; see [docs/release.md](docs/release.md).
-
-The first `make` compiles Frizbee offline, which takes about four minutes; later
-builds reuse it.
-
-## Install a source build and set up the desktop launcher
-
-```sh
-make install                     # installs into ~/.local (set PREFIX to change it)
-systemctl --user daemon-reload
-systemctl --user import-environment DISPLAY XDG_CURRENT_DESKTOP DBUS_SESSION_BUS_ADDRESS
-systemctl --user enable --now torchlightd.service
-```
-
-This installs the three programs, a desktop entry and a systemd user service for
-the daemon. Make sure `~/.local/bin` is on your PATH.
-
-Then bind a keyboard shortcut to the popup. In Cinnamon, open
-**System Settings → Keyboard → Shortcuts → Custom Shortcuts**, add a shortcut
-with the command `/home/YOUR_USER/.local/bin/torchlight-gtk --toggle`, and bind it
-to a free key such as Super+Space.
+## Use
 
 | Key | Action |
 |---|---|
 | Type | Search apps, settings, files and folders |
 | ↑ ↓ | Move the selection |
-| Enter | Open the selected item |
-| Ctrl+Enter | Show the file in its folder |
+| Enter | Open it, or switch to the window |
+| Ctrl+Enter | Show it in its folder |
+| Ctrl+C | Copy its path |
 | Esc | Close |
 
-[Desktop setup](docs/desktop-setup.md) covers other desktops, staged installs and
-service troubleshooting.
+Torchlight indexes your home folder. To pick other folders, change how the daemon runs or
+search from a terminal, see [configuration](docs/configuration.md).
 
-## Headless: daemon and command line only
+## More
 
-On a server, in WSL, or anywhere without GTK 4.14, build and install just the
-daemon and the command line. They need no GTK, X11 or display:
-
-```sh
-sudo apt install build-essential pkg-config libsqlite3-dev libutf8proc-dev libglib2.0-dev
-make headless                    # build/torchlight and build/torchlightd
-make install-headless            # into ~/.local, with a service that starts at login
-systemctl --user daemon-reload
-systemctl --user enable --now torchlightd.service
-loginctl enable-linger "$USER"   # optional: keep it running while you are logged out
-```
-
-Rust is still needed for Frizbee. Search with `torchlight query`, or talk to the
-daemon's socket from your own front end ([IPC protocol](docs/modules/ipc/README.md)).
-See [ADR 0037](docs/adr/0037-headless-build.md).
-
-## Try it without installing
-
-Run the daemon in one terminal:
-
-```sh
-./build/torchlightd
-```
-
-Then, in another terminal, open the popup or search from the command line:
-
-```sh
-./build/torchlight-gtk --toggle
-./build/torchlight query "prjnts"             # abbreviation
-./build/torchlight query --limit 20 "work notes"
-./build/torchlight query --json "report"      # ids, exact paths and status
-./build/torchlight query --null "report"      # exact paths, NUL-separated, for scripts
-./build/torchlight status
-./build/torchlight reconcile                  # rescan in the background
-./build/torchlight history-clear              # forget search and open history
-```
-
-Every word of a query must match the file name or one of its folders; a word
-containing `/` can match across the whole path. Put `--` before a query that
-starts with a dash.
-
-With the daemon stopped, you can index and search directly:
-
-```sh
-./build/torchlight index                      # sync the configured roots
-./build/torchlight index "$HOME/Documents"    # or refresh specific folders
-./build/torchlight query --db ~/.local/share/torchlight/catalog.db "prjnts"
-```
-
-## Configuration
-
-Torchlight indexes your home folder by default. To choose folders, create
-`~/.config/torchlight/config` (or `$XDG_CONFIG_HOME/torchlight/config`):
-
-```text
-# Folders to index. "~/" expands to your home folder.
-root = ~/Documents
-root = ~/projects
-# Hidden or normally skipped folders to index anyway.
-allow = ~/.config/nvim
-# Folders never to index, even inside a root or an allowed folder.
-exclude = ~/Android/Sdk
-exclude = ~/go/pkg/mod
-```
-
-Hidden folders and `node_modules`, `target`, `build` and `__pycache__` are skipped
-unless allowed; hidden files are still searchable. Symlinked folders are not
-followed. An excluded folder's saved entries are removed by the next full
-scan; the daemon reads the configuration when it starts, so restart it after
-editing (`systemctl --user restart torchlightd`). The catalog and history live
-in `~/.local/share/torchlight/`.
-
-Files are ranked by how well their names match, then by where they live:
-among similar matches, files closer to the indexed folder come first, and
-files inside installed or vendored software (`node_modules`, `site-packages`,
-`vendor`, `third_party`, SDKs, Go module caches and versioned install folders)
-come after your own ([ADR 0047](docs/adr/0047-place-ranking-and-excluded-folders.md)).
-
-Daemon options:
-
-| Option | Meaning |
-|---|---|
-| `--no-history` | Don't record what you open |
-| `--history-days N` | Keep history for N days (default 30) |
-| `--rescan-ms N` | Milliseconds between rescans of folders the watcher cannot cover, such as unwatchable, unreadable or network folders (default 30000) |
-| `--repair-ms N` | Milliseconds between safety-net full rescans (default 3600000, one hour; `0` turns them off) |
-| `--socket PATH` | Use another socket (also accepted by `torchlight`) |
-| `--db PATH`, `--config PATH` | Use another catalog or configuration file |
-| `--watch-capacity N`, `--max-entries N`, `--max-path-bytes N` | Resource limits |
-| `--model PATH.tlm` | Enable optional semantic search (see below) |
-
-To change the options of the installed service, run
-`systemctl --user edit torchlightd`, set a new `ExecStart=`, then restart it.
-
-### Optional semantic search
-
-Torchlight can also match by meaning using a local
-[Potion](docs/m4-model-evaluation.md) model passed with `--model`. It works and is
-tested, but it is parked: it is slower on large catalogs and is not enabled by
-default ([ADR 0032](docs/adr/0032-park-semantic-search.md)).
-
-## Development
-
-```sh
-make test               # unit, CLI and daemon tests under ASan, UBSan and leak checks
-make lint               # clang-tidy and cppcheck; warnings fail the build
-make lint-headless      # the same without the GTK popup, for machines without GTK
-make format             # clang-format
-make bench              # search latency and ranking quality at 50k and 500k paths
-make bench-daemon       # daemon startup, IPC, indexing load, update lag and memory
-make test-ui-isolated   # popup acceptance on a private X display (needs xvfb, xdotool, metacity)
-make test-ui-wayland    # popup acceptance on a headless Wayland compositor (needs weston)
-make bench-ui           # popup paint timing during a 500k rebuild
-make test-ui            # popup keyboard acceptance on your own X11 session (needs xdotool)
-```
-
-Lint needs `clang-format`, `clang-tidy` and `cppcheck`. A local `machine.mk`
-(ignored by git) can point the build at custom tool or dependency locations
-(`DEPS_PREFIX`, `CLANG_TIDY`, `CPPCHECK`). To benchmark against your own files:
-
-```sh
-./scripts/make_corpus.sh /usr /tmp/usr.paths   # NUL-separated path list; keep it private
-make bench BENCH_PATHS=/tmp/usr.paths
-```
-
-After rebuilding, restart the daemon (`systemctl --user restart torchlightd`). The
-popup notices that its program file was replaced and quits the next time it is hidden,
-so your next shortcut press starts the new one.
+- [Building](docs/building.md): from source, a headless build for servers, and development
+- [Configuration](docs/configuration.md): folders, daemon options and the command line
+- [Desktop setup](docs/desktop-setup.md): shortcuts and open windows on each desktop
+- [Docs index](docs/README.md): architecture, evaluation and design decisions
 
 ## Contributing
 
-Pull requests are welcome. Fork the repository, make your change on a branch, and open a
-pull request against `master`; read [CLAUDE.md](CLAUDE.md) for the code rules, and run
-`make test` and `make lint` first. The maintainer reviews and merges pull requests and
-publishes releases: `master` and release tags (`v*`) accept changes only from the
-maintainer, through the repository's rulesets.
+Pull requests are welcome: fork the repository, make your change on a branch and open a
+pull request against `master`. Read [CLAUDE.md](CLAUDE.md) for the code rules, and run
+`make test` and `make lint` first. I review and merge pull requests and publish the
+releases.
 
 ## License
 
-Torchlight is released under the [MIT License](LICENSE). Bundled third-party parts keep
-their own licenses, listed in [third_party/README.md](third_party/README.md): the Frizbee
-matcher (MIT), the fonts (SIL Open Font License 1.1 and public domain) and the Wayland
-protocol files (HPND-sell-variant).
-
-## Documentation
-
-- [Docs index](docs/README.md): where everything is
-- [Architecture](docs/architecture.md): components, data flow and dependencies
-- [Plan](PLAN.md) and [milestone status](docs/milestone-status.md)
-- [Evaluation](docs/evaluation.md): measurements and known limits
-- [Design decisions](docs/adr/): the ADRs
+MIT; see [LICENSE](LICENSE). Bundled parts keep their own licenses, listed in
+[third_party/README.md](third_party/README.md), and release builds also contain SQLite
+(public domain) and utf8proc (MIT).

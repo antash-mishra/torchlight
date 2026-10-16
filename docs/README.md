@@ -20,8 +20,12 @@ take one line each, with a short folder ([ADR 0036](adr/0036-one-line-results.md
 Machines without GTK can build and install just the daemon and command line
 with `make headless` and `make install-headless` ([ADR 0037](adr/0037-headless-build.md)).
 Releases ship as a `.deb` with a signed APT repository that keeps installations up to
-date ([ADR 0050](adr/0050-deb-and-signed-apt-repository.md)); [Releasing](release.md)
-says how to publish one. The [Wayland windows plan](wayland-windows-plan.md) brought the
+date ([ADR 0050](adr/0050-deb-and-signed-apt-repository.md)), and as a portable archive
+whose installer sets Torchlight up for one person on other distributions
+([ADR 0056](adr/0056-portable-archive-for-other-distributions.md)); [Releasing](release.md)
+says how to publish one. [Building](building.md) covers building from source, the
+headless build and development commands, and [Configuration](configuration.md) the
+configuration file, daemon options and the command line. The [Wayland windows plan](wayland-windows-plan.md) brought the
 open-window list from X11 and GNOME to the other Wayland desktops: the wlroots family and
 COSMIC through their task bar protocols, KDE Plasma through KWin scripts, and Cinnamon
 through an extension (ADRs 0052 to 0054).

@@ -1,0 +1,18 @@
+Torchlight @VERSION@ for Linux
+
+Install it for yourself (no root needed):
+
+    ./install.sh
+
+This puts the programs in ~/.local/bin and starts the search daemon, now and at
+each login. Then bind a keyboard shortcut, such as Super+Space, to:
+
+    ~/.local/bin/torchlight-gtk --toggle
+
+To update, run install.sh from a newer release. To remove Torchlight, run
+./install.sh --uninstall (your index and settings stay unless you delete them).
+
+It needs a 64-bit PC with GTK 4.14 or newer and glibc 2.39 or newer: Fedora 40,
+Debian 13, Ubuntu 24.04, openSUSE Tumbleweed, Arch and others from 2024 on.
+
+https://github.com/antash-mishra/torchlight

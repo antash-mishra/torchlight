@@ -21,12 +21,11 @@
 <main>
   <p class="page">P100 Torchlight</p>
   <h1>Torchlight</h1>
-  <p>A Spotlight-style launcher for Linux: press a shortcut, type a few letters, and open an
-  application, a settings panel, a file or a folder. For Linux Mint 22 and Ubuntu 24.04 or
-  newer, on 64-bit PCs.</p>
+  <p>A launcher for Linux I'm building. Hit a shortcut, type a few letters, and open an app, a
+  setting, a file or a folder, or jump to a window that's already open. For 64-bit PCs.</p>
 
-  <h2>Install</h2>
-  <p>Download the <code>.deb</code> from the
+  <h2>Install on Ubuntu, Linux Mint and other Ubuntu-based systems</h2>
+  <p>On Ubuntu 24.04 or Linux Mint 22 or newer, download the <code>.deb</code> from the
   <a href="https://github.com/antash-mishra/torchlight/releases/latest">latest release</a> and
   open it, or install it from a terminal:</p>
   <pre>sudo apt install ./torchlight_*_amd64.deb</pre>
@@ -39,6 +38,15 @@
 sudo curl -fsSLo /etc/apt/sources.list.d/torchlight.sources \
   https://antash-mishra.github.io/torchlight/apt/torchlight.sources
 sudo apt update && sudo apt install torchlight</pre>
+
+  <h2>Install on other distributions</h2>
+  <p>On Fedora, Arch, openSUSE, Debian 13 and other distributions with GTK 4.14 or newer,
+  download <code>torchlight-VERSION-linux-x86_64.tar.gz</code> from the same release and run
+  its installer, which sets Torchlight up just for you, without root:</p>
+  <pre>tar xf torchlight-*-linux-x86_64.tar.gz
+./torchlight-*-linux-x86_64/install.sh</pre>
+  <p>To update, do the same with a newer release; <code>install.sh --uninstall</code> removes
+  it.</p>
 
   <h2>Then</h2>
   <p>Bind <code>torchlight-gtk --toggle</code> to a keyboard shortcut in your desktop's settings

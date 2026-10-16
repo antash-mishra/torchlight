@@ -1,8 +1,12 @@
 # Releasing Torchlight
 
 Torchlight ships as a `.deb` for Linux Mint 22 and Ubuntu 24.04 or newer (amd64), from a
-signed APT repository on GitHub Pages. Installed copies update through the system's update
-manager. See [ADR 0050](adr/0050-deb-and-signed-apt-repository.md) for the design.
+signed APT repository on GitHub Pages, and as a portable archive for other distributions
+with GTK 4.14 or newer, with an installer that sets it up for one person without root.
+Installed `.deb` copies update through the system's update manager; archive installs
+update when their installer from a newer release is run. See
+[ADR 0050](adr/0050-deb-and-signed-apt-repository.md) and
+[ADR 0056](adr/0056-portable-archive-for-other-distributions.md) for the design.
 
 ## Publish a new version
 
@@ -11,7 +15,10 @@ manager. See [ADR 0050](adr/0050-deb-and-signed-apt-repository.md) for the desig
    that section.
 2. Run `make test`, `make lint`, `make test-packaging` and `make test-ui-isolated`. The
    release workflow runs the first three again, but not the UI checks, which need a
-   display.
+   display. To check the packages on other distributions before tagging, run the
+   **Release** workflow by hand from the Actions tab (`gh workflow run release.yml`): it
+   builds the `.deb` and the archive and runs the archive on five distributions, without
+   publishing.
 3. Commit, then tag and push:
 
    ```sh
@@ -20,9 +27,12 @@ manager. See [ADR 0050](adr/0050-deb-and-signed-apt-repository.md) for the desig
    ```
 
 4. Watch the **Release** workflow under the repository's Actions tab (`gh run watch`). It
-   checks that the tag matches the version, tests, lints and builds the package, creates
-   the GitHub release, adds the package to the APT repository and finally installs it on
-   a clean Ubuntu 24.04 machine and checks that the repository serves it.
+   checks that the tag matches the version, tests, lints and builds the package and the
+   portable archive, installs and runs the archive as an ordinary user on Ubuntu 24.04,
+   Debian 13, Fedora, Arch and openSUSE Tumbleweed (`tests/check_portable.sh`), creates
+   the GitHub release with both and a `SHA256SUMS` file, adds the package to the APT
+   repository and finally installs it on a clean Ubuntu 24.04 machine and checks that the
+   repository serves it.
 
 Installed copies see the new version at their next update check. When it is installed,
 each logged-in user's daemon restarts at once, and the popup restarts the next time it
@@ -39,6 +49,7 @@ tag the fixed commit and push the tag again.
 |---|---|
 | Version | `include/torchlight/version.h` |
 | Package layout and scripts | `packaging/deb/` (`build_deb.sh`, `postinst`, `prerm`, `postrm`, `control.in`, `copyright`) |
+| Portable archive | `packaging/portable/` (`build_tarball.sh`, the archive's `install.sh` and `README`); the libraries it may take from the system are listed in `build_tarball.sh`. Its licenses are the package's `copyright` file |
 | Repository publishing | `packaging/deb/publish_apt.sh`, run by `.github/workflows/release.yml` |
 | GNOME Shell extension | `ui/gnome-shell/torchlight@antash-mishra.github.io/`; add each new GNOME release to `shell-version` in its `metadata.json` once `make test-ui-gnome` passes on it |
 | Cinnamon extension | `ui/cinnamon/torchlight@antash-mishra.github.io/`; its `cinnamon-version` is a minimum, so new Cinnamon releases need no change, but run `make test-ui-desktops` on them |
@@ -61,9 +72,17 @@ certificate (`gnupg/openpgp-revocs.d/`).
 make deb                      # build/deb/torchlight_VERSION_amd64.deb
 dpkg-deb --info build/deb/torchlight_*_amd64.deb
 dpkg-deb --contents build/deb/torchlight_*_amd64.deb
+make tarball                  # build/portable/torchlight-VERSION-linux-x86_64.tar.gz
+tar -tvzf build/portable/torchlight-*.tar.gz
 ```
 
-`build_deb.sh` refuses binaries with a run path. On a machine that builds against
+`build_deb.sh` and `build_tarball.sh` refuse binaries with a run path, and
+`build_tarball.sh` also refuses a library outside its list. `tests/check_portable.sh
+ARCHIVE` installs and tries an archive the way the workflow does; it installs into a fresh
+temporary home, but its installer stops the user's running daemon by name, so run it in a
+container, or in a PID namespace of its own (`unshare --user --map-current-user --pid
+--fork --mount-proc`) with a failing `systemctl` first on the PATH, never directly in your
+own session. On a machine that builds against
 libraries outside the system (as `machine.mk` does), override the linker flags, for
 example `make deb LDFLAGS=-L/path/to/libs`, and give dpkg-shlibdeps the same folder with
 `SHLIBDEPS_FLAGS="-l/path/to/libs --ignore-missing-info"`. Published packages are built by

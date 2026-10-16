@@ -256,25 +256,33 @@ install-headless: headless
 	install -m 755 build/torchlight build/torchlightd $(DESTDIR)$(PREFIX)/bin/
 	sed 's|^ExecStart=.*|ExecStart=$(PREFIX)/bin/torchlightd|' packaging/torchlightd-headless.service > $(DESTDIR)$(USER_UNIT_DIR)/torchlightd.service
 # Optimized, hardened binaries for packages (docs/release.md); `make` stays a debug build.
-# Ubuntu's hardening flags, without link-time optimization.
+# Ubuntu's hardening flags, without link-time optimization. SQLite and utf8proc are linked
+# in, so the same binaries run on distributions that lack them (ADR 0056).
 RELEASE_CFLAGS = -std=c17 -O2 -g -pthread -fno-omit-frame-pointer -fstack-protector-strong \
                  -fstack-clash-protection -fcf-protection -D_FORTIFY_SOURCE=3 -DNDEBUG
 RELEASE_LDFLAGS = -Wl,-z,relro,-z,now
-.PHONY: release deb
+RELEASE_LDLIBS = $(subst -lsqlite3,-l:libsqlite3.a,$(subst -lutf8proc,-l:libutf8proc.a,$(LDLIBS)))
+.PHONY: release deb tarball
 release: build/release/torchlight build/release/torchlightd build/release/torchlight-gtk
 build/release/torchlight build/release/torchlightd: build/release/%: $(SOURCES) src/bin/%.c $(HEADERS) $(FRIZBEE_LIB)
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(RELEASE_CFLAGS) $(WARNINGS) $(SOURCES) src/bin/$*.c $(LDFLAGS) $(RELEASE_LDFLAGS) $(LDLIBS) -o $@
+	$(CC) $(CPPFLAGS) $(RELEASE_CFLAGS) $(WARNINGS) $(SOURCES) src/bin/$*.c $(LDFLAGS) $(RELEASE_LDFLAGS) $(RELEASE_LDLIBS) -o $@
 build/release/torchlight-gtk: $(SOURCES) $(UI_SOURCES) $(UI_HEADERS) $(UI_RESOURCES) $(WAYLAND_CODE) $(WAYLAND_HEADERS) $(HEADERS) $(FRIZBEE_LIB)
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(RELEASE_CFLAGS) $(WARNINGS) $(UI_SOURCES) $(UI_RESOURCES) $(WAYLAND_CODE) $(SOURCES) $(LDFLAGS) $(RELEASE_LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
+	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(RELEASE_CFLAGS) $(WARNINGS) $(UI_SOURCES) $(UI_RESOURCES) $(WAYLAND_CODE) $(SOURCES) $(LDFLAGS) $(RELEASE_LDFLAGS) $(GTK_LDLIBS) $(RELEASE_LDLIBS) -o $@
 # build/deb/torchlight_VERSION_ARCH.deb; needs dpkg-dev.
 deb: release
 	packaging/deb/build_deb.sh build/deb
-# Publishing a signed APT repository, checked with apt as an ordinary user.
+# build/portable/torchlight-VERSION-linux-ARCH.tar.gz with install.sh, for other
+# distributions (ADR 0056).
+tarball: release
+	packaging/portable/build_tarball.sh build/portable
+# Publishing a signed APT repository, checked with apt as an ordinary user, and the portable
+# archive with its installer.
 .PHONY: test-packaging
 test-packaging:
 	python3 tests/test_packaging.py
+	python3 tests/test_portable.py
 test-ui: all build/test_popup_probe.so build/test_window_app
 	python3 tests/test_popup.py --xdotool $(XDOTOOL)
 test-ui-isolated: all build/test_popup_probe.so build/test_popup_view build/test_window_app build/test_window_sources
