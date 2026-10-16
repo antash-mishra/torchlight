@@ -93,7 +93,7 @@ jobs:
             setup: pacman -Syu --noconfirm gtk4 xorg-server-xvfb xdotool dbus procps-ng
           - name: openSUSE Tumbleweed
             image: opensuse/tumbleweed:latest
-            setup: zypper --non-interactive install libgtk-4-1 tar gzip procps util-linux shadow /usr/bin/Xvfb /usr/bin/xdotool /usr/bin/dbus-run-session
+            setup: zypper --non-interactive install libgtk-4-1 tar gzip procps util-linux shadow xorg-x11-server-Xvfb xdotool dbus-1-daemon
     name: Portable archive on ${{ matrix.name }}
     container: ${{ matrix.image }}
     env:
