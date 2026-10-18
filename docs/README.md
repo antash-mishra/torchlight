@@ -324,6 +324,9 @@ the root [README](../README.md) for commands, and
 - [0058: Applications the query names come before files](adr/0058-applications-the-query-names-come-first.md)
   lists an application ahead of files named exactly like the query when every typed word
   starts its name, a word of it or its initials.
+- [0059: The daemon starts at login on desktops without graphical-session.target](adr/0059-daemon-starts-at-login-on-every-desktop.md)
+  adds an autostart entry that starts the daemon's unit on Cinnamon, Xfce, MATE and LXQt,
+  which sessions run by systemd skip.
 - [0060: Later CamelCase words match when typed whole](adr/0060-whole-camelcase-words.md)
   gives a later word that changes case inside (`SQLite`) a prefix key of its own, so
   `sqlite` finds DB Browser for SQLite.

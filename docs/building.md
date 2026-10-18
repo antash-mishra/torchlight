@@ -39,7 +39,9 @@ systemctl --user enable --now torchlightd.service
 
 This installs the three programs, a desktop entry, the popup's fonts, the GNOME Shell and
 Cinnamon extensions and a systemd user service for the daemon (in
-`~/.local/share/systemd/user`). Make sure `~/.local/bin` is on your PATH, then bind
+`~/.local/share/systemd/user`). On Cinnamon, Xfce, MATE and LXQt the service does not start
+at login by itself; [Desktop setup](desktop-setup.md) shows the autostart entry that starts
+it. Make sure `~/.local/bin` is on your PATH, then bind
 `~/.local/bin/torchlight-gtk --toggle` to a keyboard shortcut;
 [Desktop setup](desktop-setup.md) says where on each desktop and covers staged installs
 and service troubleshooting.

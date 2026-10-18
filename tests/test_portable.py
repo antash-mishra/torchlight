@@ -107,6 +107,7 @@ def check_contents(archive, version):
         members = {member.name.removeprefix(name + "/"): member for member in tar.getmembers()}
         readme = tar.extractfile(f"{name}/README").read().decode()
     expected = {"install.sh", "README", "share/systemd/user/torchlightd.service",
+                "etc/xdg/autostart/torchlightd.desktop",
                 "share/applications/org.torchlight.Launcher.desktop",
                 "share/fonts/torchlight/SchibstedGrotesk-VF.ttf",
                 "share/fonts/torchlight/bedstead.otf", "share/doc/torchlight/LICENSE",
@@ -156,12 +157,17 @@ def check_installed(top, home, systemd):
     for shell in ("gnome-shell", "cinnamon"):
         assert (local / f"share/{shell}/extensions/{EXTENSION}/extension.js").is_file(), shell
     unit = local / "share/systemd/user/torchlightd.service"
-    autostart = home / ".config/autostart/torchlightd.desktop"
-    assert unit.exists() == systemd and autostart.exists() == (not systemd)
+    autostart = lines(home / ".config/autostart/torchlightd.desktop")
+    assert unit.exists() == systemd
     if systemd:
         assert "ExecStart=%h/.local/bin/torchlightd" in lines(unit)
+        # Desktops that never start graphical-session.target start the unit at login
+        # (ADR 0059); sessions systemd runs skip the entry.
+        for line in ["Exec=systemctl --user start torchlightd.service",
+                     f"TryExec={local}/bin/torchlightd", "X-systemd-skip=true"]:
+            assert line in autostart, (line, autostart)
     else:
-        assert f'Exec="{local}/bin/torchlightd"' in lines(autostart)
+        assert f'Exec="{local}/bin/torchlightd"' in autostart, autostart
 
 
 def check_first_install_and_update(base, top, version):
@@ -198,6 +204,8 @@ def check_first_install_and_update(base, top, version):
         assert running.read() == (top / "bin/torchlightd").read_bytes()
     check_installed(newer_top, home, systemd=True)
     assert "systemctl --user restart torchlightd.service" in lines(log)
+    # The systemd unit's daemon is restarted, never killed.
+    assert not any(line.startswith("pkill") for line in lines(log)), lines(log)
     assert "Installed torchlight 9.9.10" in result.stdout
     assert f"Your own {own_unit} comes before the installed unit" in result.stdout
     own_unit.unlink()
@@ -206,7 +214,8 @@ def check_first_install_and_update(base, top, version):
 
 def check_without_systemd(base, top, systemd_home):
     """No user manager: an autostart entry and a daemon started now. Moving an install made
-    with systemd over drops its unit, so only one way of starting the daemon remains."""
+    with systemd over drops its unit, and moving back replaces the entry, so only one way of
+    starting the daemon remains."""
     home = base / "home-plain"
     (home / "run").mkdir(parents=True)
     log = home / "commands.log"
@@ -223,6 +232,14 @@ def check_without_systemd(base, top, systemd_home):
     result = install(top, systemd_home, tools)
     assert result.returncode == 0, result.stderr
     check_installed(top, systemd_home, systemd=False)
+    # Back to systemd: the entry that ran the daemon gives way to the unit's, and the
+    # daemon it started is stopped, so two never compete for the index.
+    log.write_text("")
+    result = install(top, home, commands(base / "tools-back", log))
+    assert result.returncode == 0, result.stderr
+    check_installed(top, home, systemd=True)
+    assert f"pkill -u {os.getuid()} -x torchlightd" in lines(log), lines(log)
+    assert "systemctl --user restart torchlightd.service" in lines(log), lines(log)
 
 
 def check_uninstall(base, top):

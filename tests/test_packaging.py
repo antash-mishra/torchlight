@@ -3,8 +3,10 @@ publish it into a site folder given by a relative path (as the release workflow 
 signed by a throwaway key, then check as an ordinary user that apt accepts the repository
 and finds the package, and rejects it when it trusts another key. Also runs the package's
 maintainer scripts with stand-in systemctl and deb-systemd-helper commands, checking what
-they do on first install, upgrade, removal and purge. Skips when dpkg-deb, apt-ftparchive
-or gpg is missing.
+they do on first install, upgrade, removal and purge, and builds a package with
+packaging/deb/build_deb.sh from stand-in programs to check where its daemon unit and
+autostart entry go. Skips when dpkg-deb, apt-ftparchive or gpg is missing, and the build
+check when cc or dpkg-shlibdeps is.
 
 usage: test_packaging.py
 """
@@ -12,6 +14,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tarfile
 import tempfile
 
 repo = Path(__file__).resolve().parent.parent
@@ -99,6 +102,36 @@ def check_maintainer_scripts(base):
         "deb-systemd-helper --user unmask torchlightd.service"]
 
 
+def check_deb_layout(base):
+    """The built package's unit runs /usr/bin/torchlightd for graphical-session.target, and
+    its autostart entry, a conffile, starts that unit at login on desktops that never start
+    the target, which sessions systemd runs skip (ADR 0059)."""
+    if shutil.which("cc") is None or shutil.which("dpkg-shlibdeps") is None:
+        print("Package layout check skipped: missing cc or dpkg-shlibdeps")
+        return
+    programs = base / "programs"
+    programs.mkdir()
+    (programs / "main.c").write_text("int main(void) { return 0; }\n")
+    for program in ["torchlight", "torchlightd", "torchlight-gtk"]:
+        run(["cc", str(programs / "main.c"), "-o", str(programs / program)])
+    deb = Path(run([str(repo / "packaging/deb/build_deb.sh"), str(base / "deb"),
+                    str(programs)]).stdout.strip())
+    control = base / "control"
+    run(["dpkg-deb", "-e", str(deb), str(control)])
+    assert (control / "conffiles").read_text().split() == [
+        "/etc/apt/sources.list.d/torchlight.sources", "/etc/xdg/autostart/torchlightd.desktop"]
+    tree = base / "tree"
+    with subprocess.Popen(["dpkg-deb", "--fsys-tarfile", str(deb)], stdout=subprocess.PIPE) as dpkg:
+        with tarfile.open(fileobj=dpkg.stdout, mode="r|") as tar:
+            tar.extractall(tree, filter="tar")
+    unit = (tree / "usr/lib/systemd/user/torchlightd.service").read_text().splitlines()
+    assert "ExecStart=/usr/bin/torchlightd" in unit and "WantedBy=graphical-session.target" in unit
+    entry = (tree / "etc/xdg/autostart/torchlightd.desktop").read_text().splitlines()
+    for line in ["Exec=systemctl --user start torchlightd.service", "TryExec=/usr/bin/torchlightd",
+                 "X-systemd-skip=true"]:
+        assert line in entry, (line, entry)
+
+
 with tempfile.TemporaryDirectory(prefix="torchlight-packaging-") as temporary:
     base = Path(temporary)
     fingerprint = throwaway_key(base / "gnupg")
@@ -121,5 +154,7 @@ with tempfile.TemporaryDirectory(prefix="torchlight-packaging-") as temporary:
     ok, log, policy = apt_update(base, site, repo / "packaging/deb/torchlight-archive-keyring.gpg")
     assert not ok and "NO_PUBKEY" in log, log
     check_maintainer_scripts(base)
+    check_deb_layout(base)
 print("Packaging check passed: published through a relative path, signed, accepted by apt, "
-      "refused with another key; maintainer scripts enable, start, restart and stop the daemon")
+      "refused with another key; maintainer scripts enable, start, restart and stop the daemon; "
+      "the package starts it at login")

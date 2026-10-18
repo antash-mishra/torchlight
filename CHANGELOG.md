@@ -14,6 +14,11 @@ Each release's notes are taken from its section here (docs/release.md).
 - A word written in CamelCase later in a name matches when you type it whole: "sqlite"
   finds DB Browser for SQLite, "virtualbox" Oracle VM VirtualBox, and the same goes for
   files.
+- The search daemon starts at every login on Cinnamon (Linux Mint), Xfce, MATE and LXQt.
+  It used to start only right after installing, and not again after logging in, because
+  those desktops never start the systemd target its service waits for. The package now
+  also starts it from an autostart entry, "Torchlight search daemon", which Startup
+  Applications lists.
 - Torchlight is open source, under the MIT License.
 - A selected window, beneath its application, is easy to read again: its title takes the
   selection's text color instead of staying gray.

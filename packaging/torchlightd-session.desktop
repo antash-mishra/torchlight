@@ -1,0 +1,14 @@
+# Starts the search daemon through systemd when the desktop session begins (ADR 0059).
+# Cinnamon, Xfce, MATE and LXQt never start graphical-session.target, which the daemon's
+# unit is wanted by, so they run this entry instead, after the session has handed its
+# environment (XDG_CURRENT_DESKTOP, XDG_DATA_DIRS) to systemd. Sessions that systemd runs
+# (GNOME, KDE Plasma) skip it, X-systemd-skip, and start the daemon with that target.
+# Installed as torchlightd.desktop in /etc/xdg/autostart by the .deb and in
+# ~/.config/autostart by install.sh, which points TryExec at its own torchlightd.
+[Desktop Entry]
+Type=Application
+Name=Torchlight search daemon
+Comment=Starts the Torchlight launcher's search daemon when you log in
+Exec=systemctl --user start torchlightd.service
+TryExec=/usr/bin/torchlightd
+X-systemd-skip=true

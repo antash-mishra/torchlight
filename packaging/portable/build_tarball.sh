@@ -47,6 +47,10 @@ done
 # it), the launcher's desktop entry, the popup's fonts and the GNOME Shell and Cinnamon
 # extensions that list open windows on those desktops' Wayland sessions.
 install -D -m 644 "$root/packaging/torchlightd.service" "$dir/share/systemd/user/torchlightd.service"
+# Where the session never starts graphical-session.target (Cinnamon, Xfce, MATE, LXQt), this
+# autostart entry starts the unit at login; install.sh copies it to ~/.config/autostart.
+install -D -m 644 "$root/packaging/torchlightd-session.desktop" \
+    "$dir/etc/xdg/autostart/torchlightd.desktop"
 install -D -m 644 "$root/packaging/org.torchlight.Launcher.desktop" \
     "$dir/share/applications/org.torchlight.Launcher.desktop"
 install -D -m 644 "$root/third_party/fonts/schibsted-grotesk/SchibstedGrotesk-VF.ttf" \

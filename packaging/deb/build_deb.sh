@@ -2,12 +2,14 @@
 # Build the Torchlight .deb from the release binaries (make release) into OUT_DIR, as
 # OUT_DIR/torchlight_VERSION_ARCH.deb. The version comes from include/torchlight/version.h.
 # Library dependencies are worked out by dpkg-shlibdeps from the binaries; extra flags for
-# it (for example -l DIR) can be passed in SHLIBDEPS_FLAGS. Needs dpkg-dev.
-# usage: packaging/deb/build_deb.sh OUT_DIR
+# it (for example -l DIR) can be passed in SHLIBDEPS_FLAGS. Needs dpkg-dev. BINARY_DIR
+# replaces build/release, for tests.
+# usage: packaging/deb/build_deb.sh OUT_DIR [BINARY_DIR]
 set -eu
 
-out=${1:?usage: build_deb.sh OUT_DIR}
+out=${1:?usage: build_deb.sh OUT_DIR [BINARY_DIR]}
 root=$(cd "$(dirname "$0")/../.." && pwd)
+binaries=${2:-$root/build/release}
 here="$root/packaging/deb"
 version=$(sed -n 's/^#define TORCHLIGHT_VERSION "\(.*\)"$/\1/p' "$root/include/torchlight/version.h")
 [ -n "$version" ] || { echo "build_deb.sh: no version in include/torchlight/version.h" >&2; exit 1; }
@@ -19,11 +21,11 @@ pkg="$stage/torchlight"
 # Binaries, stripped. A run path would point every user's daemon at a directory on the
 # build machine, so a binary that has one is refused.
 for binary in torchlight torchlightd torchlight-gtk; do
-    if readelf -d "$root/build/release/$binary" | grep -qE 'RPATH|RUNPATH'; then
-        echo "build_deb.sh: build/release/$binary has a run path; build it without one" >&2
+    if readelf -d "$binaries/$binary" | grep -qE 'RPATH|RUNPATH'; then
+        echo "build_deb.sh: $binaries/$binary has a run path; build it without one" >&2
         exit 1
     fi
-    install -D -m 755 "$root/build/release/$binary" "$pkg/usr/bin/$binary"
+    install -D -m 755 "$binaries/$binary" "$pkg/usr/bin/$binary"
     strip --strip-unneeded "$pkg/usr/bin/$binary"
 done
 
@@ -32,6 +34,10 @@ install -d "$pkg/usr/lib/systemd/user"
 sed 's|^ExecStart=.*|ExecStart=/usr/bin/torchlightd|' "$root/packaging/torchlightd.service" \
     > "$pkg/usr/lib/systemd/user/torchlightd.service"
 chmod 644 "$pkg/usr/lib/systemd/user/torchlightd.service"
+# The unit is wanted by graphical-session.target, which Cinnamon, Xfce, MATE and LXQt never
+# start; their sessions start the daemon through this autostart entry (ADR 0059).
+install -D -m 644 "$root/packaging/torchlightd-session.desktop" \
+    "$pkg/etc/xdg/autostart/torchlightd.desktop"
 install -D -m 644 "$root/packaging/org.torchlight.Launcher.desktop" \
     "$pkg/usr/share/applications/org.torchlight.Launcher.desktop"
 install -D -m 644 "$root/third_party/fonts/schibsted-grotesk/SchibstedGrotesk-VF.ttf" \
@@ -75,7 +81,8 @@ size=$(du -sk "$pkg" | cut -f1)
 sed -e "s|@VERSION@|$version|" -e "s|@ARCH@|$arch|" -e "s|@SIZE@|$size|" -e "s|@DEPENDS@|$depends|" \
     "$here/control.in" > "$pkg/DEBIAN/control"
 install -m 755 "$here/postinst" "$here/prerm" "$here/postrm" "$pkg/DEBIAN/"
-echo /etc/apt/sources.list.d/torchlight.sources > "$pkg/DEBIAN/conffiles"
+printf '%s\n' /etc/apt/sources.list.d/torchlight.sources /etc/xdg/autostart/torchlightd.desktop \
+    > "$pkg/DEBIAN/conffiles"
 (cd "$pkg" && find usr -type f -exec md5sum {} + | sort -k2 > DEBIAN/md5sums)
 
 mkdir -p "$out"

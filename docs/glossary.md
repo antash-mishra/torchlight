@@ -131,6 +131,9 @@
   entry, from its `OnlyShowIn`, `NotShowIn` and `Exec` (`desktop_shown_in`, ADR 0057):
   GIO's rule, except that Cinnamon also lists GNOME-only entries and never GNOME
   Settings panels. The catalog and the popup's launch check both apply it.
+- **Session autostart entry:** `torchlightd.desktop` in `/etc/xdg/autostart` (package) or
+  `~/.config/autostart` (portable install): starts the daemon's unit at login on desktops
+  that never start graphical-session.target; sessions systemd runs skip it (ADR 0059).
 - **Whole-word key:** A prefix key for a separator-delimited word of a basename, after its
   first, that changes case inside (`SQLite`), besides its tokens (`SQ`, `Lite`); typing the
   word whole then matches at token strength (ADR 0060).

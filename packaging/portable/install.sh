@@ -3,8 +3,9 @@
 # The programs go into ~/.local/bin; the search daemon's systemd user unit, the launcher's
 # desktop entry, the popup's fonts and the GNOME Shell and Cinnamon extensions that list
 # open windows go into ~/.local/share (or XDG_DATA_HOME). The daemon starts now and at each
-# login: through systemd when the session has a user manager, otherwise through an
-# autostart entry. Running it from a newer release updates Torchlight in place;
+# login: through systemd when the session has a user manager (with an autostart entry that
+# starts its unit on desktops that do not), otherwise through an autostart entry that runs
+# it. Running it from a newer release updates Torchlight in place;
 # --uninstall removes it and keeps the index, history and settings.
 # usage: ./install.sh [--uninstall]
 set -eu
@@ -98,15 +99,20 @@ install_files() {
 }
 
 # The daemon (re)starts now, so an update takes effect at once, and at each login. Only one
-# way of starting it is kept, so two daemons never compete for the same index.
+# way of starting it is kept, so two daemons never compete for the same index. With systemd
+# the unit starts it, and an autostart entry asks systemd to start the unit where the
+# session never starts graphical-session.target (Cinnamon, Xfce, MATE, LXQt; ADR 0059).
 start_daemon() {
     if has_systemd; then
-        if [ -e "$autostart" ]; then
+        # An entry that ran the daemon itself came from an install without systemd.
+        if [ -e "$autostart" ] && ! grep -q '^Exec=systemctl ' "$autostart"; then
             rm -f "$autostart"
             stop_own torchlightd
         fi
-        mkdir -p "$(dirname "$unit")"
+        mkdir -p "$(dirname "$unit")" "$(dirname "$autostart")"
         cp "$here/share/systemd/user/torchlightd.service" "$unit"
+        sed "s|^TryExec=.*|TryExec=$bin_dir/torchlightd|" \
+            "$here/etc/xdg/autostart/torchlightd.desktop" > "$autostart"
         systemctl --user daemon-reload
         systemctl --user --quiet enable torchlightd.service
         systemctl --user restart torchlightd.service ||

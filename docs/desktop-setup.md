@@ -38,12 +38,23 @@ systemctl --user status torchlightd.service
 The default install is `~/.local`: three executables, a launcher desktop entry
 and a systemd user unit in `~/.local/share/systemd/user`, where systemd looks for
 it. Ensure `~/.local/bin` is on your desktop session's PATH.
-The unit is associated with graphical-session.target. On desktop sessions that
-do not activate that target, add `systemctl --user start torchlightd.service` to
-the desktop's Startup Applications after importing its environment. Cinnamon's
-Startup Applications can run this command at login. A standalone unit started
-before the desktop environment is imported can hide desktop-specific entries;
-import and restart it from the graphical session in that case.
+The unit is wanted by graphical-session.target, which only sessions that systemd
+runs start (GNOME, KDE Plasma). Cinnamon, Xfce, MATE and LXQt never start it, so
+the packages also install an autostart entry that starts the unit at login there
+([ADR 0059](adr/0059-daemon-starts-at-login-on-every-desktop.md)). `make install`
+does not; to start a source install at login on those desktops, install the entry
+yourself:
+
+```sh
+mkdir -p ~/.config/autostart
+sed "s|^TryExec=.*|TryExec=$HOME/.local/bin/torchlightd|" packaging/torchlightd-session.desktop \
+    > ~/.config/autostart/torchlightd.desktop
+```
+
+A unit started before the desktop hands its environment to systemd (for example
+one wanted by default.target) hides the applications meant only for that
+desktop; import the environment and restart it from the graphical session in
+that case.
 
 Keep a single daemon per database/socket. Stop a foreground trial daemon before
 starting the unit. Configuration remains under XDG_CONFIG_HOME/torchlight and
