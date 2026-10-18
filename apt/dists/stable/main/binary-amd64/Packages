@@ -106,3 +106,31 @@ Description: Spotlight-style launcher: find apps, settings, files and folders
  Installing this package also adds Torchlight's signed APT repository, so the
  system's update manager installs new versions.
 
+Package: torchlight
+Architecture: amd64
+Version: 0.1.5
+Priority: optional
+Section: utils
+Maintainer: antash-mishra <mishraantash34@gmail.com>
+Installed-Size: 33644
+Depends: libc6 (>= 2.39), libcairo2 (>= 1.10.0), libgcc-s1 (>= 4.2), libglib2.0-0t64 (>= 2.79.2), libgraphene-1.0-0 (>= 1.5.4), libgtk-4-1 (>= 4.13.8), libpango-1.0-0 (>= 1.14.0), libwayland-client0 (>= 1.20.0), libx11-6, systemd
+Recommends: fontconfig, xdg-utils
+Filename: pool/main/t/torchlight/torchlight_0.1.5_amd64.deb
+Size: 7722552
+MD5sum: 459ee0af24bb93e409583cdd55fba86a
+SHA1: 0642066120029f70f3eb145c5501fad602ae2127
+SHA256: 3b8f166fe73f0912ca12e9ca80a46214f051d1d9061c0142a3136153d51f6a42
+SHA512: 43e12397fb2c27d44c07ee49d58ae448a9e1919afd60b3d6a2c247993222e687a0a7d91b30cbb7cd1be16ad6ed85e1f948f42f8a03be99b76b7188ceaca4f07b
+Homepage: https://github.com/antash-mishra/torchlight
+Description: keyboard launcher for apps, settings, files, folders and windows
+ Press a shortcut, type a few letters and open an application, a settings
+ panel, a file or a folder. A resident per-user daemon keeps the index of
+ file names and paths in memory and follows changes as they happen; file
+ contents are never read. The GTK 4 popup lists running applications' open
+ windows (on X11, and on GNOME, KDE Plasma, Cinnamon, COSMIC, Sway, Hyprland,
+ labwc and other Wayland desktops) and shows the selected item's details
+ beside the results.
+ .
+ Installing this package also adds Torchlight's signed APT repository, so the
+ system's update manager installs new versions.
+

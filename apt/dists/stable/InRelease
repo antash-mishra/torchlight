@@ -4,27 +4,27 @@ Hash: SHA512
 Architectures: amd64
 Codename: stable
 Components: main
-Date: Wed, 14 Oct 2026 14:02:02 +0000
+Date: Sun, 18 Oct 2026 17:21:03 +0000
 Description: Torchlight launcher
 Label: Torchlight
 Origin: Torchlight
 Suite: stable
 MD5Sum:
- 8aeb5b0c964c411f5d0334337defe6b8             6068 main/binary-amd64/Packages
- cd9ff2f98d92c57c47bc0f7888c1ec2a             1617 main/binary-amd64/Packages.gz
+ 036fcfb54105a53e68acc6ef71aa70ec             7598 main/binary-amd64/Packages
+ eac6425745f62a7156eed5361b5e6d17             1848 main/binary-amd64/Packages.gz
 SHA1:
- 323fd8b88234085fb3d81ca4674ade8f8eb58d25             6068 main/binary-amd64/Packages
- d7f2a863013a08fd2a8b8b5e9595fc58e0855105             1617 main/binary-amd64/Packages.gz
+ 8d5c88f1d4b2dff318f7c7b2d0aeec27a37f7e9c             7598 main/binary-amd64/Packages
+ 52ee64d234f9c33a001e594b9c5f0095f7915301             1848 main/binary-amd64/Packages.gz
 SHA256:
- 7dbc6e6b81d6fc012141b92f8fa90bf5b111bb88ef96e8599579c89d2dd4c65b             6068 main/binary-amd64/Packages
- 9e2a556a940e76740d49a8274917eb79f8839f16d52803d065fdbd7eb0f772f2             1617 main/binary-amd64/Packages.gz
+ fb3614c9c6c341e9bc622ca8800ea5cd1c5c1e2357abd8ebcf991f8e804d4a3d             7598 main/binary-amd64/Packages
+ 333c45ecf7571c4d092413f27084522e63871da5fd05e64072150a2246c88903             1848 main/binary-amd64/Packages.gz
 SHA512:
- 41487fb1df05066d486a7cd062f1ab884f9eaf4af9ec377c902ce66844c4d48ef881536da81ed23a4a5dc0144894e4d90c5581e8f5a8f852a85a2ab7898fdd57             6068 main/binary-amd64/Packages
- 68fd136cef051fdeba179569dfbf085f01c2a4373bacd7653fcfdf502227f38a4f5b0166dce02ea3df7ae1d5abeeec42d1e200ea1553f7cf4f31bb9777f9d7ca             1617 main/binary-amd64/Packages.gz
+ daa545c1cdc8c07d5261f32ea90e62e6a00e6a1c4a454c3cc17f9b589ac00ff637c2ea41c50385564f16a8cca7163efb7d0cec7b17e3f87e9f268069dcd6d620             7598 main/binary-amd64/Packages
+ bd203c4ab0132375dc2ad50b3c223b895e9634176b53f314104ad69ef1347453a4bf3427cc5f1fa99456968ca551f0fa66f50f1eda46b5514738e73a59f79626             1848 main/binary-amd64/Packages.gz
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQRqNkJNDjIFjxAk+Pu8eHI0Q7opRQUCas+LWgAKCRC8eHI0Q7op
-ResRAQD5Im+Q5lL1IhSCeHoUNCvFO3EkPqKLZS8cmu6x5TbdMwD/XtBpeOnBp6wX
-ZzZ0o25t+WdusMbqxqLPNHPqS8OZtAg=
-=9val
+iHUEARYKAB0WIQRqNkJNDjIFjxAk+Pu8eHI0Q7opRQUCatT//wAKCRC8eHI0Q7op
+RV/YAP4sqaK47c4u4+lMd63mrBm+/0RkkERusrOB3YyEq/qLxwD6Ah0UrLF/hU98
+4RODRjnKojFASrM7LuOBoOWFoY3+yQw=
+=p1Oj
 -----END PGP SIGNATURE-----
