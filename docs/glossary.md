@@ -127,6 +127,17 @@
   from a durable SQLite file id.
 - **Desktop revision:** Fingerprint of the selected desktop filename and canonical
   keyfile content, checked before native activation to reject replacement entries.
+- **Desktop menu rule:** Whether the running desktop's own application menu lists an
+  entry, from its `OnlyShowIn`, `NotShowIn` and `Exec` (`desktop_shown_in`, ADR 0057):
+  GIO's rule, except that Cinnamon also lists GNOME-only entries and never GNOME
+  Settings panels. The catalog and the popup's launch check both apply it.
+- **Whole-word key:** A prefix key for a separator-delimited word of a basename, after its
+  first, that changes case inside (`SQLite`), besides its tokens (`SQ`, `Lite`); typing the
+  word whole then matches at token strength (ADR 0060).
+- **Named application:** An application the query names: every typed word starts its
+  display name, a word of it or its initials (`desktop_named`). The daemon lists named
+  applications after exact paths and before files (ADR 0058); generic names and
+  keywords never name an application.
 
 - **Static embedding:** A trained token lookup table pooled into a text vector;
   Potion uses this without a contextual transformer runtime.

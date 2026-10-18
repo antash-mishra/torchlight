@@ -6,7 +6,9 @@
 #define RANK_DEFAULT_RRF_K 60
 #define RANK_MAX_CANDIDATES 2000
 typedef struct tl_rank tl_rank;
-typedef enum { RANK_REGULAR, RANK_EXACT_BASENAME, RANK_EXACT_PATH } tl_rank_priority;
+/* Fusion tiers, lowest first. RANK_NAMED marks a result the caller lists
+ * ahead of exact basenames: the daemon's applications named by the query. */
+typedef enum { RANK_REGULAR, RANK_EXACT_BASENAME, RANK_NAMED, RANK_EXACT_PATH } tl_rank_priority;
 typedef struct {
     uint64_t id;
     const char *path;
@@ -32,9 +34,10 @@ void rank_destroy(tl_rank *ranker);
  * Inputs may be NULL only for zero counts; ids must be nonzero and unique within
  * each list, paths nonempty raw byte strings, priorities valid. Across lists,
  * equal ids must have equal paths or TL_STATE prevents mixing catalog views.
- * Exact paths precede exact basenames, which precede ordinary fusion. Ties keep
- * lexical source order first, then raw path bytes and id. With no semantic
- * results, preserve lexical order exactly, including unembedded entries.
+ * Exact paths precede named results, then exact basenames, then ordinary
+ * fusion. Ties keep lexical source order first, then raw path bytes and id.
+ * With no semantic results, preserve lexical order exactly, including
+ * unembedded entries.
  * Copy up to capacity results (1..candidate_capacity); paths borrow input
  * lifetimes and no ownership transfers. Input/output arrays must not overlap.
  * TL_INVALID for arguments/duplicates, TL_LIMIT for scratch exhaustion;

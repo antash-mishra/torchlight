@@ -48,6 +48,19 @@ tl_status desktop_query(tl_desktop *desktop, const char *query, tl_result *resul
 tl_status desktop_query_boosted(tl_desktop *desktop, const char *query,
                                 const tl_lexical_boost *boosts, size_t boost_count,
                                 tl_result *results, size_t capacity, size_t *count);
+/** Set named[i] for each of count results of a desktop query on this lease:
+ * whether the query names that application, that is, every word of query
+ * (split at whitespace, as lexical_query splits it) starts the application's
+ * name, a word of the name or the name's initials. That is the evidence the
+ * name bonus weights; generic names, keywords, typos and scattered letters do
+ * not name an application. The daemon lists named applications before files
+ * (ADR 0058). Ids not in the leased snapshot and queries without words are
+ * not named. Requires the lease; uses the catalog's query scratch, so one
+ * lease holder at a time. TL_INVALID for NULL arguments (count zero excepted),
+ * TL_LIMIT for a query over LEXICAL_QUERY_BYTES; named is all false on error.
+ * No I/O or allocation. */
+tl_status desktop_named(tl_desktop *desktop, const char *query, const tl_result *results,
+                        size_t count, bool *named);
 /** Resolve session-scoped id in current snapshot; NULL when stale. Requires
  * lease; borrowed entry/strings valid until release. No I/O/allocation. */
 const tl_desktop_entry *desktop_resolve(const tl_desktop *desktop, uint64_t id);
@@ -66,4 +79,17 @@ size_t desktop_count(const tl_desktop *desktop);
 /** Borrow entry at sorted-id position under a query lease, NULL if absent.
  * Strings (including generic_name/keywords) borrow lease. No allocation/I/O. */
 const tl_desktop_entry *desktop_entry(const tl_desktop *desktop, size_t position);
+/** Whether the running desktop's own application menu lists an entry, judged
+ * by its OnlyShowIn and NotShowIn lists (NULL-terminated, NULL when the key is
+ * absent) and its Exec line (NULL when absent). desktops is an
+ * XDG_CURRENT_DESKTOP value: colon-separated names, NULL or empty for none.
+ * The rule is GIO's: the first of desktops that either list names decides,
+ * otherwise an entry is listed only without OnlyShowIn. On Cinnamon (desktops
+ * names X-Cinnamon) it is the Cinnamon menu's: an OnlyShowIn naming GNOME also
+ * lists the entry, and an Exec line starting with gnome-control-center never
+ * does. Hidden, NoDisplay and TryExec are the caller's. Both the catalog and
+ * the popup's launch check use it (ADR 0057). Borrowed input; no allocation,
+ * I/O or errors. */
+bool desktop_shown_in(const char *const *only_show_in, const char *const *not_show_in,
+                      const char *exec, const char *desktops);
 #endif

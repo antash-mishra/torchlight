@@ -1,4 +1,5 @@
-/* Sorted ranges, token initials, short queries and basename priority. */
+/* Sorted ranges, token initials, short queries, basename priority and whole
+ * CamelCase words. */
 #include "test.h"
 #include "torchlight/prefix.h"
 struct best_scores {
@@ -48,9 +49,13 @@ static void score_matches_query(void) {
                            "/a/p",
                            "/x/HTMLParser v2.txt",
                            "/r/s s.md",
-                           "/q/Caf\xc3\xa9 au lait"};
-    const char *queries[] = {"p", "pr", "pn", "o",   "h",           "hp", "parser", "v2",
-                             "s", "s.", "c",  "cal", "caf\xc3\xa9", "z",  "md",     "projectnotes"};
+                           "/q/Caf\xc3\xa9 au lait",
+                           "/x/DB Browser for SQLite",
+                           "/x/a_JavaScript v2Final.txt"};
+    const char *queries[] = {
+        "p",      "pr",   "pn",         "o",      "h",           "hp", "parser", "v2",
+        "s",      "s.",   "c",          "cal",    "caf\xc3\xa9", "z",  "md",     "projectnotes",
+        "sqlite", "sqli", "javascript", "v2final"};
     size_t count = sizeof(texts) / sizeof(texts[0]);
     tl_tokenized *tokens[8];
     tl_prefix *index = NULL;
@@ -82,8 +87,31 @@ static void score_matches_query(void) {
         tokenize_destroy(tokens[i]);
     prefix_destroy(index);
 }
+/* A later word that changes case inside matches when typed whole; its tokens
+ * keep their keys, and letters and digits never join into such a word. */
+static void cased_words(void) {
+    tl_prefix *index = NULL;
+    CHECK(prefix_create(&index) == TL_OK);
+    tl_tokenized *a = test_text("/x/DB Browser for SQLite");
+    tl_tokenized *b = test_text("/x/LibreOffice v2Final.txt");
+    CHECK(prefix_add(index, tokenize_view(a), 0) == TL_OK);
+    CHECK(prefix_add(index, tokenize_view(b), 1) == TL_OK);
+    CHECK(prefix_finish(index) == TL_OK);
+    const int token = PREFIX_TOKEN_SCORE, complete = PREFIX_TOKEN_SCORE + PREFIX_COMPLETE_BONUS;
+    CHECK(query(index, "sqlite").scores[0] == complete && query(index, "sqli").scores[0] == token);
+    CHECK(query(index, "sq").scores[0] == complete && query(index, "lite").scores[0] == complete);
+    CHECK(query(index, "sqlitex").hits == 0);
+    /* The first word is the basename key's start already. */
+    CHECK(query(index, "libreoffice").scores[1] == PREFIX_BASENAME_SCORE);
+    CHECK(query(index, "office").scores[1] == complete);
+    CHECK(query(index, "v2final").hits == 0 && query(index, "final").scores[1] == complete);
+    prefix_destroy(index);
+    tokenize_destroy(a);
+    tokenize_destroy(b);
+}
 void test_prefix(void) {
     score_matches_query();
+    cased_words();
     tl_prefix *index = NULL;
     CHECK(prefix_create(&index) == TL_OK);
     tl_tokenized *a = test_text("/projectNotes/other.txt"), *b = test_text("/work/projectNotes.md");

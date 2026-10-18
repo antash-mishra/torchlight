@@ -1156,10 +1156,20 @@ void semantic_destroy(tl_semantic *service) {
     free(service->database);
     free(service);
 }
+/* The fusion tier of lexical pool entry i: exact paths, then the applications
+ * the query names (named, NULL for none), then exact basenames (ADR 0058). */
+static tl_rank_priority lexical_priority(const tl_result *result, const bool *named, size_t i) {
+    tl_lexical_exactness tier = lexical_exactness(result);
+    if (tier == LEXICAL_EXACT_RAW_PATH)
+        return RANK_EXACT_PATH;
+    if (named != NULL && named[i])
+        return RANK_NAMED;
+    return tier == LEXICAL_EXACT_NAME ? RANK_EXACT_BASENAME : RANK_REGULAR;
+}
 tl_status semantic_submit(tl_semantic *service, size_t slot, uint64_t token,
                           const tl_ipc_request *request, const char *search_id,
                           uint64_t catalog_gen, uint64_t desktop_gen, const tl_result *lexical,
-                          size_t count, uint64_t *out_emb_gen) {
+                          const bool *named, size_t count, uint64_t *out_emb_gen) {
     if (out_emb_gen != NULL)
         *out_emb_gen = 0;
     if (service == NULL || slot >= SEMANTIC_CLIENTS || token == 0 || request == NULL ||
@@ -1184,11 +1194,8 @@ tl_status semantic_submit(tl_semantic *service, size_t slot, uint64_t token,
         if (entry == NULL)
             status = TL_STATE;
         else {
-            tl_lexical_exactness tier = lexical_exactness(&lexical[i]);
             job->lexical[i] = (tl_rank_candidate){entry->id, entry->path,
-                                                  tier == LEXICAL_EXACT_RAW_PATH ? RANK_EXACT_PATH
-                                                  : tier == LEXICAL_EXACT_NAME ? RANK_EXACT_BASENAME
-                                                                               : RANK_REGULAR};
+                                                  lexical_priority(&lexical[i], named, i)};
         }
     }
     if (status == TL_OK) {

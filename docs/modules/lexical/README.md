@@ -29,7 +29,7 @@ Directory-to-entry lists and descendant counts support complete parent unions
 and cheap scan-order estimates.
 
 **Channels**, built at seal time over basenames: [prefix](../prefix/README.md)
-(basename, tokens, initials), [trigram](../trigram/README.md),
+(basename, tokens, later CamelCase words whole, initials), [trigram](../trigram/README.md),
 [typo](../typo/README.md), and a second prefix index over directory names.
 Directories above every indexed root (`/home` for root `/home/user`) are not
 usable parent context; the root's own name is.

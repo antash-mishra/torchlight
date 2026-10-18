@@ -1,6 +1,7 @@
 # 0018. Application names in mixed launcher results
 
-- **Status:** Accepted, implemented
+- **Status:** Accepted, implemented; its exact-file priority over application names is
+  revised by [ADR 0058](0058-applications-the-query-names-come-first.md)
 - **Date:** 2026-10-05
 
 ## Context

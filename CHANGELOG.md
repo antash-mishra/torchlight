@@ -4,6 +4,16 @@ Each release's notes are taken from its section here (docs/release.md).
 
 ## Unreleased
 
+- Typing "terminal" on Linux Mint finds the Terminal. Applications are listed as the
+  desktop's own menu lists them: Cinnamon's menu shows GNOME's Terminal and Power
+  Statistics, and now so does Torchlight, and they launch.
+- An application whose name you type comes first, even when many files or folders are
+  named exactly that word: "google" lists Google Chrome before the `google` folders of Go
+  module caches and SDKs, "time" lists Date & Time, "cli" CLion. A typed path still lists
+  its file first.
+- A word written in CamelCase later in a name matches when you type it whole: "sqlite"
+  finds DB Browser for SQLite, "virtualbox" Oracle VM VirtualBox, and the same goes for
+  files.
 - Torchlight is open source, under the MIT License.
 - A selected window, beneath its application, is easy to read again: its title takes the
   selection's text color instead of staying gray.

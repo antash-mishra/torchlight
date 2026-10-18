@@ -20,7 +20,10 @@ tl_status prefix_create(tl_prefix **out);
 /** Destroy index and its owned initials; borrowed text is never freed. NULL allowed. */
 void prefix_destroy(tl_prefix *index);
 /** Add the basename, every token and the basename initials of text for slot.
- * The token starting at text.basename retains PREFIX_BASENAME_SCORE.
+ * The token starting at text.basename retains PREFIX_BASENAME_SCORE. A later
+ * separator-delimited word of the basename that changes case inside (SQLite in
+ * "DB Browser for SQLite") also gets a key for the whole word at token
+ * strength, so the word typed whole matches it.
  * text storage must not move or be freed while the index lives. Before finish
  * only; failure may partially add keys, so discard the index. TL_LIMIT for
  * slots or lengths beyond UINT32_MAX. */

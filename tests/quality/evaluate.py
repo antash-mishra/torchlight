@@ -19,6 +19,17 @@ class Result(C.Structure):
     _fields_ = [("id", C.c_uint64), ("path", C.c_char_p), ("score", C.c_int)]
 
 
+class Text(C.Structure):
+    _fields_ = [("symbols", C.c_void_p), ("boundaries", C.c_void_p), ("byte_offsets", C.c_void_p),
+                ("length", C.c_size_t), ("basename", C.c_size_t), ("mask", C.c_uint64)]
+
+
+# lexical_exactness's tier for exact raw paths, and prefix_score's initials score:
+# the weakest evidence that a query word starts an application's name.
+LEXICAL_EXACT_RAW_PATH = 2
+PREFIX_INITIALS_SCORE = 4500
+
+
 class Engine:
     def __init__(self, library, entries):
         self.lib = C.CDLL(str(pathlib.Path(library).resolve()))
@@ -34,6 +45,17 @@ class Engine:
             "lexical_destroy": ([C.c_void_p], None),
         }
         self.fields = getattr(self.lib, "lexical_add_fields", None)
+        # Libraries that can say which applications a query names (ADR 0058) are
+        # merged as the daemon does now; older ones by score, as it did then.
+        self.naming = hasattr(self.lib, "desktop_named")
+        if self.naming:
+            signatures.update({
+                "tokenize_create": ([C.c_char_p, C.POINTER(C.c_void_p)], C.c_int),
+                "tokenize_view": ([C.c_void_p], Text),
+                "tokenize_destroy": ([C.c_void_p], None),
+                "prefix_score": ([Text, Text, C.POINTER(C.c_int), C.POINTER(C.c_bool)], C.c_int),
+                "lexical_exactness": ([C.POINTER(Result)], C.c_int),
+            })
         # Libraries from before M8 have no place ranking; file engines use it when present.
         self.place = getattr(self.lib, "lexical_set_place_ranking", None)
         if self.place:
@@ -81,22 +103,61 @@ class Engine:
         if status:
             raise RuntimeError(f"native engine returned status {status}")
 
-    def query(self, text, capacity=1000, cold=False):
-        merged = []
-        for engine, workspace in self.engines:
-            rows, count = (Result * capacity)(), C.c_size_t()
+    def tokenized(self, text):
+        handle = C.c_void_p()
+        self.check(self.lib.tokenize_create(text.encode("utf-8", "surrogateescape"),
+                                            C.byref(handle)))
+        return handle
+
+    def names(self, query, path):
+        """Whether every word of query starts the application's name, a word of it
+        or its initials, as desktop_named decides."""
+        words = [word for word in re.split(r"[ \t\n\r]+", query) if word]
+        name = self.tokenized(path.rsplit("/", 1)[1])
+        try:
+            for word in words:
+                handle = self.tokenized(word)
+                best, complete = C.c_int(), C.c_bool()
+                try:
+                    self.check(self.lib.prefix_score(self.lib.tokenize_view(name),
+                                                     self.lib.tokenize_view(handle),
+                                                     C.byref(best), C.byref(complete)))
+                finally:
+                    self.lib.tokenize_destroy(handle)
+                if best.value < PREFIX_INITIALS_SCORE:
+                    return False
+            return bool(words)
+        finally:
+            self.lib.tokenize_destroy(name)
+
+    def search(self, engine, workspace, text, capacity, cold):
+        rows, count = (Result * capacity)(), C.c_size_t()
+        if cold:
+            workspace = C.c_void_p()
+            self.check(self.lib.lexical_workspace_create(engine, C.byref(workspace)))
+        try:
+            self.check(self.lib.lexical_query(engine, workspace, text.encode(), rows,
+                                             capacity, C.byref(count)))
+        finally:
             if cold:
-                workspace = C.c_void_p()
-                self.check(self.lib.lexical_workspace_create(engine, C.byref(workspace)))
-            try:
-                self.check(self.lib.lexical_query(engine, workspace, text.encode(), rows,
-                                                 capacity, C.byref(count)))
-            finally:
-                if cold:
-                    self.lib.lexical_workspace_destroy(workspace)
-            merged.extend((row.score, row.path, row.id) for row in rows[:count.value])
-        merged.sort(key=lambda row: (-row[0], row[1], row[2]))
-        return [self.ids[row[2]] for row in merged[:capacity]]
+                self.lib.lexical_workspace_destroy(workspace)
+        return rows[:count.value]
+
+    def query(self, text, capacity=1000, cold=False):
+        (files_engine, files_workspace), (apps_engine, apps_workspace) = self.engines
+        files = self.search(files_engine, files_workspace, text, capacity, cold)
+        # The daemon weighs every application match, not just capacity of them.
+        apps = self.search(apps_engine, apps_workspace, text, 1000, cold)
+        key = lambda row: (-row.score, row.path, row.id)  # noqa: E731
+        if not self.naming:
+            merged = sorted(files + apps, key=key)
+        else:
+            exact = [row for row in files
+                     if self.lib.lexical_exactness(C.byref(row)) == LEXICAL_EXACT_RAW_PATH]
+            named = [row for row in apps if self.names(text, row.path.decode())]
+            rest = [row for row in files + apps if row not in exact and row not in named]
+            merged = exact + named + sorted(rest, key=key)
+        return [self.ids[row.id] for row in merged[:capacity]]
 
     def close(self):
         for engine, workspace in self.engines:

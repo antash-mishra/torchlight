@@ -21,14 +21,18 @@ static void pause_ms(long milliseconds) {
     const struct timespec delay = {milliseconds / 1000, (milliseconds % 1000) * 1000000L};
     CHECK(nanosleep(&delay, NULL) == 0);
 }
-static void write_entry(const char *directory, const char *id, const char *fields) {
+static void write_exec_entry(const char *directory, const char *id, const char *exec,
+                             const char *fields) {
     char path[512];
     int length = snprintf(path, sizeof(path), "%s/%s", directory, id);
     CHECK(length > 0 && (size_t)length < sizeof(path));
     FILE *file = fopen(path, "w");
     CHECK(file != NULL);
-    CHECK(fprintf(file, "[Desktop Entry]\nType=Application\nExec=/bin/true\n%s", fields) > 0);
+    CHECK(fprintf(file, "[Desktop Entry]\nType=Application\nExec=%s\n%s", exec, fields) > 0);
     CHECK(fclose(file) == 0);
+}
+static void write_entry(const char *directory, const char *id, const char *fields) {
+    write_exec_entry(directory, id, "/bin/true", fields);
 }
 static size_t query(tl_desktop *desktop, const char *text, tl_result results[10]) {
     size_t count = 0;
@@ -56,6 +60,157 @@ static void wait_query(tl_desktop *desktop, const char *text, size_t wanted) {
             pause_ms(5);
     }
     CHECK(count == wanted);
+}
+/* GIO's OnlyShowIn/NotShowIn rule, and Cinnamon's menu, which also lists
+ * GNOME's entries (GNOME Terminal on Linux Mint) but never GNOME Settings. */
+static void shown_in(void) {
+    const char *const kde[] = {"KDE", NULL}, *const cinnamon[] = {"X-Cinnamon", NULL};
+    const char *const gnome[] = {"GNOME", "Unity", NULL}, *const ubuntu[] = {"ubuntu", NULL};
+    const char *const flashback[] = {"GNOME-Flashback", NULL}, *const none[] = {NULL};
+    CHECK(desktop_shown_in(NULL, NULL, NULL, "X-Cinnamon"));
+    CHECK(desktop_shown_in(NULL, NULL, "/bin/true", NULL));
+    CHECK(desktop_shown_in(cinnamon, NULL, NULL, "X-Cinnamon"));
+    CHECK(!desktop_shown_in(kde, NULL, NULL, "X-Cinnamon"));
+    CHECK(!desktop_shown_in(NULL, cinnamon, NULL, "X-Cinnamon"));
+    CHECK(desktop_shown_in(NULL, kde, NULL, "X-Cinnamon"));
+    CHECK(!desktop_shown_in(none, NULL, NULL, "X-Cinnamon"));
+    /* Without a desktop, OnlyShowIn hides and NotShowIn never does. */
+    CHECK(!desktop_shown_in(cinnamon, NULL, NULL, NULL));
+    CHECK(!desktop_shown_in(gnome, NULL, NULL, ""));
+    CHECK(desktop_shown_in(NULL, cinnamon, NULL, ""));
+    /* The first listed desktop that either list names decides. */
+    CHECK(desktop_shown_in(gnome, NULL, NULL, "ubuntu:GNOME"));
+    CHECK(!desktop_shown_in(gnome, ubuntu, NULL, "ubuntu:GNOME"));
+    CHECK(desktop_shown_in(gnome, ubuntu, NULL, "GNOME:ubuntu"));
+    CHECK(!desktop_shown_in(flashback, NULL, NULL, "GNOME"));
+    CHECK(!desktop_shown_in(gnome, NULL, NULL, "GNOME-Flashback"));
+    CHECK(desktop_shown_in(gnome, NULL, NULL, "GNOME-Flashback:GNOME"));
+    /* GNOME-only entries: listed on Cinnamon (the regression), nowhere else. */
+    CHECK(desktop_shown_in(gnome, NULL, "gnome-terminal", "X-Cinnamon"));
+    CHECK(desktop_shown_in(gnome, cinnamon, "gnome-terminal", "X-Cinnamon"));
+    CHECK(desktop_shown_in(gnome, NULL, "gnome-terminal", "GNOME"));
+    CHECK(!desktop_shown_in(gnome, NULL, "gnome-terminal", "KDE"));
+    CHECK(!desktop_shown_in(gnome, NULL, "gnome-terminal", "MATE"));
+    CHECK(!desktop_shown_in(gnome, NULL, "gnome-terminal", "X-Cinnamonish"));
+    /* GNOME Settings panels stay out of Cinnamon, as its menu leaves them. */
+    CHECK(!desktop_shown_in(gnome, NULL, "gnome-control-center display", "X-Cinnamon"));
+    CHECK(!desktop_shown_in(NULL, NULL, "gnome-control-center", "X-Cinnamon"));
+    CHECK(desktop_shown_in(gnome, NULL, "gnome-control-center display", "GNOME"));
+    CHECK(desktop_shown_in(NULL, NULL, "gnome-control-center", "KDE"));
+}
+static size_t catalog_count(const char *text) {
+    tl_desktop *desktop = NULL;
+    tl_result results[10];
+    CHECK(desktop_create(NULL, &desktop) == TL_OK);
+    desktop_acquire(desktop);
+    size_t count = query(desktop, text, results);
+    desktop_release(desktop);
+    desktop_destroy(desktop);
+    return count;
+}
+/* The catalog applies the session's menu rule: on Cinnamon a GNOME-only entry
+ * is listed and a GNOME Settings panel is not. A stand-in gnome-control-center
+ * on PATH lets GIO accept the panel, so only the rule can hide it. */
+static void gnome_entries(const char *temporary, const char *user_apps) {
+    char bin[512], program[512], path[4096];
+    CHECK(snprintf(bin, sizeof(bin), "%s/bin", temporary) > 0);
+    CHECK(snprintf(program, sizeof(program), "%s/gnome-control-center", bin) > 0);
+    CHECK(mkdir(bin, 0700) == 0);
+    FILE *file = fopen(program, "w");
+    CHECK(file != NULL && fputs("#!/bin/sh\n", file) >= 0 && fclose(file) == 0);
+    CHECK(chmod(program, 0700) == 0);
+    const char *old_path = getenv("PATH");
+    char *saved_path = old_path == NULL ? NULL : strdup(old_path);
+    CHECK(old_path == NULL || saved_path != NULL);
+    CHECK(snprintf(path, sizeof(path), "%s:%s", bin, old_path == NULL ? "/usr/bin" : old_path) > 0);
+    CHECK(setenv("PATH", path, 1) == 0);
+    write_entry(user_apps, "gnome-terminal.desktop",
+                "Name=GnomeOnlyTerminal\nOnlyShowIn=GNOME;Unity;\n");
+    write_exec_entry(user_apps, "gnome-panel.desktop", "gnome-control-center display",
+                     "Name=GnomeSettingsPanel\nOnlyShowIn=GNOME;Unity;\n");
+    write_entry(user_apps, "kde-only.desktop", "Name=GnomeAbsentKde\nOnlyShowIn=KDE;\n");
+    CHECK(setenv("XDG_CURRENT_DESKTOP", "X-Cinnamon", 1) == 0);
+    CHECK(catalog_count("GnomeOnlyTerminal") == 1);
+    CHECK(catalog_count("GnomeSettingsPanel") == 0);
+    CHECK(catalog_count("GnomeAbsentKde") == 0);
+    CHECK(setenv("XDG_CURRENT_DESKTOP", "GNOME", 1) == 0);
+    CHECK(catalog_count("GnomeOnlyTerminal") == 1);
+    CHECK(catalog_count("GnomeSettingsPanel") == 1);
+    CHECK(setenv("XDG_CURRENT_DESKTOP", "KDE", 1) == 0);
+    CHECK(catalog_count("GnomeOnlyTerminal") == 0);
+    CHECK(catalog_count("GnomeAbsentKde") == 1);
+    CHECK(setenv("XDG_CURRENT_DESKTOP", "X-Cinnamon", 1) == 0);
+    const char *ids[] = {"gnome-terminal.desktop", "gnome-panel.desktop", "kde-only.desktop"};
+    for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); i++) {
+        CHECK(snprintf(path, sizeof(path), "%s/%s", user_apps, ids[i]) > 0);
+        CHECK(unlink(path) == 0);
+    }
+    if (saved_path != NULL)
+        CHECK(setenv("PATH", saved_path, 1) == 0);
+    else
+        CHECK(unsetenv("PATH") == 0);
+    free(saved_path);
+    CHECK(unlink(program) == 0 && rmdir(bin) == 0);
+}
+/* -1 when query does not return the application called name, else whether
+ * desktop_named says the query names it. */
+static int naming(tl_desktop *desktop, const char *text, const char *name) {
+    tl_result results[10];
+    bool named[10];
+    size_t count = query(desktop, text, results);
+    CHECK(desktop_named(desktop, text, results, count, named) == TL_OK);
+    for (size_t i = 0; i < count; i++)
+        if (strcmp(desktop_resolve(desktop, results[i].id)->name, name) == 0)
+            return named[i];
+    return -1;
+}
+/* A query names an application when every word starts its name, a word of
+ * the name or its initials; metadata, infixes and typos never do. */
+static void named_entries(const char *user_apps) {
+    write_entry(user_apps, "chrome.desktop",
+                "Name=Google Chrome\nGenericName=Web Browser\nKeywords=internet;\n");
+    write_entry(user_apps, "writer.desktop", "Name=LibreOffice Writer\n");
+    write_entry(user_apps, "editor.desktop", "Name=Text Editor\n");
+    write_entry(user_apps, "sqlite.desktop", "Name=DB Browser for SQLite\n");
+    tl_desktop *desktop = NULL;
+    CHECK(desktop_create(NULL, &desktop) == TL_OK);
+    desktop_acquire(desktop);
+    const char *chrome = "Google Chrome";
+    CHECK(naming(desktop, "google", chrome) == 1 && naming(desktop, "CHROME", chrome) == 1);
+    CHECK(naming(desktop, "goo", chrome) == 1 && naming(desktop, "c", chrome) == 1);
+    CHECK(naming(desktop, "google chrome", chrome) == 1);
+    CHECK(naming(desktop, " chr  goo ", chrome) == 1 && naming(desktop, "gc", chrome) == 1);
+    CHECK(naming(desktop, "office", "LibreOffice Writer") == 1);
+    CHECK(naming(desktop, "writer", "LibreOffice Writer") == 1);
+    CHECK(naming(desktop, "text", "Text Editor") == 1);
+    /* A later word typed whole although it changes case inside (ADR 0060). */
+    CHECK(naming(desktop, "sqlite", "DB Browser for SQLite") == 1);
+    CHECK(naming(desktop, "db sqlite", "DB Browser for SQLite") == 1);
+    CHECK(naming(desktop, "browser", chrome) == 0 && naming(desktop, "internet", chrome) == 0);
+    CHECK(naming(desktop, "google web", chrome) == 0 && naming(desktop, "rome", chrome) == 0);
+    CHECK(naming(desktop, "gogle", chrome) == 0);
+    tl_result results[10];
+    bool named[2] = {true, true};
+    size_t count = query(desktop, "google", results);
+    CHECK(count >= 1);
+    tl_result unknown = {1, "/Applications/Unknown", 0};
+    CHECK(desktop_named(desktop, "google", &unknown, 1, named) == TL_OK && !named[0]);
+    CHECK(desktop_named(desktop, "  ", results, 1, named) == TL_OK && !named[0]);
+    CHECK(desktop_named(desktop, "google", results, 0, NULL) == TL_OK);
+    CHECK(desktop_named(desktop, "google", results, 1, NULL) == TL_INVALID);
+    char long_query[LEXICAL_QUERY_BYTES + 2];
+    memset(long_query, 'g', sizeof(long_query) - 1);
+    long_query[sizeof(long_query) - 1] = 0;
+    named[0] = true;
+    CHECK(desktop_named(desktop, long_query, results, 1, named) == TL_LIMIT && !named[0]);
+    desktop_release(desktop);
+    desktop_destroy(desktop);
+    const char *ids[] = {"chrome.desktop", "writer.desktop", "editor.desktop", "sqlite.desktop"};
+    char path[512];
+    for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); i++) {
+        CHECK(snprintf(path, sizeof(path), "%s/%s", user_apps, ids[i]) > 0);
+        CHECK(unlink(path) == 0);
+    }
 }
 static uint64_t wait_parses(tl_desktop *desktop, uint64_t wanted) {
     for (size_t i = 0; i < WAIT_STEPS && desktop_parses(desktop) < wanted; i++)
@@ -136,6 +291,7 @@ static void change_stamps(const char *user_apps, const char *system_apps) {
     CHECK(unlink(removed) == 0);
 }
 void test_desktop(void) {
+    shown_in();
     char temporary[] = "/tmp/torchlight-desktop-XXXXXX";
     CHECK(mkdtemp(temporary) != NULL);
     char user[512], system[512], user_apps[512], system_apps[512];
@@ -240,6 +396,8 @@ void test_desktop(void) {
     }
     CHECK(stale);
     desktop_destroy(desktop);
+    gnome_entries(temporary, user_apps);
+    named_entries(user_apps);
     change_stamps(user_apps, system_apps);
     const char *user_ids[] = {"masked.desktop",  "duplicate.desktop", "private.desktop",
                               "other.desktop",   "excluded.desktop",  "missing.desktop",

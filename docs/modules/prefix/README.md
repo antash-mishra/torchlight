@@ -1,6 +1,6 @@
 # prefix
 
-> **Status:** Implemented (M3 Part 2): token-completeness scoring, including the first basename token; M5 per-text scoring
+> **Status:** Implemented (M3 Part 2): token-completeness scoring, including the first basename token; M5 per-text scoring; whole keys for later CamelCase words (ADR 0060)
 > **Source:** `src/index/prefix.c` · **Header:** `include/torchlight/prefix.h`
 > **Tests:** `tests/unit/test_prefix.c`
 
@@ -13,7 +13,13 @@ basename tokens, or `PREFIX_PARENT_SCORE` before `text.basename`). Complete
 basename token matches gain `PREFIX_COMPLETE_BONUS` (128) at their own tier;
 shorter fragments receive no bonus. This keeps a whole-basename prefix from
 overriding a completed first token. It also indexes
-basename initials (`projectNotes.md` → `pnm`, `PREFIX_INITIALS_SCORE`). Basename
+basename initials (`projectNotes.md` → `pnm`, `PREFIX_INITIALS_SCORE`). A
+separator-delimited word of the basename after its first that changes case
+inside gets a key for the whole word at token strength (`SQLite` in
+`DB Browser for SQLite`, besides its tokens `SQ` and `Lite`), so typing the
+word whole matches it; the first word needs none, since the basename key starts
+with it, and words joined only by digits (`v2Final`) get none
+([ADR 0060](../../adr/0060-whole-camelcase-words.md)). Basename
 and token keys borrow the caller's normalized symbols; initials live in one
 index-owned arena and get pointers only at `prefix_finish`, after the arena
 stops moving.
@@ -42,7 +48,7 @@ O(log K + matching keys).
 an index. It reports what `prefix_query` would report for that text's slot:
 the best key score, and whether any reported key is a complete token. It
 enumerates keys with the same visitor `prefix_add` uses (basename, every
-token, then initials), so both always see the same keys. The lexical side
+token, whole CamelCase words, then initials), so both always see the same keys. The lexical side
 pass uses it to build one-symbol evidence for a few boosted entries without
 expanding every key that starts with the symbol. `test_prefix.c` checks it
 against `prefix_query` for every slot and query.

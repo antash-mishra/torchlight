@@ -717,3 +717,38 @@ storing them per entry (2 bytes) recovered it.
 500k 0.539 to 0.541, 213k real mirror 0.632 to 0.634. recall@1 on the real
 mirror drops 0.492 to 0.463 because its random targets are 84% SDK and module
 cache files, which M8 demotes on purpose. Fixtures pass 9/9.
+
+## Applications on a real desktop (2026-10-17)
+
+Reported on the reference Linux Mint 22 Cinnamon machine: typing "terminal" did not
+show the Terminal. An isolated `-O3` daemon on the real home folder (213,518 paths,
+own database and socket, the live daemon's environment) answered, for every application
+the session's menu lists (112), its lowercased name, each name word, typed prefixes of
+its first word (3 to 5 letters), its generic name, keywords and `Exec` program, at limit
+10 as the popup asks. Checks that missed (want: the name first, a name word or generic
+name in the top 3 or 5, a keyword in the top 10):
+
+| Check | HEAD | ADR 0057 + 0058 | + ADR 0060 |
+|---|---:|---:|---:|
+| full name (112) | 2 | 0 | 0 |
+| name word | 54 | 7 | 6 |
+| typed prefix | 26 | 2 | 2 |
+| generic name | 7 | 7 | 7 |
+| keyword | 172 | 168 | 168 |
+| `Exec` program (not indexed) | 70 | 68 | 68 |
+| all 957 checks | 331 | 252 | 251 |
+
+The two missing names were GNOME Terminal and Power Statistics, hidden by GIO's
+`OnlyShowIn` test, which Cinnamon's own menu does not apply to GNOME entries
+([ADR 0057](adr/0057-applications-the-desktop-menu-lists.md)). Most name-word and
+prefix misses were applications pushed out of the ten results by folders named
+exactly like the word (`google` in Go module caches, `time`, `system`, `net`, `cli` in
+SDKs and sources), now listed after the applications the query names
+([ADR 0058](adr/0058-applications-the-query-names-come-first.md)); the remaining six are
+words several applications share ("manager"). `sqlite` now finds DB Browser for SQLite
+([ADR 0060](adr/0060-whole-camelcase-words.md)). Keyword and generic-name matches keep
+their ordinary strength (ADR 0018) and program names are not searched; both are left
+as they were. The mixed relevance fixture scores 1.0 on every measure before and after.
+ADR 0060's `bench_lexical` comparison is in that ADR: no change in typing latency or
+labeled quality.
+

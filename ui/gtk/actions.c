@@ -1,5 +1,6 @@
 /* Worker-only desktop activation and exact byte file open/reveal actions. */
 #include "actions.h"
+#include "torchlight/desktop.h"
 #include "torchlight/hashmap.h"
 #include <gio/gdesktopappinfo.h>
 #include <string.h>
@@ -81,6 +82,22 @@ cleanup:
     g_key_file_unref(file);
     return info;
 }
+/* Whether this session's menu lists info, as the daemon's catalog decides
+ * (desktop_shown_in): GNOME Terminal launches on Cinnamon, which lists it. */
+static bool menu_lists(GDesktopAppInfo *info) {
+    if (g_desktop_app_info_get_is_hidden(info) || g_desktop_app_info_get_nodisplay(info))
+        return false;
+    char **only_show_in = g_desktop_app_info_get_string_list(info, "OnlyShowIn", NULL);
+    char **not_show_in = g_desktop_app_info_get_string_list(info, "NotShowIn", NULL);
+    char *exec = g_desktop_app_info_get_string(info, "Exec");
+    bool shown =
+        desktop_shown_in((const char *const *)only_show_in, (const char *const *)not_show_in, exec,
+                         g_getenv("XDG_CURRENT_DESKTOP"));
+    g_free(exec);
+    g_strfreev(not_show_in);
+    g_strfreev(only_show_in);
+    return shown;
+}
 /* Desktop actions that open another window, most common first. */
 static const char *const NEW_WINDOW_ACTIONS[] = {"new-window", "new-empty-window"};
 static bool launch_application(GDesktopAppInfo *info, bool new_window, GAppLaunchContext *context,
@@ -103,8 +120,7 @@ void actions_worker(GTask *task, gpointer source, gpointer task_data, GCancellab
     bool accepted = false;
     if (launch->row.application && !launch->reveal) {
         GDesktopAppInfo *info = validated_info(&launch->row);
-        if (info != NULL && !g_desktop_app_info_get_is_hidden(info) &&
-            g_app_info_should_show(G_APP_INFO(info)) && !g_cancellable_is_cancelled(cancel))
+        if (info != NULL && menu_lists(info) && !g_cancellable_is_cancelled(cancel))
             accepted = launch_application(info, launch->new_window, launch->context, &error);
         if (info != NULL)
             g_object_unref(info);

@@ -141,11 +141,25 @@ with tempfile.TemporaryDirectory(prefix="torchlight-m3-") as directory:
         keyword = next(i for i, result in enumerate(full)
                        if result.get("desktop_id") == "keyword.desktop")
         assert all(i < keyword for i, result in enumerate(full) if result["kind"] == "file")
+        # ADR 0058: an application the query names precedes files named exactly
+        # like the query, which follow it; a typed path still puts its file first.
         exact_file = root / "chrome"
         exact_file.touch()
-        wait_for(lambda: query("chrome")["results"][0].get("path") == str(exact_file))
+        wait_for(lambda: any(r.get("path") == str(exact_file) for r in query("chrome")["results"]))
+        ranked = query("chrome")["results"]
+        assert ranked[0].get("desktop_id") == "google-chrome.desktop", ranked
+        assert ranked[1].get("path") == str(exact_file), ranked
         assert query(str(exact_file))["results"][0]["path"] == str(exact_file)
         exact_file.unlink()
+        # A popup's worth of folders named "google" (Go module caches, SDKs) must
+        # not push Google Chrome out of the ten results the popup asks for.
+        for index in range(12):
+            (root / f"vendor-{index:02}" / "google").mkdir(parents=True)
+        wait_for(lambda: sum(r["kind"] == "folder" for r in query("google")["results"]) >= 9)
+        for limit in [1, 10, 1000]:
+            response = call("query", query="google", limit=limit)
+            assert response["results"][0].get("desktop_id") == "google-chrome.desktop", (limit, response)
+        assert all(r["kind"] == "folder" for r in query("google")["results"][1:])
         wait_for(lambda: query("chrome")["results"][0].get("desktop_id") == "google-chrome.desktop")
         tied = call("query", query="duplicate app", limit=1000)["results"]
         assert len(tied) == 12

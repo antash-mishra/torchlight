@@ -102,7 +102,7 @@ static void hybrid_hello(struct semantic_fixture *fixture, const tl_semantic_sta
         .operation = IPC_QUERY, .request_id = "hybrid", .query = "hello", .limit = 8};
     uint64_t emb_gen = 0;
     CHECK(semantic_submit(fixture->service, 1, token, &request, "search-hybrid", stats->catalog_gen,
-                          stats->desktop_gen, lexical, 1, &emb_gen) == TL_OK);
+                          stats->desktop_gen, lexical, NULL, 1, &emb_gen) == TL_OK);
     size_t length = 0;
     for (size_t i = 0; i < SEMANTIC_WAIT_ATTEMPTS && length == 0; i++) {
         CHECK(semantic_take(fixture->service, 1, token, false, output, capacity, &length) == TL_OK);
@@ -216,7 +216,7 @@ void test_semantic(void) {
         .operation = IPC_QUERY, .request_id = "retry", .query = "hello", .limit = 1};
     uint64_t emb_gen = 0;
     CHECK(semantic_submit(fixture.service, 0, 1, &request, "search", stats.catalog_gen,
-                          stats.desktop_gen, NULL, 0, &emb_gen) == TL_OK);
+                          stats.desktop_gen, NULL, NULL, 0, &emb_gen) == TL_OK);
     CHECK(emb_gen == stats.emb_gen);
     wait_for_small_buffer(&fixture, 1);
     char output[2048];
@@ -228,7 +228,7 @@ void test_semantic(void) {
     CHECK(strstr(output, "\"id\":\"1\"") != NULL);
     CHECK(semantic_take(fixture.service, 0, 1, false, output, sizeof(output), &length) == TL_STATE);
     CHECK(semantic_submit(fixture.service, 0, 2, &request, "search", stats.catalog_gen,
-                          stats.desktop_gen, NULL, 0, &emb_gen) == TL_OK);
+                          stats.desktop_gen, NULL, NULL, 0, &emb_gen) == TL_OK);
     CHECK(semantic_take(fixture.service, 0, 2, true, output, 1, &length) == TL_LIMIT &&
           length == 0);
     CHECK(semantic_take(fixture.service, 0, 2, true, output, sizeof(output), &length) == TL_OK);

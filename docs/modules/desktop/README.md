@@ -1,7 +1,8 @@
 # desktop
 
 > **Status:** Implemented (M3 Part 2), including independent name/generic/keyword fields; M5 personal
-> boosts; M7 change-stamped refresh (parses only when an entry changed)
+> boosts; M7 change-stamped refresh (parses only when an entry changed); the desktop menu's
+> visibility rule (ADR 0057) and named applications (ADR 0058)
 > **Source:** `src/index/desktop.c` · **Header:** `include/torchlight/desktop.h`
 > **Tests:** `tests/unit/test_desktop.c`, `tests/test_desktop.py`
 
@@ -14,7 +15,8 @@ hidden user data directories normally excluded by the file crawler.
 User `applications/` entries precede system directories in XDG_DATA_DIRS order.
 Nested paths become hyphenated desktop ids. A hidden or malformed higher-priority
 entry masks lower copies. GIO supplies localized display/generic names and
-keywords and enforces desktop visibility and TryExec. Settings-category entries
+keywords and enforces TryExec; which desktops an entry is for follows the
+desktop's own menu (below). Settings-category entries
 receive a settings result kind; no Cinnamon-specific launch command is invented.
 Category lists use GIO's list parser, including valid lists without a final
 semicolon.
@@ -33,7 +35,8 @@ lets `chrome` match the name token in `Google Chrome` ahead of ordinary file
 prefixes such as `chromepolicy…`, even when more than ten files match. It applies
 before desktop top-k selection, so a small result limit cannot discard a name
 match before weighting. Generic names, keywords and weak fuzzy matches keep
-their separate lower field scores; exact filenames and paths retain their priority.
+their separate lower field scores. Exact paths retain their priority; files named
+exactly like the query now follow the applications it names (ADR 0058, below).
 The daemon preserves the desktop engine's tie order across result limits.
 See [ADR 0018](../../adr/0018-application-name-ranking.md).
 
@@ -122,3 +125,34 @@ checks) and makes a directory unreadable only while that parse runs: the entry
 must come back. Recording the check's stamp instead fails it in 6 of 8 runs.
 See [ADR 0042](../../adr/0042-desktop-change-stamps.md).
 
+## The desktop's own menu (ADR 0057)
+
+An entry is listed when the running desktop's application menu lists it:
+`desktop_shown_in` decides from its `OnlyShowIn`, `NotShowIn` and `Exec` and the
+`XDG_CURRENT_DESKTOP` value. The rule is GIO's (`g_desktop_app_info_get_show_in`: the
+first current desktop that either list names decides; otherwise only entries without
+`OnlyShowIn` are listed), except on Cinnamon, whose menu (libcinnamon-menu) also lists
+entries restricted to GNOME and never lists `gnome-control-center` panels. That is why
+GNOME Terminal (`OnlyShowIn=GNOME;Unity;` in Ubuntu's package) appears on Linux Mint;
+GIO alone hid it, and Power Statistics with it. The popup's launch check applies the
+same rule to the entry it is about to start. The rule takes the desktop list as an
+argument rather than using GIO's once-per-process copy of the environment, so tests
+judge several desktops in one process; `tests/unit/test_desktop.c` covers it with a
+stand-in `gnome-control-center` on `PATH`, so GIO accepts the panel and only the rule can
+hide it.
+
+## Named applications (ADR 0058)
+
+`desktop_named` says, for the results of a query on the current lease, whether the
+query names each application: every word of the query (split at whitespace, as the
+lexical engine splits) starts the application's display name, a word of it or its
+initials. That is `prefix_score` over the normalized name, kept per entry at discovery
+(`tokenize_create` of the search key's basename), against the query normalized into a
+scratch buffer the catalog owns, so it allocates nothing; only the lease holder uses
+it. It is the same evidence the name bonus weights: generic names, keywords, typos
+and letters scattered through a name do not name an application. The daemon lists
+named applications right after exact paths and before every other file, including
+files named exactly like the query. A name the tokenizer rejects is still searched; it
+just never counts as named. On a stock Mint desktop (112 entries) querying every match
+and naming them costs at most 13 µs a keystroke (for "te"), against 6 µs for the
+top ten alone.

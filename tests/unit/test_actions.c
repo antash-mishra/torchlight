@@ -216,6 +216,38 @@ static void test_new_window(struct launch *launch, const char *script, const cha
     expect_marker(marker, desktop);
     CHECK(unlink(marker) == 0);
 }
+/* Launching follows the session menu's rule (desktop_shown_in): on Cinnamon a
+ * GNOME-only entry such as GNOME Terminal launches, a KDE-only one does not. */
+static void test_desktop_menus(struct launch *launch, const char *script, const char *marker,
+                               const char *desktop) {
+    const char *old_desktops = getenv("XDG_CURRENT_DESKTOP");
+    char *saved_desktops = old_desktops == NULL ? NULL : strdup(old_desktops);
+    CHECK(old_desktops == NULL || saved_desktops != NULL);
+    CHECK(setenv("XDG_CURRENT_DESKTOP", "X-Cinnamon", 1) == 0);
+    char contents[1024];
+    CHECK(snprintf(contents, sizeof(contents),
+                   "[Desktop Entry]\nType=Application\nName=Fixture\nExec=%s %%k\n"
+                   "OnlyShowIn=GNOME;Unity;\n",
+                   script) > 0);
+    write_text(desktop, contents);
+    launch->row.desktop_revision = revision(desktop);
+    CHECK(run_action(launch));
+    expect_marker(marker, desktop);
+    CHECK(unlink(marker) == 0);
+    CHECK(snprintf(contents, sizeof(contents),
+                   "[Desktop Entry]\nType=Application\nName=Fixture\nExec=%s %%k\n"
+                   "OnlyShowIn=KDE;\n",
+                   script) > 0);
+    write_text(desktop, contents);
+    launch->row.desktop_revision = revision(desktop);
+    CHECK(!run_action(launch));
+    CHECK(access(marker, F_OK) != 0);
+    if (saved_desktops != NULL)
+        CHECK(setenv("XDG_CURRENT_DESKTOP", saved_desktops, 1) == 0);
+    else
+        CHECK(unsetenv("XDG_CURRENT_DESKTOP") == 0);
+    free(saved_desktops);
+}
 void test_actions(void) {
     char directory[] = "/tmp/torchlight-actions-XXXXXX";
     CHECK(mkdtemp(directory) != NULL);
@@ -249,6 +281,7 @@ void test_actions(void) {
     expect_marker(marker, desktop);
     CHECK(unlink(marker) == 0);
     test_new_window(&launch, script, marker, desktop);
+    test_desktop_menus(&launch, script, marker, desktop);
     write_text(desktop, "[Desktop Entry]\nType=Application\nName=Replacement\nExec=/bin/true\n");
     CHECK(!run_action(&launch));
     CHECK(access(marker, F_OK) != 0);

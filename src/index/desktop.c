@@ -5,6 +5,7 @@
  * on a stock desktop. */
 #include "torchlight/desktop.h"
 #include "torchlight/hashmap.h"
+#include "torchlight/prefix.h"
 #include "torchlight/vec.h"
 #include <dirent.h>
 #include <gio/gdesktopappinfo.h>
@@ -29,9 +30,24 @@
 /* A typed name token (Chrome in Google Chrome) beats a filename prefix.
  * Metadata-only matches retain their ordinary lexical strength. */
 #define DESKTOP_NAME_PREFIX_BONUS 2000
+/* Cinnamon's XDG_CURRENT_DESKTOP name. Its menu (libcinnamon-menu) also lists
+ * entries restricted to GNOME, which is how GNOME Terminal (OnlyShowIn=GNOME;
+ * Unity;) appears on Linux Mint, but never GNOME Settings panels. */
+#define DESKTOP_CINNAMON "X-Cinnamon"
+#define DESKTOP_GNOME "GNOME"
+#define DESKTOP_GNOME_SETTINGS "gnome-control-center"
+#define DESKTOP_SEPARATOR ":"
+/* The synthetic parent of every search key: the name is the key's basename,
+ * and metadata never enters filesystem folder context. */
+#define DESKTOP_KEY_PREFIX "/Applications/"
+/* Symbols desktop_named can normalize a query into: lexical_query's own
+ * bound, since case folding can expand a byte. */
+#define DESKTOP_QUERY_SYMBOLS (LEXICAL_QUERY_BYTES * 4)
 struct entry {
     tl_desktop_entry public;
     char *key, *generic_name, *keywords;
+    /* The normalized name (the key's basename), for desktop_named. */
+    tl_tokenized *name_text;
     uint64_t fingerprint;
 };
 struct snapshot {
@@ -53,21 +69,28 @@ struct tl_desktop {
      * and the periodic parse are due, in monotonic milliseconds. */
     uint64_t stamp, settle_due, rescan_due;
     atomic_uint_least64_t parses;
+    /* desktop_named's normalized query; used only by the lease holder. */
+    uint32_t query_symbols[DESKTOP_QUERY_SYMBOLS];
+    uint8_t query_boundaries[DESKTOP_QUERY_SYMBOLS];
+    size_t query_offsets[DESKTOP_QUERY_SYMBOLS];
 };
+static void entry_free(struct entry *entry) {
+    g_free((void *)entry->public.desktop_id);
+    g_free((void *)entry->public.filename);
+    g_free((void *)entry->public.name);
+    g_free((void *)entry->public.icon);
+    g_free((void *)entry->public.wm_class);
+    g_free(entry->key);
+    g_free(entry->generic_name);
+    g_free(entry->keywords);
+    tokenize_destroy(entry->name_text);
+}
 static void snapshot_destroy(struct snapshot *snapshot) {
     if (snapshot == NULL)
         return;
     struct entry *entries = vec_data(snapshot->entries);
-    for (size_t i = 0; i < vec_count(snapshot->entries); i++) {
-        g_free((void *)entries[i].public.desktop_id);
-        g_free((void *)entries[i].public.filename);
-        g_free((void *)entries[i].public.name);
-        g_free((void *)entries[i].public.icon);
-        g_free((void *)entries[i].public.wm_class);
-        g_free(entries[i].key);
-        g_free(entries[i].generic_name);
-        g_free(entries[i].keywords);
-    }
+    for (size_t i = 0; i < vec_count(snapshot->entries); i++)
+        entry_free(&entries[i]);
     char **seen = vec_data(snapshot->seen);
     for (size_t i = 0; i < vec_count(snapshot->seen); i++)
         g_free(seen[i]);
@@ -130,8 +153,9 @@ static bool settings_category(GDesktopAppInfo *info) {
     return settings;
 }
 static char *search_key(GDesktopAppInfo *info) {
-    char *key = g_strconcat("/Applications/", g_app_info_get_display_name(G_APP_INFO(info)), NULL);
-    for (size_t i = strlen("/Applications/"); key[i] != 0; i++)
+    char *key =
+        g_strconcat(DESKTOP_KEY_PREFIX, g_app_info_get_display_name(G_APP_INFO(info)), NULL);
+    for (size_t i = strlen(DESKTOP_KEY_PREFIX); key[i] != 0; i++)
         if (key[i] == '/')
             key[i] = ' ';
     return key;
@@ -160,6 +184,76 @@ static char *keyword_field(GDesktopAppInfo *info) {
         }
     return g_string_free(text, FALSE);
 }
+/* ---- visibility -------------------------------------------------------------- */
+/* Whether list (NULL-terminated, NULL for an absent key) holds exactly the
+ * length bytes at name. */
+static bool list_names(const char *const *list, const char *name, size_t length) {
+    for (size_t i = 0; list != NULL && list[i] != NULL; i++)
+        if (strncmp(list[i], name, length) == 0 && list[i][length] == 0)
+            return true;
+    return false;
+}
+/* Step through colon-separated desktops: false at the end, else *name and
+ * *length give the next desktop and *cursor moves past it and its colon. */
+static bool next_desktop(const char **cursor, const char **name, size_t *length) {
+    if (**cursor == 0)
+        return false;
+    *name = *cursor;
+    *length = strcspn(*cursor, DESKTOP_SEPARATOR);
+    *cursor += *length;
+    if (**cursor != 0)
+        (*cursor)++;
+    return true;
+}
+/* Whether the colon-separated desktops include wanted. */
+static bool desktops_include(const char *desktops, const char *wanted) {
+    const char *const names[] = {wanted, NULL};
+    const char *cursor = desktops, *name = NULL;
+    size_t length = 0;
+    while (next_desktop(&cursor, &name, &length))
+        if (list_names(names, name, length))
+            return true;
+    return false;
+}
+bool desktop_shown_in(const char *const *only_show_in, const char *const *not_show_in,
+                      const char *exec, const char *desktops) {
+    if (desktops == NULL)
+        desktops = "";
+    if (desktops_include(desktops, DESKTOP_CINNAMON)) {
+        if (exec != NULL &&
+            strncmp(exec, DESKTOP_GNOME_SETTINGS, strlen(DESKTOP_GNOME_SETTINGS)) == 0)
+            return false;
+        if (list_names(only_show_in, DESKTOP_GNOME, strlen(DESKTOP_GNOME)))
+            return true;
+    }
+    /* g_desktop_app_info_get_show_in, without its once-per-process cache of
+     * the environment, so a test can judge several desktops. */
+    const char *cursor = desktops, *name = NULL;
+    size_t length = 0;
+    while (next_desktop(&cursor, &name, &length)) {
+        if (list_names(only_show_in, name, length))
+            return true;
+        if (list_names(not_show_in, name, length))
+            return false;
+    }
+    return only_show_in == NULL;
+}
+/* Whether this session's menu lists info (desktop_shown_in); the popup's
+ * launch check applies the same test to the entry it launches. */
+static bool menu_lists(GDesktopAppInfo *info) {
+    if (g_desktop_app_info_get_is_hidden(info) || g_desktop_app_info_get_nodisplay(info))
+        return false;
+    char **only_show_in = g_desktop_app_info_get_string_list(info, "OnlyShowIn", NULL);
+    char **not_show_in = g_desktop_app_info_get_string_list(info, "NotShowIn", NULL);
+    char *exec = g_desktop_app_info_get_string(info, "Exec");
+    bool shown =
+        desktop_shown_in((const char *const *)only_show_in, (const char *const *)not_show_in, exec,
+                         g_getenv("XDG_CURRENT_DESKTOP"));
+    g_free(exec);
+    g_strfreev(not_show_in);
+    g_strfreev(only_show_in);
+    return shown;
+}
 static GDesktopAppInfo *entry_info(const char *filename, uint64_t *revision) {
     GKeyFile *file = g_key_file_new();
     GDesktopAppInfo *info = NULL;
@@ -185,6 +279,36 @@ cleanup:
     g_key_file_unref(file);
     return info;
 }
+/* Copy what search and launch need of a listed entry, including its
+ * normalized name; TL_NOMEM when that cannot be allocated. entry owns what
+ * was copied either way (entry_free). */
+static tl_status fill_entry(struct entry *entry, GDesktopAppInfo *info, const char *filename,
+                            const char *id, uint64_t revision) {
+    entry->public.desktop_id = g_strdup(id);
+    entry->public.filename = g_strdup(filename);
+    entry->public.name = g_strdup(g_app_info_get_display_name(G_APP_INFO(info)));
+    GIcon *icon = g_app_info_get_icon(G_APP_INFO(info));
+    entry->public.icon =
+        icon == NULL ? g_strdup("application-x-executable-symbolic") : g_icon_to_string(icon);
+    if (entry->public.icon == NULL || strlen(entry->public.icon) >= DESKTOP_FIELD_BYTES) {
+        g_free((void *)entry->public.icon);
+        entry->public.icon = g_strdup("application-x-executable-symbolic");
+    }
+    entry->public.settings = settings_category(info);
+    const char *wm_class = g_desktop_app_info_get_startup_wm_class(info);
+    if (wm_class != NULL && wm_class[0] != 0 && strlen(wm_class) < DESKTOP_WM_CLASS_BYTES)
+        entry->public.wm_class = g_strdup(wm_class);
+    entry->key = search_key(info);
+    entry->generic_name = generic_field(info);
+    entry->keywords = keyword_field(info);
+    entry->public.generic_name = entry->generic_name;
+    entry->public.keywords = entry->keywords;
+    entry->fingerprint = revision;
+    entry->public.revision = revision;
+    tl_status status = tokenize_create(entry->key + strlen(DESKTOP_KEY_PREFIX), &entry->name_text);
+    /* A name the tokenizer rejects is still searched; it just never counts as named. */
+    return status == TL_NOMEM ? status : TL_OK;
+}
 static tl_status add_entry(struct snapshot *snapshot, const char *filename, const char *id) {
     bool duplicate = false;
     tl_status status = remember_id(snapshot, id, &duplicate);
@@ -201,45 +325,17 @@ static tl_status add_entry(struct snapshot *snapshot, const char *filename, cons
     if (info == NULL)
         return TL_OK;
     const char *name = g_app_info_get_display_name(G_APP_INFO(info));
-    if (g_desktop_app_info_get_is_hidden(info) || !g_app_info_should_show(G_APP_INFO(info)) ||
-        name == NULL || strlen(name) >= DESKTOP_FIELD_BYTES) {
+    if (!menu_lists(info) || name == NULL || strlen(name) >= DESKTOP_FIELD_BYTES) {
         g_object_unref(info);
         return TL_OK;
     }
     struct entry entry = {0};
-    entry.public.desktop_id = g_strdup(id);
-    entry.public.filename = g_strdup(filename);
-    entry.public.name = g_strdup(name);
-    GIcon *icon = g_app_info_get_icon(G_APP_INFO(info));
-    entry.public.icon =
-        icon == NULL ? g_strdup("application-x-executable-symbolic") : g_icon_to_string(icon);
-    if (entry.public.icon == NULL || strlen(entry.public.icon) >= DESKTOP_FIELD_BYTES) {
-        g_free((void *)entry.public.icon);
-        entry.public.icon = g_strdup("application-x-executable-symbolic");
-    }
-    entry.public.settings = settings_category(info);
-    const char *wm_class = g_desktop_app_info_get_startup_wm_class(info);
-    if (wm_class != NULL && wm_class[0] != 0 && strlen(wm_class) < DESKTOP_WM_CLASS_BYTES)
-        entry.public.wm_class = g_strdup(wm_class);
-    entry.key = search_key(info);
-    entry.generic_name = generic_field(info);
-    entry.keywords = keyword_field(info);
-    entry.public.generic_name = entry.generic_name;
-    entry.public.keywords = entry.keywords;
-    entry.fingerprint = revision;
-    entry.public.revision = revision;
+    status = fill_entry(&entry, info, filename, id, revision);
     g_object_unref(info);
-    status = vec_append(snapshot->entries, &entry);
-    if (status != TL_OK) {
-        g_free((void *)entry.public.desktop_id);
-        g_free((void *)entry.public.filename);
-        g_free((void *)entry.public.name);
-        g_free((void *)entry.public.icon);
-        g_free((void *)entry.public.wm_class);
-        g_free(entry.key);
-        g_free(entry.generic_name);
-        g_free(entry.keywords);
-    }
+    if (status == TL_OK)
+        status = vec_append(snapshot->entries, &entry);
+    if (status != TL_OK)
+        entry_free(&entry);
     return status;
 }
 /* ---- applications trees ---------------------------------------------------- */
@@ -646,9 +742,38 @@ tl_status desktop_query_boosted(tl_desktop *desktop, const char *query,
     return lexical_query(desktop->active->engine, desktop->active->workspace, query, results,
                          capacity, count);
 }
-const tl_desktop_entry *desktop_resolve(const tl_desktop *desktop, uint64_t id) {
-    if (desktop == NULL)
-        return NULL;
+/* The separators lexical_query splits a query's words at. */
+static bool query_space(uint32_t symbol) {
+    return symbol == ' ' || symbol == '\t' || symbol == '\n' || symbol == '\r';
+}
+/* Whether every word of the normalized query starts name, a word of it or
+ * its initials (prefix_score's keys of a name without parent folders). */
+static bool names_entry(const tl_tokenized *name, tl_text query) {
+    if (name == NULL)
+        return false;
+    size_t words = 0;
+    for (size_t start = 0; start < query.length;) {
+        if (query_space(query.symbols[start])) {
+            start++;
+            continue;
+        }
+        size_t end = start;
+        while (end < query.length && !query_space(query.symbols[end]))
+            end++;
+        tl_text word = {.symbols = query.symbols + start,
+                        .boundaries = query.boundaries + start,
+                        .length = end - start};
+        int best = 0;
+        bool complete = false;
+        if (prefix_score(tokenize_view(name), word, &best, &complete) != TL_OK ||
+            best < PREFIX_INITIALS_SCORE)
+            return false;
+        words++;
+        start = end;
+    }
+    return words != 0;
+}
+static const struct entry *entry_by_id(const tl_desktop *desktop, uint64_t id) {
     const struct entry *entries = vec_const_data(desktop->active->entries);
     size_t low = 0, high = vec_count(desktop->active->entries);
     while (low < high) {
@@ -658,9 +783,38 @@ const tl_desktop_entry *desktop_resolve(const tl_desktop *desktop, uint64_t id) 
         else
             high = middle;
     }
-    return low < vec_count(desktop->active->entries) && entries[low].public.id == id
-               ? &entries[low].public
-               : NULL;
+    return low < vec_count(desktop->active->entries) && entries[low].public.id == id ? &entries[low]
+                                                                                     : NULL;
+}
+tl_status desktop_named(tl_desktop *desktop, const char *query, const tl_result *results,
+                        size_t count, bool *named) {
+    if (count == 0)
+        return TL_OK;
+    if (named == NULL)
+        return TL_INVALID;
+    memset(named, 0, count * sizeof(*named));
+    if (desktop == NULL || query == NULL || results == NULL)
+        return TL_INVALID;
+    size_t length = strnlen(query, LEXICAL_QUERY_BYTES + 1);
+    if (length > LEXICAL_QUERY_BYTES)
+        return TL_LIMIT;
+    tl_text text = {0};
+    tl_status status =
+        tokenize_into(query, length, desktop->query_symbols, desktop->query_boundaries,
+                      desktop->query_offsets, DESKTOP_QUERY_SYMBOLS, &text);
+    if (status != TL_OK)
+        return status;
+    for (size_t i = 0; i < count; i++) {
+        const struct entry *entry = entry_by_id(desktop, results[i].id);
+        named[i] = entry != NULL && names_entry(entry->name_text, text);
+    }
+    return TL_OK;
+}
+const tl_desktop_entry *desktop_resolve(const tl_desktop *desktop, uint64_t id) {
+    if (desktop == NULL)
+        return NULL;
+    const struct entry *entry = entry_by_id(desktop, id);
+    return entry == NULL ? NULL : &entry->public;
 }
 uint64_t desktop_gen(const tl_desktop *desktop) {
     return desktop == NULL ? 0 : desktop->desktop_gen;

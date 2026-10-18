@@ -315,6 +315,18 @@ the root [README](../README.md) for commands, and
 - [0055: The search time instead of the result count](adr/0055-search-time-in-the-page-header.md)
   shows how long each search took in Tekst's header, in cyan, at a fixed width, and drops
   the header's result count.
+- [0056: A portable archive for other distributions](adr/0056-portable-archive-for-other-distributions.md)
+  ships a tar.gz whose installer sets Torchlight up for one person in `~/.local`, without
+  root, checked on five distributions before each release.
+- [0057: Applications are listed as the desktop's own menu lists them](adr/0057-applications-the-desktop-menu-lists.md)
+  follows Cinnamon's menu, which lists GNOME-only entries such as GNOME Terminal, in the
+  catalog and the popup's launch check.
+- [0058: Applications the query names come before files](adr/0058-applications-the-query-names-come-first.md)
+  lists an application ahead of files named exactly like the query when every typed word
+  starts its name, a word of it or its initials.
+- [0060: Later CamelCase words match when typed whole](adr/0060-whole-camelcase-words.md)
+  gives a later word that changes case inside (`SQLite`) a prefix key of its own, so
+  `sqlite` finds DB Browser for SQLite.
 
 ## Keeping docs current
 

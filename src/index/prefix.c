@@ -76,9 +76,41 @@ static int token_complete_score(tl_text text, size_t start) {
 }
 /* Receives one nonempty key of a text: its symbols and stored score. */
 typedef tl_status (*key_visitor)(void *context, const uint32_t *symbols, size_t length, int score);
-/* Visit the basename key and every token key of text, in that order; the
- * initials key is derived separately. Shared by prefix_add and prefix_score
- * so that both see exactly the same keys. */
+static bool digit(uint32_t symbol) {
+    return symbol >= '0' && symbol <= '9';
+}
+/* Whether a change of case starts a token at i: the tokenizer marks word
+ * starts only after separators, at case changes and between letters and
+ * digits, so a start between two symbols that are neither is a case change. */
+static bool case_start(tl_text text, size_t i) {
+    return text.boundaries[i] != 0 && !digit(text.symbols[i - 1]) && !digit(text.symbols[i]) &&
+           !tokenize_separator(text.symbols[i - 1]);
+}
+/* Visit a key for each separator-delimited word of the basename after its
+ * first that changes case inside (SQLite in "DB Browser for SQLite"), so the
+ * word typed whole matches at token strength; its tokens (SQ, Lite) keep their
+ * own keys. The first word needs none: the basename key starts with it. */
+static tl_status visit_cased_words(tl_text text, key_visitor visit, void *context) {
+    tl_status status = TL_OK;
+    for (size_t start = text.basename; start < text.length && status == TL_OK;) {
+        if (tokenize_separator(text.symbols[start])) {
+            start++;
+            continue;
+        }
+        size_t end = start + 1;
+        bool cased = false;
+        for (; end < text.length && !tokenize_separator(text.symbols[end]); end++)
+            cased = cased || case_start(text, end);
+        if (cased && start != text.basename)
+            status = visit(context, text.symbols + start, end - start,
+                           token_complete_score(text, start));
+        start = end;
+    }
+    return status;
+}
+/* Visit the basename key, every token key and the whole-word keys of text, in
+ * that order; the initials key is derived separately. Shared by prefix_add
+ * and prefix_score so that both see exactly the same keys. */
 static tl_status visit_keys(tl_text text, key_visitor visit, void *context) {
     tl_status status = TL_OK;
     if (text.length > text.basename)
@@ -97,7 +129,7 @@ static tl_status visit_keys(tl_text text, key_visitor visit, void *context) {
             visit(context, text.symbols + start, end - start, token_complete_score(text, start));
         start = end;
     }
-    return status;
+    return status == TL_OK ? visit_cased_words(text, visit, context) : status;
 }
 struct key_target {
     tl_prefix *index;

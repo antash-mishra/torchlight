@@ -1,7 +1,8 @@
 # daemon
 
 > **Status:** Implemented (M6 step 1; M5 personal ranking): dedicated search thread with per-client
-> request queues, supersession and cancellation, over the M4 two-phase service
+> request queues, supersession and cancellation, over the M4 two-phase service; named
+> applications before files (ADR 0058)
 > **Source:** `src/service/daemon.c`, `src/bin/torchlightd.c`
 > **Header:** `include/torchlight/daemon.h`
 > **Tests:** `tests/test_daemon.py`, `tests/test_semantic.py`,
@@ -56,11 +57,19 @@ connections, duplicate ids, size bounds and client deadlines.
 See [writer](../writer/README.md), [IPC](../ipc/README.md) and
 [ADR 0011](../../adr/0011-m2-daemon-writer-and-reconciliation.md).
 
-M3 owns a separate desktop catalog worker, merges its bounded lexical results
-with files by score, and adds typed launch metadata. Desktop name-prefix
-weighting is applied inside its engine before truncation. Tied applications
-retain their engine order and precede tied files, keeping the same head for
-different result limits. See [ADR 0018](../../adr/0018-application-name-ranking.md).
+M3 owns a separate desktop catalog worker, merges its lexical results with
+files, and adds typed launch metadata. Desktop name-prefix weighting is applied
+inside its engine. The merge lists files whose raw path the query is, then the
+applications the query names (`desktop_named`: every word starts the name, a word
+of it or its initials), then every other result by score, so a popup's worth of
+files named exactly like the query cannot hide the application it names
+([ADR 0058](../../adr/0058-applications-the-query-names-come-first.md)). Every
+desktop match is weighed, not only the request's limit. Applications that are not
+named keep their score; tied applications retain their engine order and precede
+tied files, keeping the same head for different result limits
+([ADR 0018](../../adr/0018-application-name-ranking.md)). The semantic service
+receives which pooled results are named applications, so fusion keeps them in
+place.
 Query/result encoding holds
 a short desktop lease and a file-catalog lease, releases both before socket
 output, and does no new filesystem/SQL/allocation work. Resolve/open dispatches

@@ -92,6 +92,12 @@ struct tl_daemon {
     struct client clients[DAEMON_MAX_CLIENTS];
     tl_result results[LEXICAL_MAX_RESULTS];
     tl_result applications[LEXICAL_MAX_RESULTS];
+    /* Merge scratch, search thread only (ADR 0058): which applications the
+     * query names, the merged order, and which merged results (aligned with
+     * results) are named applications, a tier semantic fusion keeps. */
+    bool application_named[LEXICAL_MAX_RESULTS];
+    tl_result merged[LEXICAL_MAX_RESULTS];
+    bool merged_named[LEXICAL_MAX_RESULTS], results_named[LEXICAL_MAX_RESULTS];
 };
 static uint64_t milliseconds(void) {
     struct timespec now;
@@ -438,30 +444,60 @@ static void response_prefix(tl_json_buffer *b, const tl_ipc_request *request, ui
     indexing_status(b, stats, semantic, personal_items);
     json_raw(b, ",\"results\":[");
 }
+/* Search thread: append one result to the merge, with whether it is an
+ * application the query names. */
+static void merge_append(tl_daemon *daemon, size_t *out, const tl_result *result, bool named) {
+    daemon->merged[*out] = *result;
+    daemon->merged_named[*out] = named;
+    (*out)++;
+}
+/* Search thread: after exact paths and named applications, the remaining
+ * files and applications by score. Applications precede equally scored files
+ * and keep the desktop engine's order, so limit=1 and limit=10 expose the
+ * same head (ADR 0018). */
+static void merge_rest(tl_daemon *daemon, size_t limit, size_t file_count, size_t app_count,
+                       size_t file, size_t *out) {
+    size_t app = 0;
+    while (*out < limit) {
+        while (app < app_count && daemon->application_named[app])
+            app++;
+        bool apps_left = app < app_count, files_left = file < file_count;
+        if (!apps_left && !files_left)
+            return;
+        if (apps_left &&
+            (!files_left || daemon->applications[app].score >= daemon->results[file].score))
+            merge_append(daemon, out, &daemon->applications[app++], false);
+        else
+            merge_append(daemon, out, &daemon->results[file++], false);
+    }
+}
+/* Search thread: merge the leased desktop catalog's matches into the file
+ * results. Exact raw paths come first, then the applications the query names
+ * (desktop_named: each word starts the name, a word of it or its initials),
+ * then everything else by score (ADR 0058). Every desktop match is weighed,
+ * not just limit of them: a boosted multiword match can rank an unnamed
+ * application above a named one, and the catalog is small. */
 static tl_status merge_applications(tl_daemon *daemon, const tl_ipc_request *request,
                                     size_t *count) {
-    size_t app_count = 0;
+    size_t app_count = 0, file = 0, out = 0;
     tl_status status = desktop_query_boosted(daemon->desktop, request->query, daemon->app_boosts,
                                              daemon->app_boost_count, daemon->applications,
-                                             request->limit, &app_count);
+                                             LEXICAL_MAX_RESULTS, &app_count);
+    if (status == TL_OK)
+        status = desktop_named(daemon->desktop, request->query, daemon->applications, app_count,
+                               daemon->application_named);
     if (status != TL_OK)
         return status;
-    for (size_t i = 0; i < app_count; i++) {
-        tl_result candidate = daemon->applications[i];
-        size_t place = 0;
-        /* Preserve the desktop engine's order at ties, so limit=1 and limit=10
-         * expose the same head. Desktop results still precede tied files. */
-        while (place < *count && (daemon->results[place].score > candidate.score ||
-                                  (daemon->results[place].score == candidate.score &&
-                                   daemon->results[place].id >= DESKTOP_ID_BASE)))
-            place++;
-        if (place >= request->limit)
-            continue;
-        size_t end = *count < request->limit ? (*count)++ : request->limit - 1;
-        for (size_t j = end; j > place; j--)
-            daemon->results[j] = daemon->results[j - 1];
-        daemon->results[place] = candidate;
-    }
+    while (out < request->limit && file < *count &&
+           lexical_exactness(&daemon->results[file]) == LEXICAL_EXACT_RAW_PATH)
+        merge_append(daemon, &out, &daemon->results[file++], false);
+    for (size_t i = 0; i < app_count && out < request->limit; i++)
+        if (daemon->application_named[i])
+            merge_append(daemon, &out, &daemon->applications[i], true);
+    merge_rest(daemon, request->limit, *count, app_count, file, &out);
+    memcpy(daemon->results, daemon->merged, out * sizeof(*daemon->results));
+    memcpy(daemon->results_named, daemon->merged_named, out * sizeof(*daemon->results_named));
+    *count = out;
     return TL_OK;
 }
 /* Search thread: queue an accepted open for saving, with the query of its
@@ -718,10 +754,10 @@ static void queue_semantic(tl_daemon *daemon, struct client *client,
         client->abort = true;
         return;
     }
-    tl_status queued = semantic_submit(daemon->semantic, client->slot, ++client->semantic_token,
-                                       request, completion->search_id, completion->catalog_gen,
-                                       desktop_gen(daemon->desktop), daemon->results,
-                                       completion->count, &completion->emb_gen);
+    tl_status queued = semantic_submit(
+        daemon->semantic, client->slot, ++client->semantic_token, request, completion->search_id,
+        completion->catalog_gen, desktop_gen(daemon->desktop), daemon->results,
+        daemon->results_named, completion->count, &completion->emb_gen);
     if (queued == TL_OK) {
         completion->lexical_phase = true;
         completion->reason = "semantic_pending";

@@ -21,14 +21,15 @@ a positive RRF constant. Start with `RANK_DEFAULT_RRF_K` (60).
 Each concurrent query needs its own ranker; `rank_destroy` releases scratch.
 
 `rank_fuse` accepts best-first candidate lists containing nonzero ids, borrowed
-raw path strings and explicit regular/exact-basename/exact-path priorities.
+raw path strings and explicit regular/exact-basename/named/exact-path priorities.
 It deduplicates matching ids across the two lists and adds
 `1 / (k + one-based source rank)` for each source. Duplicate ids within one list
 are rejected so a candidate cannot vote twice. Equal ids with differing paths
 return `TL_STATE` rather than combine incompatible catalog views.
 
-Exact paths precede exact basenames, which precede regular fusion scores, even
-when ordinary RRF scores would win. Equal scores preserve lexical source order,
+Exact paths precede named results (`RANK_NAMED`: the applications the query
+names, which the daemon lists before files, ADR 0058), then exact basenames, then
+regular fusion scores, even when ordinary RRF scores would win. Equal scores preserve lexical source order,
 then compare raw paths and ids. With an empty semantic list, output preserves
 the lexical order exactly. Unembedded lexical entries remain candidates.
 

@@ -179,6 +179,9 @@ there are no windows and nothing else changes.
 
 Actions first resolve the id. A separate GTask performs desktop revision checking,
 GAppInfo launch, argv xdg-open or FileManager1.ShowItems with parent fallback.
+An application launches only if the desktop's own menu lists it, by the catalog's
+rule (`desktop_shown_in`, [ADR 0057](../../adr/0057-applications-the-desktop-menu-lists.md)),
+so GNOME Terminal starts on Cinnamon, whose menu lists it, though GIO alone would refuse.
 For non-UTF-8 filenames, it also opens the parent after an acknowledged reveal,
 covering Nemo accepting the URI without displaying the item. An isolated D-Bus
 fixture verifies the exact decoded URI bytes and the parent argv fallback.

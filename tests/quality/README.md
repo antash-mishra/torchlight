@@ -7,8 +7,10 @@ are 3 (preferred) and 1 (reasonable alternative). Target families and their
 variants stay together in the explicit tuning/held-out split. The two alignment
 families are controlled comparisons rather than real application names.
 
-The native evaluator merges separate desktop and file engines using the daemon's
-score-first behavior. It verifies fresh-workspace and top-k equivalence. The
+The native evaluator merges separate desktop and file engines as the daemon does:
+exact paths, then the applications the query names, then the rest by score
+(ADR 0058). Libraries from before `desktop_named` are merged by score alone, as the
+daemon merged them then. It verifies fresh-workspace and top-k equivalence. The
 fixture has fewer than 1000 entries, so returned membership is complete, making
 candidate recall exact here. Large synthetic benchmark recall@1000 is a ranked
 proxy, not complete pre-ranking recall. Missing useful results have first rank
