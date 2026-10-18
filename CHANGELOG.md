@@ -2,32 +2,46 @@
 
 Each release's notes are taken from its section here (docs/release.md).
 
-## Unreleased
+## 0.1.5 (2026-10-18)
 
-- Typing "terminal" on Linux Mint finds the Terminal. Applications are listed as the
+Torchlight now installs on many more distributions, finds applications it used to miss,
+and starts with every session on Linux Mint.
+
+### On more distributions
+
+- Releases also come as a portable archive, `torchlight-0.1.5-linux-x86_64.tar.gz`, for
+  Fedora, Arch, openSUSE, Debian 13 and other 64-bit distributions with GTK 4.14 or newer.
+  Its `install.sh` sets Torchlight up just for you, in `~/.local`, without root; run a newer
+  release's installer to update, or `install.sh --uninstall` to remove it.
+
+### Starting at login
+
+- The search daemon starts at every login on Cinnamon (Linux Mint), Xfce, MATE and LXQt.
+  Until now it started right after installing but not again after logging in, so the popup
+  could not search: those desktops never start the systemd target its service waits for.
+  The package now also starts it from an autostart entry, "Torchlight search daemon", which
+  Startup Applications lists. After updating, log out and back in once, or run
+  `systemctl --user start torchlightd`.
+
+### Finding applications
+
+- Typing "terminal" on Linux Mint finds the Terminal. Applications are listed as your
   desktop's own menu lists them: Cinnamon's menu shows GNOME's Terminal and Power
   Statistics, and now so does Torchlight, and they launch.
-- An application whose name you type comes first, even when many files or folders are
-  named exactly that word: "google" lists Google Chrome before the `google` folders of Go
-  module caches and SDKs, "time" lists Date & Time, "cli" CLion. A typed path still lists
-  its file first.
-- A word written in CamelCase later in a name matches when you type it whole: "sqlite"
-  finds DB Browser for SQLite, "virtualbox" Oracle VM VirtualBox, and the same goes for
-  files.
-- The search daemon starts at every login on Cinnamon (Linux Mint), Xfce, MATE and LXQt.
-  It used to start only right after installing, and not again after logging in, because
-  those desktops never start the systemd target its service waits for. The package now
-  also starts it from an autostart entry, "Torchlight search daemon", which Startup
-  Applications lists.
-- Torchlight is open source, under the MIT License.
+- An application whose name you type comes first, even when many files or folders are named
+  exactly that word: "google" lists Google Chrome before the `google` folders of Go module
+  caches and SDKs, "time" lists Date & Time, "cli" CLion. A typed path still lists its file
+  first.
+- A word written in CamelCase later in a name matches when you type it whole: "sqlite" finds
+  DB Browser for SQLite, "virtualbox" Oracle VM VirtualBox, and the same goes for files.
+
+### Also
+
 - A selected window, beneath its application, is easy to read again: its title takes the
   selection's text color instead of staying gray.
-- Releases also come as a portable archive for Fedora, Arch, openSUSE, Debian 13 and other
-  distributions with GTK 4.14 or newer. Its `install.sh` sets Torchlight up just for you,
-  in `~/.local`, without root; run a newer release's installer to update, or
-  `install.sh --uninstall` to remove it.
 - `make install` puts the search daemon's service where systemd finds it
   (`~/.local/share/systemd/user`).
+- Torchlight is open source, under the MIT License.
 
 ## 0.1.4 (2026-10-14)
 
