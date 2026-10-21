@@ -23,6 +23,13 @@
 #define SETTLE_MS 300
 #define WAIT_STEPS 20000
 #define OPERATION_KINDS 10
+/* A file in the root the random operations never list, so never touch: every
+ * comparison then holds more than the root whenever scans work. Without it,
+ * removals, renames out of the tree and hidden or ignored names could leave
+ * nothing indexable, failing the count check although both writers agreed
+ * (seeds 7, 16 and 19 did here, and a release runner's directory order did
+ * for the default seed). */
+#define ANCHOR_NAME "anchor.txt"
 struct mode {
     char database[128], config_path[128];
     tl_config *config;
@@ -61,7 +68,8 @@ static void list_into(struct tree *tree, const char *path) {
         return;
     struct dirent *entry = NULL;
     while ((entry = readdir(directory)) != NULL && tree->count < TREE_LIMIT) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0 ||
+            strcmp(entry->d_name, ANCHOR_NAME) == 0)
             continue;
         size_t index = tree->count;
         if (snprintf(tree->paths[index], NAME_BYTES, "%s/%s", path, entry->d_name) >= NAME_BYTES)
@@ -429,6 +437,9 @@ void test_scan_equivalence(void) {
     struct world world;
     prepare_world(&world);
     replaced_directory_keeps_descendants(&world);
+    char anchor[NAME_BYTES];
+    CHECK(snprintf(anchor, sizeof(anchor), "%s/%s", world.root, ANCHOR_NAME) < NAME_BYTES);
+    write_bytes(anchor, O_CREAT, 1);
     for (int i = 0; i < INITIAL_OPERATIONS; i++)
         operate(&world);
     for (int round = 0; round < EQUIVALENCE_ROUNDS; round++) {
