@@ -212,6 +212,76 @@ static void named_entries(const char *user_apps) {
         CHECK(unlink(path) == 0);
     }
 }
+/* -1 when query does not return the application called name, else what
+ * desktop_evidence says the query finds in it. */
+static int evidence_of(tl_desktop *desktop, const char *text, const char *name) {
+    tl_result results[10];
+    tl_desktop_evidence evidence[10];
+    size_t count = query(desktop, text, results);
+    CHECK(desktop_evidence(desktop, text, results, count, evidence) == TL_OK);
+    for (size_t i = 0; i < count; i++)
+        if (strcmp(desktop_resolve(desktop, results[i].id)->name, name) == 0)
+            return (int)evidence[i];
+    return -1;
+}
+/* Evidence (ADR 0061): named as desktop_named says; described when each other
+ * word is a whole word of the generic name or keywords (the tags a settings
+ * panel carries); a word start when one only starts such a word; fuzzy for
+ * typos and infixes. */
+static void evidence_entries(const char *user_apps) {
+    write_entry(user_apps, "evidence-chrome.desktop",
+                "Name=Google Chrome\nGenericName=Web Browser\nKeywords=internet;\n");
+    write_entry(user_apps, "evidence-sound.desktop",
+                "Name=Loudness\nKeywords=audio;speakers;microphone;\n");
+    write_entry(user_apps, "evidence-network.desktop",
+                "Name=Connections\nKeywords=wifi;wireless;\n");
+    tl_desktop *desktop = NULL;
+    CHECK(desktop_create(NULL, &desktop) == TL_OK);
+    desktop_acquire(desktop);
+    const char *chrome = "Google Chrome";
+    CHECK(evidence_of(desktop, "google", chrome) == DESKTOP_NAMED);
+    CHECK(evidence_of(desktop, "chr goo", chrome) == DESKTOP_NAMED);
+    CHECK(evidence_of(desktop, "browser", chrome) == DESKTOP_DESCRIBED);
+    CHECK(evidence_of(desktop, "internet", chrome) == DESKTOP_DESCRIBED);
+    CHECK(evidence_of(desktop, "web browser", chrome) == DESKTOP_DESCRIBED);
+    CHECK(evidence_of(desktop, "google browser", chrome) == DESKTOP_DESCRIBED);
+    CHECK(evidence_of(desktop, "brow", chrome) == DESKTOP_WORD_START);
+    CHECK(evidence_of(desktop, "google brow", chrome) == DESKTOP_WORD_START);
+    CHECK(evidence_of(desktop, "audio", "Loudness") == DESKTOP_DESCRIBED);
+    CHECK(evidence_of(desktop, "MICROPHONE", "Loudness") == DESKTOP_DESCRIBED);
+    CHECK(evidence_of(desktop, "aud", "Loudness") == DESKTOP_WORD_START);
+    CHECK(evidence_of(desktop, "wifi", "Connections") == DESKTOP_DESCRIBED);
+    CHECK(evidence_of(desktop, "gogle", chrome) == DESKTOP_FUZZY);
+    CHECK(evidence_of(desktop, "rome", chrome) == DESKTOP_FUZZY);
+    tl_result results[10];
+    tl_desktop_evidence evidence[2] = {DESKTOP_NAMED, DESKTOP_NAMED};
+    size_t count = query(desktop, "google", results);
+    CHECK(count >= 1);
+    tl_result unknown = {1, "/Applications/Unknown", 0};
+    CHECK(desktop_evidence(desktop, "google", &unknown, 1, evidence) == TL_OK &&
+          evidence[0] == DESKTOP_FUZZY);
+    evidence[0] = DESKTOP_NAMED;
+    CHECK(desktop_evidence(desktop, "  ", results, 1, evidence) == TL_OK &&
+          evidence[0] == DESKTOP_FUZZY);
+    CHECK(desktop_evidence(desktop, "google", results, 0, NULL) == TL_OK);
+    CHECK(desktop_evidence(desktop, "google", results, 1, NULL) == TL_INVALID);
+    CHECK(desktop_evidence(NULL, "google", results, 1, evidence) == TL_INVALID);
+    char long_query[LEXICAL_QUERY_BYTES + 2];
+    memset(long_query, 'g', sizeof(long_query) - 1);
+    long_query[sizeof(long_query) - 1] = 0;
+    evidence[0] = DESKTOP_NAMED;
+    CHECK(desktop_evidence(desktop, long_query, results, 1, evidence) == TL_LIMIT &&
+          evidence[0] == DESKTOP_FUZZY);
+    desktop_release(desktop);
+    desktop_destroy(desktop);
+    const char *ids[] = {"evidence-chrome.desktop", "evidence-sound.desktop",
+                         "evidence-network.desktop"};
+    char path[512];
+    for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); i++) {
+        CHECK(snprintf(path, sizeof(path), "%s/%s", user_apps, ids[i]) > 0);
+        CHECK(unlink(path) == 0);
+    }
+}
 static uint64_t wait_parses(tl_desktop *desktop, uint64_t wanted) {
     for (size_t i = 0; i < WAIT_STEPS && desktop_parses(desktop) < wanted; i++)
         pause_ms(5);
@@ -398,6 +468,7 @@ void test_desktop(void) {
     desktop_destroy(desktop);
     gnome_entries(temporary, user_apps);
     named_entries(user_apps);
+    evidence_entries(user_apps);
     change_stamps(user_apps, system_apps);
     const char *user_ids[] = {"masked.desktop",  "duplicate.desktop", "private.desktop",
                               "other.desktop",   "excluded.desktop",  "missing.desktop",

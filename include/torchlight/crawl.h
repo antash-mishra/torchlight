@@ -1,6 +1,7 @@
-/* Physical filesystem walking with explicit roots, default exclusions, an
- * allowlist for hidden/ignored directories and never-crawled excluded scopes
- * (Torchlight's own state, and folders a person excludes). */
+/* Physical filesystem walking with explicit roots, default exclusions
+ * (hidden, ignored-name and tool-managed directories), an allowlist for them
+ * and never-crawled excluded scopes (Torchlight's own state, and folders a
+ * person excludes). */
 #ifndef TORCHLIGHT_CRAWL_H
 #define TORCHLIGHT_CRAWL_H
 #include "torchlight/common.h"
@@ -32,7 +33,7 @@ typedef tl_status (*tl_crawl_callback)(void *context, const tl_crawl_entry *entr
 /** Create a crawler. exclude lists exclude_count scopes never crawled, not
  * even below allowlisted or root directories: Torchlight's own state and the
  * configured `exclude` paths. allow lists allow_count directories re-included
- * despite the hidden/ignored-name defaults. All paths should be absolute and
+ * despite the hidden, ignored-name and tool-managed defaults. All paths should be absolute and
  * canonical; they are copied. out NULL on TL_INVALID (NULL list with a
  * nonzero count, or a NULL item) or TL_NOMEM. */
 tl_status crawl_create(const char *const *exclude, size_t exclude_count, const char *const *allow,
@@ -42,8 +43,17 @@ void crawl_destroy(tl_crawl *crawler);
 /** Walk canonical root physically, including symlink entries but not targets.
  * Callback borrows entry/path only during call; context is caller-owned.
  *
- * Hidden directories and node_modules/target/build/__pycache__ are skipped;
- * hidden files are retained; the root itself is always walked. An allowlisted
+ * Hidden directories, folders only tools create (node_modules,
+ * bower_components, site-packages, dist-packages, target, build, CMakeFiles,
+ * __pycache__) and tool-managed directories are skipped with their subtrees.
+ * A directory is tool-managed when it holds an entry its tool writes: a
+ * regular pyvenv.cfg (Python virtual environment), a conda-meta directory
+ * (Conda), a regular .knownPackages (Android SDK) or a regular CACHEDIR.TAG
+ * starting with the Cache Directory Tagging signature, or when it is named
+ * mod and holds a cache/download directory (Go's module cache; ADR 0062). Entered
+ * directories are checked against their own listing, so only those holding
+ * such a name cost extra lookups. Hidden files are retained; the root itself
+ * is always walked. An allowlisted
  * directory is indexed like any other; its hidden or ignored ancestors below
  * root are traversed without being reported, following only paths that lead
  * to allowlisted directories. Excluded scopes always win, even at the root:
@@ -71,7 +81,9 @@ tl_status crawl_scope(tl_crawl *crawler, const char *directory, bool recursive,
 /** Return whether crawl_run(outer) would index directory inner itself (both
  * absolute and canonical): inner is outer or below it, and no excluded,
  * skipped or traversed-only directory lies on the way. Then a separate scan of
- * inner is redundant. false for NULL arguments. */
+ * inner is redundant. Tool-managed markers are looked up in each directory on
+ * the way (a few fstatat calls each), exactly as a walk would decide. false
+ * for NULL arguments. */
 bool crawl_covers(const tl_crawl *crawler, const char *outer, const char *inner);
 /** Decide which of count canonical roots need their own scan: keep[i] is false
  * for repeats of an earlier root and for roots another listed root covers

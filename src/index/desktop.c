@@ -40,14 +40,18 @@
 /* The synthetic parent of every search key: the name is the key's basename,
  * and metadata never enters filesystem folder context. */
 #define DESKTOP_KEY_PREFIX "/Applications/"
-/* Symbols desktop_named can normalize a query into: lexical_query's own
- * bound, since case folding can expand a byte. */
+/* Symbols desktop_named and desktop_evidence can normalize a query into:
+ * lexical_query's own bound, since case folding can expand a byte. */
 #define DESKTOP_QUERY_SYMBOLS (LEXICAL_QUERY_BYTES * 4)
 struct entry {
     tl_desktop_entry public;
     char *key, *generic_name, *keywords;
-    /* The normalized name (the key's basename), for desktop_named. */
-    tl_tokenized *name_text;
+    /* The normalized name (the key's basename), generic name and keywords,
+     * for desktop_named and desktop_evidence; NULL when not tokenized. */
+    tl_tokenized *name_text, *generic_text, *keyword_text;
+    /* tokenize_symbol_mask of every symbol that starts a word of the generic
+     * name or keywords: a word whose first symbol is missing starts none. */
+    uint64_t field_starts;
     uint64_t fingerprint;
 };
 struct snapshot {
@@ -69,7 +73,8 @@ struct tl_desktop {
      * and the periodic parse are due, in monotonic milliseconds. */
     uint64_t stamp, settle_due, rescan_due;
     atomic_uint_least64_t parses;
-    /* desktop_named's normalized query; used only by the lease holder. */
+    /* The normalized query of desktop_named and desktop_evidence; used only by
+     * the lease holder. */
     uint32_t query_symbols[DESKTOP_QUERY_SYMBOLS];
     uint8_t query_boundaries[DESKTOP_QUERY_SYMBOLS];
     size_t query_offsets[DESKTOP_QUERY_SYMBOLS];
@@ -84,6 +89,8 @@ static void entry_free(struct entry *entry) {
     g_free(entry->generic_name);
     g_free(entry->keywords);
     tokenize_destroy(entry->name_text);
+    tokenize_destroy(entry->generic_text);
+    tokenize_destroy(entry->keyword_text);
 }
 static void snapshot_destroy(struct snapshot *snapshot) {
     if (snapshot == NULL)
@@ -279,6 +286,23 @@ cleanup:
     g_key_file_unref(file);
     return info;
 }
+/* tokenize_symbol_mask of each symbol where a prefix key of text can start:
+ * the basename, and every word (after a separator or at a marked boundary).
+ * Zero for NULL. */
+static uint64_t word_starts(const tl_tokenized *tokenized) {
+    if (tokenized == NULL)
+        return 0;
+    tl_text text = tokenize_view(tokenized);
+    uint64_t mask = 0;
+    for (size_t i = 0; i < text.length; i++) {
+        bool start = i == text.basename ||
+                     (!tokenize_separator(text.symbols[i]) &&
+                      (i == 0 || tokenize_separator(text.symbols[i - 1]) || text.boundaries[i]));
+        if (start)
+            mask |= tokenize_symbol_mask(text.symbols[i]);
+    }
+    return mask;
+}
 /* Copy what search and launch need of a listed entry, including its
  * normalized name; TL_NOMEM when that cannot be allocated. entry owns what
  * was copied either way (entry_free). */
@@ -305,9 +329,17 @@ static tl_status fill_entry(struct entry *entry, GDesktopAppInfo *info, const ch
     entry->public.keywords = entry->keywords;
     entry->fingerprint = revision;
     entry->public.revision = revision;
-    tl_status status = tokenize_create(entry->key + strlen(DESKTOP_KEY_PREFIX), &entry->name_text);
-    /* A name the tokenizer rejects is still searched; it just never counts as named. */
-    return status == TL_NOMEM ? status : TL_OK;
+    /* A field the tokenizer rejects (or an empty one) is still searched; it just
+     * never counts as naming or describing the application. */
+    const char *texts[] = {entry->key + strlen(DESKTOP_KEY_PREFIX), entry->generic_name,
+                           entry->keywords};
+    tl_tokenized **tokenized[] = {&entry->name_text, &entry->generic_text, &entry->keyword_text};
+    for (size_t i = 0; i < sizeof(texts) / sizeof(texts[0]); i++) {
+        if (texts[i] != NULL && tokenize_create(texts[i], tokenized[i]) == TL_NOMEM)
+            return TL_NOMEM;
+    }
+    entry->field_starts = word_starts(entry->generic_text) | word_starts(entry->keyword_text);
+    return TL_OK;
 }
 static tl_status add_entry(struct snapshot *snapshot, const char *filename, const char *id) {
     bool duplicate = false;
@@ -746,32 +778,77 @@ tl_status desktop_query_boosted(tl_desktop *desktop, const char *query,
 static bool query_space(uint32_t symbol) {
     return symbol == ' ' || symbol == '\t' || symbol == '\n' || symbol == '\r';
 }
-/* Whether every word of the normalized query starts name, a word of it or
- * its initials (prefix_score's keys of a name without parent folders). */
-static bool names_entry(const tl_tokenized *name, tl_text query) {
-    if (name == NULL)
+/* Whether a query word starts name, a word of it or its initials
+ * (prefix_score's keys of a name without parent folders). */
+static bool word_names(const tl_tokenized *name, tl_text word) {
+    int best = 0;
+    bool complete = false;
+    return name != NULL && prefix_score(tokenize_view(name), word, &best, &complete) == TL_OK &&
+           best >= PREFIX_INITIALS_SCORE;
+}
+/* How a query word meets a generic name or keyword field: not at all, by
+ * starting one of its words, or as a whole word of it. A field's initials are
+ * not its words. */
+enum field_match { FIELD_NONE, FIELD_START, FIELD_WHOLE };
+static enum field_match field_match(const tl_tokenized *field, tl_text word) {
+    int best = 0;
+    bool complete = false;
+    if (field == NULL || prefix_score(tokenize_view(field), word, &best, &complete) != TL_OK ||
+        best < PREFIX_TOKEN_SCORE)
+        return FIELD_NONE;
+    return complete ? FIELD_WHOLE : FIELD_START;
+}
+/* The next word of query at or after *start, split at whitespace as
+ * lexical_query splits words; false when none is left. */
+static bool next_word(tl_text query, size_t *start, tl_text *word) {
+    while (*start < query.length && query_space(query.symbols[*start]))
+        (*start)++;
+    if (*start == query.length)
         return false;
-    size_t words = 0;
-    for (size_t start = 0; start < query.length;) {
-        if (query_space(query.symbols[start])) {
-            start++;
-            continue;
-        }
-        size_t end = start;
-        while (end < query.length && !query_space(query.symbols[end]))
-            end++;
-        tl_text word = {.symbols = query.symbols + start,
-                        .boundaries = query.boundaries + start,
-                        .length = end - start};
-        int best = 0;
-        bool complete = false;
-        if (prefix_score(tokenize_view(name), word, &best, &complete) != TL_OK ||
-            best < PREFIX_INITIALS_SCORE)
+    size_t end = *start;
+    while (end < query.length && !query_space(query.symbols[end]))
+        end++;
+    *word = (tl_text){.symbols = query.symbols + *start,
+                      .boundaries = query.boundaries + *start,
+                      .length = end - *start};
+    *start = end;
+    return true;
+}
+/* Whether every word of a normalized query names entry (desktop_named). */
+static bool names_entry(const struct entry *entry, tl_text query) {
+    size_t start = 0, words = 0;
+    tl_text word;
+    while (next_word(query, &start, &word)) {
+        if (!word_names(entry->name_text, word))
             return false;
         words++;
-        start = end;
     }
     return words != 0;
+}
+/* What the words of a normalized query find in entry (see desktop_evidence). */
+static tl_desktop_evidence entry_evidence(const struct entry *entry, tl_text query) {
+    size_t start = 0, words = 0;
+    bool named = true, whole = true;
+    tl_text word;
+    while (next_word(query, &start, &word)) {
+        words++;
+        if (word_names(entry->name_text, word))
+            continue;
+        named = false;
+        if ((entry->field_starts & tokenize_symbol_mask(word.symbols[0])) == 0)
+            return DESKTOP_FUZZY;
+        enum field_match best = field_match(entry->generic_text, word);
+        if (best != FIELD_WHOLE) {
+            enum field_match keyword = field_match(entry->keyword_text, word);
+            best = keyword > best ? keyword : best;
+        }
+        if (best == FIELD_NONE)
+            return DESKTOP_FUZZY;
+        whole = whole && best == FIELD_WHOLE;
+    }
+    if (words == 0)
+        return DESKTOP_FUZZY;
+    return named ? DESKTOP_NAMED : whole ? DESKTOP_DESCRIBED : DESKTOP_WORD_START;
 }
 static const struct entry *entry_by_id(const tl_desktop *desktop, uint64_t id) {
     const struct entry *entries = vec_const_data(desktop->active->entries);
@@ -786,6 +863,35 @@ static const struct entry *entry_by_id(const tl_desktop *desktop, uint64_t id) {
     return low < vec_count(desktop->active->entries) && entries[low].public.id == id ? &entries[low]
                                                                                      : NULL;
 }
+/* Normalize query into the catalog's scratch (one lease holder at a time). */
+static tl_status normalize_query(tl_desktop *desktop, const char *query, tl_text *text) {
+    size_t length = strnlen(query, LEXICAL_QUERY_BYTES + 1);
+    if (length > LEXICAL_QUERY_BYTES)
+        return TL_LIMIT;
+    return tokenize_into(query, length, desktop->query_symbols, desktop->query_boundaries,
+                         desktop->query_offsets, DESKTOP_QUERY_SYMBOLS, text);
+}
+tl_status desktop_evidence(tl_desktop *desktop, const char *query, const tl_result *results,
+                           size_t count, tl_desktop_evidence *evidence) {
+    if (count == 0)
+        return TL_OK;
+    if (evidence == NULL)
+        return TL_INVALID;
+    for (size_t i = 0; i < count; i++)
+        evidence[i] = DESKTOP_FUZZY;
+    if (desktop == NULL || query == NULL || results == NULL)
+        return TL_INVALID;
+    tl_text text = {0};
+    tl_status status = normalize_query(desktop, query, &text);
+    if (status != TL_OK)
+        return status;
+    for (size_t i = 0; i < count; i++) {
+        const struct entry *entry = entry_by_id(desktop, results[i].id);
+        if (entry != NULL)
+            evidence[i] = entry_evidence(entry, text);
+    }
+    return TL_OK;
+}
 tl_status desktop_named(tl_desktop *desktop, const char *query, const tl_result *results,
                         size_t count, bool *named) {
     if (count == 0)
@@ -795,18 +901,13 @@ tl_status desktop_named(tl_desktop *desktop, const char *query, const tl_result 
     memset(named, 0, count * sizeof(*named));
     if (desktop == NULL || query == NULL || results == NULL)
         return TL_INVALID;
-    size_t length = strnlen(query, LEXICAL_QUERY_BYTES + 1);
-    if (length > LEXICAL_QUERY_BYTES)
-        return TL_LIMIT;
     tl_text text = {0};
-    tl_status status =
-        tokenize_into(query, length, desktop->query_symbols, desktop->query_boundaries,
-                      desktop->query_offsets, DESKTOP_QUERY_SYMBOLS, &text);
+    tl_status status = normalize_query(desktop, query, &text);
     if (status != TL_OK)
         return status;
     for (size_t i = 0; i < count; i++) {
         const struct entry *entry = entry_by_id(desktop, results[i].id);
-        named[i] = entry != NULL && names_entry(entry->name_text, text);
+        named[i] = entry != NULL && names_entry(entry, text);
     }
     return TL_OK;
 }

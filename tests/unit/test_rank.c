@@ -50,22 +50,24 @@ static void check_weak_exact_hit(void) {
 }
 
 /* A named application stays after exact paths and before exact basenames,
- * however strongly semantic search favors the basename. */
+ * and a described one after exact basenames and before ordinary results,
+ * however strongly semantic search favors what follows them. */
 static void check_named_tier(void) {
     tl_rank *ranker = NULL;
     CHECK(rank_create(8, RANK_DEFAULT_RRF_K, &ranker) == TL_OK);
     const tl_rank_candidate lexical[] = {{1, "/r/path", RANK_EXACT_PATH},
                                          {2, "/Applications/Google Chrome", RANK_NAMED},
                                          {3, "/r/google", RANK_EXACT_BASENAME},
-                                         {4, "/r/regular", RANK_REGULAR}};
-    const tl_rank_candidate semantic[] = {{3, "/r/google", RANK_REGULAR},
-                                          {4, "/r/regular", RANK_REGULAR}};
+                                         {4, "/Applications/Sound", RANK_DESCRIBED},
+                                         {5, "/r/regular", RANK_REGULAR}};
+    const tl_rank_candidate semantic[] = {{5, "/r/regular", RANK_REGULAR},
+                                          {3, "/r/google", RANK_REGULAR}};
     tl_rank_result results[8];
     size_t count = 0;
-    CHECK(rank_fuse(ranker, lexical, 4, semantic, 2, results, 8, &count) == TL_OK && count == 4);
+    CHECK(rank_fuse(ranker, lexical, 5, semantic, 2, results, 8, &count) == TL_OK && count == 5);
     for (size_t i = 0; i < count; i++)
         CHECK(results[i].id == i + 1);
-    CHECK(results[1].priority == RANK_NAMED);
+    CHECK(results[1].priority == RANK_NAMED && results[3].priority == RANK_DESCRIBED);
     const tl_rank_candidate invalid[] = {{1, "/r/path", (tl_rank_priority)(RANK_EXACT_PATH + 1)}};
     CHECK(rank_fuse(ranker, invalid, 1, NULL, 0, results, 8, &count) == TL_INVALID);
     rank_destroy(ranker);

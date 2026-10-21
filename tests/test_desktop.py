@@ -34,6 +34,10 @@ with tempfile.TemporaryDirectory(prefix="torchlight-m3-") as directory:
     for index in range(24):
         (root / f"chromepolicy-{index:02}.txt").touch()
     (root / "browser-notes.txt").touch()
+    # ADR 0061: a word-start file match for "sound", fuzzy look-alikes (a typo
+    # and an infix), and a file a tagged settings panel must precede.
+    for name in ["sound-check.txt", "round-table.txt", "playsound.wav", "screen-notes.txt"]:
+        (root / name).touch()
     user = base / "user" / "applications"
     system = base / "system" / "applications"
     user.mkdir(parents=True)
@@ -134,13 +138,35 @@ with tempfile.TemporaryDirectory(prefix="torchlight-m3-") as directory:
                 response = call("query", query=text, limit=limit)
                 assert response["status"] == "ok", response
                 assert response["results"][0].get("desktop_id") == "google-chrome.desktop", (text, limit, response)
-        # Metadata-only matches keep their ordinary strength; this is not an
-        # unconditional preference for every installed application.
-        assert query("browser")["results"][0]["kind"] == "file"
+        # ADR 0061: an application tagged with the whole word (its generic name
+        # or keywords) precedes ordinary file matches; part of a tag keeps its
+        # ordinary metadata strength, below files that start with it.
+        assert query("browser")["results"][0].get("desktop_id") == "google-chrome.desktop"
+        assert query("brow")["results"][0]["kind"] == "file"
         full = call("query", query="chrome", limit=1000)["results"]
         keyword = next(i for i, result in enumerate(full)
                        if result.get("desktop_id") == "keyword.desktop")
-        assert all(i < keyword for i, result in enumerate(full) if result["kind"] == "file")
+        assert full[0].get("desktop_id") == "google-chrome.desktop" and keyword == 1, full[:3]
+        assert all(keyword < i for i, result in enumerate(full) if result["kind"] == "file")
+        ranked = query("screen")["results"]
+        assert ranked[0].get("desktop_id") == "display.desktop", ranked
+        assert ranked[1].get("path") == str(root / "screen-notes.txt"), ranked
+        # A one-word query lists only word-start matches once anything matches
+        # by a word start: the typo and the infix would only pad the list. With
+        # no word start at all, near matches remain the fallback.
+        found = [r.get("desktop_id") or r["path"] for r in query("sound")["results"]]
+        assert found == ["sound.desktop", str(root / "sound-check.txt")], found
+        assert any(r.get("path") == str(root / "sound-check.txt") for r in query("sond")["results"])
+        assert any(r.get("path") == str(root / "playsound.wav")
+                   for r in query("sound wav")["results"])
+        # A near match the person opened stays first, but its boost does not make it
+        # a word start that would drop the other near matches (Sound by its typo).
+        response = query("sond")
+        typo = next(r for r in response["results"] if r.get("path") == str(root / "sound-check.txt"))
+        assert call("open", file_id=typo["id"], event_id="typo-open",
+                    search_id=response["search_id"])["status"] == "ok"
+        wait_for(lambda: query("sond")["results"][0].get("path") == str(root / "sound-check.txt"))
+        assert any(r.get("desktop_id") == "sound.desktop" for r in query("sond")["results"])
         # ADR 0058: an application the query names precedes files named exactly
         # like the query, which follow it; a typed path still puts its file first.
         exact_file = root / "chrome"
@@ -186,7 +212,7 @@ with tempfile.TemporaryDirectory(prefix="torchlight-m3-") as directory:
         assert call("open", file_id=lifted["id"], event_id="tied-launch",
                     search_id=response["search_id"])["status"] == "ok"
         assert query("duplicate app")["results"][0]["id"] == lifted["id"]
-        assert call("status")["history"]["personal_items"] == 2
+        assert call("status")["history"]["personal_items"] == 3
         # The boost follows the application by desktop id: editing its file
         # gives it a new session id, sorted last, and it stays first. Once the
         # file is gone, no other application inherits its boost.

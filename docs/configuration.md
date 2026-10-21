@@ -12,22 +12,29 @@ root = ~/projects
 # Hidden or normally skipped folders to index anyway.
 allow = ~/.config/nvim
 # Folders never to index, even inside a root or an allowed folder.
-exclude = ~/Android/Sdk
-exclude = ~/go/pkg/mod
+exclude = ~/Downloads/archive
+exclude = ~/VirtualBox VMs
 ```
 
-Hidden folders and `node_modules`, `target`, `build` and `__pycache__` are skipped
-unless allowed; hidden files are still searchable. Symlinked folders are not
-followed. An excluded folder's saved entries are removed by the next full
+Hidden folders and folders that tools manage are skipped unless allowed: those
+named `node_modules`, `bower_components`, `site-packages`, `dist-packages`,
+`target`, `build`, `CMakeFiles` or `__pycache__`, Python virtual environments,
+Conda environments, Android SDKs, Go's module cache and caches marked with a
+`CACHEDIR.TAG` ([ADR 0062](adr/0062-folders-tools-manage.md)), wherever they are.
+Hidden files are still searchable. Symlinked folders are not followed. An excluded folder's saved entries are removed by the next full
 scan; the daemon reads the configuration when it starts, so restart it after
 editing (`systemctl --user restart torchlightd`). The catalog and history live
 in `~/.local/share/torchlight/`.
 
 Files are ranked by how well their names match, then by where they live:
 among similar matches, files closer to the indexed folder come first, and
-files inside installed or vendored software (`node_modules`, `site-packages`,
-`vendor`, `third_party`, SDKs, Go module caches and versioned install folders)
-come after your own ([ADR 0047](adr/0047-place-ranking-and-excluded-folders.md)).
+files inside installed or vendored software (`vendor`, `third_party`, SDKs and
+versioned install folders) come after your own
+([ADR 0047](adr/0047-place-ranking-and-excluded-folders.md)). Typing one word lists
+what matches it by a word start (a name, a word of a name, initials, or an
+application's tags such as "wifi" for Network); near matches (typos, shared
+letters) appear only when nothing does
+([ADR 0061](adr/0061-word-matches-first.md)).
 
 ## The daemon
 

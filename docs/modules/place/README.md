@@ -41,7 +41,10 @@ come later if markers become configurable.
   (contain `@v` followed by a digit, or are exactly `@v`); versioned install
   folders (`v?D{1,3}(.D+)+`, such as `27.0.12077973` or `1.4.335.0`). The lead
   is limited to three digits so dotted dates (`2024.05.01`) do not match. A
-  marker's descendants are in the tree; the marker folder itself is not.
+  marker's descendants are in the tree; the marker folder itself is not. Since
+  ADR 0062 the crawler leaves out `node_modules`, `bower_components`,
+  `site-packages`, `dist-packages` and every folder a tool marks as its own, so
+  the penalty matters for the rest (and for those an `allow` brings back).
 - **Penalty.** `PLACE_DEPTH_PENALTY` (24) per directory beyond
   `PLACE_FREE_DEPTH` (3), plus `PLACE_DEPENDENCY_PENALTY` (128) inside a
   dependency tree, capped at `PLACE_PENALTY_MAX` (256). Three extra levels, or

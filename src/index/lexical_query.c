@@ -29,6 +29,9 @@ enum {
     /* Lowest score of the exact-basename tier once its place penalty is
      * taken (lexical_set_place_ranking). */
     LEXICAL_EXACT_BASENAME_FLOOR = LEXICAL_EXACT_BASENAME - PLACE_PENALTY_MAX,
+    /* Lowest one-word score of a word-start match (lexical_word_start): an
+     * initials hit less the largest place penalty. */
+    LEXICAL_WORD_START_FLOOR = PREFIX_INITIALS_SCORE - PLACE_PENALTY_MAX,
     /* Added to basename subsequence scores (fuzzy_score) so they outrank
      * subsequences inside parent directory names. */
     LEXICAL_BASENAME_BONUS = 1500,
@@ -79,6 +82,10 @@ _Static_assert((long long)LEXICAL_MAX_WORDS *(PREFIX_BASENAME_SCORE + LEXICAL_PR
                        72LL * LEXICAL_QUERY_SYMBOLS + LEXICAL_BOOST_MAX <
                    LEXICAL_EXACT_BASENAME_FLOOR,
                "boosted word scores cannot reach a penalized exact name");
+/* Typos (the strongest evidence that is not a word start, above parent
+ * prefixes and trigrams) stay below word starts with any short-name bonus. */
+_Static_assert(LEXICAL_TYPO_SCORE + LEXICAL_LENGTH_BONUS_MAX < LEXICAL_WORD_START_FLOOR,
+               "typos are not word starts");
 /* Place penalties reorder results inside a channel tier, never across one:
  * initials (4500) to token prefix (5000) is the smallest gap. */
 _Static_assert(PLACE_PENALTY_MAX < PREFIX_TOKEN_SCORE - PREFIX_INITIALS_SCORE,
@@ -1600,6 +1607,9 @@ tl_status lexical_query(const tl_lexical *engine, tl_lexical_workspace *workspac
     return status;
 }
 
+bool lexical_word_start(const tl_result *result) {
+    return result != NULL && result->score >= LEXICAL_WORD_START_FLOOR;
+}
 tl_lexical_exactness lexical_exactness(const tl_result *result) {
     if (result == NULL)
         return LEXICAL_ORDINARY;

@@ -1,6 +1,7 @@
 # 0047. Rank files by place, and let people exclude folders
 
-- **Status:** Accepted
+- **Status:** Accepted; its rejected default exclusions are revised by
+  [ADR 0062](0062-folders-tools-manage.md), which leaves out folders that tools manage
 - **Date:** 2026-10-12
 
 ## Context

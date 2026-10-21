@@ -2,7 +2,8 @@
 
 > **Status:** Implemented (M6 step 1; M5 personal ranking): dedicated search thread with per-client
 > request queues, supersession and cancellation, over the M4 two-phase service; named
-> applications before files (ADR 0058)
+> applications before files (ADR 0058); word matches first, near matches only as a
+> fallback (ADR 0061)
 > **Source:** `src/service/daemon.c`, `src/bin/torchlightd.c`
 > **Header:** `include/torchlight/daemon.h`
 > **Tests:** `tests/test_daemon.py`, `tests/test_semantic.py`,
@@ -59,17 +60,28 @@ See [writer](../writer/README.md), [IPC](../ipc/README.md) and
 
 M3 owns a separate desktop catalog worker, merges its lexical results with
 files, and adds typed launch metadata. Desktop name-prefix weighting is applied
-inside its engine. The merge lists files whose raw path the query is, then the
-applications the query names (`desktop_named`: every word starts the name, a word
-of it or its initials), then every other result by score, so a popup's worth of
-files named exactly like the query cannot hide the application it names
-([ADR 0058](../../adr/0058-applications-the-query-names-come-first.md)). Every
-desktop match is weighed, not only the request's limit. Applications that are not
-named keep their score; tied applications retain their engine order and precede
-tied files, keeping the same head for different result limits
-([ADR 0018](../../adr/0018-application-name-ranking.md)). The semantic service
-receives which pooled results are named applications, so fusion keeps them in
-place.
+inside its engine. `desktop_evidence` classifies every desktop match (named,
+described, word start or fuzzy; see [desktop](../desktop/README.md)). For a one-word
+query without `/`, once any file (`lexical_word_start`) or application matches by a
+word start, the merge first drops the near matches, those found only by a typo,
+shared trigrams, scattered letters or a parent folder; results the person opened
+before (personally boosted) stay, judged on their score less their boost so an
+opened near match does not drop the others, and with no word start anywhere near
+matches are the fallback ([ADR 0061](../../adr/0061-word-matches-first.md)). Longer queries keep
+them: each word must match, and summed scores do not tell evidence apart. The merge
+then lists files whose raw path the query is, the applications the query names
+(every word starts the name, a word of it or its initials), files named exactly like
+the query, the applications tagged with its words (each word that does not start the
+name is a whole word of the generic name or keywords), then every other result by
+score, so a popup's worth of files named exactly like the query cannot hide the
+application it names
+([ADR 0058](../../adr/0058-applications-the-query-names-come-first.md)) and a settings
+panel tagged "wifi" is not buried under files. Every desktop match is weighed, not only
+the request's limit. Other applications keep their score; tied applications retain
+their engine order and precede tied files, keeping the same head for different result
+limits ([ADR 0018](../../adr/0018-application-name-ranking.md)). The semantic service
+receives each pooled result's application tier (`RANK_NAMED`, `RANK_DESCRIBED`), so
+fusion keeps them in place.
 Query/result encoding holds
 a short desktop lease and a file-catalog lease, releases both before socket
 output, and does no new filesystem/SQL/allocation work. Resolve/open dispatches

@@ -24,10 +24,15 @@ class Text(C.Structure):
                 ("length", C.c_size_t), ("basename", C.c_size_t), ("mask", C.c_uint64)]
 
 
-# lexical_exactness's tier for exact raw paths, and prefix_score's initials score:
-# the weakest evidence that a query word starts an application's name.
+# lexical_exactness's tiers for exact names and raw paths, prefix_score's initials
+# score (the weakest evidence that a query word starts an application's name) and
+# token score (the weakest that it starts a word of a generic name or keywords).
+LEXICAL_EXACT_NAME = 1
 LEXICAL_EXACT_RAW_PATH = 2
 PREFIX_INITIALS_SCORE = 4500
+PREFIX_TOKEN_SCORE = 5000
+# desktop_evidence's classes (ADR 0061).
+FUZZY, WORD_START, DESCRIBED, NAMED = range(4)
 
 
 class Engine:
@@ -58,6 +63,12 @@ class Engine:
             })
         # Libraries from before M8 have no place ranking; file engines use it when present.
         self.place = getattr(self.lib, "lexical_set_place_ranking", None)
+        # Libraries with word-start evidence merge as the daemon does since ADR 0061.
+        self.word_starts = self.naming and hasattr(self.lib, "lexical_word_start")
+        if self.word_starts:
+            signatures["lexical_word_start"] = ([C.POINTER(Result)], C.c_bool)
+        self.metadata = {number: (entry.get("generic", ""), entry.get("keywords", ""))
+                         for number, entry in enumerate(entries, 1) if entry["kind"] == "app"}
         if self.place:
             signatures["lexical_set_place_ranking"] = ([C.c_void_p, C.c_bool], C.c_int)
         if self.fields:
@@ -109,26 +120,69 @@ class Engine:
                                             C.byref(handle)))
         return handle
 
+    def prefix(self, text, word):
+        """prefix_score of word against text: its best score and whether a whole
+        token matched; (0, False) for text without tokens."""
+        if not text.strip():
+            return 0, False
+        handles = [self.tokenized(text), self.tokenized(word)]
+        try:
+            best, complete = C.c_int(), C.c_bool()
+            self.check(self.lib.prefix_score(self.lib.tokenize_view(handles[0]),
+                                             self.lib.tokenize_view(handles[1]),
+                                             C.byref(best), C.byref(complete)))
+            return best.value, complete.value
+        finally:
+            for handle in handles:
+                self.lib.tokenize_destroy(handle)
+
     def names(self, query, path):
         """Whether every word of query starts the application's name, a word of it
         or its initials, as desktop_named decides."""
         words = [word for word in re.split(r"[ \t\n\r]+", query) if word]
-        name = self.tokenized(path.rsplit("/", 1)[1])
-        try:
-            for word in words:
-                handle = self.tokenized(word)
-                best, complete = C.c_int(), C.c_bool()
-                try:
-                    self.check(self.lib.prefix_score(self.lib.tokenize_view(name),
-                                                     self.lib.tokenize_view(handle),
-                                                     C.byref(best), C.byref(complete)))
-                finally:
-                    self.lib.tokenize_destroy(handle)
-                if best.value < PREFIX_INITIALS_SCORE:
-                    return False
-            return bool(words)
-        finally:
-            self.lib.tokenize_destroy(name)
+        name = path.rsplit("/", 1)[1]
+        return bool(words) and all(self.prefix(name, word)[0] >= PREFIX_INITIALS_SCORE
+                                   for word in words)
+
+    def evidence(self, query, number, path):
+        """What query's words find in application number, as desktop_evidence
+        decides; its generic field also holds the name, as the catalog stores it."""
+        words = [word for word in re.split(r"[ \t\n\r]+", query) if word]
+        name = path.rsplit("/", 1)[1]
+        generic, keywords = self.metadata[number]
+        named = whole = True
+        for word in words:
+            if self.prefix(name, word)[0] >= PREFIX_INITIALS_SCORE:
+                continue
+            named = False
+            matches = [self.prefix(field, word) for field in (name + " " + generic, keywords)]
+            found = [complete for best, complete in matches if best >= PREFIX_TOKEN_SCORE]
+            if not found:
+                return FUZZY
+            whole = whole and any(found)
+        if not words:
+            return FUZZY
+        return NAMED if named else DESCRIBED if whole else WORD_START
+
+    def merge(self, text, files, apps, key):
+        """The daemon's merge since ADR 0061: a one-word query keeps only
+        word-start matches once any exists, then exact raw paths, named
+        applications, exact names, described applications and the rest by score."""
+        evidence = {row.id: self.evidence(text, row.id, row.path.decode()) for row in apps}
+        words = [word for word in re.split(r"[ \t\n\r]+", text) if word]
+        if len(words) == 1 and "/" not in text:
+            starts = [row for row in files if self.lib.lexical_word_start(C.byref(row))]
+            if starts or any(evidence[row.id] != FUZZY for row in apps):
+                files = starts
+                apps = [row for row in apps if evidence[row.id] != FUZZY]
+        exactness = lambda row: self.lib.lexical_exactness(C.byref(row))  # noqa: E731
+        exact = [row for row in files if exactness(row) == LEXICAL_EXACT_RAW_PATH]
+        named = [row for row in apps if evidence[row.id] == NAMED]
+        names = [row for row in files if exactness(row) == LEXICAL_EXACT_NAME]
+        described = [row for row in apps if evidence[row.id] == DESCRIBED]
+        placed = exact + named + names + described
+        rest = [row for row in files + apps if row not in placed]
+        return placed + sorted(rest, key=key)
 
     def search(self, engine, workspace, text, capacity, cold):
         rows, count = (Result * capacity)(), C.c_size_t()
@@ -149,7 +203,9 @@ class Engine:
         # The daemon weighs every application match, not just capacity of them.
         apps = self.search(apps_engine, apps_workspace, text, 1000, cold)
         key = lambda row: (-row.score, row.path, row.id)  # noqa: E731
-        if not self.naming:
+        if self.word_starts:
+            merged = self.merge(text, files, apps, key)
+        elif not self.naming:
             merged = sorted(files + apps, key=key)
         else:
             exact = [row for row in files

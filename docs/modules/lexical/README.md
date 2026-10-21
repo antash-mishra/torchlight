@@ -162,6 +162,17 @@ The entry/context APIs expose immutable sorted metadata and context clipped at
 indexed roots. lexical_exactness exposes exact tiers without leaking numeric
 score constants to fusion. Query scoring algorithms remain unchanged.
 
+`lexical_word_start` likewise tells, for a result of a one-word query, a word start
+(an exact name or path, or the word starting the name, a word of it or its initials)
+from a near match (a typo, shared trigrams, scattered letters or a parent folder
+alone) without exposing scores: word starts score at least the initials score less
+the largest place penalty (4,244), a typo with the largest short-name bonus at most
+3,564, and a static assertion keeps that gap. Only scattered letters of a word of 34
+or more symbols, nearly contiguous by then, can reach the line, and a personal boost
+can lift a near match over it. A longer query's score sums its words, so the test says
+nothing there. The daemon uses it to drop a one-word query's near matches once
+anything matches by a word start ([ADR 0061](../../adr/0061-word-matches-first.md)).
+
 ## Cooperative cancellation (M6 step 1)
 
 `lexical_workspace_cancel` attaches a caller-owned atomic flag to a workspace.

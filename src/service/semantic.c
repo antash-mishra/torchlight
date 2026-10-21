@@ -1157,19 +1157,24 @@ void semantic_destroy(tl_semantic *service) {
     free(service);
 }
 /* The fusion tier of lexical pool entry i: exact paths, then the applications
- * the query names (named, NULL for none), then exact basenames (ADR 0058). */
-static tl_rank_priority lexical_priority(const tl_result *result, const bool *named, size_t i) {
-    tl_lexical_exactness tier = lexical_exactness(result);
-    if (tier == LEXICAL_EXACT_RAW_PATH)
+ * the query names, then exact basenames, then the applications tagged with its
+ * words (tiers, NULL for none; ADR 0058, ADR 0061). */
+static tl_rank_priority lexical_priority(const tl_result *result, const tl_rank_priority *tiers,
+                                         size_t i) {
+    tl_lexical_exactness exactness = lexical_exactness(result);
+    tl_rank_priority given = tiers == NULL ? RANK_REGULAR : tiers[i];
+    if (exactness == LEXICAL_EXACT_RAW_PATH)
         return RANK_EXACT_PATH;
-    if (named != NULL && named[i])
+    if (given == RANK_NAMED)
         return RANK_NAMED;
-    return tier == LEXICAL_EXACT_NAME ? RANK_EXACT_BASENAME : RANK_REGULAR;
+    if (exactness == LEXICAL_EXACT_NAME)
+        return RANK_EXACT_BASENAME;
+    return given == RANK_DESCRIBED ? RANK_DESCRIBED : RANK_REGULAR;
 }
 tl_status semantic_submit(tl_semantic *service, size_t slot, uint64_t token,
                           const tl_ipc_request *request, const char *search_id,
                           uint64_t catalog_gen, uint64_t desktop_gen, const tl_result *lexical,
-                          const bool *named, size_t count, uint64_t *out_emb_gen) {
+                          const tl_rank_priority *tiers, size_t count, uint64_t *out_emb_gen) {
     if (out_emb_gen != NULL)
         *out_emb_gen = 0;
     if (service == NULL || slot >= SEMANTIC_CLIENTS || token == 0 || request == NULL ||
@@ -1195,7 +1200,7 @@ tl_status semantic_submit(tl_semantic *service, size_t slot, uint64_t token,
             status = TL_STATE;
         else {
             job->lexical[i] = (tl_rank_candidate){entry->id, entry->path,
-                                                  lexical_priority(&lexical[i], named, i)};
+                                                  lexical_priority(&lexical[i], tiers, i)};
         }
     }
     if (status == TL_OK) {

@@ -27,6 +27,15 @@ typedef struct {
 /** Return explicit exact-match tier of a lexical result; ordinary for NULL.
  * Borrowed result; no allocation/I/O/errors. Score encoding stays internal. */
 tl_lexical_exactness lexical_exactness(const tl_result *result);
+/** For a one-word query (no whitespace, no '/') on an engine without a prefix
+ * bonus: whether result matched by a word start, that is an exact path or
+ * name, or the word starting the entry's name, a word of it or its initials.
+ * Typos, shared trigrams, scattered letters and parent folders alone do not.
+ * A personal boost can lift a weaker match over the line, and a scattered match
+ * of a very long word (34 symbols or more) can reach it, nearly contiguous by
+ * then. A longer query's score sums its words, so this says nothing about it.
+ * false for NULL. Borrowed result; no allocation/I/O/errors. */
+bool lexical_word_start(const tl_result *result);
 /** Create owned builder; out NULL on invalid/allocation failure. */
 tl_status lexical_create(tl_lexical **out);
 /** Set a per-word basename/token/initials prefix bonus on an unsealed builder.

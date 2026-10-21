@@ -1821,8 +1821,10 @@
       <p><strong>Privacy:</strong> only names and paths are stored, never file contents. History stays
         on your machine, is kept for 30 days by default (<code>--history-days</code>), and can be turned
         off (<code>--no-history</code>) or erased (<code>torchlight history-clear</code>). Hidden folders
-        and <code>node_modules</code>, <code>target</code>, <code>build</code> and <code>__pycache__</code>
-        are skipped unless you allow them, and folders you exclude are never read.</p>
+        and folders that tools manage (<code>node_modules</code>, <code>site-packages</code>, <code>target</code>,
+        <code>build</code>, <code>__pycache__</code>, virtual environments, Conda, Android SDKs, Go's module
+        cache and tagged caches) are skipped unless you allow them, and folders you exclude are never
+        read.</p>
     </div>
   </section>
 

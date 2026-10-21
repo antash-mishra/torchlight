@@ -455,7 +455,10 @@ when mtime is unchanged. Catalog writes continue when history is disabled.
   skipped by default (covering `.git`, `.cache`, `.cargo`, `.npm`, `.mozilla`,
   `.local/share/...`), with a config allowlist to re-include specific ones.
   Hidden files in visible directories are indexed. Visible trees ignored by
-  default: `node_modules`, `target`, `build`, `__pycache__`.
+  default: `node_modules`, `bower_components`, `site-packages`, `dist-packages`,
+  `target`, `build`, `CMakeFiles`, `__pycache__`, and folders a tool marks as
+  its own (virtual environments, Conda, Android SDKs, Go's module cache, tagged
+  caches; ADR 0062).
   Index symlinks without traversing directory symlinks. Handle permission
   errors and unavailable roots without deleting their saved entries.
   Explicitly configured roots override hidden-directory defaults; allowlisted

@@ -1,8 +1,8 @@
 # crawl
 
 > **Status:** Implemented (M1/M2; M6 scoped walks; M7 device boundaries; M7 Phase 2 one stat per
-> entry; M8 configured exclusions): physical crawl, allowlist, excluded scopes, roots and
-> filesystem identity
+> entry; M8 configured exclusions; tool-managed folders, ADR 0062): physical crawl, allowlist,
+> excluded scopes, roots and filesystem identity
 > **Source:** `src/fs/crawl.c` · **Header:** `include/torchlight/crawl.h`
 > **Tests:** `tests/unit/test_crawl.c`, `tests/test_cli.py`
 
@@ -47,9 +47,23 @@ one `statfs` each, to find network and FUSE mounts that need periodic repair.
 **Scopes.** One decision function (`classify`) is shared by walks and coverage
 checks:
 
-- Hidden directories and `node_modules`/`target`/`build`/`__pycache__` are
-  skipped; hidden files in visible directories are kept; the root is always
-  walked.
+- Hidden directories and folders only tools create (`node_modules`,
+  `bower_components`, `site-packages`, `dist-packages`, `target`, `build`,
+  `CMakeFiles`, `__pycache__`) are skipped; hidden files in visible directories
+  are kept; the root is always walked.
+- So are folders a tool marks as its own (ADR 0062): a regular `pyvenv.cfg`
+  (Python virtual environment), a `conda-meta` directory (Conda), a regular
+  `.knownPackages` (Android SDK), a regular `CACHEDIR.TAG` starting with the
+  Cache Directory Tagging signature, or a folder named `mod` holding
+  `cache/download` (Go's module cache). A walk checks a directory it enters
+  against the listing fts builds for it anyway (`fts_children`, which
+  `fts_read` then reuses), so only directories holding one of those names pay
+  for lookups; coverage checks and children-only rescans look the markers up
+  directly and end in the same test (`tool_managed`). glibc builds that listing
+  in the walk's shared path buffer and leaves the directory's own `fts_path` as
+  `dir/`; the walk restores its terminator, and `tool_managed_folders` checks
+  every reported path exactly. `allow` and explicit roots override markers as
+  they override names.
 - An allowlisted directory is indexed like any other, and the defaults apply
   again below it.
 - Hidden or ignored ancestors of an allowlisted directory are *traversed*: not
@@ -78,7 +92,9 @@ A root inside a hidden directory is not covered and stays separate.
 
 Unit tests cover invalid roots, callback propagation, unreadable directories,
 allowlist traversal (indexed, traversed and skipped paths), excluded scopes
-(over the allowlist, at the root, in coverage and scoped walks) and
+(over the allowlist, at the root, in coverage and scoped walks), tool-managed
+folders (each marker, look-alikes that stay, coverage, children-only and
+recursive scoped walks, the allowlist and explicit roots) and
 coverage/selection.
 CLI fixtures cover symlink cycles, hidden files/directories, explicit hidden
 roots, state exclusion, raw bytes and configured allowlists. Watches and periodic

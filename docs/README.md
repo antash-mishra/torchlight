@@ -61,6 +61,12 @@ shallow files and the person's own folders come before SDKs, package caches
 and vendored code, and an `exclude` setting drops whole folders
 ([ADR 0047](adr/0047-place-ranking-and-excluded-folders.md),
 [health report](reports/m8-place-ranking-health-report.html)).
+Everyday words still listed SDK internals in duplicate pairs, so folders that
+tools manage are now left out for everyone, recognized by the markers their
+tools write ([ADR 0062](adr/0062-folders-tools-manage.md)), and a one-word
+query lists word matches and tagged settings first, with near matches only as
+the fallback ([ADR 0061](adr/0061-word-matches-first.md)). On the live desktop
+the index shrank from 213,520 entries to 26,169 and "wifi" lists Network.
 
 Start here. Read in this order:
 
@@ -330,6 +336,13 @@ the root [README](../README.md) for commands, and
 - [0060: Later CamelCase words match when typed whole](adr/0060-whole-camelcase-words.md)
   gives a later word that changes case inside (`SQLite`) a prefix key of its own, so
   `sqlite` finds DB Browser for SQLite.
+- [0061: Word matches first; near matches only when nothing else matches](adr/0061-word-matches-first.md)
+  drops a one-word query's typos and scattered-letter matches once anything matches by a
+  word start, and lists applications tagged with the word ("wifi" for Network) after exact
+  file names and before other results.
+- [0062: Leave out folders that tools manage](adr/0062-folders-tools-manage.md)
+  skips virtual environments, Conda, Android SDKs, Go's module cache, tagged caches and
+  dependency folders for everyone, by the markers their tools write.
 
 ## Keeping docs current
 

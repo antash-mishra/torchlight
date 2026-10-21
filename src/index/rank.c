@@ -43,8 +43,9 @@ static tl_status load_candidates(tl_rank *ranker, const tl_rank_candidate *input
     for (size_t i = 0; i < count; i++) {
         const tl_rank_candidate *candidate = &input[i];
         if (candidate->id == 0 || candidate->path == NULL || candidate->path[0] == 0 ||
-            (candidate->priority != RANK_REGULAR && candidate->priority != RANK_EXACT_BASENAME &&
-             candidate->priority != RANK_NAMED && candidate->priority != RANK_EXACT_PATH))
+            (candidate->priority != RANK_REGULAR && candidate->priority != RANK_DESCRIBED &&
+             candidate->priority != RANK_EXACT_BASENAME && candidate->priority != RANK_NAMED &&
+             candidate->priority != RANK_EXACT_PATH))
             return TL_INVALID;
         ranker->candidates[offset + i] =
             (tl_rank_result){candidate->id,       candidate->path,

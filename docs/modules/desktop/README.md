@@ -2,7 +2,7 @@
 
 > **Status:** Implemented (M3 Part 2), including independent name/generic/keyword fields; M5 personal
 > boosts; M7 change-stamped refresh (parses only when an entry changed); the desktop menu's
-> visibility rule (ADR 0057) and named applications (ADR 0058)
+> visibility rule (ADR 0057), named applications (ADR 0058) and query evidence (ADR 0061)
 > **Source:** `src/index/desktop.c` · **Header:** `include/torchlight/desktop.h`
 > **Tests:** `tests/unit/test_desktop.c`, `tests/test_desktop.py`
 
@@ -156,3 +156,23 @@ files named exactly like the query. A name the tokenizer rejects is still search
 just never counts as named. On a stock Mint desktop (112 entries) querying every match
 and naming them costs at most 13 µs a keystroke (for "te"), against 6 µs for the
 top ten alone.
+
+## Query evidence (ADR 0061)
+
+`desktop_evidence` classifies each result of a query on the current lease by what the
+query's words find in it: *named* (as `desktop_named`), *described* (each word that does
+not start the name is a whole word of the generic name or keywords, the tags a settings
+panel carries: "audio" for Sound, "wifi" for Network), *word start* (some word only starts
+such a word, as "aud" does) or *fuzzy* (a typo, shared trigrams or scattered letters). The
+generic field also holds the untranslated name, so an English name still describes an
+application under another locale. Generic names and keywords are tokenized at discovery
+like the name, with the same `tokenize_create` the lexical engine uses for these fields,
+so the evidence agrees with what search matches; a word's evidence comes from
+`prefix_score` at token strength or above (a field's initials are not its words), and a
+whole word is a complete token. Each entry also keeps a mask of the symbols that start a
+word of its fields, so a word starting with none of them is fuzzy without scoring. The
+daemon lists described applications after exact file names and before the rest, and for a
+one-word query drops fuzzy matches once anything matches by a word start (see
+[daemon](../daemon/README.md)). On the live Mint desktop (112 entries) classifying every
+match costs 20 to 28 µs for a one-letter query (naming alone 10 to 12 µs) and 6 to 7 µs
+for a whole word such as "sound".

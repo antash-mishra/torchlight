@@ -205,19 +205,23 @@ def config_excludes(temporary):
     assert os.fsencode(home / "sdk/inner/lib.so") in catalog()
 
 def place_ranking(temporary):
-    """Shallow files outrank deep and dependency-tree files with equal names."""
+    """Shallow files outrank deep and dependency-tree files with equal names, and
+    folders a tool manages (site-packages, a virtual environment) are not indexed."""
     home = Path(temporary) / "place"
-    for directory in ["work", "a/b/c/d/e/f", "lib/site-packages"]:
+    for directory in ["work", "a/b/c/d/e/f", "lib/vendor", "lib/site-packages", "env/lib"]:
         (home / directory).mkdir(parents=True)
-    for file in ["work/scripts", "a/b/c/d/e/f/scan", "lib/site-packages/scripts"]:
+    for file in ["work/scripts", "a/b/c/d/e/f/scan", "lib/vendor/scripts",
+                 "lib/site-packages/scripts", "env/pyvenv.cfg", "env/lib/scripts"]:
         (home / file).write_bytes(b"")
     database = home / "catalog.db"
     run("index", "--db", str(database), str(home))
     lines = run("query", "--db", str(database), "--limit", "3", "sc").splitlines()
     assert lines == [os.fsencode(home / "work/scripts"), os.fsencode(home / "a/b/c/d/e/f/scan"),
-                     os.fsencode(home / "lib/site-packages/scripts")], lines
+                     os.fsencode(home / "lib/vendor/scripts")], lines
     lines = run("query", "--db", str(database), "--limit", "2", "scripts").splitlines()
     assert lines[0] == os.fsencode(home / "work/scripts"), lines
+    lines = run("query", "--db", str(database), "--limit", "20", "scripts").splitlines()
+    assert not any(b"/site-packages" in line or b"/env/" in line for line in lines), lines
 
 def catalog_gen_failures_roll_back(temporary):
     """Malformed metadata and exhausted counters cannot reuse a catalog_gen."""

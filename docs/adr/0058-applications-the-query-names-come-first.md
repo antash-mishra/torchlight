@@ -1,7 +1,8 @@
 # 0058. Applications the query names come before files
 
 - **Status:** Accepted; revises the exact-file priority of
-  [ADR 0018](0018-application-name-ranking.md)
+  [ADR 0018](0018-application-name-ranking.md); [ADR 0061](0061-word-matches-first.md) adds a
+  tier for applications tagged with the query's words and drops near-match padding
 - **Date:** 2026-10-17
 
 ## Context

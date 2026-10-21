@@ -514,8 +514,49 @@ static void cooperative_cancellation(void) {
     lexical_workspace_destroy(workspace);
     lexical_destroy(engine);
 }
+/* lexical_word_start (ADR 0061): for one word, exact names, prefixes of the
+ * name or a word of it, and initials are word starts wherever the entry lives;
+ * a typo, an infix, a parent folder and scattered letters are not. */
+static void word_start_evidence(void) {
+    struct {
+        const char *path;
+        bool word_start;
+    } entries[] = {{"/r/sound", true},
+                   {"/r/sound.ts", true},
+                   {"/r/my-sound-file.txt", true},
+                   {"/r/simple-old-unix-network-daemon.txt", true},
+                   {"/r/a/b/c/d/e/f/g/sound-deep.txt", true},
+                   {"/r/soundless", true},
+                   {"/r/round.png", false},
+                   {"/r/playsound.txt", false},
+                   {"/r/sound/inner.txt", false},
+                   {"/r/stereo-unused-noise-device.txt", false}};
+    size_t total = sizeof(entries) / sizeof(entries[0]);
+    tl_lexical *engine = NULL;
+    tl_lexical_workspace *workspace = NULL;
+    CHECK(lexical_create(&engine) == TL_OK && lexical_set_place_ranking(engine, true) == TL_OK);
+    CHECK(lexical_add(engine, 1, "/r", true) == TL_OK);
+    for (size_t i = 0; i < total; i++)
+        CHECK(lexical_add(engine, i + 2, entries[i].path, false) == TL_OK);
+    CHECK(lexical_finish(engine) == TL_OK && lexical_workspace_create(engine, &workspace) == TL_OK);
+    tl_result results[20];
+    size_t count = 0, seen = 0;
+    CHECK(lexical_query(engine, workspace, "sound", results, 20, &count) == TL_OK);
+    for (size_t i = 0; i < count; i++) {
+        for (size_t j = 0; j < total; j++) {
+            if (strcmp(results[i].path, entries[j].path) != 0)
+                continue;
+            CHECK(lexical_word_start(&results[i]) == entries[j].word_start);
+            seen++;
+        }
+    }
+    CHECK(seen == total && !lexical_word_start(NULL));
+    lexical_workspace_destroy(workspace);
+    lexical_destroy(engine);
+}
 void test_lexical(void) {
     cooperative_cancellation();
+    word_start_evidence();
     first_token_completeness();
     quality_fields();
     prefix_bonus_ranking();

@@ -32,9 +32,12 @@ snapshots, very short queries, path queries and queue saturation return one
 lexical terminal (`semantic_unavailable` or `semantic_queue_full`). Query
 inference/retrieval never runs in the IPC coordinator. RRF k=60 uses a fixed
 1000-entry lexical pool and ten semantic candidates above tuning cosine 0.2;
-exact path/name tiers remain explicit, and the daemon flags the pool's named
-applications (`semantic_submit`'s `named`), which fusion keeps after exact paths
-and before exact basenames, as the lexical phase lists them (ADR 0058). Both phases carry matching request,
+exact path/name tiers remain explicit, and the daemon passes each pooled
+application's tier (`semantic_submit`'s `tiers`): fusion keeps named applications
+after exact paths and before exact basenames (ADR 0058), and applications tagged with
+the query's words after exact basenames (ADR 0061), as the lexical phase lists them.
+The lexical pool is the merged one, so a one-word query's dropped near matches stay
+out of the final phase too. Both phases carry matching request,
 search, catalog and embedding ids. History is enqueued only once.
 
 Cancellation emits a terminal `cancelled/superseded`; running work keeps its

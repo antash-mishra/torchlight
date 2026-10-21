@@ -92,12 +92,13 @@ struct tl_daemon {
     struct client clients[DAEMON_MAX_CLIENTS];
     tl_result results[LEXICAL_MAX_RESULTS];
     tl_result applications[LEXICAL_MAX_RESULTS];
-    /* Merge scratch, search thread only (ADR 0058): which applications the
-     * query names, the merged order, and which merged results (aligned with
-     * results) are named applications, a tier semantic fusion keeps. */
-    bool application_named[LEXICAL_MAX_RESULTS];
+    /* Merge scratch, search thread only (ADR 0058, ADR 0061): what the query
+     * finds in each application, the merged order, and the application tier
+     * of each merged result (aligned with results), which semantic fusion
+     * keeps. */
+    tl_desktop_evidence application_evidence[LEXICAL_MAX_RESULTS];
     tl_result merged[LEXICAL_MAX_RESULTS];
-    bool merged_named[LEXICAL_MAX_RESULTS], results_named[LEXICAL_MAX_RESULTS];
+    tl_rank_priority merged_tier[LEXICAL_MAX_RESULTS], results_tier[LEXICAL_MAX_RESULTS];
 };
 static uint64_t milliseconds(void) {
     struct timespec now;
@@ -444,59 +445,151 @@ static void response_prefix(tl_json_buffer *b, const tl_ipc_request *request, ui
     indexing_status(b, stats, semantic, personal_items);
     json_raw(b, ",\"results\":[");
 }
-/* Search thread: append one result to the merge, with whether it is an
- * application the query names. */
-static void merge_append(tl_daemon *daemon, size_t *out, const tl_result *result, bool named) {
+/* Search thread: append one result to the merge with its application tier
+ * (RANK_REGULAR for files and applications merged by score). */
+static void merge_append(tl_daemon *daemon, size_t *out, const tl_result *result,
+                         tl_rank_priority tier) {
     daemon->merged[*out] = *result;
-    daemon->merged_named[*out] = named;
+    daemon->merged_tier[*out] = tier;
     (*out)++;
 }
-/* Search thread: after exact paths and named applications, the remaining
- * files and applications by score. Applications precede equally scored files
- * and keep the desktop engine's order, so limit=1 and limit=10 expose the
- * same head (ADR 0018). */
+/* Search thread: after the tiers, the remaining files and applications by
+ * score. Applications precede equally scored files and keep the desktop
+ * engine's order, so limit=1 and limit=10 expose the same head (ADR 0018). */
 static void merge_rest(tl_daemon *daemon, size_t limit, size_t file_count, size_t app_count,
                        size_t file, size_t *out) {
     size_t app = 0;
     while (*out < limit) {
-        while (app < app_count && daemon->application_named[app])
+        while (app < app_count && daemon->application_evidence[app] >= DESKTOP_DESCRIBED)
             app++;
         bool apps_left = app < app_count, files_left = file < file_count;
         if (!apps_left && !files_left)
             return;
         if (apps_left &&
             (!files_left || daemon->applications[app].score >= daemon->results[file].score))
-            merge_append(daemon, out, &daemon->applications[app++], false);
+            merge_append(daemon, out, &daemon->applications[app++], RANK_REGULAR);
         else
-            merge_append(daemon, out, &daemon->results[file++], false);
+            merge_append(daemon, out, &daemon->results[file++], RANK_REGULAR);
     }
 }
+/* Search thread: append the leading file results of this exactness. */
+static void merge_exact_files(tl_daemon *daemon, size_t limit, size_t file_count,
+                              tl_lexical_exactness exactness, size_t *file, size_t *out) {
+    while (*out < limit && *file < file_count &&
+           lexical_exactness(&daemon->results[*file]) == exactness)
+        merge_append(daemon, out, &daemon->results[(*file)++], RANK_REGULAR);
+}
+/* Search thread: append the applications with this evidence, in the desktop
+ * engine's order. */
+static void merge_tier(tl_daemon *daemon, size_t limit, size_t app_count,
+                       tl_desktop_evidence evidence, tl_rank_priority tier, size_t *out) {
+    for (size_t i = 0; i < app_count && *out < limit; i++)
+        if (daemon->application_evidence[i] == evidence)
+            merge_append(daemon, out, &daemon->applications[i], tier);
+}
+/* Whether query is one word without '/' (split at whitespace exactly as
+ * lexical_query splits it): the only queries whose file scores tell a word
+ * start from fuzzy evidence (lexical_word_start). */
+static bool one_plain_word(const char *query) {
+    size_t words = 0;
+    bool inside = false;
+    for (const char *symbol = query; *symbol != 0; symbol++) {
+        if (*symbol == '/')
+            return false;
+        bool space = *symbol == ' ' || *symbol == '\t' || *symbol == '\n' || *symbol == '\r';
+        words += !space && !inside;
+        inside = !space;
+    }
+    return words == 1;
+}
+/* Search thread: the personal boost a file or application result carries for
+ * this query (0 unless the person opened it before). */
+static int boost_of(const tl_daemon *daemon, const tl_catalog_boosts *files, uint64_t id,
+                    bool application) {
+    if (application) {
+        for (size_t i = 0; i < daemon->app_boost_count; i++) {
+            const tl_desktop_entry *entry =
+                desktop_entry(daemon->desktop, daemon->app_boosts[i].position);
+            if (entry != NULL && entry->id == id)
+                return daemon->app_boosts[i].boost;
+        }
+        return 0;
+    }
+    for (size_t i = 0; files != NULL && i < files->count; i++)
+        if (files->ids[i] == id)
+            return files->values[i];
+    return 0;
+}
+/* Search thread: whether file result i matches by a word start on its own,
+ * not only because its personal boost (added to its score) lifted a near
+ * match over the line. */
+static bool file_word_start(const tl_daemon *daemon, const tl_catalog_boosts *files, size_t i) {
+    if (!lexical_word_start(&daemon->results[i]))
+        return false;
+    tl_result unboosted = daemon->results[i];
+    unboosted.score -= boost_of(daemon, files, unboosted.id, false);
+    return lexical_word_start(&unboosted);
+}
+/* Search thread: keep only word-start matches of a one-word query once any
+ * file or application has one (ADR 0061): a typo, shared trigrams, scattered
+ * letters or a parent folder alone then only pads the list. Results the
+ * person opened before stay, but do not decide the cut. Longer queries keep
+ * everything: each word must already match, and their summed scores do not
+ * tell evidence apart. */
+static void drop_fuzzy(tl_daemon *daemon, const char *query, const tl_catalog_boosts *files,
+                       size_t *file_count, size_t *app_count) {
+    if (!one_plain_word(query))
+        return;
+    bool word_start = false;
+    for (size_t i = 0; i < *file_count && !word_start; i++)
+        word_start = file_word_start(daemon, files, i);
+    for (size_t i = 0; i < *app_count && !word_start; i++)
+        word_start = daemon->application_evidence[i] != DESKTOP_FUZZY;
+    if (!word_start)
+        return;
+    size_t kept = 0;
+    for (size_t i = 0; i < *file_count; i++)
+        if (lexical_word_start(&daemon->results[i]) ||
+            boost_of(daemon, files, daemon->results[i].id, false) > 0)
+            daemon->results[kept++] = daemon->results[i];
+    *file_count = kept;
+    kept = 0;
+    for (size_t i = 0; i < *app_count; i++) {
+        if (daemon->application_evidence[i] == DESKTOP_FUZZY &&
+            boost_of(daemon, files, daemon->applications[i].id, true) == 0)
+            continue;
+        daemon->applications[kept] = daemon->applications[i];
+        daemon->application_evidence[kept++] = daemon->application_evidence[i];
+    }
+    *app_count = kept;
+}
 /* Search thread: merge the leased desktop catalog's matches into the file
- * results. Exact raw paths come first, then the applications the query names
- * (desktop_named: each word starts the name, a word of it or its initials),
- * then everything else by score (ADR 0058). Every desktop match is weighed,
- * not just limit of them: a boosted multiword match can rank an unnamed
- * application above a named one, and the catalog is small. */
+ * results, after dropping a one-word query's fuzzy padding (drop_fuzzy). The
+ * tiers: exact raw paths, the applications the query names (each word starts
+ * the name, a word of it or its initials), exact file names, the applications
+ * tagged with the query's words (generic name or keywords; ADR 0061), then
+ * everything else by score (ADR 0058). Every desktop match is weighed, not just
+ * limit of them: a boosted multiword match can rank an unnamed application
+ * above a named one, and the catalog is small. */
 static tl_status merge_applications(tl_daemon *daemon, const tl_ipc_request *request,
-                                    size_t *count) {
-    size_t app_count = 0, file = 0, out = 0;
+                                    const tl_catalog_boosts *files, size_t *count) {
+    size_t app_count = 0, file = 0, out = 0, limit = request->limit;
     tl_status status = desktop_query_boosted(daemon->desktop, request->query, daemon->app_boosts,
                                              daemon->app_boost_count, daemon->applications,
                                              LEXICAL_MAX_RESULTS, &app_count);
     if (status == TL_OK)
-        status = desktop_named(daemon->desktop, request->query, daemon->applications, app_count,
-                               daemon->application_named);
+        status = desktop_evidence(daemon->desktop, request->query, daemon->applications, app_count,
+                                  daemon->application_evidence);
     if (status != TL_OK)
         return status;
-    while (out < request->limit && file < *count &&
-           lexical_exactness(&daemon->results[file]) == LEXICAL_EXACT_RAW_PATH)
-        merge_append(daemon, &out, &daemon->results[file++], false);
-    for (size_t i = 0; i < app_count && out < request->limit; i++)
-        if (daemon->application_named[i])
-            merge_append(daemon, &out, &daemon->applications[i], true);
-    merge_rest(daemon, request->limit, *count, app_count, file, &out);
+    drop_fuzzy(daemon, request->query, files, count, &app_count);
+    merge_exact_files(daemon, limit, *count, LEXICAL_EXACT_RAW_PATH, &file, &out);
+    merge_tier(daemon, limit, app_count, DESKTOP_NAMED, RANK_NAMED, &out);
+    merge_exact_files(daemon, limit, *count, LEXICAL_EXACT_NAME, &file, &out);
+    merge_tier(daemon, limit, app_count, DESKTOP_DESCRIBED, RANK_DESCRIBED, &out);
+    merge_rest(daemon, limit, *count, app_count, file, &out);
     memcpy(daemon->results, daemon->merged, out * sizeof(*daemon->results));
-    memcpy(daemon->results_named, daemon->merged_named, out * sizeof(*daemon->results_named));
+    memcpy(daemon->results_tier, daemon->merged_tier, out * sizeof(*daemon->results_tier));
     *count = out;
     return TL_OK;
 }
@@ -577,7 +670,7 @@ static tl_status execute_leased(tl_daemon *daemon, const tl_ipc_request *request
         status = catalog_query_boosted(*reader, request->query, &files, daemon->results,
                                        request->limit, count);
         if (status == TL_OK)
-            status = merge_applications(daemon, request, count);
+            status = merge_applications(daemon, request, &files, count);
         uint64_t end = nanoseconds();
         daemon->engine_ns = end >= start ? end - start : 0;
         return status;
@@ -757,7 +850,7 @@ static void queue_semantic(tl_daemon *daemon, struct client *client,
     tl_status queued = semantic_submit(
         daemon->semantic, client->slot, ++client->semantic_token, request, completion->search_id,
         completion->catalog_gen, desktop_gen(daemon->desktop), daemon->results,
-        daemon->results_named, completion->count, &completion->emb_gen);
+        daemon->results_tier, completion->count, &completion->emb_gen);
     if (queued == TL_OK) {
         completion->lexical_phase = true;
         completion->reason = "semantic_pending";

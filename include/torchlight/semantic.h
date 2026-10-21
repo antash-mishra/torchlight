@@ -4,6 +4,7 @@
 #include "torchlight/catalog.h"
 #include "torchlight/desktop.h"
 #include "torchlight/ipc.h"
+#include "torchlight/rank.h"
 #define SEMANTIC_CLIENTS 16
 #define SEMANTIC_DEADLINE_MS 200
 #define SEMANTIC_VECTOR_BYTES (150U * 1024U * 1024U)
@@ -50,13 +51,15 @@ void semantic_destroy(tl_semantic *semantic);
  * zero on failure. TL_STATE when not ready/mismatched, TL_LIMIT when slot busy,
  * TL_INVALID for inputs. Token is nonzero and prevents connection reuse leaks.
  * Supply fixed lexical candidate pool independently of displayed request.limit.
- * named (NULL for none) flags the pool's applications the query names
- * (desktop_named): fusion keeps them after exact paths and before exact
- * basenames, as the lexical order has them (ADR 0058). */
+ * tiers (NULL for none) gives each pool entry's application tier: RANK_NAMED
+ * for applications the query names, RANK_DESCRIBED for ones tagged with its
+ * words (desktop_evidence), RANK_REGULAR otherwise. Fusion keeps named ones
+ * after exact paths and before exact basenames, and described ones after exact
+ * basenames, as the lexical order has them (ADR 0058, ADR 0061). */
 tl_status semantic_submit(tl_semantic *semantic, size_t slot, uint64_t token,
                           const tl_ipc_request *request, const char *search_id,
                           uint64_t catalog_gen, uint64_t desktop_gen, const tl_result *lexical,
-                          const bool *named, size_t count, uint64_t *out_emb_gen);
+                          const tl_rank_priority *tiers, size_t count, uint64_t *out_emb_gen);
 /** Copy a ready terminal JSON response, or an immediate lexical terminal on
  * cancel/deadline, into caller buffer. out_length zero while pending (TL_OK).
  * Cancel emits cancelled/superseded. A consumed/unknown token returns TL_STATE;

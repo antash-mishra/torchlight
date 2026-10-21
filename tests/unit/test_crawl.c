@@ -1,5 +1,5 @@
-/* Crawler errors, unreadable scopes, allowlist traversal, excluded scopes and
- * root coverage. */
+/* Crawler errors, unreadable scopes, allowlist traversal, excluded scopes,
+ * tool-managed folders and root coverage. */
 #include "test.h"
 #include "torchlight/crawl.h"
 #include <fcntl.h>
@@ -48,13 +48,14 @@ static void unreadable_directory_is_reported(void) {
           rmdir(root) == 0);
     CHECK(status == TL_OK && observed.entries == 4 && observed.unreadable == 1 && observed.sibling);
 }
+enum { LISTING_CAPACITY = 32 };
 struct listing {
-    char paths[16][128];
+    char paths[LISTING_CAPACITY][128];
     size_t count;
 };
 static tl_status list_path(void *context, const tl_crawl_entry *entry) {
     struct listing *listing = context;
-    CHECK(listing->count < 16 && strlen(entry->path) < 128);
+    CHECK(listing->count < LISTING_CAPACITY && strlen(entry->path) < 128);
     snprintf(listing->paths[listing->count++], 128, "%s", entry->path);
     return TL_OK;
 }
@@ -298,8 +299,139 @@ static void excluded_scopes(void) {
                              "/sdk",          "/keep"};
     remove_all(root, cleanup, 10);
 }
+static void write_text(const char *root, const char *suffix, const char *text) {
+    char path[160];
+    snprintf(path, sizeof(path), "%s%s", root, suffix);
+    FILE *file = fopen(path, "w");
+    CHECK(file != NULL && fputs(text, file) >= 0 && fclose(file) == 0);
+}
+static bool covers(const tl_crawl *crawler, const char *root, const char *suffix) {
+    char path[160];
+    snprintf(path, sizeof(path), "%s%s", root, suffix);
+    return crawl_covers(crawler, root, path);
+}
+/* Folders a tool manages are skipped with everything in them, by the markers
+ * the tools write: a venv, a Conda environment, an Android SDK, a signed
+ * cache tag and Go's module cache, and by names (site-packages). Look-alikes
+ * stay: a pyvenv.cfg folder, an unsigned tag, a project's own "mod" package.
+ * Coverage and scoped walks agree with the root walk; the allowlist and an
+ * explicit root override the markers. */
+static void tool_managed_folders(void) {
+    char root[] = "/tmp/torchlight-managed-XXXXXX", path[160];
+    CHECK(mkdtemp(root) != NULL);
+    const char *dirs[] = {"/own",
+                          "/own/mod",
+                          "/own/mod/cache",
+                          "/venv",
+                          "/venv/lib",
+                          "/conda",
+                          "/conda/conda-meta",
+                          "/Sdk",
+                          "/Sdk/ndk",
+                          "/go",
+                          "/go/pkg",
+                          "/go/pkg/mod",
+                          "/go/pkg/mod/cache",
+                          "/go/pkg/mod/cache/download",
+                          "/tagged",
+                          "/untagged",
+                          "/fakevenv",
+                          "/fakevenv/pyvenv.cfg",
+                          "/lib",
+                          "/lib/site-packages"};
+    for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++)
+        make(root, dirs[i], true);
+    const char *files[] = {"/own/notes.txt", "/own/mod/cache/x.go", "/venv/pyvenv.cfg",
+                           "/venv/lib/x.py", "/Sdk/.knownPackages", "/lib/site-packages/a.py"};
+    for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++)
+        make(root, files[i], false);
+    write_text(root, "/tagged/CACHEDIR.TAG",
+               "Signature: 8a477f597d28d172789f06886806bc55\n# a cache\n");
+    write_text(root, "/untagged/CACHEDIR.TAG", "Signature: not a cache\n");
+    tl_crawl *crawler = NULL;
+    CHECK(crawl_create(NULL, 0, NULL, 0, &crawler) == TL_OK);
+    struct listing listing = {0};
+    CHECK(crawl_run(crawler, root, list_path, &listing) == TL_OK);
+    const char *kept[] = {"",
+                          "/own",
+                          "/own/notes.txt",
+                          "/own/mod",
+                          "/own/mod/cache",
+                          "/own/mod/cache/x.go",
+                          "/go",
+                          "/go/pkg",
+                          "/untagged",
+                          "/untagged/CACHEDIR.TAG",
+                          "/fakevenv",
+                          "/fakevenv/pyvenv.cfg",
+                          "/lib"};
+    CHECK(listing.count == sizeof(kept) / sizeof(kept[0]));
+    for (size_t i = 0; i < sizeof(kept) / sizeof(kept[0]); i++)
+        CHECK(listed(&listing, root, kept[i]));
+    CHECK(!covers(crawler, root, "/venv") && !covers(crawler, root, "/venv/lib") &&
+          !covers(crawler, root, "/conda") && !covers(crawler, root, "/Sdk/ndk") &&
+          !covers(crawler, root, "/go/pkg/mod") && !covers(crawler, root, "/tagged") &&
+          !covers(crawler, root, "/lib/site-packages"));
+    CHECK(covers(crawler, root, "/go/pkg") && covers(crawler, root, "/own/mod") &&
+          covers(crawler, root, "/untagged") && covers(crawler, root, "/fakevenv/pyvenv.cfg"));
+    /* A children-only scan of the root reports the same direct children. */
+    listing = (struct listing){0};
+    CHECK(crawl_scope(crawler, root, false, no_roots, &listing) == TL_OK);
+    CHECK(listing.count == 6 && listed(&listing, root, "/own") && listed(&listing, root, "/go") &&
+          listed(&listing, root, "/untagged") && listed(&listing, root, "/fakevenv") &&
+          listed(&listing, root, "/lib") && !listed(&listing, root, "/venv"));
+    snprintf(path, sizeof(path), "%s/go", root);
+    listing = (struct listing){0};
+    CHECK(crawl_scope(crawler, path, true, no_roots, &listing) == TL_OK);
+    CHECK(listing.count == 2 && listed(&listing, root, "/go/pkg"));
+    /* An explicit root is walked even when a tool manages it. */
+    snprintf(path, sizeof(path), "%s/Sdk", root);
+    listing = (struct listing){0};
+    CHECK(crawl_run(crawler, path, list_path, &listing) == TL_OK);
+    CHECK(listing.count == 3 && listed(&listing, root, "/Sdk/ndk"));
+    crawl_destroy(crawler);
+    /* An allowlisted managed folder is indexed like any other. */
+    snprintf(path, sizeof(path), "%s/venv", root);
+    const char *allow[] = {path};
+    CHECK(crawl_create(NULL, 0, allow, 1, &crawler) == TL_OK);
+    listing = (struct listing){0};
+    CHECK(crawl_run(crawler, root, list_path, &listing) == TL_OK);
+    CHECK(listed(&listing, root, "/venv/lib/x.py") && !listed(&listing, root, "/conda"));
+    CHECK(covers(crawler, root, "/venv/lib"));
+    crawl_destroy(crawler);
+    const char *cleanup[] = {"/own/notes.txt",
+                             "/own/mod/cache/x.go",
+                             "/venv/pyvenv.cfg",
+                             "/venv/lib/x.py",
+                             "/Sdk/.knownPackages",
+                             "/lib/site-packages/a.py",
+                             "/tagged/CACHEDIR.TAG",
+                             "/untagged/CACHEDIR.TAG",
+                             "/lib/site-packages",
+                             "/lib",
+                             "/fakevenv/pyvenv.cfg",
+                             "/fakevenv",
+                             "/untagged",
+                             "/tagged",
+                             "/go/pkg/mod/cache/download",
+                             "/go/pkg/mod/cache",
+                             "/go/pkg/mod",
+                             "/go/pkg",
+                             "/go",
+                             "/Sdk/ndk",
+                             "/Sdk",
+                             "/conda/conda-meta",
+                             "/conda",
+                             "/venv/lib",
+                             "/venv",
+                             "/own/mod/cache",
+                             "/own/mod",
+                             "/own"};
+    remove_all(root, cleanup, sizeof(cleanup) / sizeof(cleanup[0]));
+}
 void test_crawl(void) {
     one_stat_records();
+    tool_managed_folders();
     device_boundaries();
     scoped_walks();
     tl_crawl *crawler = NULL;

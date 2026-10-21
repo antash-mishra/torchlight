@@ -29,7 +29,8 @@ return `TL_STATE` rather than combine incompatible catalog views.
 
 Exact paths precede named results (`RANK_NAMED`: the applications the query
 names, which the daemon lists before files, ADR 0058), then exact basenames, then
-regular fusion scores, even when ordinary RRF scores would win. Equal scores preserve lexical source order,
+described results (`RANK_DESCRIBED`: applications tagged with the query's words,
+ADR 0061), then regular fusion scores, even when ordinary RRF scores would win. Equal scores preserve lexical source order,
 then compare raw paths and ids. With an empty semantic list, output preserves
 the lexical order exactly. Unembedded lexical entries remain candidates.
 

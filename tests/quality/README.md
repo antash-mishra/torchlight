@@ -8,9 +8,11 @@ variants stay together in the explicit tuning/held-out split. The two alignment
 families are controlled comparisons rather than real application names.
 
 The native evaluator merges separate desktop and file engines as the daemon does:
-exact paths, then the applications the query names, then the rest by score
-(ADR 0058). Libraries from before `desktop_named` are merged by score alone, as the
-daemon merged them then. It verifies fresh-workspace and top-k equivalence. The
+for a one-word query it keeps only word-start matches once any exists, then lists
+exact paths, the applications the query names, exact names, the applications tagged
+with its words and the rest by score (ADR 0058, ADR 0061). Libraries from before
+`lexical_word_start` are merged as the daemon merged them then: exact paths, named
+applications, then the rest by score, or by score alone before `desktop_named`. It verifies fresh-workspace and top-k equivalence. The
 fixture has fewer than 1000 entries, so returned membership is complete, making
 candidate recall exact here. Large synthetic benchmark recall@1000 is a ranked
 proxy, not complete pre-ranking recall. Missing useful results have first rank

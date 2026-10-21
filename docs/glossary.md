@@ -97,7 +97,8 @@
 | **Allowlist (`allow`)** | Configured hidden or ignored directories that are indexed anyway; their hidden ancestors are traversed but not indexed. |
 | **Excluded scope (`exclude`)** | A folder that is never crawled or watched, even below a root or an allowlisted folder: Torchlight's own state directory, and every configured `exclude` path (M8). Its saved entries are pruned by the next full scan. |
 | **Place penalty** | A query-independent penalty (0 to 256) a file result loses for where it lives: 24 per folder beyond three below the indexed root, plus 128 inside a dependency tree. It reorders matches of similar strength inside their channel tier (`place` module, M8). |
-| **Dependency tree** | Everything below a folder that by convention holds installed or vendored software: `node_modules`, `site-packages`, `vendor`, `third_party`, `sysroot`, `sdk`, Go module folders (`name@v1.2.3`) or versioned install folders (`27.0.12077973`). The marker folder itself is not in the tree. |
+| **Dependency tree** | Everything below a folder that by convention holds installed or vendored software: `node_modules`, `site-packages`, `vendor`, `third_party`, `sysroot`, `sdk`, Go module folders (`name@v1.2.3`) or versioned install folders (`27.0.12077973`). The marker folder itself is not in the tree. Those a tool manages are not indexed at all (see tool-managed folder). |
+| **Tool-managed folder** | A folder a tool makes and maintains, never a person: one named `node_modules`, `bower_components`, `site-packages`, `dist-packages`, `target`, `build`, `CMakeFiles` or `__pycache__`, or one holding a marker its tool writes (`pyvenv.cfg`, `conda-meta`, `.knownPackages` for an Android SDK, a signed `CACHEDIR.TAG`, or Go's module cache, `mod` with `cache/download`). The crawler skips it with everything inside unless a root or `allow` names it (ADR 0062). |
 | **Place ranking** | The per-engine setting that applies place penalties (`lexical_set_place_ranking`): on for file catalogs, off for the desktop catalog, inherited by delta segments. |
 | **Configuration sync** | `torchlight index` without roots: scan configured roots, keep unavailable ones, and forget roots no longer configured. |
 | **Known-item query** | A benchmark query generated from one target entry (exact, prefix, abbreviation, typo, partial typo or parent + name) and judged by whether that entry is retrieved. |
@@ -141,6 +142,16 @@
   display name, a word of it or its initials (`desktop_named`). The daemon lists named
   applications after exact paths and before files (ADR 0058); generic names and
   keywords never name an application.
+- **Described application:** An application tagged with the query's words: each word
+  that does not start its name is a whole word of its generic name or keywords ("wifi"
+  for Network). The daemon lists described applications after exact file names and
+  before other results (`desktop_evidence`, ADR 0061).
+- **Word start / near match:** A result matches by a word start when each typed word
+  starts its name, a word of it or its initials (for applications also a word of the
+  generic name or keywords), or is its exact name or path. A near match has only a typo,
+  shared trigrams, scattered letters or a parent folder's name. For a one-word query the
+  daemon shows near matches only when nothing matches by a word start
+  (`lexical_word_start`, `desktop_evidence`, ADR 0061).
 
 - **Static embedding:** A trained token lookup table pooled into a text vector;
   Potion uses this without a contextual transformer runtime.

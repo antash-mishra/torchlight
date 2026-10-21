@@ -752,3 +752,46 @@ as they were. The mixed relevance fixture scores 1.0 on every measure before and
 ADR 0060's `bench_lexical` comparison is in that ADR: no change in typing latency or
 labeled quality.
 
+
+## Word matches first and folders tools manage (2026-10-21)
+
+The person called everyday words "garbage" in the popup: "camera" listed six `camera`
+folders from the Android SDK, the NDK and a cloned library and four `camera.h` files,
+"sound" the Sound panel and then SDK files in duplicate pairs. Both builds indexed the
+same live home with an isolated `-O3` daemon (own database, configuration and socket;
+the live service untouched), and the popup's ten results for 35 everyday words (camera,
+sound, music, video, photo, image, picture, screen, display, network, wifi, bluetooth,
+battery, power, keyboard, mouse, printer, calendar, clock, calculator, terminal, notes,
+text, editor, browser, download, settings, update, theme, font, color, volume,
+microphone, record, player) were compared
+([ADR 0061](adr/0061-word-matches-first.md), [ADR 0062](adr/0062-folders-tools-manage.md)):
+
+| | before | after |
+|---|---:|---:|
+| indexed entries | 213,520 | 26,169 |
+| inotify watches | 34,498 | 3,803 |
+| resident memory after the first index | 176 MiB | 38.5 MiB |
+| first index | 5 s, 3.8 CPU-s | 1 s, 0.5 CPU-s |
+| popup rows for the 35 words | 350 | 246 |
+| rows inside third-party trees | 254 | 58 |
+| rows that repeat another row in a different version folder | 72 | 0 |
+| applications and settings among them | 36 | 79 |
+
+The remaining third-party rows are cloned or unpacked libraries that carry no marker
+(`~/assimp`, `~/faiss`, a monorepo cloned under a project, two Vulkan SDK versions). After
+the change "wifi" lists Network, "battery" Power Statistics, "microphone" Sound, "sound"
+Sound, System Info and the person's `Sound.ts` and `Sound.test.ts`, and "camera" only files
+named camera, the person's own engine files among the ten instead of from rank 9.
+
+For every application the menu lists (111), each keyword and generic name was typed as a
+query: the application was missing from the ten results for 281 of 428 keywords and 5 of
+23 generic names before, and for 2 keywords and 1 generic name after. Those three are
+tokenizer cases both builds miss: "MP3" and "E-mail" are split at the digit and the
+hyphen, so the typed word starts no key, and "Streaming/Recording Software" holds a `/` and
+searches as a path.
+
+`desktop_evidence` on the live desktop's 112 applications costs 20 to 28 µs for a
+one-letter query and 6 to 7 µs for a whole word, where naming alone took 10 to 12 µs and
+1.3 to 1.6 µs. `make bench` (the lexical engine, unchanged) gave typing p50/p95
+0.74/3.52 ms at 500k synthetic entries. The mixed relevance fixture scores 1.0 on every
+measure before and after.

@@ -61,6 +61,32 @@ tl_status desktop_query_boosted(tl_desktop *desktop, const char *query,
  * No I/O or allocation. */
 tl_status desktop_named(tl_desktop *desktop, const char *query, const tl_result *results,
                         size_t count, bool *named);
+/* What the words of a query find in an application, weakest first. */
+typedef enum {
+    /* Only typos, shared trigrams or scattered letters. */
+    DESKTOP_FUZZY,
+    /* Each word starts the name, a word of it or its initials, or starts a
+     * word of the generic name or keywords. */
+    DESKTOP_WORD_START,
+    /* As word start, and each word that does not start the name is a whole
+     * word of the generic name or keywords: the application is tagged with
+     * it ("audio" for Sound, not "aud"). */
+    DESKTOP_DESCRIBED,
+    /* Each word starts the name, a word of it or its initials (desktop_named). */
+    DESKTOP_NAMED
+} tl_desktop_evidence;
+/** Set evidence[i] for each of count results of a desktop query on this lease:
+ * what the query's words (split at whitespace, as lexical_query splits them)
+ * find in that application. The generic name field also holds the untranslated
+ * name. The daemon lists named applications first, described ones after exact
+ * file names, and for a one-word query drops fuzzy matches when any result
+ * matches by a word start (ADR 0061). Ids not in the leased snapshot and
+ * queries without words are fuzzy. Requires the lease; uses the catalog's
+ * query scratch, so one lease holder at a time. TL_INVALID for NULL arguments
+ * (count zero excepted), TL_LIMIT for a query over LEXICAL_QUERY_BYTES;
+ * evidence is all fuzzy on error. No I/O or allocation. */
+tl_status desktop_evidence(tl_desktop *desktop, const char *query, const tl_result *results,
+                           size_t count, tl_desktop_evidence *evidence);
 /** Resolve session-scoped id in current snapshot; NULL when stale. Requires
  * lease; borrowed entry/strings valid until release. No I/O/allocation. */
 const tl_desktop_entry *desktop_resolve(const tl_desktop *desktop, uint64_t id);
