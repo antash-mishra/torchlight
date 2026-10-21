@@ -2,6 +2,33 @@
 
 Each release's notes are taken from its section here (docs/release.md).
 
+## 0.1.6 (2026-10-21)
+
+Searches show what you meant instead of software internals: SDKs, virtual environments and
+caches are left out, and a typed word lists real matches, with the settings tagged with it
+first.
+
+### Cleaner results
+
+- Folders that tools manage are no longer indexed: Python virtual environments, Conda
+  environments, Android SDKs, Go's module cache, folders marked as caches (`CACHEDIR.TAG`)
+  and dependency folders such as `node_modules` and `site-packages`, wherever they are.
+  "camera" and "sound" used to list Android SDK files, often twice (once per installed
+  version); now they list your own files. On one developer's home folder the index shrank
+  from 213,520 entries to 26,169 and the search daemon's memory from 176 MiB to 38 MiB. To
+  search such a folder anyway, add `allow = PATH` to `~/.config/torchlight/config`.
+- Typing one word lists what matches it by the start of a word: a name, a word of a name or
+  its initials. Near matches, such as typos or names that only share a few letters, appear
+  when nothing else matches, so a misspelled word still finds things. Files you have opened
+  before stay.
+
+### Settings by what they are for
+
+- An application or settings panel is found by the words it is tagged with: "wifi" lists
+  Network, "audio" Sound, VLC and Rhythmbox, "battery" Power Statistics, "microphone" Sound.
+  They come after files named exactly like the word and before other files; part of a tag
+  ("aud") does not count.
+
 ## 0.1.5 (2026-10-18)
 
 Torchlight now installs on many more distributions, finds applications it used to miss,
