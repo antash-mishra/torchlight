@@ -1,20 +1,20 @@
 Architectures: amd64
 Codename: stable
 Components: main
-Date: Sun, 18 Oct 2026 17:21:03 +0000
+Date: Wed, 21 Oct 2026 18:16:10 +0000
 Description: Torchlight launcher
 Label: Torchlight
 Origin: Torchlight
 Suite: stable
 MD5Sum:
- 036fcfb54105a53e68acc6ef71aa70ec             7598 main/binary-amd64/Packages
- eac6425745f62a7156eed5361b5e6d17             1848 main/binary-amd64/Packages.gz
+ 8dadb616af0765be6408ae1d4077b56f             9128 main/binary-amd64/Packages
+ e77c76cc854bb691e4fec349184d3a70             2046 main/binary-amd64/Packages.gz
 SHA1:
- 8d5c88f1d4b2dff318f7c7b2d0aeec27a37f7e9c             7598 main/binary-amd64/Packages
- 52ee64d234f9c33a001e594b9c5f0095f7915301             1848 main/binary-amd64/Packages.gz
+ 475871dcc1e19d4c9e90f4d02e0bd9062d80c453             9128 main/binary-amd64/Packages
+ d4df2384e1d5764261e01fecbd41acdcee30fd1c             2046 main/binary-amd64/Packages.gz
 SHA256:
- fb3614c9c6c341e9bc622ca8800ea5cd1c5c1e2357abd8ebcf991f8e804d4a3d             7598 main/binary-amd64/Packages
- 333c45ecf7571c4d092413f27084522e63871da5fd05e64072150a2246c88903             1848 main/binary-amd64/Packages.gz
+ 48ace3c96aa13425a8c1052e68131ff885828536a5b78e4a290c18e8deb164a3             9128 main/binary-amd64/Packages
+ ff3b9dcaee39aebd3d2811e489c8ae84dbc0e3cfb30381fb71c6c1ee8557396d             2046 main/binary-amd64/Packages.gz
 SHA512:
- daa545c1cdc8c07d5261f32ea90e62e6a00e6a1c4a454c3cc17f9b589ac00ff637c2ea41c50385564f16a8cca7163efb7d0cec7b17e3f87e9f268069dcd6d620             7598 main/binary-amd64/Packages
- bd203c4ab0132375dc2ad50b3c223b895e9634176b53f314104ad69ef1347453a4bf3427cc5f1fa99456968ca551f0fa66f50f1eda46b5514738e73a59f79626             1848 main/binary-amd64/Packages.gz
+ a8eedc51f092c1c4467eb1c6c6a40c59a42c75e1a922700cb933c263fa1bfcca1035595a05de5549cb8c1c24beb3c04ad9d2558135979e15db7fd268e465b98c             9128 main/binary-amd64/Packages
+ e8d4cf235b37da2ca073b731743436826ea717023a066f1d5ac81258bf17639299ddd486c8c5cb951945c06d78793ee99908853fca50f664aa8b9743d199dda4             2046 main/binary-amd64/Packages.gz
