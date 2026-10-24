@@ -116,6 +116,61 @@ shortcut choices are preserved.
 Use the full path of `torchlight-gtk` when it is not on the desktop's `PATH` (as with
 `make install` or the portable archive's installer, into `~/.local/bin`).
 
+## Omarchy 4 (optional)
+
+Omarchy keeps many settings in its menu and bar rather than `.desktop` files.
+Installed apps already appear through Torchlight's normal XDG catalog. To also
+search Omarchy's settings, use this **opt-in**, per-user integration after installing
+Torchlight, with `~/.local/bin` on `PATH`:
+
+```sh
+# From the portable archive:
+python3 share/torchlight/omarchy.py install
+# Or from a source checkout:
+python3 scripts/omarchy.py install
+```
+
+It requires `ID=omarchy` in `/etc/os-release`, Omarchy 4's Lua configuration,
+Python 3 and a running Hyprland/systemd user session. Arch with Hyprland is not
+treated as Omarchy. Normal installation never invokes this script; other
+distributions and Torchlight's built-in palettes are unchanged.
+
+The integration:
+
+- Exposes available Omarchy menu entries and Audio, Bluetooth, Display, Wi-Fi
+  and Power panels as XDG settings entries. User menu overrides and parent
+  visibility conditions are respected. Runtime providers (such as fonts) open
+  their original picker; their individual choices are not duplicated.
+- Refreshes settings every five minutes and rechecks availability at launch.
+  Actions stay in Omarchy, rather than copying their shell commands.
+- Maps Torchlight's namespaced GTK colors to the current Omarchy palette.
+  A `theme-set.d` hook refreshes the palette and closes the cached launcher;
+  the next invocation uses the new colors. Restart Torchlight once after setup.
+  Fonts, layout and other GTK applications' colors are not changed.
+- Adds a user Lua module to float and center Torchlight without Hyprland's
+  extra border. Other windows' rules are unchanged.
+
+Existing shortcuts are preserved unless you explicitly add `--bind-super-space`
+to `install`. That flag replaces Super+Space (normally the Omarchy launcher);
+the separate Omarchy-menu shortcut stays available. Re-running setup updates
+the helper and retains an earlier opt-in to this binding.
+
+Files live under your XDG config/data directories. Existing GTK CSS and Hyprland
+configuration are preserved; only an import and a module load are added. Setup
+refuses to overwrite an unrelated file at an integration-owned path. The XDG
+settings entries also appear in other launchers, as standard desktop entries do.
+
+Remove the integration **before** removing Torchlight itself:
+
+```sh
+python3 ~/.local/share/torchlight/omarchy/integration.py uninstall
+```
+
+For a custom `XDG_DATA_HOME`, use
+`$XDG_DATA_HOME/torchlight/omarchy/integration.py` instead. Removal stops the
+sync timer, removes only integration-owned files and its exact config additions,
+and reloads Hyprland; it leaves Torchlight, apps, history and unrelated config alone.
+
 ## Open windows
 
 Running applications list their open windows beneath them in the popup, and Enter

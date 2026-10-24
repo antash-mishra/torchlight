@@ -12,6 +12,17 @@ each login. Then bind a keyboard shortcut, such as Super+Space, to:
 To update, run install.sh from a newer release. To remove Torchlight, run
 ./install.sh --uninstall (your index and settings stay unless you delete them).
 
+Omarchy 4 only: after installing, optional settings search, theme colors and
+borderless popup rules can be enabled with:
+
+    python3 share/torchlight/omarchy.py install
+
+Add --bind-super-space to explicitly replace that shortcut. This is never run
+by install.sh, and refuses other distributions. Remove the integration before
+uninstalling Torchlight:
+
+    python3 ~/.local/share/torchlight/omarchy/integration.py uninstall
+
 It needs a 64-bit PC with GTK 4.14 or newer and glibc 2.39 or newer: Fedora 40,
 Debian 13, Ubuntu 24.04, openSUSE Tumbleweed, Arch and others from 2024 on.
 

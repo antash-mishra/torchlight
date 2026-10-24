@@ -109,6 +109,7 @@ def check_contents(archive, version):
     expected = {"install.sh", "README", "share/systemd/user/torchlightd.service",
                 "etc/xdg/autostart/torchlightd.desktop",
                 "share/applications/org.torchlight.Launcher.desktop",
+                "share/torchlight/omarchy.py",
                 "share/fonts/torchlight/SchibstedGrotesk-VF.ttf",
                 "share/fonts/torchlight/bedstead.otf", "share/doc/torchlight/LICENSE",
                 "share/doc/torchlight/copyright", "share/doc/torchlight/OFL.txt",

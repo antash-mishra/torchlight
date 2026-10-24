@@ -156,6 +156,7 @@ test: build/tests build/torchlight-sanitized build/torchlightd-sanitized build/t
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_daemon.py ./build/torchlight-sanitized ./build/torchlightd-sanitized
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_semantic.py ./build/torchlightd-sanitized ./build/test_semantic_stall.so ./build/torchlight-sanitized
 	python3 tests/test_headless.py $(MAKE)
+	python3 tests/test_omarchy.py
 lint-headless:
 	@command -v $(CLANG_TIDY) >/dev/null || { echo 'clang-tidy is required'; exit 1; }
 	@command -v $(CPPCHECK) >/dev/null || { echo 'cppcheck is required'; exit 1; }
