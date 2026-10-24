@@ -80,7 +80,7 @@ $(WAYLAND_GENERATED)/%-client.h: third_party/wayland-protocols/%.xml
 	$(WAYLAND_SCANNER) client-header $< $@ 2>$@.log || { cat $@.log; exit 1; }
 # The presentation's widgets, which the native view test builds on its own.
 VIEW_SOURCES = ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c ui/gtk/header.c ui/gtk/index_strip.c \
-               ui/gtk/preview.c
+               ui/gtk/preview.c ui/gtk/tooltip.c
 # The open-window sources, one per kind of session (ADR 0052), and how one is chosen.
 WINDOW_SOURCES = ui/gtk/windows.c ui/gtk/windows_x11.c ui/gtk/windows_shell.c ui/gtk/windows_kwin.c \
                  ui/gtk/windows_track.c ui/gtk/windows_wayland.c ui/gtk/windows_session.c

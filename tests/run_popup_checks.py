@@ -34,7 +34,12 @@ with tempfile.TemporaryDirectory(prefix="torchlight-gtk-session-") as temporary:
 <policy context="default"><allow send_destination="*"/>
 <allow receive_sender="*"/><allow own="*"/></policy>
 </busconfig>""")
-    env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), GDK_BACKEND="x11", GSK_RENDERER="cairo")
+    # An empty configuration: the desktop's own GTK stylesheet (~/.config/gtk-4.0/gtk.css)
+    # would restyle the popup, and its parser warnings are fatal in the view checks.
+    config = base / "config"
+    config.mkdir()
+    env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), XDG_CONFIG_HOME=str(config),
+               GDK_BACKEND="x11", GSK_RENDERER="cairo")
     if not args.a11y:
         env["GTK_A11Y"] = "none"
     with (base / "xserver.log").open("w") as server_log:

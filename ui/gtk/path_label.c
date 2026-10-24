@@ -1,5 +1,6 @@
 /* Allocate a path label using Pango measurements, preserving distinguishing and final folders. */
 #include "path_label.h"
+#include "tooltip.h"
 #include "torchlight/popup.h"
 #include <stdbool.h>
 #include <string.h>
@@ -177,7 +178,7 @@ GtkWidget *popup_path_label_new(const char *path, size_t keep) {
         kept = kept > length ? kept - length + 1 : 0;
     self->shown = short_form(full, kept, &self->keep);
     g_free(full);
-    gtk_widget_set_tooltip_text(GTK_WIDGET(self), path);
+    popup_tooltip_set(GTK_WIDGET(self), path);
     gtk_accessible_update_property(GTK_ACCESSIBLE(self), GTK_ACCESSIBLE_PROPERTY_LABEL, path, -1);
     return GTK_WIDGET(self);
 }

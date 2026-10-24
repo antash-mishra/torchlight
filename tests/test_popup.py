@@ -254,27 +254,52 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
         empty_entry()
         idle = driver.read_frames()[-1]
         assert not idle["results_visible"] and not idle["footer_visible"] and not idle["clear_icon"], idle
+        scale = int(driver.env.get("GDK_SCALE", "1"))
+        def window_at(x, y):
+            xdo("mousemove", x, y)
+            location = dict(line.split("=", 1) for line in
+                            xdo("getmouselocation", "--shell").splitlines())
+            return location["WINDOW"]
+        pointer = dict(line.split("=", 1) for line in
+                       xdo("getmouselocation", "--shell").splitlines())
         if idle["shadow_left"]:
             # The transparent shadow margin passes the pointer through to what lies beneath.
-            scale = int(driver.env.get("GDK_SCALE", "1"))
-            def window_at(x, y):
-                xdo("mousemove", x, y)
-                location = dict(line.split("=", 1) for line in
-                                xdo("getmouselocation", "--shell").splitlines())
-                return location["WINDOW"]
-            pointer = dict(line.split("=", 1) for line in
-                           xdo("getmouselocation", "--shell").splitlines())
             margin_y = geometry["Y"] + (idle["shadow_top"] + 20) * scale
             assert window_at(geometry["X"] + idle["shadow_left"] * scale // 2, margin_y) != window
             assert window_at(geometry["X"] + geometry["WIDTH"] // 2, margin_y) == window
-            xdo("mousemove", pointer["X"], pointer["Y"])
+        below_y = geometry["Y"] + (idle["shadow_top"] + int(idle["surface_height"]) + 20) * scale
+        if idle["clear"] and below_y < geometry["Y"] + geometry["HEIGHT"]:
+            # So does the clear room a see-through window keeps below the surface.
+            assert window_at(geometry["X"] + geometry["WIDTH"] // 2, below_y) != window
+        xdo("mousemove", pointer["X"], pointer["Y"])
+        # Once it has faded in, the compositor learns that the surface is opaque, and
+        # nothing around it is: mutter otherwise let redraws beneath show through (ADR 0064).
+        steady = driver.frame(lambda f: f["opaque"][2] > 0, after=idle["paint_us"])
+        left, top, right, bottom = steady["opaque"]
+        assert (left >= steady["shadow_left"] and top >= steady["shadow_top"]
+                and right <= steady["shadow_left"] + steady["surface_width"]
+                and bottom <= steady["shadow_top"] + steady["surface_height"]), steady
         empty_geometry = driver.geometry()
         # Growth follows the fixed search anchor; typing never moves or narrows it.
+        # New rows' tooltips ask the X server nothing: one set with gtk_widget_set_tooltip_text
+        # queries the pointer under a grab of the whole server, and those grabs stalled
+        # typing for 100-300 ms per keystroke on GNOME's X11 session.
+        before = driver.read_frames()[-1]
         result = type_query("display")
+        assert result["tooltip_queries"] == before["tooltip_queries"], (before, result)
+        # The keys typed after the first wait out the 16 ms window and go as one query,
+        # rather than each one a reply happens to free up (ADR 0065).
+        assert result["query_sent_us"] - result["changed_us"] >= 15000, result
         assert result["results_visible"] and result["footer_visible"] and result["typing"], result
         for key in ["entry_x", "entry_y", "entry_width"]:
             assert result[key] == idle[key], (key, idle, result)
         assert driver.geometry()["Y"] == empty_geometry["Y"], "Results moved window top"
+        if result["clear"]:
+            # A see-through window keeps the popup's full height and the surface grows
+            # inside it: mutter showed an X11 window that resized itself at its old size
+            # for a few frames, squeezed or doubled (ADR 0064).
+            assert result["surface_height"] > idle["surface_height"], (idle, result)
+            assert driver.geometry()["HEIGHT"] == empty_geometry["HEIGHT"], "Results resized the window"
         # A work area with room for 880 logical pixels shows the preview panel beside the
         # results, describing the selected result; narrower ones never show it.
         wide = screen_width // int(driver.env.get("GDK_SCALE", "1")) - 48 >= 880
@@ -288,6 +313,12 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
         empty_entry()
         assert driver.geometry()["HEIGHT"] == empty_geometry["HEIGHT"], "Clearing did not shrink window"
         assert_no_blank_searches()
+        # A key after a pause searches at once, not after the 16 ms that coalesce a burst.
+        time.sleep(.1)
+        xdo("key", "s")
+        single = driver.frame(lambda f: f["query"] == "s" and f["query_sent_us"] >= f["changed_us"])
+        assert single["query_sent_us"] - single["changed_us"] < 12000, single
+        empty_entry()
         # Escape dismisses; the next invocation reuses the first process/window.
         xdo("key", "Escape")
         wait_for(lambda: not focused())

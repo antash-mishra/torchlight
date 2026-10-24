@@ -5,6 +5,7 @@
 #include "header.h"
 #include "path_label.h"
 #include "selection_track.h"
+#include "tooltip.h"
 #include <stdio.h>
 #include <string.h>
 #define TYPING_IDLE_MS 700
@@ -36,6 +37,9 @@
 #define SHADOW_SIDE 20
 #define SHADOW_TOP 10
 #define SHADOW_BOTTOM 28
+/* popup.css's surface: a translucent 1px edge and 14px rounded corners. */
+#define SURFACE_EDGE 1
+#define SURFACE_RADIUS 14
 #define HINT_SPACING 6
 /* The placeholder changes on each show, teaching the forgiving search. */
 static const char *const TIPS[] = {"Search apps, files and settings", "Try raedme: typos are fine",
@@ -330,6 +334,9 @@ static void build_content(tl_popup_view *view) {
     gtk_widget_add_css_class(view->widgets.root, "launcher-surface");
     gtk_widget_set_name(view->widgets.root, "popup-surface");
     gtk_widget_set_overflow(view->widgets.root, GTK_OVERFLOW_HIDDEN);
+    /* A window kept taller than the surface (on X11, see launcher.c) leaves the room
+     * below it clear; the surface keeps its natural height at the top. */
+    gtk_widget_set_valign(view->widgets.root, GTK_ALIGN_START);
     view->settings = g_object_ref(gtk_widget_get_settings(view->window));
     view->header = popup_header_new();
     gtk_box_append(GTK_BOX(view->widgets.root), view->header);
@@ -340,22 +347,59 @@ static void build_content(tl_popup_view *view) {
     gtk_box_append(GTK_BOX(view->widgets.root), create_footer(view));
     gtk_window_set_child(GTK_WINDOW(view->window), view->widgets.root);
 }
-/* Clicks in the transparent shadow margin reach the windows beneath, as if the
- * window ended at the visible surface. */
-static void apply_input_region(tl_popup_view *view, int width, int height) {
-    if (view->surface == NULL)
+#if !GTK_CHECK_VERSION(4, 16, 0)
+/* GTK 4.16 finds a window's opaque parts by itself. Before it, a window with a clear
+ * background is see-through throughout as far as the compositor knows, and mutter's
+ * redraws of the windows beneath then showed through the popup for a frame. The surface
+ * is opaque inside its edge and corners, except while it fades in or out. */
+static void apply_opaque_region(tl_popup_view *view, const cairo_rectangle_int_t *visible) {
+    cairo_rectangle_int_t across = {visible->x + SURFACE_EDGE, visible->y + SURFACE_RADIUS,
+                                    visible->width - 2 * SURFACE_EDGE,
+                                    visible->height - 2 * SURFACE_RADIUS};
+    cairo_rectangle_int_t down = {visible->x + SURFACE_RADIUS, visible->y + SURFACE_EDGE,
+                                  visible->width - 2 * SURFACE_RADIUS,
+                                  visible->height - 2 * SURFACE_EDGE};
+    if (gtk_widget_has_css_class(view->widgets.root, "opening") ||
+        gtk_widget_has_css_class(view->widgets.root, "closing") || across.height <= 0 ||
+        down.width <= 0) {
+        gdk_surface_set_opaque_region(view->surface, NULL);
         return;
-    const tl_popup_margins *margins = &view->margins;
-    cairo_rectangle_int_t visible = {margins->left, margins->top,
-                                     MAX(1, width - margins->left - margins->right),
-                                     MAX(1, height - margins->top - margins->bottom)};
+    }
+    cairo_region_t *region = cairo_region_create_rectangle(&across);
+    cairo_region_union_rectangle(region, &down);
+    gdk_surface_set_opaque_region(view->surface, region);
+    cairo_region_destroy(region);
+}
+#else
+static void apply_opaque_region(tl_popup_view *view, const cairo_rectangle_int_t *visible) {
+    (void)view;
+    (void)visible;
+}
+#endif
+/* Tell the compositor where the surface is. Clicks in the transparent shadow margin, and
+ * in any clear room the window keeps below the surface, reach the windows beneath, as if
+ * the window ended at the visible surface. */
+static void apply_regions(tl_popup_view *view) {
+    /* The surface's border box; its content size would leave out the border. */
+    graphene_rect_t bounds;
+    if (view->surface == NULL ||
+        !gtk_widget_compute_bounds(view->widgets.root, view->window, &bounds))
+        return;
+    cairo_rectangle_int_t visible = {(int)bounds.origin.x, (int)bounds.origin.y,
+                                     MAX(1, (int)bounds.size.width),
+                                     MAX(1, (int)bounds.size.height)};
     cairo_region_t *region = cairo_region_create_rectangle(&visible);
     gdk_surface_set_input_region(view->surface, region);
     cairo_region_destroy(region);
+    apply_opaque_region(view, &visible);
 }
+/* Each layout allocates the surface first (GtkWindow connected earlier), so its new
+ * size is known here even when the window's is unchanged. */
 static void surface_layout(GdkSurface *surface, int width, int height, gpointer context) {
     (void)surface;
-    apply_input_region(context, width, height);
+    (void)width;
+    (void)height;
+    apply_regions(context);
 }
 static void window_realized(GtkWidget *window, gpointer context) {
     tl_popup_view *view = context;
@@ -387,11 +431,14 @@ static void update_shadow(tl_popup_view *view) {
         gtk_widget_add_css_class(view->widgets.root, "shadowed");
     else
         gtk_widget_remove_css_class(view->widgets.root, "shadowed");
-    if (view->surface != NULL)
-        apply_input_region(view, gdk_surface_get_width(view->surface),
-                           gdk_surface_get_height(view->surface));
+    apply_regions(view);
 }
 static void install_style(tl_popup_view *view) {
+    /* GtkWindow's "background" class takes the theme's window colour, and a user
+     * stylesheet (~/.config/gtk-4.0/gtk.css, where themes for libadwaita link theirs)
+     * outranks the popup's own, so that colour filled the shadow margin and the corners
+     * around the rounded surface. Without the class the window stays clear. */
+    gtk_widget_remove_css_class(view->window, "background");
     view->display = g_object_ref(gtk_widget_get_display(view->window));
     view->css = gtk_css_provider_new();
     gtk_css_provider_load_from_resource(view->css, "/org/torchlight/launcher/popup.css");
@@ -440,7 +487,7 @@ void popup_view_set_status(tl_popup_view *view, const char *text) {
                           : strcmp(text, "Searching…") == 0                 ? ""
                                                                             : text;
     gtk_label_set_text(GTK_LABEL(view->message), compact);
-    gtk_widget_set_tooltip_text(view->message, text);
+    popup_tooltip_set(view->message, text);
     update_message(view);
     if (!empty(view))
         gtk_accessible_announce(
@@ -564,7 +611,7 @@ GtkWidget *popup_view_result(const tl_popup_row *row, size_t path_keep, tl_popup
         gtk_widget_set_valign(location, GTK_ALIGN_CENTER);
         gtk_box_append(GTK_BOX(box), location);
         /* Files keep their full path on hover; a desktop file's path means nothing. */
-        gtk_widget_set_tooltip_text(box, row->display);
+        popup_tooltip_set(box, row->display);
     }
     return box;
 }
@@ -603,7 +650,7 @@ GtkWidget *popup_view_child(const tl_popup_row *parent, tl_popup_item_kind kind,
     gtk_widget_set_hexpand(name, true);
     gtk_widget_set_valign(name, GTK_ALIGN_CENTER);
     gtk_box_append(GTK_BOX(box), name);
-    gtk_widget_set_tooltip_text(box, text);
+    popup_tooltip_set(box, text);
     GtkWidget *row = gtk_list_box_row_new();
     gtk_widget_add_css_class(row, "child-row");
     gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), box);
@@ -741,6 +788,7 @@ static gboolean opening_finished(gpointer context) {
     view->opening_timer = 0;
     /* Removing the class lets the next show restart the opening animations. */
     gtk_widget_remove_css_class(view->widgets.root, "opening");
+    apply_regions(view);
     return G_SOURCE_REMOVE;
 }
 void popup_view_set_active(tl_popup_view *view, bool active) {
@@ -762,6 +810,7 @@ void popup_view_set_active(tl_popup_view *view, bool active) {
         return;
     gtk_widget_add_css_class(view->widgets.root, "opening");
     view->opening_timer = g_timeout_add(OPENING_MS, opening_finished, view);
+    apply_regions(view);
 }
 /* Hide the window, dropping its surface too when the next show needs a fresh one. */
 static void hide_window(tl_popup_view *view) {
@@ -790,6 +839,7 @@ void popup_view_dismiss(tl_popup_view *view) {
     }
     gtk_widget_add_css_class(view->widgets.root, "closing");
     view->closing_timer = g_timeout_add(CLOSING_MS, closing_finished, view);
+    apply_regions(view);
 }
 void popup_view_destroy(tl_popup_view *view) {
     if (view == NULL)

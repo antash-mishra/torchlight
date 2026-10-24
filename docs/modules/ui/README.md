@@ -1,6 +1,6 @@
 # ui
 
-> **Status:** Implemented (M3 + Tekst look, motion, grouped results and preview panel + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, light and dark palettes, preview details read off the main thread, Wayland sizing (headless Weston), window switching on Wayland desktops and repeated showing on Cinnamon's Wayland session (`tests/test_windows_desktops.py`)
+> **Status:** Implemented (M3 + Tekst look, motion, grouped results and preview panel + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, a clear window under user stylesheets and a steady X11 height under GNOME's mutter (ADR 0064), tooltips without pointer round trips, the first edit after a pause searching at once (ADR 0065), light and dark palettes, preview details read off the main thread, Wayland sizing (headless Weston), window switching on Wayland desktops and repeated showing on Cinnamon's Wayland session (`tests/test_windows_desktops.py`)
 > **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track,header,index_strip,preview,wayland_globals}.c`, `ui/gtk/popup.css`, `ui/gtk/palette-{light,dark}.css`, `src/bin/torchlight-gtk.c`; fonts in `third_party/fonts`; open windows in [windows](../windows/README.md)
 > **Headers:** `include/torchlight/{launcher,popup,async,windows}.h`
 > **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/unit/test_windows.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/test_popup_wayland.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`
@@ -31,9 +31,16 @@ shadow on every full redraw), `popup_view_configure` gives the surface a
 transparent shadow margin (the `shadowed` class and widget margins, reported by
 `popup_view_margins`); it runs after the launcher realizes the window, when the
 renderer exists. The window's input region, updated on each surface layout,
-excludes the margin, so clicks in it reach the windows beneath. High contrast (the
+is the surface's border box, so clicks in the margin, or in any clear room a taller
+window keeps below the surface, reach the windows beneath. High contrast (the
 theme setting, or `GTK_THEME` as GTK resolves it) uses the theme's colors and no
-shadow.
+shadow. The view drops the window's `background` style class: a user stylesheet
+(`~/.config/gtk-4.0/gtk.css`, where GNOME themes for libadwaita link theirs) outranks
+`popup.css`, and its window colour filled the margin. Before GTK 4.16, which finds a
+window's opaque parts by itself, each layout also sets the window's opaque region to
+the surface inside its edge and corners, and none while the surface fades in or out;
+otherwise mutter blends the windows beneath into all of the clear window, and their
+redraws showed through the surface ([ADR 0064](../../adr/0064-clear-window-steady-height-on-x11.md)).
 
 **Optional Omarchy integration:** `scripts/omarchy.py` supplies per-user GTK
 palette colors and borderless, centered Hyprland popup rules only after an explicit
@@ -99,7 +106,16 @@ Each row is one line: a 24px icon, the name (its natural width up to 40
 characters, end-ellipsized) and, for files and folders, the short folder,
 dimmed and right-aligned to the row's end. Applications and settings
 show their name alone, with no subtitle or tooltip; file rows keep the full
-path as their tooltip. Each row carries its kind as a style class (`kind-app`,
+path as their tooltip. Rows, folder labels and the status set tooltips with
+`popup_tooltip_set` (`tooltip.c`), which hands GTK the text from `query-tooltip` and
+makes it the accessible description: `gtk_widget_set_tooltip_text` asks where the
+pointer is each time a visible widget gets tooltip text, and on X11 GTK grabs the whole X
+server to find the window under it. Under GNOME's X11 compositor (mutter 46, NVIDIA) such
+a grab waited for the next screen refresh or two, 16 to 35 ms against 0.1 ms without
+one, so two tooltips per row held up each keystroke's input for 100 to 300 ms. Key to
+text on screen is now about 10 ms there and key to results about 26 to 28 ms: under 1 ms
+of search, then building the rows and waiting for a frame, which GNOME's X11 compositor
+confirms to GTK 4 every 33 ms. Each row carries its kind as a style class (`kind-app`,
 `kind-setting`, `kind-folder`, `kind-file`, or `kind-window` for children). Hover
 draws a hairline frame and no fill. Icons are full color: desktop icons, `folder`,
 or a file type guessed from the name only (`g_content_type_guess`, no I/O;
@@ -149,7 +165,10 @@ Exact path/path_b64 bytes are decoded independently of safe display strings;
 NUL, duplicate ids, malformed results and obsolete request ids are rejected.
 
 IPC exchanges run on GIO async operations, with one active query and the newest
-pending edit, 16 ms coalescing and a delayed Searching indicator after 120 ms.
+pending edit, and a delayed Searching indicator after 120 ms. The first edit after a
+pause searches at once; edits within 16 ms of the one before, or while a query is out,
+are coalesced, and a reply leaves the newest edit to the 16 ms timer while it runs
+([ADR 0065](../../adr/0065-first-edit-searches-at-once.md)).
 Each uses a fresh same-user connection, so idle expiry and daemon restart do not
 reuse old connection identities. Supplementary status polls have a separate
 slot, preserve good results and reconnect/requery after service recovery.
@@ -206,7 +225,12 @@ Cinnamon X11 focus, native keyboard launches and repeated toggle are exercised b
 the desktop test. X11 requests centering on the pointer's monitor, clamps width
 and scroller height to its work area, and handles integer GTK scale factors. The
 window is the 680px (or clamped) surface plus the shadow margin on each side, and
-is centered as a whole, so the surface stays centered.
+is centered as a whole, so the surface stays centered. Where the window can be
+see-through (a compositor and an RGBA visual), it keeps the popup's tallest height,
+70% of the work area with the margin, and the surface grows inside it from the top:
+mutter draws an X11 window that resized itself at the wrong size for a few frames, so
+results squeezed or doubled the popup as they came and went
+([ADR 0064](../../adr/0064-clear-window-steady-height-on-x11.md)).
 Clamping occurs before mapping so window-manager constraints cannot misplace
 an initially oversized window at scale 2. Monitor selection uses full geometry,
 so the pointer may be over a panel while placement still uses the work area.
@@ -242,8 +266,11 @@ replaces it at the end to check this.
 
 The isolated test session owns a private Xvfb display, window manager and bus.
 It does not auto-start unrelated portal/secret services. A test-only preload
-observer records native GTK after-paint frames and entry-edit timestamps;
-production binaries have no measurement I/O. Small-screen theme/scale checks,
+observer records native GTK after-paint frames and entry-edit timestamps, and counts
+the synchronous pointer queries (`XIQueryPointer`) that setting tooltips makes and when
+a query request is written to the daemon; the acceptance test checks that typing a query
+that lists results makes no such pointer query, that a key after a pause sends its query
+within 12 ms, and that a burst's query waits out the 16 ms window. Production binaries have no measurement I/O. Small-screen theme/scale checks,
 error/restart recovery, no-history mode and 500k rebuild timings are repeatable
 through `make test-ui-isolated` and `make bench-ui`. Native presentation tests check
 highlight geometry and an observed intermediate glide, file-type icons, entrance
@@ -258,9 +285,15 @@ placeholder tips, the Copy path confirmation, the light or dark palette class an
 a forced dark theme, the shadow margin against the display, the renderer, the
 `shadowed` class and the window size, and a `GTK_THEME` high-contrast override that
 drops the shadow. The isolated session runs the native view test under GTK's Cairo
-and GL renderers. The probe reports the shadow margin, and the `gl-shadow` matrix
-configuration checks that the pointer reaches the window beneath in the margin but
-not on the surface. The acceptance run maps two real windows with
+and GL renderers, with an empty `XDG_CONFIG_HOME` so the desktop's own `gtk.css`
+stays out; it also renders the popup under a user-priority stylesheet whose
+`.background` is red and checks that the window's corner stays clear. The probe reports
+the shadow margin, the surface's size, whether the display can show see-through
+windows and the window's opaque region. The `gl-shadow` matrix configuration checks
+that the pointer reaches the window beneath in the margin but not on the surface; on a
+see-through display, every configuration checks that the window keeps its height while
+results grow the surface, that the pointer passes through below the surface, and that
+the opaque region lies within the surface. The acceptance run maps two real windows with
 `tests/fixtures/window_app.c` and checks Enter, choosing a window, Left/Right,
 a window closed after the snapshot, an application ranked below an exact file
 name and New window. They pass on a bare

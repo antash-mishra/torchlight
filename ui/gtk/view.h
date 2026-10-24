@@ -23,7 +23,9 @@ typedef struct {
     int left, right, top, bottom;
 } tl_popup_margins;
 /** Create an owned view on the GTK main thread. Borrow window until destroy.
- * Installs its child. TL_INVALID/NOMEM; out NULL on error. Widgets stay borrowed. */
+ * Installs its child at the window's top and drops the window's "background" style
+ * class, so no theme colour fills the window around the surface. TL_INVALID/NOMEM;
+ * out NULL on error. Widgets stay borrowed. */
 tl_status popup_view_create(GtkWidget *window, tl_popup_view **out);
 /** Return borrowed widget handles for wiring input and IPC; valid until destroy.
  * view must be a live view on the main thread. No allocation/errors. */
@@ -77,8 +79,9 @@ void popup_view_set_launching(tl_popup_view *view, bool launching);
  * view, positive width/height. No ownership transfer or errors. */
 void popup_view_configure(tl_popup_view *view, int width, int height_limit);
 /** Return the shadow margin chosen by the last popup_view_configure; the window
- * must be this much larger than the surface on each side. Clicks in it reach the
- * windows beneath. Main thread; live view. No ownership transfer or errors. */
+ * must be this much larger than the surface on each side. Clicks in it, and in any room
+ * a taller window leaves below the surface, reach the windows beneath. Main thread;
+ * live view. No ownership transfer or errors. */
 tl_popup_margins popup_view_margins(tl_popup_view *view);
 /** Describe the borrowed selected item in the preview panel (see popup_preview_show),
  * with the same icon as its row; a NULL preview or row clears it. A new result shows

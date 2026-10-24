@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 /* The gtk_shell1 version from which GTK 4 can release a hidden window's gtk_surface1. */
 #define GTK_SHELL_RELEASE_VERSION 4
+/* Edits within this long of the one before are coalesced into one query (ADR 0065). */
 #define POPUP_DEBOUNCE_MS 16
 #define POPUP_PENDING_MS 120
 #define POPUP_STATUS_MS 2000
@@ -310,7 +311,9 @@ static void query_response(void *context, tl_status status, const char *response
     ipc_exchange_destroy(popup->query);
     popup->query = NULL;
     remove_timer(&popup->pending);
-    if (popup->dirty && popup->visible)
+    /* Within a burst of edits the window's timer sends the newest one; sending it here
+     * would search each edit that lands between two fast replies. */
+    if (popup->dirty && popup->visible && popup->debounce == 0)
         start_query(popup);
 }
 static void start_query(struct popup *popup) {
@@ -365,6 +368,9 @@ static void changed(GtkEditable *entry, gpointer context) {
     popup_view_set_launching(popup->view, false);
     popup->dirty = true;
     gtk_widget_set_sensitive(popup->list, false);
+    /* An edit within the window after the last one, or while a query is out, waits to be
+     * coalesced: a burst of keys sends its first edit, then one query for its end. */
+    bool burst = popup->debounce != 0 || popup->query != NULL;
     remove_timer(&popup->debounce);
     if (query_empty(popup)) {
         popup->dirty = false;
@@ -375,6 +381,9 @@ static void changed(GtkEditable *entry, gpointer context) {
         render(popup);
         return;
     }
+    /* The first edit after a pause searches at once rather than after the window. */
+    if (!burst)
+        start_query(popup);
     popup->debounce = g_timeout_add(POPUP_DEBOUNCE_MS, debounce, popup);
 }
 static void launch_free(gpointer context) {
@@ -727,6 +736,17 @@ static void fit_to_monitor(struct popup *popup) {
     fit_to_area(popup, &area);
 }
 #ifdef GDK_WINDOWING_X11
+/* Mutter (GNOME), unlike Muffin (Cinnamon), shows an X11 window that resized itself at
+ * its old size for a few frames, squeezed or drawn twice, so the popup flickered whenever
+ * results grew or shrank it. Where the window can be see-through, it keeps the popup's
+ * tallest height instead and the surface grows inside it; the view's input region lets
+ * clicks below the surface through (ADR 0064). */
+static void hold_height(struct popup *popup, const GdkRectangle *area) {
+    GdkDisplay *display = gtk_widget_get_display(popup->window);
+    bool clear = gdk_display_is_composited(display) && gdk_display_is_rgba(display);
+    gtk_widget_set_size_request(popup->window, -1,
+                                clear ? area->height * POPUP_HEIGHT_PERCENT / 100 : -1);
+}
 /* X11: fit the work area of the monitor under the pointer and centre the popup near its
  * top. Returns false on other displays. */
 static bool place_on_x11(struct popup *popup) {
@@ -755,6 +775,7 @@ static bool place_on_x11(struct popup *popup) {
             pointer_y < geometry.y || pointer_y >= geometry.y + geometry.height)
             continue;
         int outer = fit_to_area(popup, &area);
+        hold_height(popup, &area);
         GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(popup->window));
         if (surface == NULL)
             break;

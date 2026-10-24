@@ -343,6 +343,13 @@ the root [README](../README.md) for commands, and
 - [0062: Leave out folders that tools manage](adr/0062-folders-tools-manage.md)
   skips virtual environments, Conda, Android SDKs, Go's module cache, tagged caches and
   dependency folders for everyone, by the markers their tools write.
+- [0064: The popup's window stays clear and keeps its height on X11](adr/0064-clear-window-steady-height-on-x11.md)
+  keeps theme colours out of the window around the surface, holds a see-through X11
+  window at the popup's full height so mutter never shows it mid-resize, and marks the
+  surface opaque before GTK 4.16.
+- [0065: The first edit after a pause searches at once](adr/0065-first-edit-searches-at-once.md)
+  sends a key's query without the 16 ms coalescing window when nothing is pending, and
+  still coalesces bursts.
 
 ## Keeping docs current
 

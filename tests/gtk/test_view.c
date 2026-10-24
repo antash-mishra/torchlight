@@ -3,9 +3,11 @@
 #include "../../ui/gtk/header.h"
 #include "../../ui/gtk/index_strip.h"
 #include "../../ui/gtk/path_label.h"
+#include "../../ui/gtk/tooltip.h"
 #include "../../ui/gtk/view.h"
 #include "../unit/test.h"
 #include <glib/gstdio.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #define SURFACE_WIDTH POPUP_VIEW_LIST_WIDTH
@@ -38,11 +40,8 @@ static graphene_rect_t bounds(GtkWidget *widget) {
     CHECK(gtk_widget_compute_bounds(widget, GTK_WIDGET(gtk_widget_get_root(widget)), &result));
     return result;
 }
-/* Render the popup window, shadow included; with TORCHLIGHT_TEST_VIEW_CAPTURE set, save
- * it for the docs. */
-static void capture(tl_popup_widgets widgets, const char *artifact) {
-    const char *directory = g_getenv("TORCHLIGHT_TEST_VIEW_CAPTURE");
-    GtkWidget *window = GTK_WIDGET(gtk_widget_get_root(widgets.root));
+/* Render the popup window, shadow included, into an image the caller destroys. */
+static cairo_surface_t *render(GtkWidget *window, const char *artifact) {
     /* A loaded machine can map and allocate the window late; snapshot it once it has. */
     for (int waited = 0;
          waited < 2000 && (!gtk_widget_get_mapped(window) || gtk_widget_get_width(window) == 0);
@@ -68,14 +67,20 @@ static void capture(tl_popup_widgets widgets, const char *artifact) {
     cairo_t *cr = cairo_create(surface);
     gsk_render_node_draw(node, cr);
     cairo_surface_flush(surface);
+    cairo_destroy(cr);
+    gsk_render_node_unref(node);
+    return surface;
+}
+/* Render the popup window; with TORCHLIGHT_TEST_VIEW_CAPTURE set, save it for the docs. */
+static void capture(tl_popup_widgets widgets, const char *artifact) {
+    const char *directory = g_getenv("TORCHLIGHT_TEST_VIEW_CAPTURE");
+    cairo_surface_t *surface = render(GTK_WIDGET(gtk_widget_get_root(widgets.root)), artifact);
     if (directory != NULL) {
         char *filename = g_strdup_printf("%s/native-%s.png", directory, artifact);
         CHECK(cairo_surface_write_to_png(surface, filename) == CAIRO_STATUS_SUCCESS);
         g_free(filename);
     }
-    cairo_destroy(cr);
     cairo_surface_destroy(surface);
-    gsk_render_node_unref(node);
 }
 static void check_path(const char *full, size_t keep, const char *expected) {
     GtkWidget *window = gtk_window_new(), *path = popup_path_label_new(full, keep);
@@ -97,7 +102,7 @@ static void check_path(const char *full, size_t keep, const char *expected) {
         settle(10);
     settle(80);
     CHECK(strcmp(gtk_label_get_text(GTK_LABEL(label)), expected) == 0);
-    CHECK(strcmp(gtk_widget_get_tooltip_text(path), full) == 0);
+    CHECK(strcmp(popup_tooltip_text(path), full) == 0);
     g_object_unref(layout);
     gtk_window_destroy(GTK_WINDOW(window));
     g_object_unref(window);
@@ -151,11 +156,13 @@ static void test_rows(void) {
     GtkWidget *plain = g_object_ref_sink(result_widget(&row, POPUP_ENTER_NONE, 0));
     CHECK(!gtk_widget_has_css_class(plain, "fresh") && !gtk_widget_has_css_class(plain, "enter-0"));
     CHECK(strcmp(icon_name(plain), "text-x-generic") == 0);
-    /* One line: name, then the folder filling the rest; the row's tooltip is the full path. */
+    /* One line: name, then the folder filling the rest; the row's tooltip is the full path,
+     * handed to GTK only when it asks, so making the row queries no pointer. */
     GtkWidget *location = gtk_widget_get_last_child(plain);
     CHECK(strcmp(gtk_widget_get_css_name(location), "path-label") == 0);
     CHECK(gtk_widget_get_hexpand(location) &&
-          strcmp(gtk_widget_get_tooltip_text(plain), "/src/core/config.c") == 0);
+          strcmp(popup_tooltip_text(plain), "/src/core/config.c") == 0 &&
+          gtk_widget_get_has_tooltip(plain) && gtk_widget_get_tooltip_text(plain) == NULL);
     row.folder = true;
     GtkWidget *folder = g_object_ref_sink(result_widget(&row, POPUP_ENTER_NONE, 0));
     CHECK(strcmp(icon_name(folder), "folder") == 0 &&
@@ -189,7 +196,8 @@ static void test_children(void) {
     g_strlcpy(app.icon, "google-chrome", sizeof(app.icon));
     GtkWidget *plain = g_object_ref_sink(popup_view_result(&app, 0, POPUP_ENTER_NONE, 0));
     /* An application row is its icon and name alone: no subtitle, count or tooltip. */
-    CHECK(label_text(plain, "result-detail") == NULL && gtk_widget_get_tooltip_text(plain) == NULL);
+    CHECK(label_text(plain, "result-detail") == NULL && popup_tooltip_text(plain) == NULL &&
+          !gtk_widget_get_has_tooltip(plain));
     CHECK(gtk_widget_has_css_class(plain, "kind-app"));
     app.settings = true;
     GtkWidget *panel = g_object_ref_sink(popup_view_result(&app, 0, POPUP_ENTER_NONE, 0));
@@ -577,6 +585,51 @@ static void test_index_strip(void) {
     gtk_window_destroy(GTK_WINDOW(window));
     g_object_unref(window);
 }
+/* A tooltip waits for GTK to ask for it: the widget carries no tooltip text of GTK's, whose
+ * setter queries the pointer, yet shows and describes the text; empty text removes it. */
+static void test_tooltips(void) {
+    GtkWidget *label = g_object_ref_sink(gtk_label_new("notes.txt"));
+    popup_tooltip_set(label, "/home/me/notes.txt");
+    CHECK(gtk_widget_get_has_tooltip(label) && gtk_widget_get_tooltip_text(label) == NULL);
+    CHECK(strcmp(popup_tooltip_text(label), "/home/me/notes.txt") == 0);
+    popup_tooltip_set(label, "/home/me/other.txt");
+    CHECK(strcmp(popup_tooltip_text(label), "/home/me/other.txt") == 0);
+    popup_tooltip_set(label, "");
+    CHECK(!gtk_widget_get_has_tooltip(label) && popup_tooltip_text(label) == NULL);
+    popup_tooltip_set(label, NULL);
+    CHECK(!gtk_widget_get_has_tooltip(label) && popup_tooltip_text(label) == NULL);
+    g_object_unref(label);
+}
+/* Themes for libadwaita link their stylesheet to ~/.config/gtk-4.0/gtk.css, which outranks
+ * the popup's own. Its window colour must not fill the window around the rounded surface:
+ * the top-left pixel, in the shadow margin or the corner the radius leaves, stays clear. */
+static void test_user_stylesheet(void) {
+    GtkCssProvider *user = gtk_css_provider_new();
+    gtk_css_provider_load_from_string(user, ".background { background-color: rgb(255, 0, 0); }");
+    GdkDisplay *display = gdk_display_get_default();
+    gtk_style_context_add_provider_for_display(display, GTK_STYLE_PROVIDER(user),
+                                               GTK_STYLE_PROVIDER_PRIORITY_USER);
+    GtkWidget *window = new_window();
+    tl_popup_view *view = NULL;
+    CHECK(popup_view_create(window, &view) == TL_OK);
+    gtk_widget_realize(window);
+    popup_view_configure(view, SURFACE_WIDTH, 800);
+    tl_popup_margins margins = popup_view_margins(view);
+    gtk_window_set_default_size(GTK_WINDOW(window), SURFACE_WIDTH + margins.left + margins.right,
+                                -1);
+    gtk_window_present(GTK_WINDOW(window));
+    settle(100);
+    cairo_surface_t *image = render(window, "user-stylesheet");
+    /* ARGB32 keeps red in bits 16 to 23 of each native-endian pixel. */
+    uint32_t corner = *(const uint32_t *)(const void *)cairo_image_surface_get_data(image);
+    CHECK(((corner >> 16) & 0xffU) < 0x40U);
+    cairo_surface_destroy(image);
+    gtk_window_destroy(GTK_WINDOW(window));
+    popup_view_destroy(view);
+    g_object_unref(window);
+    gtk_style_context_remove_provider_for_display(display, GTK_STYLE_PROVIDER(user));
+    g_object_unref(user);
+}
 /* A forced dark theme loads the dark palette, as the desktop's dark theme would. */
 static void test_forced_dark(void) {
     g_setenv("GTK_THEME", "Adwaita:dark", true);
@@ -861,16 +914,19 @@ int main(void) {
     gtk_init();
     test_paths();
     test_rows();
+    test_tooltips();
     test_children();
     test_group_header();
     test_search_time();
     test_index_strip();
     test_view();
     test_preview();
+    test_user_stylesheet();
     test_forced_dark();
     test_forced_contrast();
     puts("Native view: path fitting, icons, entrances, glide, motion timers, header, search time, "
-         "idle strip, group headers, preview panel, palettes, selection ink, shadow and geometry "
-         "passed.");
+         "idle strip, group headers, preview panel, palettes, selection ink, shadow, geometry, "
+         "tooltips and a "
+         "clear window under user stylesheets passed.");
     return 0;
 }
