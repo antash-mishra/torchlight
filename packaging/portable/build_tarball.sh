@@ -53,6 +53,7 @@ install -D -m 644 "$root/packaging/torchlightd-session.desktop" \
     "$dir/etc/xdg/autostart/torchlightd.desktop"
 install -D -m 644 "$root/packaging/org.torchlight.Launcher.desktop" \
     "$dir/share/applications/org.torchlight.Launcher.desktop"
+install -D -m 644 "$root/scripts/omarchy.py" "$dir/share/torchlight/omarchy.py"
 install -D -m 644 "$root/third_party/fonts/schibsted-grotesk/SchibstedGrotesk-VF.ttf" \
     "$dir/share/fonts/torchlight/SchibstedGrotesk-VF.ttf"
 install -D -m 644 "$root/third_party/fonts/bedstead/bedstead.otf" "$dir/share/fonts/torchlight/bedstead.otf"

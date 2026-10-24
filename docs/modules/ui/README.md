@@ -35,6 +35,15 @@ excludes the margin, so clicks in it reach the windows beneath. High contrast (t
 theme setting, or `GTK_THEME` as GTK resolves it) uses the theme's colors and no
 shadow.
 
+**Optional Omarchy integration:** `scripts/omarchy.py` supplies per-user GTK
+palette colors and borderless, centered Hyprland popup rules only after an explicit
+setup command on Omarchy 4+. It also publishes Omarchy settings through ordinary
+XDG desktop entries; the UI and query protocol do not change. Other systems retain
+the built-in Tekst palettes. Status: implemented; installer isolation, platform
+refusal, settings visibility/launch/removal and light/dark palette generation are
+covered by `tests/test_omarchy.py`. See [setup](../../desktop-setup.md#omarchy-4-optional)
+and [ADR 0063](../../adr/0063-opt-in-omarchy-integration.md).
+
 The surface stacks a page header (`header.c`: `P100`, `Torchlight`, how long the
 search took in cyan ([ADR 0055](../../adr/0055-search-time-in-the-page-header.md): the
 daemon's `timing.engine_us`, "3.2ms", fixed width, changed only when results land, and

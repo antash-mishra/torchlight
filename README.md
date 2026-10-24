@@ -45,6 +45,10 @@ Then bind `torchlight-gtk --toggle` (the installer prints its full path) to a ke
 shortcut such as Super+Space; [desktop setup](docs/desktop-setup.md) says where on each
 desktop. To build it yourself, see [building](docs/building.md).
 
+On **Omarchy 4**, an [optional integration](docs/desktop-setup.md#omarchy-4-optional)
+adds settings search, Omarchy theme colors and borderless popup rules. It is never
+enabled automatically and refuses other distributions.
+
 ## Use
 
 | Key | Action |
