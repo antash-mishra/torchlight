@@ -1,0 +1,1460 @@
+{
+ "summary": {
+  "torchlight": {
+   "title": "Torchlight",
+   "version": "torchlightd 0.1.6 (3a858d4)",
+   "box": null,
+   "cpu": null,
+   "sections": {
+    "apps": {
+     "overall": {
+      "n": 261,
+      "first": 0.9234,
+      "top5": 0.9923
+     },
+     "kinds": {
+      "name": {
+       "n": 89,
+       "first": 1.0,
+       "top5": 1.0
+      },
+      "prefix": {
+       "n": 88,
+       "first": 0.7841,
+       "top5": 0.9886
+      },
+      "typo": {
+       "n": 84,
+       "first": 0.9881,
+       "top5": 0.9881
+      }
+     },
+     "time_ms": {
+      "p50": 0.184,
+      "p95": 1.14
+     }
+    },
+    "everyday": {
+     "overall": {
+      "n": 36,
+      "first": 0.9444,
+      "top5": 0.9722
+     },
+     "kinds": {
+      "everyday": {
+       "n": 36,
+       "first": 0.9444,
+       "top5": 0.9722
+      }
+     },
+     "time_ms": {
+      "p50": 0.278,
+      "p95": 1.16
+     }
+    },
+    "files": {
+     "overall": {
+      "n": 1200,
+      "first": 0.4475,
+      "top5": 0.5808
+     },
+     "kinds": {
+      "exact": {
+       "n": 200,
+       "first": 0.965,
+       "top5": 0.995
+      },
+      "prefix": {
+       "n": 200,
+       "first": 0.22,
+       "top5": 0.425
+      },
+      "abbreviation": {
+       "n": 200,
+       "first": 0.41,
+       "top5": 0.63
+      },
+      "typo": {
+       "n": 200,
+       "first": 0.73,
+       "top5": 0.86
+      },
+      "partial_typo": {
+       "n": 200,
+       "first": 0.06,
+       "top5": 0.07
+      },
+      "parent": {
+       "n": 200,
+       "first": 0.3,
+       "top5": 0.505
+      }
+     },
+     "time_ms": {
+      "p50": 0.201,
+      "p95": 1.2
+     },
+     "skipped_folders": 1,
+     "without_skipped": {
+      "n": 1199,
+      "first": 0.4479,
+      "top5": 0.5813
+     }
+    }
+   },
+   "memory_mib": {
+    "rss": 49.7,
+    "peak": 56.2
+   },
+   "start_s": 1.053
+  },
+  "gnome": {
+   "title": "GNOME Shell search",
+   "version": "GLib 2.80.0 (as in GNOME Shell 46)",
+   "box": "gnome",
+   "cpu": "AMD Ryzen 7 9700X 8-Core Processor",
+   "sections": {
+    "apps": {
+     "overall": {
+      "n": 261,
+      "first": 0.5977,
+      "top5": 0.6897
+     },
+     "kinds": {
+      "name": {
+       "n": 89,
+       "first": 0.9775,
+       "top5": 1.0
+      },
+      "prefix": {
+       "n": 88,
+       "first": 0.7386,
+       "top5": 0.9886
+      },
+      "typo": {
+       "n": 84,
+       "first": 0.0476,
+       "top5": 0.0476
+      }
+     },
+     "time_ms": {
+      "p50": 0.007,
+      "p95": 0.017
+     },
+     "torchlight_same_box_ms": {
+      "p50": 0.316,
+      "p95": 2.316
+     }
+    },
+    "everyday": {
+     "overall": {
+      "n": 36,
+      "first": 0.8611,
+      "top5": 0.8889
+     },
+     "kinds": {
+      "everyday": {
+       "n": 36,
+       "first": 0.8611,
+       "top5": 0.8889
+      }
+     },
+     "time_ms": {
+      "p50": 0.007,
+      "p95": 0.013
+     },
+     "torchlight_same_box_ms": {
+      "p50": 0.35,
+      "p95": 1.629
+     }
+    }
+   }
+  },
+  "ulauncher": {
+   "title": "Ulauncher",
+   "version": "Ulauncher 5.16.2",
+   "box": "ulauncher",
+   "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+   "sections": {
+    "apps": {
+     "overall": {
+      "n": 261,
+      "first": 0.8621,
+      "top5": 0.9923
+     },
+     "kinds": {
+      "name": {
+       "n": 89,
+       "first": 0.9551,
+       "top5": 1.0
+      },
+      "prefix": {
+       "n": 88,
+       "first": 0.6591,
+       "top5": 0.9886
+      },
+      "typo": {
+       "n": 84,
+       "first": 0.9762,
+       "top5": 0.9881
+      }
+     },
+     "time_ms": {
+      "p50": 0.239,
+      "p95": 0.305
+     },
+     "torchlight_same_box_ms": {
+      "p50": 0.115,
+      "p95": 0.67
+     }
+    },
+    "everyday": {
+     "overall": {
+      "n": 36,
+      "first": 0.8056,
+      "top5": 0.8611
+     },
+     "kinds": {
+      "everyday": {
+       "n": 36,
+       "first": 0.8056,
+       "top5": 0.8611
+      }
+     },
+     "time_ms": {
+      "p50": 0.238,
+      "p95": 0.346
+     },
+     "torchlight_same_box_ms": {
+      "p50": 0.127,
+      "p95": 0.514
+     }
+    }
+   }
+  },
+  "rofi": {
+   "title": "rofi",
+   "version": "Version: 1.7.5",
+   "box": "rofi",
+   "cpu": "AMD Ryzen 7 9700X 8-Core Processor",
+   "sections": {
+    "apps": {
+     "overall": {
+      "n": 261,
+      "first": 0.4483,
+      "top5": 0.6284
+     },
+     "kinds": {
+      "name": {
+       "n": 89,
+       "first": 0.8876,
+       "top5": 0.9888
+      },
+      "prefix": {
+       "n": 88,
+       "first": 0.3864,
+       "top5": 0.8182
+      },
+      "typo": {
+       "n": 84,
+       "first": 0.0476,
+       "top5": 0.0476
+      }
+     },
+     "time_ms": {
+      "p50": 16.522,
+      "p95": 24.986
+     },
+     "torchlight_same_box_ms": {
+      "p50": 0.211,
+      "p95": 1.219
+     }
+    },
+    "everyday": {
+     "overall": {
+      "n": 36,
+      "first": 0.6944,
+      "top5": 0.8611
+     },
+     "kinds": {
+      "everyday": {
+       "n": 36,
+       "first": 0.6944,
+       "top5": 0.8611
+      }
+     },
+     "time_ms": {
+      "p50": 16.065,
+      "p95": 23.307
+     },
+     "torchlight_same_box_ms": {
+      "p50": 0.211,
+      "p95": 1.089
+     }
+    },
+    "files": {
+     "overall": {
+      "n": 1200,
+      "first": 0.245,
+      "top5": 0.2908
+     },
+     "kinds": {
+      "exact": {
+       "n": 200,
+       "first": 0.885,
+       "top5": 0.94
+      },
+      "prefix": {
+       "n": 200,
+       "first": 0.2,
+       "top5": 0.275
+      },
+      "abbreviation": {
+       "n": 200,
+       "first": 0.02,
+       "top5": 0.04
+      },
+      "typo": {
+       "n": 200,
+       "first": 0.01,
+       "top5": 0.01
+      },
+      "partial_typo": {
+       "n": 200,
+       "first": 0.005,
+       "top5": 0.01
+      },
+      "parent": {
+       "n": 200,
+       "first": 0.35,
+       "top5": 0.47
+      }
+     },
+     "time_ms": {
+      "p50": 33.404,
+      "p95": 47.988
+     },
+     "skipped_folders": 1,
+     "without_skipped": {
+      "n": 1199,
+      "first": 0.2452,
+      "top5": 0.2902
+     },
+     "torchlight_same_box_ms": {
+      "p50": 0.188,
+      "p95": 1.033
+     }
+    }
+   }
+  },
+  "fzf": {
+   "title": "fzf",
+   "version": "fzf 0.74.5",
+   "box": "fzf",
+   "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+   "sections": {
+    "apps": {
+     "overall": {
+      "n": 261,
+      "first": 0.6513,
+      "top5": 0.7395
+     },
+     "kinds": {
+      "name": {
+       "n": 89,
+       "first": 0.9888,
+       "top5": 1.0
+      },
+      "prefix": {
+       "n": 88,
+       "first": 0.7386,
+       "top5": 0.9886
+      },
+      "typo": {
+       "n": 84,
+       "first": 0.2024,
+       "top5": 0.2024
+      }
+     },
+     "time_ms": {
+      "p50": 1.327,
+      "p95": 4.953
+     },
+     "torchlight_same_box_ms": {
+      "p50": 0.184,
+      "p95": 1.14
+     }
+    },
+    "everyday": {
+     "overall": {
+      "n": 36,
+      "first": 0.8333,
+      "top5": 0.8333
+     },
+     "kinds": {
+      "everyday": {
+       "n": 36,
+       "first": 0.8333,
+       "top5": 0.8333
+      }
+     },
+     "time_ms": {
+      "p50": 1.3,
+      "p95": 5.157
+     },
+     "torchlight_same_box_ms": {
+      "p50": 0.278,
+      "p95": 1.16
+     }
+    },
+    "files": {
+     "overall": {
+      "n": 1200,
+      "first": 0.3458,
+      "top5": 0.4592
+     },
+     "kinds": {
+      "exact": {
+       "n": 200,
+       "first": 0.9,
+       "top5": 0.94
+      },
+      "prefix": {
+       "n": 200,
+       "first": 0.215,
+       "top5": 0.315
+      },
+      "abbreviation": {
+       "n": 200,
+       "first": 0.315,
+       "top5": 0.545
+      },
+      "typo": {
+       "n": 200,
+       "first": 0.27,
+       "top5": 0.335
+      },
+      "partial_typo": {
+       "n": 200,
+       "first": 0.01,
+       "top5": 0.02
+      },
+      "parent": {
+       "n": 200,
+       "first": 0.365,
+       "top5": 0.6
+      }
+     },
+     "time_ms": {
+      "p50": 15.685,
+      "p95": 50.732
+     },
+     "skipped_folders": 1,
+     "without_skipped": {
+      "n": 1199,
+      "first": 0.3453,
+      "top5": 0.4587
+     },
+     "torchlight_same_box_ms": {
+      "p50": 0.201,
+      "p95": 1.2
+     }
+    }
+   }
+  },
+  "plocate": {
+   "title": "plocate",
+   "version": "plocate 1.1.19",
+   "box": "plocate",
+   "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+   "sections": {
+    "files": {
+     "overall": {
+      "n": 1200,
+      "first": 0.2533,
+      "top5": 0.3083
+     },
+     "kinds": {
+      "exact": {
+       "n": 200,
+       "first": 0.86,
+       "top5": 0.935
+      },
+      "prefix": {
+       "n": 200,
+       "first": 0.245,
+       "top5": 0.345
+      },
+      "abbreviation": {
+       "n": 200,
+       "first": 0.01,
+       "top5": 0.025
+      },
+      "typo": {
+       "n": 200,
+       "first": 0.01,
+       "top5": 0.01
+      },
+      "partial_typo": {
+       "n": 200,
+       "first": 0.005,
+       "top5": 0.005
+      },
+      "parent": {
+       "n": 200,
+       "first": 0.39,
+       "top5": 0.53
+      }
+     },
+     "time_ms": {
+      "p50": 0.903,
+      "p95": 1.586
+     },
+     "skipped_folders": 1,
+     "without_skipped": {
+      "n": 1199,
+      "first": 0.2535,
+      "top5": 0.3078
+     },
+     "torchlight_same_box_ms": {
+      "p50": 0.131,
+      "p95": 0.693
+     }
+    }
+   }
+  }
+ },
+ "losses": [
+  {
+   "section": "apps",
+   "kind": "prefix",
+   "query": "dis",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "org.gnome.DiskUtility.desktop",
+    "org.gnome.baobab.desktop",
+    "org.gnome.Nautilus.desktop"
+   ],
+   "winners": [
+    "fzf",
+    "gnome",
+    "ulauncher"
+   ]
+  },
+  {
+   "section": "apps",
+   "kind": "prefix",
+   "query": "fir",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "firefox.desktop",
+    "gufw.desktop"
+   ],
+   "winners": [
+    "fzf",
+    "gnome",
+    "rofi",
+    "ulauncher"
+   ]
+  },
+  {
+   "section": "apps",
+   "kind": "typo",
+   "query": "cliron",
+   "torchlight_rank": null,
+   "torchlight_shown": [
+    "client_migration.log",
+    "Client Lyrics 49.json",
+    "Changelog Fixture 48.json"
+   ],
+   "winners": [
+    "ulauncher"
+   ]
+  },
+  {
+   "section": "everyday",
+   "kind": "everyday",
+   "query": "chrm",
+   "torchlight_rank": 10,
+   "torchlight_shown": [
+    "chart_model",
+    "chapter.mp3",
+    "chapter_music.h"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "everyday",
+   "kind": "everyday",
+   "query": "code",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "OpenCode.desktop",
+    "code.desktop",
+    "org.x.editor.desktop"
+   ],
+   "winners": [
+    "fzf",
+    "gnome",
+    "ulauncher"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "abbreviation",
+   "query": "dry202mdl",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "Diary_2023_medical.png",
+    "Diary_2024_model.pdf"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "abbreviation",
+   "query": "dsc032",
+   "torchlight_rank": 9,
+   "torchlight_shown": [
+    "DSC03258.JPG",
+    "DSC03243.JPG",
+    "DSC03288.JPG"
+   ],
+   "winners": [
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "abbreviation",
+   "query": "img349",
+   "torchlight_rank": 3,
+   "torchlight_shown": [
+    "IMG_8349.jpg",
+    "IMG_2349.jpg",
+    "IMG_3499.jpg"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "abbreviation",
+   "query": "img558",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "IMG_5583.jpg",
+    "IMG_5587.jpg",
+    "IMG_5587.jpg"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "abbreviation",
+   "query": "img633",
+   "torchlight_rank": 4,
+   "torchlight_shown": [
+    "IMG_6313.jpg",
+    "IMG_6233.jpg",
+    "IMG_6933.jpg"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "abbreviation",
+   "query": "lcnv2",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "license_v2.js",
+    "license_v2.odt",
+    "license_v2.xlsx"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "abbreviation",
+   "query": "phtbck",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "photo-backup-6.html",
+    "photoBackup.jpg"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "abbreviation",
+   "query": "slr201trv",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "Salary_2021_travel.md",
+    "Salary_2015_travel.jpg"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "exact",
+   "query": "recipe",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "Recipe",
+    "recipe",
+    "Recipe"
+   ],
+   "winners": [
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "exact",
+   "query": "report.docx",
+   "torchlight_rank": null,
+   "torchlight_shown": [
+    "Archive_2014_report.docx",
+    "Report_2015_save.docx",
+    "report131.docx"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "2011 note",
+   "torchlight_rank": null,
+   "torchlight_shown": [
+    "Notes_2011_lyrics.js",
+    "Notes_2011_medical.docx",
+    "Notes_2011_invoice.json"
+   ],
+   "winners": [
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "2015 main",
+   "torchlight_rank": 5,
+   "torchlight_shown": [
+    "Main_2015_assets.xlsx",
+    "Letter_2015_main.css",
+    "Old_2015_main.c"
+   ],
+   "winners": [
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "2017 img_",
+   "torchlight_rank": 3,
+   "torchlight_shown": [
+    "IMG_2017.jpg",
+    "IMG_2017.jpg",
+    "IMG_5627.jpg"
+   ],
+   "winners": [
+    "fzf",
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "analysis6 jour",
+   "torchlight_rank": 4,
+   "torchlight_shown": [
+    "Journal Analysis 12.xlsx",
+    "journalAnalysis.tar.gz",
+    "analysisJournal.docx"
+   ],
+   "winners": [
+    "fzf",
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "blog epis",
+   "torchlight_rank": null,
+   "torchlight_shown": [
+    "blog-episode-52.xlsx",
+    "blogEpisode.h",
+    "Episode Blog 21.js"
+   ],
+   "winners": [
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "blog9 scho",
+   "torchlight_rank": 3,
+   "torchlight_shown": [
+    "school-blog-92.pdf",
+    "Blog School 23.py",
+    "school_v3.xlsx"
+   ],
+   "winners": [
+    "fzf",
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "book8 invo",
+   "torchlight_rank": 3,
+   "torchlight_shown": [
+    "invoice_book",
+    "Invoice_2021_book.pdf",
+    "invoice52.mp3"
+   ],
+   "winners": [
+    "fzf",
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "cache_changelog scre",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "Screenshot from 2020-06-10 05-53.png",
+    "Screenshot from 2021-04-04 03-27.png",
+    "Screenshot from 2022-10-26 09-45.png"
+   ],
+   "winners": [
+    "fzf",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "chapter4 holi",
+   "torchlight_rank": 6,
+   "torchlight_shown": [
+    "holiday_chapter.json",
+    "holiday_chapter.json",
+    "Holiday Chapter 6.html"
+   ],
+   "winners": [
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "chapter5 migr",
+   "torchlight_rank": 3,
+   "torchlight_shown": [
+    "Migration Chapter 6.tar.gz",
+    "migration_chapter.pdf",
+    "migration_v2.tar.gz"
+   ],
+   "winners": [
+    "fzf",
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "example5 quer",
+   "torchlight_rank": 3,
+   "torchlight_shown": [
+    "example-query-74.js",
+    "Example Query 25.mp3",
+    "Query License 1.csv"
+   ],
+   "winners": [
+    "fzf",
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "family_tax draf",
+   "torchlight_rank": 9,
+   "torchlight_shown": [
+    "draft.pdf",
+    "draft-family-30.css",
+    "familyDraft.jpg"
+   ],
+   "winners": [
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "handler impo",
+   "torchlight_rank": 10,
+   "torchlight_shown": [
+    "import-handler-38.py",
+    "handlerWedding.odt",
+    "importWidget.md"
+   ],
+   "winners": [
+    "fzf",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "homework-cache dsc0",
+   "torchlight_rank": 3,
+   "torchlight_shown": [
+    "DSC00862.JPG",
+    "DSC02693.JPG",
+    "DSC03869.JPG"
+   ],
+   "winners": [
+    "fzf",
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "journal7 conc",
+   "torchlight_rank": 4,
+   "torchlight_shown": [
+    "concert_journal",
+    "journal7",
+    "handler_journal"
+   ],
+   "winners": [
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "lexer trav",
+   "torchlight_rank": null,
+   "torchlight_shown": [
+    "Lexer_2023_travel.docx",
+    "Lexer_2012_travel.odt",
+    "Lexer Medical 6.zip"
+   ],
+   "winners": [
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "paper2 stor",
+   "torchlight_rank": 4,
+   "torchlight_shown": [
+    "store-paper-87.tar.gz",
+    "storePaper.mp3",
+    "paper_store.c"
+   ],
+   "winners": [
+    "fzf",
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "school8 exam",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "school_example.zip",
+    "example.html",
+    "School Example 25.h"
+   ],
+   "winners": [
+    "fzf",
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "scripts6 hand",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "handler-scripts-26.png",
+    "handlerSchema.tar.gz",
+    "House Scripts 15.py"
+   ],
+   "winners": [
+    "fzf",
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "server9 todo",
+   "torchlight_rank": 10,
+   "torchlight_shown": [
+    "todo-server-85.png",
+    "Todo_2017_server.pdf",
+    "todo_store.css"
+   ],
+   "winners": [
+    "fzf",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "source map_",
+   "torchlight_rank": 9,
+   "torchlight_shown": [
+    "source_map.html",
+    "Source Index 8.xlsx",
+    "source_v4.json"
+   ],
+   "winners": [
+    "fzf",
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "survey4 meet",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "survey_meeting.py",
+    "meeting_index.html",
+    "survey-podcast-27.txt"
+   ],
+   "winners": [
+    "fzf",
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "sync9 asse",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "Assets_2012_sync.py",
+    "assets787.h",
+    "sync947.docx"
+   ],
+   "winners": [
+    "fzf",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "table holi",
+   "torchlight_rank": 9,
+   "torchlight_shown": [
+    "Table Holiday 23.json",
+    "Table Lyrics 49.csv",
+    "table_upload.js"
+   ],
+   "winners": [
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "table9 sche",
+   "torchlight_rank": 4,
+   "torchlight_shown": [
+    "Schema_2017_table.h",
+    "table_schema.pdf",
+    "Table Schema 11.json"
+   ],
+   "winners": [
+    "fzf",
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "template fixt",
+   "torchlight_rank": null,
+   "torchlight_shown": [
+    "template-fixture",
+    "template5",
+    "template"
+   ],
+   "winners": [
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "thesis5 podc",
+   "torchlight_rank": 3,
+   "torchlight_shown": [
+    "podcastThesis.png",
+    "thesisPodcast.html",
+    "podcast.md"
+   ],
+   "winners": [
+    "fzf",
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "todo-sample inde",
+   "torchlight_rank": 4,
+   "torchlight_shown": [
+    "index.js",
+    "index.js",
+    "Index Budget 0.odt"
+   ],
+   "winners": [
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "travel1 stor",
+   "torchlight_rank": 3,
+   "torchlight_shown": [
+    "store_travel",
+    "Store_2024_travel.xlsx",
+    "store_v9.csv"
+   ],
+   "winners": [
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "version save",
+   "torchlight_rank": null,
+   "torchlight_shown": [
+    "saveVersion.py",
+    "saveVersion.odt",
+    "version-save-38.h"
+   ],
+   "winners": [
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "parent",
+   "query": "work img_",
+   "torchlight_rank": null,
+   "torchlight_shown": [
+    "IMG_1825.jpg",
+    "IMG_5807.jpg",
+    "IMG_5911.jpg"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "app5",
+   "torchlight_rank": 3,
+   "torchlight_shown": [
+    "app5",
+    "app5",
+    "app517.zip"
+   ],
+   "winners": [
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "build-de",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "build-demo",
+    "build-demo-50.mp3"
+   ],
+   "winners": [
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "fixture-no",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "fixture-notes",
+    "fixture-notes-96.zip"
+   ],
+   "winners": [
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "ind",
+   "torchlight_rank": 5,
+   "torchlight_shown": [
+    "index",
+    "Index",
+    "index4"
+   ],
+   "winners": [
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "lecturele",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "lectureLecture.py",
+    "lectureLecture.mp3"
+   ],
+   "winners": [
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "map6",
+   "torchlight_rank": 3,
+   "torchlight_shown": [
+    "map6",
+    "map61.zip",
+    "map681.mp3"
+   ],
+   "winners": [
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "not",
+   "torchlight_rank": 5,
+   "torchlight_shown": [
+    "sticky.desktop",
+    "notes",
+    "notes"
+   ],
+   "winners": [
+    "plocate",
+    "plocate",
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "notes journa",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "journalNotes.md",
+    "Notes Journal 45.tar.gz",
+    "notes.txt"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "query homew",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "homeworkQuery.xlsx",
+    "Query Homework 33.csv",
+    "homework_query.json"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "salaryle",
+   "torchlight_rank": 3,
+   "torchlight_shown": [
+    "salaryLexer.tar.gz",
+    "salaryLecture.md",
+    "salaryLetter.py"
+   ],
+   "winners": [
+    "plocate",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "server-",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "server-main",
+    "server-sync",
+    "server-thesis"
+   ],
+   "winners": [
+    "fzf",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "serviceb",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "serviceBirthday.txt",
+    "serviceBudget.py",
+    "serviceBackup.csv"
+   ],
+   "winners": [
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "store alb",
+   "torchlight_rank": 3,
+   "torchlight_shown": [
+    "albumStore.xlsx",
+    "Album_2020_store.c",
+    "Store Album 44.txt"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "tablere",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "tableRecipe.csv",
+    "tableResume.json"
+   ],
+   "winners": [
+    "fzf",
+    "rofi"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "todo temp",
+   "torchlight_rank": 5,
+   "torchlight_shown": [
+    "tempTodo.css",
+    "temp-todo-48.csv",
+    "Todo_2021_temp.zip"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "prefix",
+   "query": "upload-sou",
+   "torchlight_rank": 2,
+   "torchlight_shown": [
+    "upload-source-32.xlsx",
+    "upload-source-83.xlsx"
+   ],
+   "winners": [
+    "plocate"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "typo",
+   "query": "screensht from 2024-10-14 21-45",
+   "torchlight_rank": 5,
+   "torchlight_shown": [
+    "Screenshot from 2024-10-14 09-45.png",
+    "Screenshot from 2024-10-14 09-45.png",
+    "Screenshot from 2024-10-14 21-57.png"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  },
+  {
+   "section": "files",
+   "kind": "typo",
+   "query": "test_exprt",
+   "torchlight_rank": 3,
+   "torchlight_shown": [
+    "test_export",
+    "engine_save",
+    "test_export.c"
+   ],
+   "winners": [
+    "fzf"
+   ]
+  }
+ ]
+}

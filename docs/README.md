@@ -3,6 +3,8 @@
 For a plain-language tour of how the whole system works, with diagrams and
 charts of measured performance, open [System design](system-design.html) in a browser. For an overview of what was
 built and what comes next, open [Built and next](system-overview.html).
+[How Torchlight compares](comparison.md) measures it against GNOME Shell's search,
+Ulauncher, rofi, fzf and plocate with the same apps, files and queries.
 The implemented M3 popup follows the [GUI specification](m3-gui-design.md) and
 [interactive design preview](m3-gui-preview.html), including Cinnamon X11 focus,
 keyboard actions, status/error states and asynchronous IPC requirements.

@@ -63,6 +63,23 @@ enabled automatically and refuses other distributions.
 Torchlight indexes your home folder. To pick other folders, change how the daemon runs or
 search from a terminal, see [configuration](docs/configuration.md).
 
+## How it compares
+
+I measured Torchlight against GNOME Shell's search, Ulauncher, rofi, fzf and plocate,
+giving each the same 89 apps, the same 50,000-file home and the same 1,497 queries
+([method and full results](docs/comparison.md)):
+
+| | Torchlight | GNOME | Ulauncher | rofi | fzf | plocate |
+|---|---|---|---|---|---|---|
+| Everyday app searches, right app first | 94% | 83–86% | 81% | 69% | 83% | |
+| Mistyped app names, right app first | 99% | 5% | 98% | 5% | 20% | |
+| File searches, right file first | 45% | | | 24% | 35% | 25% |
+| Time per search on a desktop, median | 0.23 ms | 0.009 ms | 0.44 ms | 63–88 ms | 2–17 ms | 2 ms |
+
+GNOME's time is its in-process app search, which has no files to search. Torchlight
+loses on searches that name a folder and a file, where plocate and fzf rank a little
+better.
+
 ## More
 
 - [Building](docs/building.md): from source, a headless build for servers, and development

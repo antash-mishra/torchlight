@@ -69,6 +69,19 @@ corpus, not only by ranking.
 
 ## Results
 
+### 2026-10-27: comparison with other launchers
+
+[How Torchlight compares](comparison.md) measures it against GNOME Shell's search,
+Ulauncher, rofi, fzf and plocate, each in its own image on its own Boat box and again
+on the reference desktop, with the same 89 apps, the synthetic 50k home and 1,497
+queries (the held-out file queries above plus app queries). Torchlight finds the right
+answer first for 92% of generated app queries, 94% of everyday ones and 45% of file
+queries; the best other launcher reaches 86–89%, 86% and 35%. It answers in
+0.1–0.35 ms median over its socket. It loses most on folder-plus-name queries (30% found
+first against plocate's 39%). Raw summaries:
+[Boat](../tests/bench/results/2026-10-27-launcher-comparison-boat.md),
+[desktop](../tests/bench/results/2026-10-27-launcher-comparison-local.md).
+
 ### 2026-10-05: application-name ranking (ADR 0018)
 
 The running catalog returned Google Chrome 25th for `chrome`, outside the popup's

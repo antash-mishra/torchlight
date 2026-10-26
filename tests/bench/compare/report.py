@@ -3,8 +3,9 @@
     report.py RESULTS_DIR OUT_PREFIX
 
 RESULTS_DIR holds one folder per box (named after its launcher) with lscpu.txt and
-the run_compare.py outputs <launcher>-round<N>.json. Writes OUT_PREFIX.md (tables)
-and OUT_PREFIX.json (summary for the chart page), and fails when a launcher's
+the run_compare.py outputs <launcher>-round<N>.json. Writes OUT_PREFIX.md (tables),
+OUT_PREFIX.json (summary for the chart page) and OUT_PREFIX-ranks.tsv (every
+query's rank per launcher, blank for a miss), and fails when a launcher's
 search quality differs between rounds or Torchlight's differs between boxes,
 since quality must not depend on the machine.
 """
@@ -147,9 +148,9 @@ def quality_table(summary, section):
     if skipped:
         count = next(info["sections"]["files"]["skipped_folders"] for info in summary.values()
                      if "files" in info["sections"])
-        note += (f" {count} of the targets sit in folders Torchlight skips by default (hidden"
-                 " folders, build output, package folders; ADR 0062); the third column leaves"
-                 " them out (found first / top 5).")
+        note += (f" Targets in folders Torchlight skips by default (hidden folders, build output,"
+                 f" package folders; ADR 0062): {count}; the third column leaves them out"
+                 " (found first / top 5).")
     return "\n".join(lines) + note
 
 
@@ -188,6 +189,26 @@ def losses(boxes):
     return sorted(lost.values(), key=lambda item: (item["section"], item["kind"], item["query"]))
 
 
+def ranks_table(boxes):
+    """One row per query: section, kind, query, then each launcher's rank."""
+    entries = {}
+    for runs in boxes.values():
+        for launcher, runs_of_launcher in runs.items():
+            entries.setdefault(launcher, runs_of_launcher[0])
+    launchers = [launcher for launcher in ORDER if launcher in entries]
+    rows = {}
+    for launcher in launchers:
+        for section, records in entries[launcher]["sections"].items():
+            # Every launcher gets a section's queries in the same order; some repeat.
+            for position, record in enumerate(records):
+                row = rows.setdefault((section, position), dict(kind=record["kind"], query=record["query"]))
+                row[launcher] = "" if record["rank"] is None else str(record["rank"])
+    lines = ["\t".join(["section", "kind", "query"] + launchers)]
+    for (section, _), row in sorted(rows.items(), key=lambda item: (SECTIONS.index(item[0][0]), item[0][1])):
+        lines.append("\t".join([section, row["kind"], row["query"]] + [row.get(l, "-") for l in launchers]))
+    return "\n".join(lines) + "\n"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("results", type=Path)
@@ -207,6 +228,7 @@ def main():
         for info in summary.values()))
     args.out.with_suffix(".md").write_text("\n\n".join(parts) + "\n")
     args.out.with_suffix(".json").write_text(json.dumps(dict(summary=summary, losses=lost), indent=1) + "\n")
+    args.out.with_name(args.out.name + "-ranks.tsv").write_text(ranks_table(boxes))
     print(args.out.with_suffix(".md").read_text())
     print(f"{len(lost)} queries another launcher found first and Torchlight did not")
     if problems:
