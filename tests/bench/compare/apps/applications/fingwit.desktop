@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Fingerprints
+Comment=Fingerprint configuration tool
+Keywords=fingerprint;authentication;security;biometric;
+Exec=fingwit
+Icon=fingwit
+Categories=System;Settings;
+Terminal=false

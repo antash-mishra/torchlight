@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Extensions
+Comment=Configure GNOME Shell Extensions
+Exec=/usr/bin/gnome-extensions-app
+Icon=org.gnome.Extensions
+Categories=GNOME;GTK;Utility;
+OnlyShowIn=GNOME;

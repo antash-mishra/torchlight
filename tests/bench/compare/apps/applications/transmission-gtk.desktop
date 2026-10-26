@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Transmission
+GenericName=BitTorrent Client
+Comment=Download and share files over BitTorrent
+Keywords=torrents;downloading;uploading;share;sharing;
+Exec=transmission-gtk %U
+Icon=transmission
+Categories=Network;FileTransfer;P2P;GTK;
+Terminal=false

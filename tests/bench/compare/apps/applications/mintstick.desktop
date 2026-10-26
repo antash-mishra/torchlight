@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=USB Image Writer
+Comment=Make a bootable USB stick
+Exec=mintstick -m iso
+Icon=mintstick
+Categories=GNOME;GTK;Utility;
+NotShowIn=KDE;
+Terminal=false

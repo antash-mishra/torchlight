@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Pix
+Comment=View and organize your images
+Keywords=Image;Viewer;
+Exec=pix %U
+Icon=pix
+Categories=GNOME;GTK;Graphics;Viewer;RasterGraphics;2DGraphics;Photography;
+Terminal=false

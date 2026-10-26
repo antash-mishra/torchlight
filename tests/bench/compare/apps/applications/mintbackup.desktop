@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Backup Tool
+Comment=Make a backup of your home directory
+Exec=mintbackup
+Icon=mintbackup
+Categories=Application;System;Settings
+NotShowIn=KDE;
+Terminal=false

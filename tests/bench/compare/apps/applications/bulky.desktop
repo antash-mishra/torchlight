@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=File Renamer
+Comment=Rename files and directories
+Keywords=rename;bulk;
+Exec=bulky
+Icon=bulky
+Categories=GTK;Utility;Core;
+Terminal=false

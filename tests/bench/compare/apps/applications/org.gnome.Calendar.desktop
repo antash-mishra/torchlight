@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Calendar
+Comment=Access and manage your calendars
+Keywords=Calendar;Event;Reminder;
+Exec=gnome-calendar %U
+Icon=org.gnome.Calendar
+Categories=GNOME;GTK;Office;Calendar;Core;
+Terminal=false

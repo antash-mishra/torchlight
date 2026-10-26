@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=OBS Studio
+GenericName=Streaming/Recording Software
+Comment=Free and Open Source Streaming/Recording Software
+Exec=/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=obs com.obsproject.Studio
+Icon=com.obsproject.Studio
+Categories=AudioVideo;Recorder;
+StartupWMClass=obs
+Terminal=false

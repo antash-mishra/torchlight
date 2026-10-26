@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Power Statistics
+Comment=Observe power management
+Keywords=battery;consumption;charge;
+Exec=gnome-power-statistics
+Icon=org.gnome.PowerStats
+Categories=GNOME;GTK;System;Monitor;
+OnlyShowIn=GNOME;Unity;
+Terminal=false

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Thunderbird Mail
+GenericName=Mail Client
+Comment=Send and receive mail with Thunderbird
+Keywords=Email;E-mail;Newsgroup;Feed;RSS
+Exec=thunderbird %u
+Icon=thunderbird
+Categories=Application;Network;Email;
+StartupWMClass=thunderbird-esr
+Terminal=false

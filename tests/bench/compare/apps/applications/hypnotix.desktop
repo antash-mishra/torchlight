@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Hypnotix
+Comment=Watch TV
+Keywords=Television;Stream;
+Exec=hypnotix
+Icon=hypnotix
+Categories=AudioVideo;Video;Player;TV;
+Terminal=false

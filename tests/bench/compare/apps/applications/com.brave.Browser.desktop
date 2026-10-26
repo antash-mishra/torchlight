@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Brave
+GenericName=Web Browser
+Comment=Access the Internet
+Exec=/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=brave --file-forwarding com.brave.Browser @@u %U @@
+Icon=com.brave.Browser
+Categories=Network;WebBrowser;
+StartupWMClass=brave-browser
+Terminal=false

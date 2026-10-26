@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Languages
+Comment=Language settings
+Exec=mintlocale
+Icon=preferences-desktop-locale
+Categories=GNOME;GTK;Settings;DesktopSettings;XFCE;X-XFCE-SettingsDialog;X-XFCE-SystemSettings;
+Terminal=false

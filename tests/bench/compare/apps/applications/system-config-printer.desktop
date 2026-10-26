@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Printers
+GenericName=Printers
+X-GNOME-FullName=Printers
+Comment=Configure printers
+Keywords=Printer;Queue;Print;Paper;Ink;Toner;
+Exec=system-config-printer
+Icon=printer
+Categories=GNOME;GTK;Settings;HardwareSettings;X-GNOME-Settings-Panel;X-Unity-Settings-Panel;System;Printing;
+NotShowIn=KDE;
+Terminal=false

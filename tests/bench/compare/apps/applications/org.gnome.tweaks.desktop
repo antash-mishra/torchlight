@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Tweaks
+Comment=Tweak advanced GNOME settings
+Keywords=Settings;Advanced;Preferences;Fonts;Theme;XKB;Keyboard;Typing;Startup;
+Exec=gnome-tweaks
+Icon=org.gnome.tweaks
+Categories=GNOME;GTK;Settings;
+OnlyShowIn=GNOME;Unity;Pantheon;
+StartupWMClass=gnome-tweaks
+Terminal=false

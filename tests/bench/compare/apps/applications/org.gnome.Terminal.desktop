@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal
+Comment=Use the command line
+Keywords=shell;prompt;command;commandline;cmd;
+Exec=gnome-terminal
+Icon=org.gnome.Terminal
+Categories=GNOME;GTK;System;TerminalEmulator;
+OnlyShowIn=GNOME;Unity;
+StartupWMClass=Gnome-terminal

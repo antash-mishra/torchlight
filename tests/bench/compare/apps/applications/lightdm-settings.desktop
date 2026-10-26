@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Login Window
+Comment=Configure the login window
+Exec=pkexec lightdm-settings
+Icon=lightdm-settings
+Categories=GNOME;GTK;Settings;System;XFCE;X-XFCE-SettingsDialog;X-XFCE-SystemSettings;
+Terminal=false

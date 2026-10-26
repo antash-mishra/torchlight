@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=VLC media player
+GenericName=Media player
+Comment=Read, capture, broadcast your multimedia streams
+Keywords=Player;Capture;DVD;Audio;Video;Server;Broadcast;
+Exec=/usr/bin/vlc --started-from-file %U
+Icon=vlc
+Categories=AudioVideo;Player;Recorder;
+Terminal=false

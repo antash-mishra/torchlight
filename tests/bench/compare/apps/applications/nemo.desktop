@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Files
+Comment=Access and organize files
+Keywords=folders;filesystem;explorer;
+Exec=nemo %U
+Icon=system-file-manager
+Categories=GNOME;GTK;Utility;Core;
+Terminal=false

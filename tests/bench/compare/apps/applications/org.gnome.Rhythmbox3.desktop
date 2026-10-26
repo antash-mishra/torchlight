@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Rhythmbox
+GenericName=Music Player
+X-GNOME-FullName=Rhythmbox Music Player
+Comment=Play and organize your music collection
+Keywords=Audio;Song;MP3;CD;Podcast;MTP;iPod;Playlist;Last.fm;UPnP;DLNA;Radio;
+Exec=rhythmbox %U
+Icon=org.gnome.Rhythmbox3
+Categories=GNOME;GTK;AudioVideo;Audio;Player;
+Terminal=false

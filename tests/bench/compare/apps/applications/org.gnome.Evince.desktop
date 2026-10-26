@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Document Viewer
+Comment=View multi-page documents
+Keywords=pdf;ps;postscript;dvi;xps;djvu;tiff;document;presentation;viewer;evince;
+Exec=evince %U
+Icon=org.gnome.Evince
+Categories=GNOME;GTK;Office;Viewer;Graphics;2DGraphics;VectorGraphics;
+Terminal=false

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Timeshift
+GenericName=System Restore Utility
+Comment=System Restore Utility
+Keywords=backup;btrfs;rsync;
+Exec=timeshift-launcher
+Icon=timeshift
+Categories=System;
+Terminal=false

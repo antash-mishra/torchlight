@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Disks
+Comment=Manage Drives and Media
+Keywords=disk;drive;volume;harddisk;hdd;disc;cdrom;dvd;partition;iso;image;backup;restore;benchmark;raid;luks;encryption;S.M.A.R.T.;smart;
+Exec=gnome-disks
+Icon=org.gnome.DiskUtility
+Categories=GNOME;GTK;Utility;X-GNOME-Utilities;Settings;HardwareSettings;
+Terminal=false

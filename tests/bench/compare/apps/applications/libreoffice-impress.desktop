@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=LibreOffice Impress
+GenericName=Presentation
+Comment=Create and edit presentations for slideshows, meetings and Web pages.
+Keywords=Slideshow;Slides;OpenDocument Presentation;Microsoft PowerPoint;Microsoft Works;OpenOffice Impress;odp;ppt;pptx;
+Exec=libreoffice --impress %U
+Icon=libreoffice-impress
+Categories=Office;Presentation;
+StartupWMClass=libreoffice-impress
+Terminal=false

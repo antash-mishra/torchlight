@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Brave Web Browser
+GenericName=Web Browser
+Comment=Access the Internet
+Exec=/usr/bin/brave-browser-stable %U
+Icon=brave-browser
+Categories=Network;WebBrowser;
+StartupWMClass=brave-browser
+Terminal=false

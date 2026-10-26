@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Ghostty
+Comment=A terminal emulator
+Keywords=terminal;tty;pty;
+Exec=/usr/bin/ghostty --gtk-single-instance=true
+Icon=com.mitchellh.ghostty
+Categories=System;TerminalEmulator;
+StartupWMClass=com.mitchellh.ghostty
+Terminal=false

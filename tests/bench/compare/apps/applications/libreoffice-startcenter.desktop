@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=LibreOffice
+GenericName=Office
+Comment=Launch applications to create text documents, spreadsheets, presentations, drawings, formulas, and databases, or open recently used documents.
+Exec=libreoffice %U
+Icon=libreoffice-startcenter
+Categories=Office;X-Red-Hat-Base;X-SuSE-Core-Office;
+StartupWMClass=libreoffice-startcenter
+Terminal=false

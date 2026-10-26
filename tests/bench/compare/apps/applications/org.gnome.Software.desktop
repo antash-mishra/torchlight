@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Software
+Comment=Add, remove or update software on this computer
+Keywords=Updates;Upgrade;Sources;Repositories;Preferences;Install;Uninstall;Program;Software;App;Store;
+Exec=gnome-software %U
+Icon=org.gnome.Software
+Categories=GNOME;GTK;System;PackageManager;
+Terminal=false

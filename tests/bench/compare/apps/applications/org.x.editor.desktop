@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Text Editor
+Comment=Edit text files
+Keywords=xed;text;editor;tabs;highlighting;code;multiple;files;pluggable;notepad;
+Exec=xed %U
+Icon=accessories-text-editor
+Categories=GTK;Utility;TextEditor;
+Terminal=false

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Online Accounts
+Comment=Connect to your data in the cloud
+Keywords=google;facebook;twitter;yahoo;web;online;chat;calendar;mail;contact;owncloud;kerberos;imap;smtp;pocket;readitlater;account;
+Exec=gnome-online-accounts-gtk
+Icon=gnome-online-accounts-gtk
+Categories=Settings;

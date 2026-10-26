@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Image Viewer
+Comment=Browse and rotate images
+Keywords=Picture;Slideshow;Graphics;
+Exec=xviewer %U
+Icon=xviewer
+Categories=GNOME;GTK;Utility;Viewer;
+Terminal=false

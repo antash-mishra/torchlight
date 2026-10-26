@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Bluetooth Manager
+Comment=Blueman Bluetooth Manager
+Exec=blueman-manager
+Icon=blueman
+Categories=GTK;GNOME;Settings;HardwareSettings;
+Terminal=false

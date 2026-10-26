@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=System Monitor
+Comment=View current processes and monitor system state
+Keywords=Monitor;System;Process;CPU;Memory;Network;History;Usage;Performance;Task;Manager;Activity;
+Exec=gnome-system-monitor
+Icon=org.gnome.SystemMonitor
+Categories=GNOME;GTK;System;Monitor;
+NotShowIn=KDE;
+StartupWMClass=gnome-system-monitor
+Terminal=false

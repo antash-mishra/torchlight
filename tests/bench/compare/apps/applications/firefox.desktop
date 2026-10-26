@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Firefox Web Browser
+GenericName=Web Browser
+Comment=Browse the World Wide Web
+Keywords=Internet;WWW;Browser;Web;Explorer
+Exec=firefox %u
+Icon=firefox
+Categories=GNOME;GTK;Network;WebBrowser;
+Terminal=false

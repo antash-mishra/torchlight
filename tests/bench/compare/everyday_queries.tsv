@@ -1,0 +1,40 @@
+# Everyday app queries for the launcher comparison, written by hand before any
+# launcher was run (2026-10-27) and not tuned afterwards. Each line: the query,
+# a tab, then every desktop id that counts as a right answer, separated by spaces.
+# Lowercase, as people type into a launcher. Typos keep the first letter.
+term	org.gnome.Terminal.desktop com.mitchellh.ghostty.desktop
+terminal	org.gnome.Terminal.desktop com.mitchellh.ghostty.desktop
+chrome	google-chrome.desktop
+chrm	google-chrome.desktop
+firefox	firefox.desktop
+fierfox	firefox.desktop
+browser	firefox.desktop google-chrome.desktop brave-browser.desktop com.brave.Browser.desktop
+calc	org.gnome.Calculator.desktop libreoffice-calc.desktop
+calculator	org.gnome.Calculator.desktop
+settings	org.gnome.Settings.desktop
+files	org.gnome.Nautilus.desktop nemo.desktop
+code	code.desktop
+vscode	code.desktop
+editor	org.gnome.TextEditor.desktop org.x.editor.desktop
+spotify	spotify.desktop
+spotfy	spotify.desktop
+music	org.gnome.Rhythmbox3.desktop spotify.desktop
+vlc	vlc.desktop
+videos	org.gnome.Totem.desktop
+screenshot	org.gnome.Screenshot.desktop
+screen recorder	simplescreenrecorder.desktop com.obsproject.Studio.desktop
+disks	org.gnome.DiskUtility.desktop
+task manager	org.gnome.SystemMonitor.desktop
+system monitor	org.gnome.SystemMonitor.desktop
+pdf	org.gnome.Evince.desktop xreader.desktop org.kde.okular.desktop
+word	libreoffice-writer.desktop
+excel	libreoffice-calc.desktop
+obs	com.obsproject.Studio.desktop
+steam	steam.desktop
+blender	blender.desktop
+bluetooth	blueman-manager.desktop
+mail	thunderbird.desktop
+printers	system-config-printer.desktop
+fonts	org.gnome.font-viewer.desktop
+ghosty	com.mitchellh.ghostty.desktop
+backup	mintbackup.desktop timeshift-gtk.desktop

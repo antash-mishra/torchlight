@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=System Reports
+Comment=Troubleshoot problems
+Exec=mintreport
+Icon=mintreport
+Categories=Application;System;Settings;
+NotShowIn=KDE;
+Terminal=false

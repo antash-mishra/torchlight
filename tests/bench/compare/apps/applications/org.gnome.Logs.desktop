@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Logs
+GenericName=Log Viewer
+Comment=View detailed event logs for the system
+Keywords=log;journal;debug;error;
+Exec=gnome-logs
+Icon=org.gnome.Logs
+Categories=GTK;GNOME;System;Monitor;Utility;X-GNOME-Utilities;
+Terminal=false

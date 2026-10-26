@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Cursor
+Exec=/opt/cursor.appimage
+Icon=/opt/cursor.png
+Categories=Development;

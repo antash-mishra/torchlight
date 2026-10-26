@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Contacts
+Comment=Manage your contacts
+Keywords=friends;address book;
+Exec=gnome-contacts
+Icon=org.gnome.Contacts
+Categories=GNOME;GTK;Office;ContactManagement;
+Terminal=false

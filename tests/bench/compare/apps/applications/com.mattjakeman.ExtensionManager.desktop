@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Extension Manager
+Comment=Manage GNOME Shell Extensions
+Keywords=extension;manager;shell;
+Exec=extension-manager %U
+Icon=com.mattjakeman.ExtensionManager
+Categories=GTK;Utility
+Terminal=false

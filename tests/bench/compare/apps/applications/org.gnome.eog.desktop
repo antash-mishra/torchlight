@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Image Viewer
+Comment=Browse and rotate images
+Keywords=Picture;Slideshow;Graphics;
+Exec=eog %U
+Icon=org.gnome.eog
+Categories=GNOME;GTK;Graphics;2DGraphics;RasterGraphics;Viewer;
+Terminal=false

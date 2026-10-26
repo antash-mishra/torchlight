@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Screenshot
+Comment=Save images of your screen or individual windows
+Keywords=snapshot;capture;print;screenshot;
+Exec=gnome-screenshot --interactive
+Icon=org.gnome.Screenshot
+Categories=GTK;GNOME;Utility;X-GNOME-Utilities;
+NotShowIn=KDE;
+Terminal=false

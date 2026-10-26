@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Text Editor
+GenericName=Text Editor
+Comment=View and edit text files
+Keywords=write;notepad;
+Exec=gnome-text-editor %U
+Icon=org.gnome.TextEditor
+Categories=GNOME;GTK;Utility;TextEditor;
+Terminal=false

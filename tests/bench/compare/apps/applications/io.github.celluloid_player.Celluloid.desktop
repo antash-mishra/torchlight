@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Celluloid
+GenericName=Multimedia Player
+Comment=Play movies and videos
+Keywords=Video;Movie;Film;Clip;Series;Player;DVD;TV;Disc;Album;Music;GNOME;mpv;
+Exec=celluloid %U
+Icon=io.github.celluloid_player.Celluloid
+Categories=GTK;GNOME;AudioVideo;Player;Video;TV;
+StartupWMClass=Celluloid
+Terminal=false

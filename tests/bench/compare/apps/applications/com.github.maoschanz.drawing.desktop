@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Drawing
+Comment=Simple drawing utility
+Keywords=Paint;Sketch;Pencil;
+Exec=drawing %U
+Icon=com.github.maoschanz.drawing
+Categories=Graphics;GNOME;GTK;
+Terminal=false

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=LibreOffice Writer
+GenericName=Word Processor
+Comment=Create and edit text and graphics in letters, reports, documents and Web pages.
+Keywords=Text;Letter;Fax;Document;OpenDocument Text;Microsoft Word;Microsoft Works;Lotus WordPro;OpenOffice Writer;CV;odt;doc;docx;rtf;
+Exec=libreoffice --writer %U
+Icon=libreoffice-writer
+Categories=Office;WordProcessor;
+StartupWMClass=libreoffice-writer
+Terminal=false

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Characters
+Comment=Utility application to find and insert unusual characters
+Keywords=characters;unicode;punctuation;math;letters;emoji;emoticon;symbols;
+Exec=/usr/bin/gnome-characters
+Icon=org.gnome.Characters
+Categories=GNOME;GTK;Utility;X-GNOME-Utilities;

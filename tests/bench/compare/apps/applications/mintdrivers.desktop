@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Driver Manager
+Comment=Additional and proprietary drivers
+Exec=driver-manager
+Icon=mintdrivers
+Categories=GNOME;GTK;System;Settings;X-GNOME-SystemSettings;X-GNOME-Settings-Panel;XFCE;X-XFCE-SettingsDialog;X-XFCE-SystemSettings;
+NotShowIn=KDE;
+Terminal=false

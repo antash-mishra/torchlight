@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Onboard
+GenericName=Onboard onscreen keyboard
+Comment=Flexible onscreen keyboard
+Keywords=onscreen;keyboard;accessibility;utility;
+Exec=onboard
+Icon=onboard
+Categories=Utility;Accessories;
+Terminal=false

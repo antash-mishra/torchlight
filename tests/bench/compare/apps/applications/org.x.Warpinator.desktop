@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Warpinator
+Comment=Send and Receive Files across the Network
+Keywords=transfer;exchange;
+Exec=warpinator
+Icon=org.x.Warpinator
+Categories=GNOME;GTK;Utility;

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=LibreOffice Draw
+GenericName=Drawing Program
+Comment=Create and edit drawings, flow charts and logos.
+Keywords=Vector;Schema;Diagram;Layout;OpenDocument Graphics;Microsoft Publisher;Microsoft Visio;Corel Draw;cdr;odg;svg;pdf;vsd;
+Exec=libreoffice --draw %U
+Icon=libreoffice-draw
+Categories=Office;
+StartupWMClass=libreoffice-draw
+Terminal=false

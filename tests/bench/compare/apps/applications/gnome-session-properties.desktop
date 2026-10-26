@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Startup Applications
+Comment=Choose what applications to start when you log in
+Exec=gnome-session-properties
+Icon=session-properties
+Categories=GTK;GNOME;Settings;X-GNOME-PersonalSettings;
+OnlyShowIn=GNOME;Unity;
+Terminal=false

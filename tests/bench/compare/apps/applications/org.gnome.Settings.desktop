@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+Keywords=Preferences;Settings;
+Exec=gnome-control-center
+Icon=org.gnome.Settings
+Categories=GNOME;GTK;Settings;
+OnlyShowIn=GNOME;
+Terminal=false

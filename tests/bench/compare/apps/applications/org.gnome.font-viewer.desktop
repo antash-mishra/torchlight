@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Fonts
+Comment=View fonts on your system
+Keywords=fonts;fontface;
+Exec=gnome-font-viewer %u
+Icon=org.gnome.font-viewer
+Categories=GTK;GNOME;Utility;X-GNOME-Utilities;
+Terminal=false

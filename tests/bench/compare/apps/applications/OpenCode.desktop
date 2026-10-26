@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=OpenCode
+Comment=The open source AI coding agent
+Exec=OpenCode
+Icon=OpenCode
+Categories=
+StartupWMClass=OpenCode
+Terminal=false

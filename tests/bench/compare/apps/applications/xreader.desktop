@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Document Viewer
+Comment=View multi-page documents
+Keywords=document;viewer;pdf;dvi;ps;xps;tiff;djvu;comics;
+Exec=xreader %U
+Icon=xreader
+Categories=GTK;Utility;Viewer;
+Terminal=false
