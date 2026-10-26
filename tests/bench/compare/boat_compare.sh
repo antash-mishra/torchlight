@@ -35,7 +35,7 @@ boat push "$base" . >/dev/null
 run_on "$base" "sh torchlight/tests/bench/compare/box_build.sh" > "$work/logs/base-build.log"
 run_on "$base" "sh torchlight/tests/bench/compare/box_images.sh $commit" > "$work/logs/base-images.log"
 # A stop returns at once; forks use the newest snapshot, so wait for this one.
-stop=$(boat stop "$base" --json | jq -r '.stop.id')
+stop=$(boat stop "$base" --json | jq -r '.operation.id')
 until status=$(boat stop "$base" --status "$stop" --json | jq -r '.stop.status') &&
     [ "$status" = completed ]; do
     [ "$status" != failing ] || { echo "the base box could not be snapshotted" >&2; exit 1; }

@@ -28,7 +28,9 @@ gi.require_version("Gio", "2.0")
 gi.require_version("GLib", "2.0")
 from gi.repository import Gio, GLib  # noqa: E402
 
-DATA = Path("/opt/compare")
+# The image layout by default; local_compare.sh points these elsewhere.
+DATA = Path(os.environ.get("COMPARE_DATA", "/opt/compare"))
+STATE = Path(os.environ.get("COMPARE_STATE", "/var/tl"))  # Torchlight's db, config and socket
 HOME = Path("/home/user")
 PATHS_FILE = DATA / "paths"  # NUL-separated, from build/bench_fixture
 FILE_QUERIES = DATA / "queries.jsonl"  # held-out seed 2, with target indexes
@@ -196,7 +198,7 @@ class Torchlight:
     best row ranks, rows in rank order within a group (ui/gtk/model.c)."""
     name = "torchlight"
     sections = ("apps", "everyday", "files")
-    binary = "/usr/local/bin/torchlightd"
+    binary = os.environ.get("COMPARE_TORCHLIGHTD", "/usr/local/bin/torchlightd")
 
     def __init__(self, apps, paths):
         self.size = len(paths)
@@ -205,8 +207,8 @@ class Torchlight:
     def start(self):
         sys.path.insert(0, str(DATA))
         from bench_daemon import Resident
-        base = Path("/var/tl")
-        base.mkdir(exist_ok=True)
+        base = STATE
+        base.mkdir(parents=True, exist_ok=True)
         (base / "config").write_text(f"root = {HOME}\n")
         environment = dict(os.environ, XDG_CONFIG_HOME=str(base / "config-home"),
                            XDG_CACHE_HOME=str(base / "cache"), XDG_STATE_HOME=str(base / "state"))
@@ -427,7 +429,7 @@ class Plocate:
     word a case-insensitive pattern that must match, as `plocate -i a b` does."""
     name = "plocate"
     sections = ("files",)
-    database = "/var/lib/compare-plocate.db"
+    database = os.environ.get("COMPARE_PLOCATE_DB", "/var/lib/compare-plocate.db")
 
     def __init__(self, apps, paths):
         pass
