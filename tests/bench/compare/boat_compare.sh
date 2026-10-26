@@ -34,11 +34,18 @@ boat extend "$base" --hours "$hours" >/dev/null
 boat push "$base" . >/dev/null
 run_on "$base" "sh torchlight/tests/bench/compare/box_build.sh" > "$work/logs/base-build.log"
 run_on "$base" "sh torchlight/tests/bench/compare/box_images.sh $commit" > "$work/logs/base-images.log"
-boat stop "$base" >/dev/null
+# A stop returns at once; forks use the newest snapshot, so wait for this one.
+stop=$(boat stop "$base" --json | jq -r '.stop.id')
+until status=$(boat stop "$base" --status "$stop" --json | jq -r '.stop.status') &&
+    [ "$status" = completed ]; do
+    [ "$status" != failing ] || { echo "the base box could not be snapshotted" >&2; exit 1; }
+    sleep 5
+done
 
 for launcher in $launchers; do
-    id=$(boat fork "$base" --wait --json | jq -r 'select(.event == "ready") | .id')
+    id=$(boat fork "$base" --wait --json | jq -r 'select(.event == "ready") | .id' | tail -1)
     boxes="$boxes $id"
+    boat rename "$id" "tl-compare-$launcher" >/dev/null
     boat extend "$id" --hours "$hours" >/dev/null
     pid=$(boat exec "$id" --json --detach "sh torchlight/tests/bench/compare/box_run.sh $launcher" |
         jq -r 'select(.pid) | .pid')

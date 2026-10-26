@@ -9,6 +9,13 @@ rounds=3
 out=/home/user/results
 mkdir -p "$out"
 until docker info >/dev/null 2>&1; do sleep 1; done
+# A fork gets the base box's images back a little after it is ready.
+waited=0
+until docker image inspect "compare-$launcher" compare-torchlight >/dev/null 2>&1; do
+    [ "$waited" -lt 600 ] || { echo "the images never arrived" >&2; exit 1; }
+    sleep 5
+    waited=$((waited + 5))
+done
 lscpu > "$out/lscpu.txt"
 
 run() {

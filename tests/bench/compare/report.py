@@ -147,8 +147,9 @@ def quality_table(summary, section):
     if skipped:
         count = next(info["sections"]["files"]["skipped_folders"] for info in summary.values()
                      if "files" in info["sections"])
-        note += (f" {count} targets sit in folders Torchlight skips by default (hidden folders, build"
-                 " output, package folders; ADR 0062); the third column leaves them out.")
+        note += (f" {count} of the targets sit in folders Torchlight skips by default (hidden"
+                 " folders, build output, package folders; ADR 0062); the third column leaves"
+                 " them out (found first / top 5).")
     return "\n".join(lines) + note
 
 

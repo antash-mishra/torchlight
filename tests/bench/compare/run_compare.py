@@ -302,11 +302,18 @@ class Ulauncher:
     def start(self):
         from ulauncher.search.apps.AppDb import get_exec_name, search_name
         from ulauncher.search.SortedList import SortedList
+        from ulauncher.utils.desktop.reader import find_apps
         self.sorted_list = SortedList
-        for app in self.apps:  # the record AppDb.put_app builds
+        # Ulauncher's own reader and order: equal scores (capped at 100) keep the
+        # order its database got the apps in, which is the order it found the
+        # files on disk.
+        for app in find_apps():  # the record AppDb.put_app builds for each
             name = app.get_string("X-GNOME-FullName") or app.get_name()
             exec_name = get_exec_name(app.get_string("Exec") or "")
-            self.items.append(self.Item(app.get_id(), search_name(name, exec_name)))
+            desktop_id = os.path.basename(app.get_filename())
+            self.items.append(self.Item(desktop_id, search_name(name, exec_name)))
+        if len(self.items) != len(self.apps):
+            raise SystemExit(f"Ulauncher found {len(self.items)} of the {len(self.apps)} apps")
 
     def query(self, text, section):
         results = self.sorted_list(text, min_score=75, limit=9)
