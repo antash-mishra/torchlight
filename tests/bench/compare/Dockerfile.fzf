@@ -1,0 +1,5 @@
+# fzf's latest release binary (checksum in downloads.sha256).
+FROM compare-base
+COPY fzf-0.74.5-linux_amd64.tar.gz /tmp/
+RUN tar -xzf /tmp/fzf-0.74.5-linux_amd64.tar.gz -C /usr/local/bin fzf \
+    && rm /tmp/fzf-0.74.5-linux_amd64.tar.gz

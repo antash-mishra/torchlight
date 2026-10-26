@@ -1,0 +1,4 @@
+# rofi from Ubuntu 24.04.
+FROM compare-base
+RUN apt-get update && apt-get install -y --no-install-recommends rofi \
+    && rm -rf /var/lib/apt/lists/*

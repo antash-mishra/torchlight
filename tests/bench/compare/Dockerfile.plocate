@@ -1,0 +1,6 @@
+# plocate from Ubuntu 24.04, with its default pruning, indexing the synthetic home.
+FROM compare-base
+RUN apt-get update && apt-get install -y --no-install-recommends plocate \
+    && rm -rf /var/lib/apt/lists/* \
+    && updatedb --database-root /home/user --output /var/lib/compare-plocate.db \
+        --require-visibility no

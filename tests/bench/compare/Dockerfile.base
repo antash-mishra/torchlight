@@ -1,0 +1,12 @@
+# Shared base of every launcher's image: Ubuntu 24.04 like the Boat boxes, the app
+# fixture (GNOME session rules), the synthetic 50k-path home as empty files, the
+# queries and the runner. Built from the context box_images.sh gathers.
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8 HOME=/home/user \
+    XDG_CURRENT_DESKTOP=GNOME XDG_DATA_DIRS=/opt/compare/apps \
+    XDG_DATA_HOME=/var/empty-data-home
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-gi \
+        gir1.2-glib-2.0 xvfb xauth procps && rm -rf /var/lib/apt/lists/*
+COPY apps /opt/compare/apps
+COPY paths queries.jsonl everyday_queries.tsv run_compare.py bench_daemon.py commit /opt/compare/
+RUN python3 /opt/compare/run_compare.py materialize

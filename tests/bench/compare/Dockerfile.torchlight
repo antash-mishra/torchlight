@@ -1,0 +1,5 @@
+# Torchlight's release daemon (build/torchlightd-release, built on the base box).
+FROM compare-base
+RUN apt-get update && apt-get install -y --no-install-recommends libglib2.0-0t64 \
+        libsqlite3-0 libutf8proc3 && rm -rf /var/lib/apt/lists/*
+COPY torchlightd /usr/local/bin/torchlightd

@@ -1,0 +1,3 @@
+# GNOME Shell's app search is GLib's g_desktop_app_info_search, which the base
+# image already has (GLib 2.80, as in Ubuntu 24.04's GNOME Shell 46).
+FROM compare-base

@@ -21,7 +21,9 @@ def percentiles(values):
 
 
 class Resident:
-    def __init__(self, binary, base, size, model=None):
+    def __init__(self, binary, base, size, model=None, environment=None):
+        # environment replaces the default isolated one (no host apps) when given.
+        self.environment = environment
         self.base, self.size = base, size
         self.socket_path = base / "socket"
         self.database = base / "catalog.db"
@@ -40,10 +42,11 @@ class Resident:
 
     def start(self):
         start = time.perf_counter()
+        environment = self.environment or dict(
+            os.environ, XDG_CONFIG_HOME=str(self.base), XDG_DATA_HOME=str(self.base),
+            HOME=str(self.base), XDG_DATA_DIRS=str(self.base / "no-system-apps"))
         self.process = subprocess.Popen(self.command, stdout=self.log, stderr=self.log,
-                                        env=dict(os.environ, XDG_CONFIG_HOME=str(self.base),
-                                                 XDG_DATA_HOME=str(self.base), HOME=str(self.base),
-                                                 XDG_DATA_DIRS=str(self.base / "no-system-apps")))
+                                        env=environment)
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
             if self.process.poll() is not None:

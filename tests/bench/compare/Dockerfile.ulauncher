@@ -1,0 +1,5 @@
+# Ulauncher 5.16.2 from its release package (checksum in downloads.sha256).
+FROM compare-base
+COPY ulauncher_5.16.2_all.deb /tmp/
+RUN apt-get update && apt-get install -y --no-install-recommends /tmp/ulauncher_5.16.2_all.deb \
+    && rm -rf /var/lib/apt/lists/* /tmp/ulauncher_5.16.2_all.deb

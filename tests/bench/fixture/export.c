@@ -1,4 +1,5 @@
-/* Export the existing deterministic corpus and held-out queries for IPC timing. */
+/* Export the existing deterministic corpus and held-out queries for IPC timing
+ * and the launcher comparison (tests/bench/compare/). */
 #include "../corpus.h"
 #include "../queries.h"
 #include "torchlight/json.h"
@@ -35,6 +36,10 @@ static tl_status export_queries(const bench_corpus *corpus, const char *path) {
         json_quote(&buffer, queries[i].text);
         json_raw(&buffer, ",\"kind\":");
         json_quote(&buffer, query_kind_name(queries[i].kind));
+        /* The target's index in the exported path list lets other tools score
+         * results with the same relevance rule as query_relevant. */
+        json_raw(&buffer, ",\"target\":");
+        json_number(&buffer, queries[i].target);
         json_raw(&buffer, "}\n");
         status = buffer.status;
         if (status == TL_OK && fputs(line, stream) < 0)
