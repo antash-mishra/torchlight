@@ -369,6 +369,7 @@ class Fzf(LineFilter):
             command += ["--delimiter", "\t", "--nth", "1"]
         stdin = self.file_lines if section == "files" else self.app_lines
         result = subprocess.run(command, input=stdin, capture_output=True)
+        checked(result, ok=(0, 1))  # 1: no match
         return self.rows(result.stdout, section)
 
     def version(self):
@@ -408,6 +409,7 @@ class Rofi:
         stdin = self.file_lines if section == "files" else self.app_lines
         result = subprocess.run(command, input=stdin, capture_output=True,
                                 env=dict(os.environ, DISPLAY=DISPLAY))
+        checked(result, ok=(0,))
         indexes = [int(line) for line in result.stdout.split()[:SHOWN]]
         if section == "files":
             return [("file", self.paths[index]) for index in indexes]
@@ -440,6 +442,7 @@ class Plocate:
     def query(self, text, section):
         command = ["plocate", "-d", self.database, "-i", "-l", str(SHOWN), "--"] + text.split()
         result = subprocess.run(command, capture_output=True)
+        checked(result, ok=(0, 1))  # 1: no match
         return [("file", line) for line in result.stdout.splitlines()[:SHOWN]]
 
     def details(self):
@@ -450,6 +453,13 @@ class Plocate:
 
     def version(self):
         return subprocess.run(["plocate", "--version"], capture_output=True, text=True).stdout.splitlines()[0]
+
+
+def checked(result, ok):
+    """Stop the run when a launcher's command fails, rather than score it as no match."""
+    if result.returncode not in ok:
+        raise SystemExit(f"{result.args[0]} exited {result.returncode}: "
+                         f"{result.stderr.decode(errors='replace').strip()[:300]}")
 
 
 def start_display():

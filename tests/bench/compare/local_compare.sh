@@ -15,7 +15,7 @@ work=$1
 daemon=$2
 fixture=$3
 here=$(cd "$(dirname "$0")" && pwd)
-launchers="gnome ulauncher rofi fzf plocate"
+launchers=${LAUNCHERS:-gnome ulauncher rofi fzf plocate}  # LAUNCHERS=rofi reruns one
 rounds=3
 cpus=2,3
 utf8proc=${UTF8PROC_DIR:-$HOME/.local/lib/torchlight}
@@ -23,7 +23,8 @@ utf8proc=${UTF8PROC_DIR:-$HOME/.local/lib/torchlight}
 case $work in /home/*) echo "WORK must be outside /home" >&2; exit 2 ;; esac
 context=$work/context
 tools=$work/tools
-rm -rf "$context" "$work/results"
+rm -rf "$context"
+for launcher in $launchers; do rm -rf "$work/results/$launcher"; done
 mkdir -p "$context/lib" "$tools/debs" "$tools/root" "$tools/bin" "$work/results"
 
 # The images' inputs (box_images.sh), plus the daemon's libutf8proc.
@@ -41,7 +42,7 @@ curl -fsSLo "$tools/debs/ulauncher_5.16.2_all.deb" \
 curl -fsSLo "$tools/debs/fzf-0.74.5-linux_amd64.tar.gz" \
     https://github.com/junegunn/fzf/releases/download/v0.74.5/fzf-0.74.5-linux_amd64.tar.gz
 (cd "$tools/debs" && sha256sum -c "$here/downloads.sha256")
-(cd "$tools/debs" && apt-get download rofi python3-levenshtein python3-rapidfuzz >/dev/null)
+(cd "$tools/debs" && apt-get download rofi libxcb-ewmh2 python3-levenshtein python3-rapidfuzz >/dev/null)
 for deb in "$tools"/debs/*.deb; do
     dpkg -x "$deb" "$tools/root"
 done
@@ -59,7 +60,7 @@ unshare --user --map-root-user --mount env \
     export XDG_DATA_DIRS="$CONTEXT/apps" XDG_DATA_HOME=/nonexistent-data-home
     export PATH="$TOOLS/bin:$TOOLS/root/usr/bin:/usr/local/bin:/usr/bin:/bin"
     export PYTHONPATH="$TOOLS/root/usr/lib/python3/dist-packages"
-    export LD_LIBRARY_PATH="$CONTEXT/lib"
+    export LD_LIBRARY_PATH="$CONTEXT/lib:$TOOLS/root/usr/lib/x86_64-linux-gnu"
     export COMPARE_DATA="$CONTEXT" COMPARE_STATE="$STATE/torchlight"
     export COMPARE_TORCHLIGHTD="$CONTEXT/torchlightd" COMPARE_PLOCATE_DB="$STATE/plocate.db"
     python3 "$CONTEXT/run_compare.py" materialize
