@@ -39,6 +39,20 @@ make deb        # optimized .deb package; releases are tagged (docs/release.md)
 `make` also compiles the vendored Frizbee matcher (`third_party/frizbee`) with
 `cargo`, offline, into `build/frizbee/` once; Rust 1.89+ is a build dependency.
 
+## Cloud sandboxes (Boat)
+
+Use a Boat sandbox for builds, tests, untrusted code, Docker, and long jobs. Never run them on this computer.
+Docs: https://docs.boat.dev/llms.txt. Prices and limits: run `boat limits`; never quote prices from memory.
+
+- Create: `id=$(boat new --json | jq -r 'select(.event=="ready") | .id')`
+- One-shot job: `boat run --push . -- npm test` (new sandbox, run, cost, delete; exits with the test exit code)
+- Run: `boat exec "$id" --cwd my-app "npm test"` (30 s timeout; `--timeout 0` = no limit)
+- Server: `boat exec "$id" --detach "npm run dev"`, then `boat exec "$id" --status <pid>`
+- Copy files: `boat push "$id" ./my-app` (git-tracked files, to /home/user/my-app) or clone the repo inside the sandbox
+- Public URL for a port: `boat ssh "$id" "host 3000 --private"`
+- Always pass the sandbox id. `current` does not work in a non-interactive shell.
+- When done: `boat stop "$id"` (keeps the disk for 14 days) or `boat delete "$id" --yes` (erases it)
+
 ## Code rules
 
 **Readable**
