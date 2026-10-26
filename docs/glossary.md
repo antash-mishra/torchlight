@@ -131,7 +131,9 @@
 - **Desktop menu rule:** Whether the running desktop's own application menu lists an
   entry, from its `OnlyShowIn`, `NotShowIn` and `Exec` (`desktop_shown_in`, ADR 0057):
   GIO's rule, except that Cinnamon also lists GNOME-only entries and never GNOME
-  Settings panels. The catalog and the popup's launch check both apply it.
+  Settings panels. On GNOME Shell, Settings' panels are listed although they say
+  `NoDisplay`, as the overview's search lists them (`desktop_nodisplay_shown`, ADR 0066).
+  The catalog and the popup's launch check both apply it.
 - **Session autostart entry:** `torchlightd.desktop` in `/etc/xdg/autostart` (package) or
   `~/.config/autostart` (portable install): starts the daemon's unit at login on desktops
   that never start graphical-session.target; sessions systemd runs skip it (ADR 0059).

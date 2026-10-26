@@ -35,7 +35,14 @@
  * Unity;) appears on Linux Mint, but never GNOME Settings panels. */
 #define DESKTOP_CINNAMON "X-Cinnamon"
 #define DESKTOP_GNOME "GNOME"
+/* Sessions that also name GNOME, for its applications, without GNOME Shell. */
+#define DESKTOP_GNOME_FLASHBACK "GNOME-Flashback"
+#define DESKTOP_BUDGIE "Budgie"
 #define DESKTOP_GNOME_SETTINGS "gnome-control-center"
+/* The category of GNOME Settings' panels: every one says NoDisplay=true, so
+ * the app grid leaves them out, and the Shell overview finds them through
+ * Settings' search provider instead. */
+#define DESKTOP_GNOME_PANEL "X-GNOME-Settings-Panel"
 #define DESKTOP_SEPARATOR ":"
 /* The synthetic parent of every search key: the name is the key's basename,
  * and metadata never enters filesystem folder context. */
@@ -222,13 +229,18 @@ static bool desktops_include(const char *desktops, const char *wanted) {
             return true;
     return false;
 }
+/* Whether an Exec line starts GNOME Settings; NULL for none. A prefix test,
+ * as libcinnamon-menu's. */
+static bool runs_gnome_settings(const char *exec) {
+    return exec != NULL &&
+           strncmp(exec, DESKTOP_GNOME_SETTINGS, strlen(DESKTOP_GNOME_SETTINGS)) == 0;
+}
 bool desktop_shown_in(const char *const *only_show_in, const char *const *not_show_in,
                       const char *exec, const char *desktops) {
     if (desktops == NULL)
         desktops = "";
     if (desktops_include(desktops, DESKTOP_CINNAMON)) {
-        if (exec != NULL &&
-            strncmp(exec, DESKTOP_GNOME_SETTINGS, strlen(DESKTOP_GNOME_SETTINGS)) == 0)
+        if (runs_gnome_settings(exec))
             return false;
         if (list_names(only_show_in, DESKTOP_GNOME, strlen(DESKTOP_GNOME)))
             return true;
@@ -245,18 +257,34 @@ bool desktop_shown_in(const char *const *only_show_in, const char *const *not_sh
     }
     return only_show_in == NULL;
 }
-/* Whether this session's menu lists info (desktop_shown_in); the popup's
- * launch check applies the same test to the entry it launches. */
-static bool menu_lists(GDesktopAppInfo *info) {
-    if (g_desktop_app_info_get_is_hidden(info) || g_desktop_app_info_get_nodisplay(info))
+bool desktop_nodisplay_shown(const char *const *categories, const char *exec,
+                             const char *desktops) {
+    /* GNOME-Flashback's panel menu and Budgie's menu leave NoDisplay entries
+     * out like GIO; only GNOME Shell searches Settings' panels. */
+    if (desktops == NULL || !desktops_include(desktops, DESKTOP_GNOME) ||
+        desktops_include(desktops, DESKTOP_GNOME_FLASHBACK) ||
+        desktops_include(desktops, DESKTOP_BUDGIE))
+        return false;
+    return runs_gnome_settings(exec) &&
+           list_names(categories, DESKTOP_GNOME_PANEL, strlen(DESKTOP_GNOME_PANEL));
+}
+/* Whether this session's menu or search lists info (desktop_shown_in,
+ * desktop_nodisplay_shown); the popup's launch check applies the same test to
+ * the entry it launches. */
+static bool session_lists(GDesktopAppInfo *info) {
+    if (g_desktop_app_info_get_is_hidden(info))
         return false;
     char **only_show_in = g_desktop_app_info_get_string_list(info, "OnlyShowIn", NULL);
     char **not_show_in = g_desktop_app_info_get_string_list(info, "NotShowIn", NULL);
+    char **categories = g_desktop_app_info_get_string_list(info, "Categories", NULL);
     char *exec = g_desktop_app_info_get_string(info, "Exec");
-    bool shown =
-        desktop_shown_in((const char *const *)only_show_in, (const char *const *)not_show_in, exec,
-                         g_getenv("XDG_CURRENT_DESKTOP"));
+    const char *desktops = g_getenv("XDG_CURRENT_DESKTOP");
+    bool shown = (!g_desktop_app_info_get_nodisplay(info) ||
+                  desktop_nodisplay_shown((const char *const *)categories, exec, desktops)) &&
+                 desktop_shown_in((const char *const *)only_show_in,
+                                  (const char *const *)not_show_in, exec, desktops);
     g_free(exec);
+    g_strfreev(categories);
     g_strfreev(not_show_in);
     g_strfreev(only_show_in);
     return shown;
@@ -357,7 +385,7 @@ static tl_status add_entry(struct snapshot *snapshot, const char *filename, cons
     if (info == NULL)
         return TL_OK;
     const char *name = g_app_info_get_display_name(G_APP_INFO(info));
-    if (!menu_lists(info) || name == NULL || strlen(name) >= DESKTOP_FIELD_BYTES) {
+    if (!session_lists(info) || name == NULL || strlen(name) >= DESKTOP_FIELD_BYTES) {
         g_object_unref(info);
         return TL_OK;
     }

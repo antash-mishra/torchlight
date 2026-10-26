@@ -98,6 +98,29 @@ static void shown_in(void) {
     CHECK(desktop_shown_in(gnome, NULL, "gnome-control-center display", "GNOME"));
     CHECK(desktop_shown_in(NULL, NULL, "gnome-control-center", "KDE"));
 }
+/* GNOME Shell's overview finds Settings' NoDisplay panels ("display" finds
+ * Displays) through Settings' search provider; no other desktop lists them. */
+static void nodisplay_shown(void) {
+    const char *const panel[] = {"GNOME", "Settings", "X-GNOME-Settings-Panel", NULL};
+    const char *const settings[] = {"GNOME", "Settings", NULL};
+    const char *const display = "gnome-control-center display";
+    CHECK(desktop_nodisplay_shown(panel, display, "GNOME"));
+    CHECK(desktop_nodisplay_shown(panel, display, "ubuntu:GNOME"));
+    CHECK(desktop_nodisplay_shown(panel, display, "GNOME-Classic:GNOME"));
+    CHECK(desktop_nodisplay_shown(panel, "gnome-control-center", "GNOME"));
+    CHECK(!desktop_nodisplay_shown(panel, display, "X-Cinnamon"));
+    CHECK(!desktop_nodisplay_shown(panel, display, "KDE"));
+    CHECK(!desktop_nodisplay_shown(panel, display, "GNOME-Flashback:GNOME"));
+    CHECK(!desktop_nodisplay_shown(panel, display, "Budgie:GNOME"));
+    CHECK(!desktop_nodisplay_shown(panel, display, "GNOMEish"));
+    CHECK(!desktop_nodisplay_shown(panel, display, ""));
+    CHECK(!desktop_nodisplay_shown(panel, display, NULL));
+    /* Only Settings' own panels: other hidden entries stay hidden. */
+    CHECK(!desktop_nodisplay_shown(settings, display, "GNOME"));
+    CHECK(!desktop_nodisplay_shown(NULL, display, "GNOME"));
+    CHECK(!desktop_nodisplay_shown(panel, "/bin/true", "GNOME"));
+    CHECK(!desktop_nodisplay_shown(panel, NULL, "GNOME"));
+}
 static size_t catalog_count(const char *text) {
     tl_desktop *desktop = NULL;
     tl_result results[10];
@@ -109,8 +132,10 @@ static size_t catalog_count(const char *text) {
     return count;
 }
 /* The catalog applies the session's menu rule: on Cinnamon a GNOME-only entry
- * is listed and a GNOME Settings panel is not. A stand-in gnome-control-center
- * on PATH lets GIO accept the panel, so only the rule can hide it. */
+ * is listed and a GNOME Settings panel is not; on GNOME a panel marked
+ * NoDisplay, as all of Settings' are, is listed and other NoDisplay entries
+ * are not. A stand-in gnome-control-center on PATH lets GIO accept the panels,
+ * so only the rules can hide them. */
 static void gnome_entries(const char *temporary, const char *user_apps) {
     char bin[512], program[512], path[4096];
     CHECK(snprintf(bin, sizeof(bin), "%s/bin", temporary) > 0);
@@ -128,19 +153,32 @@ static void gnome_entries(const char *temporary, const char *user_apps) {
                 "Name=GnomeOnlyTerminal\nOnlyShowIn=GNOME;Unity;\n");
     write_exec_entry(user_apps, "gnome-panel.desktop", "gnome-control-center display",
                      "Name=GnomeSettingsPanel\nOnlyShowIn=GNOME;Unity;\n");
+    write_exec_entry(user_apps, "gnome-display-panel.desktop", "gnome-control-center display",
+                     "Name=Monitorscope\nNoDisplay=true\nOnlyShowIn=GNOME;Unity;\n"
+                     "Categories=GNOME;GTK;Settings;HardwareSettings;X-GNOME-Settings-Panel;\n");
+    write_entry(user_apps, "hidden-tool.desktop",
+                "Name=Quietassistant\nNoDisplay=true\nCategories=GNOME;Settings;\n");
     write_entry(user_apps, "kde-only.desktop", "Name=GnomeAbsentKde\nOnlyShowIn=KDE;\n");
     CHECK(setenv("XDG_CURRENT_DESKTOP", "X-Cinnamon", 1) == 0);
     CHECK(catalog_count("GnomeOnlyTerminal") == 1);
     CHECK(catalog_count("GnomeSettingsPanel") == 0);
+    CHECK(catalog_count("Monitorscope") == 0);
     CHECK(catalog_count("GnomeAbsentKde") == 0);
     CHECK(setenv("XDG_CURRENT_DESKTOP", "GNOME", 1) == 0);
     CHECK(catalog_count("GnomeOnlyTerminal") == 1);
     CHECK(catalog_count("GnomeSettingsPanel") == 1);
+    CHECK(catalog_count("Monitorscope") == 1);
+    CHECK(catalog_count("Quietassistant") == 0);
+    CHECK(setenv("XDG_CURRENT_DESKTOP", "GNOME-Flashback:GNOME", 1) == 0);
+    CHECK(catalog_count("GnomeSettingsPanel") == 1);
+    CHECK(catalog_count("Monitorscope") == 0);
     CHECK(setenv("XDG_CURRENT_DESKTOP", "KDE", 1) == 0);
     CHECK(catalog_count("GnomeOnlyTerminal") == 0);
+    CHECK(catalog_count("Monitorscope") == 0);
     CHECK(catalog_count("GnomeAbsentKde") == 1);
     CHECK(setenv("XDG_CURRENT_DESKTOP", "X-Cinnamon", 1) == 0);
-    const char *ids[] = {"gnome-terminal.desktop", "gnome-panel.desktop", "kde-only.desktop"};
+    const char *ids[] = {"gnome-terminal.desktop", "gnome-panel.desktop",
+                         "gnome-display-panel.desktop", "hidden-tool.desktop", "kde-only.desktop"};
     for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); i++) {
         CHECK(snprintf(path, sizeof(path), "%s/%s", user_apps, ids[i]) > 0);
         CHECK(unlink(path) == 0);
@@ -362,6 +400,7 @@ static void change_stamps(const char *user_apps, const char *system_apps) {
 }
 void test_desktop(void) {
     shown_in();
+    nodisplay_shown();
     char temporary[] = "/tmp/torchlight-desktop-XXXXXX";
     CHECK(mkdtemp(temporary) != NULL);
     char user[512], system[512], user_apps[512], system_apps[512];

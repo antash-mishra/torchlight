@@ -350,6 +350,9 @@ the root [README](../README.md) for commands, and
 - [0065: The first edit after a pause searches at once](adr/0065-first-edit-searches-at-once.md)
   sends a key's query without the 16 ms coalescing window when nothing is pending, and
   still coalesces bursts.
+- [0066: GNOME Settings panels are listed on GNOME](adr/0066-gnome-settings-panels.md)
+  keeps Settings' panels (Displays, Sound, Wi-Fi), which all say `NoDisplay`, in GNOME Shell
+  sessions, as the overview's search lists them, so "display" finds Displays.
 
 ## Keeping docs current
 

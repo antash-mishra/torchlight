@@ -2,7 +2,8 @@
 
 > **Status:** Implemented (M3 Part 2), including independent name/generic/keyword fields; M5 personal
 > boosts; M7 change-stamped refresh (parses only when an entry changed); the desktop menu's
-> visibility rule (ADR 0057), named applications (ADR 0058) and query evidence (ADR 0061)
+> visibility rule (ADR 0057), named applications (ADR 0058), query evidence (ADR 0061) and
+> GNOME Settings panels on GNOME (ADR 0066)
 > **Source:** `src/index/desktop.c` · **Header:** `include/torchlight/desktop.h`
 > **Tests:** `tests/unit/test_desktop.c`, `tests/test_desktop.py`
 
@@ -140,6 +141,19 @@ argument rather than using GIO's once-per-process copy of the environment, so te
 judge several desktops in one process; `tests/unit/test_desktop.c` covers it with a
 stand-in `gnome-control-center` on `PATH`, so GIO accepts the panel and only the rule can
 hide it.
+
+## GNOME Settings panels (ADR 0066)
+
+Every GNOME Settings panel (Displays, Sound, Wi-Fi, Power, …) says `NoDisplay=true`: the
+app grid leaves it out and the Shell overview finds it through Settings' search provider.
+`desktop_nodisplay_shown` keeps such an entry when it is a Settings panel (category
+`X-GNOME-Settings-Panel`, `Exec` starting with `gnome-control-center`) and the session is
+GNOME Shell (`XDG_CURRENT_DESKTOP` names GNOME but not GNOME-Flashback or Budgie); every
+other `NoDisplay` entry stays out, and the entry must still pass `desktop_shown_in`. Before
+this, "display" on Ubuntu's GNOME found no settings at all. The catalog and the popup's
+launch check apply both rules. Panels GNOME hides from its own search for missing hardware
+(Wi-Fi without a wireless device, Mobile Network without a modem) are still listed: that
+needs a D-Bus call the query path cannot make.
 
 ## Named applications (ADR 0058)
 

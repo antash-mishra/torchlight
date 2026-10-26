@@ -248,6 +248,46 @@ static void test_desktop_menus(struct launch *launch, const char *script, const 
         CHECK(unsetenv("XDG_CURRENT_DESKTOP") == 0);
     free(saved_desktops);
 }
+/* Launching also follows desktop_nodisplay_shown: on GNOME a Settings panel
+ * (NoDisplay, as all of them are) launches, another NoDisplay entry does not,
+ * and on Cinnamon the panel does not. A gnome-control-center link to script
+ * beside it on PATH stands in for GNOME Settings. */
+static void test_hidden_panels(struct launch *launch, const char *script, const char *marker,
+                               const char *desktop) {
+    char program[256];
+    const char *slash = strrchr(script, '/');
+    CHECK(slash != NULL);
+    CHECK(snprintf(program, sizeof(program), "%.*s/gnome-control-center", (int)(slash - script),
+                   script) > 0);
+    CHECK(symlink(script, program) == 0);
+    const char *old_desktops = getenv("XDG_CURRENT_DESKTOP");
+    char *saved_desktops = old_desktops == NULL ? NULL : strdup(old_desktops);
+    CHECK(old_desktops == NULL || saved_desktops != NULL);
+    CHECK(setenv("XDG_CURRENT_DESKTOP", "ubuntu:GNOME", 1) == 0);
+    write_text(desktop, "[Desktop Entry]\nType=Application\nName=Displays\n"
+                        "Exec=gnome-control-center %k\nNoDisplay=true\nOnlyShowIn=GNOME;Unity;\n"
+                        "Categories=GNOME;GTK;Settings;X-GNOME-Settings-Panel;\n");
+    launch->row.desktop_revision = revision(desktop);
+    CHECK(run_action(launch));
+    expect_marker(marker, desktop);
+    CHECK(unlink(marker) == 0);
+    CHECK(setenv("XDG_CURRENT_DESKTOP", "X-Cinnamon", 1) == 0);
+    CHECK(!run_action(launch));
+    CHECK(access(marker, F_OK) != 0);
+    CHECK(setenv("XDG_CURRENT_DESKTOP", "GNOME", 1) == 0);
+    write_text(desktop, "[Desktop Entry]\nType=Application\nName=Hidden\n"
+                        "Exec=gnome-control-center %k\nNoDisplay=true\n"
+                        "Categories=GNOME;GTK;Settings;\n");
+    launch->row.desktop_revision = revision(desktop);
+    CHECK(!run_action(launch));
+    CHECK(access(marker, F_OK) != 0);
+    if (saved_desktops != NULL)
+        CHECK(setenv("XDG_CURRENT_DESKTOP", saved_desktops, 1) == 0);
+    else
+        CHECK(unsetenv("XDG_CURRENT_DESKTOP") == 0);
+    free(saved_desktops);
+    CHECK(unlink(program) == 0);
+}
 void test_actions(void) {
     char directory[] = "/tmp/torchlight-actions-XXXXXX";
     CHECK(mkdtemp(directory) != NULL);
@@ -282,6 +322,7 @@ void test_actions(void) {
     CHECK(unlink(marker) == 0);
     test_new_window(&launch, script, marker, desktop);
     test_desktop_menus(&launch, script, marker, desktop);
+    test_hidden_panels(&launch, script, marker, desktop);
     write_text(desktop, "[Desktop Entry]\nType=Application\nName=Replacement\nExec=/bin/true\n");
     CHECK(!run_action(&launch));
     CHECK(access(marker, F_OK) != 0);

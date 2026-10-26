@@ -113,9 +113,23 @@ const tl_desktop_entry *desktop_entry(const tl_desktop *desktop, size_t position
  * otherwise an entry is listed only without OnlyShowIn. On Cinnamon (desktops
  * names X-Cinnamon) it is the Cinnamon menu's: an OnlyShowIn naming GNOME also
  * lists the entry, and an Exec line starting with gnome-control-center never
- * does. Hidden, NoDisplay and TryExec are the caller's. Both the catalog and
+ * does. Hidden, NoDisplay (desktop_nodisplay_shown) and TryExec are the
+ * caller's. Both the catalog and
  * the popup's launch check use it (ADR 0057). Borrowed input; no allocation,
  * I/O or errors. */
 bool desktop_shown_in(const char *const *only_show_in, const char *const *not_show_in,
                       const char *exec, const char *desktops);
+/** Whether the running desktop's own search lists an entry that its menu hides
+ * with NoDisplay=true, judged by its Categories list (NULL-terminated, NULL when
+ * the key is absent), its Exec line (NULL when absent) and desktops, an
+ * XDG_CURRENT_DESKTOP value as for desktop_shown_in. True only for a GNOME
+ * Settings panel (category X-GNOME-Settings-Panel, an Exec line starting with
+ * gnome-control-center) in a GNOME Shell session: desktops names GNOME but
+ * neither GNOME-Flashback nor Budgie, which name GNOME for its applications
+ * but have no Shell overview. The overview finds every panel through Settings'
+ * search provider ("display" finds Displays). The entry must still pass
+ * desktop_shown_in; Hidden and TryExec stay the caller's. Both the catalog and
+ * the popup's launch check use it (ADR 0066). Borrowed input; no allocation,
+ * I/O or errors. */
+bool desktop_nodisplay_shown(const char *const *categories, const char *exec, const char *desktops);
 #endif

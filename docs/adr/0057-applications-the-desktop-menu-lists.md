@@ -1,6 +1,7 @@
 # 0057. Applications are listed as the desktop's own menu lists them
 
-- **Status:** Accepted
+- **Status:** Accepted; [ADR 0066](0066-gnome-settings-panels.md) lists GNOME Settings panels,
+  which say `NoDisplay`, on GNOME
 - **Date:** 2026-10-17
 
 ## Context
