@@ -831,7 +831,9 @@ static tl_status encode_response(const struct job *job, const tl_rank_result *re
     tl_json_buffer buffer;
     json_buffer_init(&buffer, out,
                      capacity < SEMANTIC_RESPONSE_BYTES ? capacity : SEMANTIC_RESPONSE_BYTES);
-    json_raw(&buffer, "{\"version\":1,\"request_id\":");
+    json_raw(&buffer, "{\"version\":");
+    json_number(&buffer, ipc_version(&job->request));
+    json_raw(&buffer, ",\"request_id\":");
     json_quote(&buffer, job->request.request_id);
     json_raw(&buffer, ",\"phase\":\"final\",\"catalog_gen\":");
     json_number(&buffer, job->snapshot->catalog_gen);
@@ -853,7 +855,12 @@ static tl_status encode_response(const struct job *job, const tl_rank_result *re
             return TL_STATE;
         encode_metadata(&buffer, entry);
     }
-    json_raw(&buffer, "]}\n");
+    json_raw(&buffer, "]");
+    if (ipc_version(&job->request) == IPC_ACTION_VERSION)
+        search_actions_encode(&buffer, &job->request.action_settings, job->request.query,
+                              job->request.web_fallback);
+    ipc_suggestions_result(&buffer, &job->request, strcmp(status, "ok") == 0);
+    json_raw(&buffer, "}\n");
     *length = buffer.status == TL_OK ? buffer.length : 0;
     return buffer.status;
 }

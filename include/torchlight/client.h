@@ -3,6 +3,10 @@
 #define TORCHLIGHT_CLIENT_H
 #include "torchlight/ipc.h"
 #include <stdio.h>
+/** Probe v1 status for v2 action support. TL_OK with false only for a valid old
+ * daemon response; malformed/timeouts remain errors. Allocates CLI scratch;
+ * inputs borrowed, no launches or ownership transfer. */
+tl_status client_actions_supported(const char *socket_path, bool *supported);
 /** Exchange a request and write its terminal response to borrowed output.
  * json_output writes the wire JSON; null_output writes exact result paths with
  * NUL separators; plain result output escapes controls/invalid bytes. Status

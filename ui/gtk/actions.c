@@ -2,6 +2,7 @@
 #include "actions.h"
 #include "torchlight/desktop.h"
 #include "torchlight/hashmap.h"
+#include "torchlight/software_backend.h"
 #include <gio/gdesktopappinfo.h>
 #include <string.h>
 static bool open_path(const char *path, GCancellable *cancel, GError **error) {
@@ -116,6 +117,69 @@ static bool launch_application(GDesktopAppInfo *info, bool new_window, GAppLaunc
         }
     return g_app_info_launch(G_APP_INFO(info), NULL, context, error);
 }
+static void cancel_process(GCancellable *cancel, gpointer context) {
+    (void)cancel;
+    atomic_store((atomic_bool *)context, true);
+}
+static bool open_software(const tl_popup_row *row, GCancellable *cancel, GError **error) {
+    atomic_bool cancelled;
+    atomic_init(&cancelled, false);
+    gulong signal = g_cancellable_connect(cancel, G_CALLBACK(cancel_process), &cancelled, NULL);
+    tl_process_budget budget = {.deadline_ms = process_now() + IPC_DEADLINE_MS,
+                                .remaining_bytes = SOFTWARE_TEXT_BYTES,
+                                .cancel = &cancelled};
+    tl_status status = software_backend_validate(&row->software, row->source_revision, &budget);
+    g_cancellable_disconnect(cancel, signal);
+    if (status != TL_OK) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                            "This app’s source changed or is unavailable. Refresh and try again.");
+        return false;
+    }
+    if (g_cancellable_set_error_if_cancelled(cancel, error))
+        return false;
+    const char *desktop = g_getenv("XDG_CURRENT_DESKTOP");
+    bool kde = desktop != NULL && strstr(desktop, "KDE") != NULL;
+    const char *names[] = {kde ? "plasma-discover" : "gnome-software",
+                           kde ? "gnome-software" : "plasma-discover"};
+    char *program = g_find_program_in_path(names[0]);
+    const char *chosen = names[0];
+    if (program == NULL) {
+        chosen = names[1];
+        program = g_find_program_in_path(chosen);
+    }
+    if (program == NULL) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                            "No supported software manager is available. Open GNOME Software or "
+                            "KDE Discover with Flatpak support.");
+        return false;
+    }
+    bool discover = strcmp(chosen, "plasma-discover") == 0;
+    char *target = discover ? g_strdup_printf("appstream://%s", row->software.app_id)
+                            : g_strdup_printf("--details=%s", row->software.app_id);
+    char *argv[] = {program, discover ? "--application" : target, discover ? target : NULL, NULL};
+    /* Both routes open app details. The manager owns source choice and consent. */
+    bool accepted = !g_cancellable_is_cancelled(cancel) &&
+                    g_spawn_async(NULL, argv, NULL, 0, NULL, NULL, NULL, error);
+    g_free(target);
+    g_free(program);
+    return accepted;
+}
+static bool open_web(const tl_popup_row *row, GAppLaunchContext *context, GCancellable *cancel,
+                     GError **error) {
+    char uri[SEARCH_ACTION_URI_BYTES];
+    tl_status status = row->web_uri[0] == 0
+                           ? search_actions_uri(row->web_engine, row->web_query, uri, sizeof(uri))
+                           : search_actions_address(row->web_query, uri, sizeof(uri));
+    if (status != TL_OK || (row->web_uri[0] != 0 && strcmp(uri, row->web_uri) != 0)) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT,
+                            "Invalid browser action.");
+        return false;
+    }
+    if (g_cancellable_set_error_if_cancelled(cancel, error))
+        return false;
+    /* Resolve the current desktop handler on every activation, including legacy rows. */
+    return g_app_info_launch_default_for_uri(uri, context, error);
+}
 void actions_worker(GTask *task, gpointer source, gpointer task_data, GCancellable *cancel) {
     (void)source;
     struct launch *launch = task_data;
@@ -123,7 +187,11 @@ void actions_worker(GTask *task, gpointer source, gpointer task_data, GCancellab
         return;
     GError *error = NULL;
     bool accepted = false;
-    if (launch->row.application && !launch->reveal) {
+    if (launch->row.target_kind == POPUP_TARGET_WEB)
+        accepted = open_web(&launch->row, launch->context, cancel, &error);
+    else if (launch->row.target_kind == POPUP_TARGET_SOFTWARE)
+        accepted = open_software(&launch->row, cancel, &error);
+    else if (launch->row.application && !launch->reveal) {
         GDesktopAppInfo *info = validated_info(&launch->row);
         if (info != NULL && session_lists(info) && !g_cancellable_is_cancelled(cancel))
             accepted = launch_application(info, launch->new_window, launch->context, &error);
@@ -134,8 +202,12 @@ void actions_worker(GTask *task, gpointer source, gpointer task_data, GCancellab
         accepted = reveal_path(launch->row.path, cancel);
     else
         accepted = open_path(launch->row.path, cancel, &error);
-    g_clear_error(&error);
     /* Once accepted, cancellation must not erase its history record. */
     g_task_set_check_cancellable(task, false);
-    g_task_return_boolean(task, accepted);
+    if (!accepted && error != NULL)
+        g_task_return_error(task, error);
+    else {
+        g_clear_error(&error);
+        g_task_return_boolean(task, accepted);
+    }
 }

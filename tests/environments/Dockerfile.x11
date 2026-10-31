@@ -1,0 +1,8 @@
+# Private Xvfb/Metacity session; covers X11 popup behavior and native rendering.
+FROM torchlight-matrix-base
+USER root
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    xvfb xauth xdotool metacity && rm -rf /var/lib/apt/lists/*
+USER runner
+CMD ["x11"]

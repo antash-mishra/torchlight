@@ -18,6 +18,8 @@ static inline tl_tokenized *test_text(const char *path) {
     CHECK(tokenize_create(path, &text) == TL_OK);
     return text;
 }
+/** Run web/software parsing, identity, wire and worker regressions. */
+void test_search_actions(void);
 /** Run exact-byte file and revision-checked desktop launch regressions. */
 void test_actions(void);
 /** Run asynchronous IPC framing and request identity regressions. */

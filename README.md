@@ -13,6 +13,10 @@ GTK 4; works on X11 and Wayland.
   ([evaluation](docs/evaluation.md)).
 - **Open windows.** Running apps list their windows beneath them and Enter switches to
   one, on X11 and most Wayland desktops ([which ones](docs/desktop-setup.md#open-windows)).
+- **Web and available apps.** Type an app's name to **Open** it when installed
+  or find an **Install** option when available. Enter opens its Software page
+  for confirmation. Website addresses open directly; Alt+Enter searches the web.
+  See [setup and settings](docs/configuration.md#web-search-and-available-apps).
 - **Private.** It learns what you open, but that history stays on your machine and can be
   turned off. Only file names and paths are indexed, never what's inside the files.
 
@@ -53,12 +57,25 @@ enabled automatically and refuses other distributions.
 
 | Key | Action |
 |---|---|
-| Type | Search apps, settings, files and folders |
+| Type | Search apps, settings, files and folders; find available apps to install |
+| `web QUERY` | Search with your chosen engine in the system default browser |
+| Website address, e.g. `google.com` | Open the website directly |
+| Alt+Enter | Search the web immediately |
+| `install QUERY` (optional) | Browse all matching Flatpak apps and sources |
+| `local QUERY` | Search local items only; escape a reserved prefix |
 | ↑ ↓ | Move the selection |
 | Enter | Open it, or switch to the window |
 | Ctrl+Enter | Show it in its folder |
 | Ctrl+C | Copy its path |
 | Esc | Close |
+
+The Web action stays visible below the search box while local results scroll.
+Web actions always use the system's current default browser. Saved search-engine
+choices remain in `~/.config/torchlight/web.ini`; legacy browser overrides are ignored.
+App names work without a prefix: installed apps say **Open**, available apps
+say **Install**. Exact local filenames keep priority; an exact available-app
+name is selected ahead of loosely matching files. Enter on Install opens
+Software, where you confirm installation.
 
 Torchlight indexes your home folder. To pick other folders, change how the daemon runs or
 search from a terminal, see [configuration](docs/configuration.md).

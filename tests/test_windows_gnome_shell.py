@@ -11,14 +11,15 @@ Set TORCHLIGHT_GNOME_ROOT to a folder with GNOME Shell unpacked under usr/ (from
 instead of an installed gnome-shell.
 """
 import argparse
+from contextlib import contextmanager
 import glob
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
+from desktop_support import capture_view, session_directory, unavailable
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--launcher", default="build/torchlight-gtk")
@@ -30,6 +31,7 @@ UUID = "torchlight@antash-mishra.github.io"
 APP_ID = "org.torchlight.TestNotes"
 DISPLAY_NAME = "torchlight-gnome"
 ACTIVE, INITIALIZED = 1, 6
+KEY_LEFTSHIFT = 42
 
 
 def shell_root():
@@ -94,6 +96,38 @@ def listed(bus):
         return None
 
 
+def activate_view(bus):
+    """Give the native fixture focus through the same extension used to switch windows."""
+    from gi.repository import GLib
+    for entry in listed(bus) or []:
+        if entry[4] == "Torchlight native view":
+            call(bus, "/org/torchlight/Windows", "org.torchlight.Windows", "Activate",
+                 GLib.Variant("(t)", (entry[0],)), "(b)")
+
+
+@contextmanager
+def virtual_keyboard(bus):
+    """Give headless Mutter a keyboard through its private remote-input interface."""
+    from gi.repository import Gio, GLib
+    interface = "org.gnome.Mutter.RemoteDesktop"
+    path = bus.call_sync(interface, "/org/gnome/Mutter/RemoteDesktop", interface,
+                         "CreateSession", None, GLib.VariantType("(o)"),
+                         Gio.DBusCallFlags.NO_AUTO_START, 3000, None).unpack()[0]
+
+    def invoke(method, parameters=None):
+        bus.call_sync(interface, path, interface + ".Session", method, parameters, None,
+                      Gio.DBusCallFlags.NO_AUTO_START, 3000, None)
+
+    try:
+        invoke("Start")
+        # Mutter creates the virtual keyboard on the first event; Shift leaves no text behind.
+        for pressed in (True, False):
+            invoke("NotifyKeyboardKeycode", GLib.Variant("(ub)", (KEY_LEFTSHIFT, pressed)))
+        yield
+    finally:
+        invoke("Stop")
+
+
 def user_dirs(base):
     """The person's folders: the extension (installed, not enabled) and the test app."""
     for name in ["config", "data", "cache", "state", "files"]:
@@ -108,7 +142,7 @@ def user_dirs(base):
         "[Desktop Entry]\nType=Application\nName=Test Notes\nExec=true\nIcon=text-x-generic\n")
     (base / "data/mime").symlink_to("/usr/share/mime", target_is_directory=True)
     (base / "data/icons").symlink_to("/usr/share/icons", target_is_directory=True)
-    (base / "config.torchlight").write_text(f"root = {base / 'files'}\n")
+    (base / "config.torchlight").write_text(f"root = {base / 'files'}\nweb_search = false\nsoftware_search = false\n")
     return dict(XDG_CONFIG_HOME=str(base / "config"), XDG_DATA_HOME=str(base / "data"),
                 XDG_CACHE_HOME=str(base / "cache"), XDG_STATE_HOME=str(base / "state"))
 
@@ -143,9 +177,14 @@ def check_popup(base, env, bus, processes):
         [str(Path(args.launcher).resolve()), "--socket", str(socket), "--toggle"],
         env=dict(env, GDK_BACKEND="wayland"), stdout=open(base / "gtk.log", "w"),
         stderr=subprocess.STDOUT))
-    wait_for(lambda: extension_info(bus)["state"] == ACTIVE)
+    try:
+        wait_for(lambda: extension_info(bus)["state"] == ACTIVE)
+    except AssertionError as error:
+        raise AssertionError(f"Launcher exit={processes[-1].poll()}, "
+                             f"extension={extension_info(bus)}") from error
     assert extension_info(bus)["enabled"]
-    assert (base / "state/torchlight/gnome-extension-enabled").exists()
+    # The extension can become active before the launcher's asynchronous reply writes its marker.
+    wait_for((base / "state/torchlight/gnome-extension-enabled").exists)
     frame, _ = wait_for(lambda: (lambda found: found if found[0] else None)(accessible_names(Atspi)))
     return frame
 
@@ -212,6 +251,10 @@ def inside(base):
         info = wait_for(lambda: (lambda value: value if "state" in value else None)(
             _safe(lambda: extension_info(bus), {})), timeout=60)
         assert info["state"] in (INITIALIZED, 2), info
+        # Metadata appears before Shell finishes restoring session settings. Launch
+        # after startup, as on an existing desktop, so that restore cannot undo enablement.
+        wait_for(lambda: "GNOME Shell started at" in
+                 (base / "shell.log").read_text(errors="replace"), timeout=60)
         env = dict(env, WAYLAND_DISPLAY=DISPLAY_NAME)
         env.pop("DISPLAY", None)
         frame = check_popup(base, env, bus, processes)
@@ -221,6 +264,10 @@ def inside(base):
         names = wait_for(lambda: (lambda found: found if "First notes" in found and "Second notes" in found
                                   else None)(accessible_names(Atspi)[1]))
         assert "Test Notes" in names, names
+        # A test application has no user activation token; explicitly switch to its windows.
+        if os.environ.get("TORCHLIGHT_TEST_VIEW_CAPTURE"):
+            with virtual_keyboard(bus):
+                capture_view(dict(env, GDK_BACKEND="wayland"), activate=lambda: activate_view(bus))
     finally:
         for process in reversed(processes):
             process.terminate()
@@ -245,16 +292,16 @@ if args.inside:
     inside(Path(args.inside))
     raise SystemExit(0)
 if shell_root() is None:
-    print("GNOME windows check skipped: gnome-shell is not installed")
+    unavailable("gnome-shell is not installed")
     raise SystemExit(0)
 try:
     import gi
     gi.require_version("Atspi", "2.0")
     gi.require_version("Gtk", "4.0")
 except (ImportError, ValueError):
-    print("GNOME windows check skipped: the AT-SPI or GTK 4 Python bindings are not installed")
+    unavailable("the AT-SPI or GTK 4 Python bindings are not installed")
     raise SystemExit(0)
-with tempfile.TemporaryDirectory(prefix="torchlight-gnome-") as temporary:
+with session_directory(prefix="torchlight-gnome-") as temporary:
     base = Path(temporary)
     runtime = base / "runtime"
     runtime.mkdir(mode=0o700)

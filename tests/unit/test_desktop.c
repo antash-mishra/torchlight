@@ -59,6 +59,8 @@ static void wait_query(tl_desktop *desktop, const char *text, size_t wanted) {
         if (count != wanted)
             pause_ms(5);
     }
+    if (count != wanted)
+        fprintf(stderr, "desktop query %s: got %zu, wanted %zu\n", text, count, wanted);
     CHECK(count == wanted);
 }
 /* GIO's OnlyShowIn/NotShowIn rule, and Cinnamon's menu, which also lists

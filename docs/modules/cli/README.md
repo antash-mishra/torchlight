@@ -1,8 +1,8 @@
 # cli
 
-> **Status:** Implemented (M1/M2): offline indexing/local queries and resident IPC client
+> **Status:** Implemented (M1/M2/M9): offline indexing, resident local queries, typed web/software lookups
 > **Source:** `src/bin/torchlight.c` · **Header:** `—`
-> **Tests:** `tests/test_cli.py`, `tests/test_daemon.py`
+> **Tests:** `tests/test_cli.py`, `tests/test_daemon.py`, `tests/test_search_actions.py`
 
 ## Behavior and ownership
 
@@ -74,3 +74,7 @@ JSON output exposes result kinds and desktop launch metadata. Plain/NUL output
 continues to print exact result paths (desktop filenames for application entries).
 Explicit local --db queries remain file-only. Resolve/record accept current
 session-scoped desktop result ids as well as durable file ids.
+
+## M9 explicit lookup commands
+
+web and software select version-2 modes after capability negotiation. software-refresh enqueues a refresh. These commands support JSON and reject NUL output; they never launch or install. query remains literal and path-only, including offline queries. Shared feature configuration validation accepts the new settings without changing root/allow/exclude behavior.

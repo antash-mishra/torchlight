@@ -42,16 +42,20 @@
 #define SURFACE_RADIUS 14
 #define HINT_SPACING 6
 /* The placeholder changes on each show, teaching the forgiving search. */
-static const char *const TIPS[] = {"Search apps, files and settings", "Try raedme: typos are fine",
+static const char *const TIPS[] = {"Search apps, files and settings",
+                                   "Try raedme: typos are fine",
                                    "Try prjnts: initials work",
-                                   "Try work notes: folder names count"};
+                                   "Try work notes: folder names count",
+                                   "Try web linux tips",
+                                   "Type an app name to open or install it"};
 /* Style classes for what a row is; the selection's edge takes that kind's colour. */
 static const char *const KINDS[] = {"kind-app", "kind-setting", "kind-folder", "kind-file",
                                     "kind-window"};
 struct popup_view {
     tl_popup_widgets widgets;
     GtkWidget *window, *field, *footer, *message, *message_box, *text, *reveal, *close, *icons,
-        *spinner, *track, *header, *strip, *copy, *copy_label, *preview_scroll;
+        *spinner, *track, *header, *strip, *copy, *copy_label, *preview_scroll, *open_label,
+        *web_track;
     GtkSettings *settings;
     GdkDisplay *display;
     /* The stylesheet and the light or dark palette it takes its colours from. */
@@ -64,9 +68,9 @@ struct popup_view {
     guint typing_timer, opening_timer, closing_timer, copied_timer;
     size_t results, tip;
     /* The visible surface's width from the last configure, for fitting the idle strip. */
-    int width;
+    int width, height_limit;
     /* Whether the last configure left room for the preview panel. */
-    bool active, animations, dark, wide;
+    bool active, animations, dark, wide, typed_action, web_visible;
 };
 static void remove_timer(guint *timer) {
     if (*timer != 0)
@@ -222,8 +226,10 @@ static GtkWidget *create_footer(tl_popup_view *view) {
     gtk_label_set_width_chars(GTK_LABEL(view->widgets.status), STATUS_CHARS);
     gtk_widget_set_hexpand(view->widgets.status, true);
     gtk_box_append(GTK_BOX(view->footer), view->widgets.status);
-    gtk_box_append(GTK_BOX(view->footer),
-                   hint("red", (const char *const[]){"Enter", NULL}, "Open"));
+    GtkWidget *open = hint("red", (const char *const[]){"Enter", NULL}, "Open");
+    view->open_label = gtk_widget_get_last_child(open);
+    gtk_label_set_ellipsize(GTK_LABEL(view->open_label), PANGO_ELLIPSIZE_END);
+    gtk_box_append(GTK_BOX(view->footer), open);
     view->reveal = hint("green", (const char *const[]){"Ctrl", "Enter", NULL}, "Show in folder");
     gtk_box_append(GTK_BOX(view->footer), view->reveal);
     view->copy = hint("yellow", (const char *const[]){"Ctrl", "C", NULL}, "Copy path");
@@ -309,6 +315,7 @@ static GtkWidget *create_preview(tl_popup_view *view) {
 /* The results, with the preview panel beside them on a wide popup. */
 static GtkWidget *create_results(tl_popup_view *view) {
     view->widgets.list = gtk_list_box_new();
+    gtk_widget_set_name(view->widgets.list, "popup-local-list");
     gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(view->widgets.list), true);
     gtk_widget_set_focusable(view->widgets.list, false);
     view->track = popup_selection_track_new(view->widgets.list);
@@ -328,6 +335,18 @@ static GtkWidget *create_results(tl_popup_view *view) {
     gtk_box_append(GTK_BOX(body), create_preview(view));
     return body;
 }
+static GtkWidget *create_web(tl_popup_view *view) {
+    view->widgets.web_list = gtk_list_box_new();
+    gtk_widget_set_name(view->widgets.web_list, "popup-web-list");
+    gtk_widget_add_css_class(view->widgets.web_list, "web-list");
+    gtk_widget_set_focusable(view->widgets.web_list, false);
+    gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(view->widgets.web_list), true);
+    view->web_track = popup_selection_track_new(view->widgets.web_list);
+    gtk_widget_set_name(popup_selection_track_get_highlight(view->web_track),
+                        "popup-web-highlight");
+    gtk_widget_set_visible(view->web_track, false);
+    return view->web_track;
+}
 static void build_content(tl_popup_view *view) {
     view->widgets.root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     g_object_ref_sink(view->widgets.root);
@@ -341,6 +360,7 @@ static void build_content(tl_popup_view *view) {
     view->header = popup_header_new();
     gtk_box_append(GTK_BOX(view->widgets.root), view->header);
     gtk_box_append(GTK_BOX(view->widgets.root), create_search(view));
+    gtk_box_append(GTK_BOX(view->widgets.root), create_web(view));
     view->strip = popup_index_strip_new();
     gtk_box_append(GTK_BOX(view->widgets.root), view->strip);
     gtk_box_append(GTK_BOX(view->widgets.root), create_results(view));
@@ -499,7 +519,7 @@ void popup_view_set_search_time(tl_popup_view *view, uint64_t micros) {
 }
 void popup_view_set_results(tl_popup_view *view, size_t count) {
     view->results = count;
-    gtk_widget_set_visible(view->widgets.scroll, count != 0);
+    gtk_widget_set_visible(view->widgets.scroll, count > (view->web_visible ? 1U : 0U));
     gtk_widget_set_visible(view->preview_scroll, count != 0 && view->wide);
     if (count == 0)
         popup_preview_clear(view->widgets.preview);
@@ -509,6 +529,14 @@ void popup_view_set_results(tl_popup_view *view, size_t count) {
     else
         gtk_widget_remove_css_class(view->widgets.root, "has-results");
     update_message(view);
+}
+void popup_view_set_web_visible(tl_popup_view *view, bool visible) {
+    if (view->web_visible == visible)
+        return;
+    view->web_visible = visible;
+    gtk_widget_set_visible(view->web_track, visible);
+    if (view->width > 0 && view->height_limit > 0)
+        popup_view_configure(view, view->width, view->height_limit);
 }
 static GIcon *file_icon(const tl_popup_row *row) {
     if (row->folder)
@@ -524,7 +552,7 @@ static GIcon *file_icon(const tl_popup_row *row) {
 /* A new reference to row's icon: an application's own, or the file type's. */
 static GIcon *row_icon(const tl_popup_row *row) {
     GIcon *icon = NULL;
-    if (row->application && row->icon[0] != 0)
+    if ((row->application || row->target_kind != POPUP_TARGET_LOCAL) && row->icon[0] != 0)
         icon = g_icon_new_for_string(row->icon, NULL);
     if (icon == NULL)
         icon = row->application ? g_themed_icon_new("application-x-executable") : file_icon(row);
@@ -543,6 +571,13 @@ static GtkWidget *result_icon(const tl_popup_row *row) {
 static GtkWidget *result_location(const tl_popup_row *row, size_t path_keep) {
     if (row->application)
         return NULL;
+    if (row->target_kind != POPUP_TARGET_LOCAL) {
+        GtkWidget *location = label(row->display, "result-location");
+        gtk_widget_add_css_class(location, "result-detail");
+        gtk_label_set_ellipsize(GTK_LABEL(location), PANGO_ELLIPSIZE_END);
+        gtk_label_set_xalign(GTK_LABEL(location), 1);
+        return location;
+    }
     char parent[POPUP_PATH_BYTES];
     g_strlcpy(parent, row->display, sizeof(parent));
     char *slash = strrchr(parent, '/');
@@ -562,8 +597,9 @@ static void add_entrance(GtkWidget *result, tl_popup_entrance entrance, size_t i
 }
 /* A section header above a group's first row: its color block, name and count. */
 GtkWidget *popup_view_group_header(tl_popup_group group, size_t count) {
-    static const char *const NAMES[] = {"Apps", "Settings", "Folders", "Files"};
-    static const char *const COLOURS[] = {"cyan", "magenta", "yellow", "blue"};
+    static const char *const NAMES[] = {"Apps",  "Settings",       "Folders",
+                                        "Files", "Available apps", "Web"};
+    static const char *const COLOURS[] = {"cyan", "magenta", "yellow", "blue", "cyan", "blue"};
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     gtk_widget_add_css_class(box, "group-header");
     GtkWidget *block = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
@@ -603,6 +639,21 @@ GtkWidget *popup_view_result(const tl_popup_row *row, size_t path_keep, tl_popup
     gtk_label_set_max_width_chars(GTK_LABEL(name), NAME_MAX_CHARS);
     gtk_widget_set_valign(name, GTK_ALIGN_CENTER);
     gtk_box_append(GTK_BOX(box), name);
+    if (row->target_kind == POPUP_TARGET_SOFTWARE || (row->application && !row->settings)) {
+        const char *action = row->target_kind == POPUP_TARGET_LOCAL ? "Open"
+                             : row->installed                       ? "Manage"
+                                                                    : "Install";
+        GtkWidget *badge = label(action, "result-action");
+        gtk_widget_add_css_class(badge, "result-detail");
+        gtk_widget_set_valign(badge, GTK_ALIGN_CENTER);
+        gtk_box_append(GTK_BOX(box), badge);
+    }
+    if (row->target_kind == POPUP_TARGET_WEB) {
+        GtkWidget *shortcut =
+            label(row->web_uri[0] != 0 ? "Alt+Enter: Search" : "Alt+Enter", "web-shortcut");
+        gtk_widget_add_css_class(shortcut, "result-detail");
+        gtk_box_append(GTK_BOX(box), shortcut);
+    }
     GtkWidget *location = result_location(row, path_keep);
     if (location == NULL)
         gtk_widget_set_hexpand(name, true);
@@ -668,16 +719,22 @@ static void mark_kind(GtkWidget *highlight, GtkWidget *row) {
             gtk_widget_remove_css_class(highlight, KINDS[i]);
 }
 void popup_view_select(tl_popup_view *view, GtkWidget *row, bool glide) {
-    mark_kind(popup_selection_track_get_highlight(view->track), row);
-    popup_selection_track_set_target(view->track, row, glide);
+    bool web = row != NULL && gtk_widget_is_ancestor(row, view->widgets.web_list);
+    GtkWidget *selected = web ? view->web_track : view->track;
+    GtkWidget *other = web ? view->track : view->web_track;
+    popup_selection_track_set_target(other, NULL, false);
+    mark_kind(popup_selection_track_get_highlight(selected), row);
+    popup_selection_track_set_target(selected, row, glide);
 }
 void popup_view_set_searching(tl_popup_view *view, bool searching) {
     gtk_stack_set_visible_child_name(GTK_STACK(view->icons), searching ? "spinner" : "search");
     gtk_spinner_set_spinning(GTK_SPINNER(view->spinner), searching);
 }
 void popup_view_set_launching(tl_popup_view *view, bool launching) {
-    GtkWidget *highlight = popup_selection_track_get_highlight(view->track);
-    GtkWidget *row = popup_selection_track_get_target(view->track);
+    GtkWidget *track =
+        popup_selection_track_get_target(view->web_track) != NULL ? view->web_track : view->track;
+    GtkWidget *highlight = popup_selection_track_get_highlight(track);
+    GtkWidget *row = popup_selection_track_get_target(track);
     GtkWidget *result = row != NULL && GTK_IS_LIST_BOX_ROW(row)
                             ? gtk_list_box_row_get_child(GTK_LIST_BOX_ROW(row))
                             : NULL;
@@ -696,8 +753,8 @@ void popup_view_set_launching(tl_popup_view *view, bool launching) {
 static void fit_hints(tl_popup_view *view, int width) {
     GtkWidget *optional[] = {view->close, view->copy, view->reveal};
     gtk_widget_set_visible(view->close, true);
-    gtk_widget_set_visible(view->copy, true);
-    gtk_widget_set_visible(view->reveal, width >= COMPACT_WIDTH);
+    gtk_widget_set_visible(view->copy, !view->typed_action);
+    gtk_widget_set_visible(view->reveal, !view->typed_action && width >= COMPACT_WIDTH);
     for (size_t i = 0; i < G_N_ELEMENTS(optional); i++) {
         int minimum, natural;
         /* Measure the whole surface so its border, padding and shadow margin count too. */
@@ -723,6 +780,7 @@ static void fit_search_time(tl_popup_view *view, int width) {
 void popup_view_configure(tl_popup_view *view, int width, int height_limit) {
     update_shadow(view);
     view->width = width;
+    view->height_limit = height_limit;
     view->wide = width >= POPUP_VIEW_PREVIEW_WIDTH;
     if (!view->wide)
         popup_preview_clear(view->widgets.preview);
@@ -741,7 +799,7 @@ void popup_view_configure(tl_popup_view *view, int width, int height_limit) {
     gtk_widget_measure(view->widgets.root, GTK_ORIENTATION_VERTICAL, width, &minimum, &natural,
                        NULL, NULL);
     gtk_widget_set_visible(view->footer, visible);
-    gtk_widget_set_visible(view->widgets.scroll, view->results != 0);
+    gtk_widget_set_visible(view->widgets.scroll, view->results > (view->web_visible ? 1U : 0U));
     gtk_widget_set_visible(view->preview_scroll, view->results != 0 && view->wide);
     int budget = MAX(32, height_limit - natural);
     gtk_scrolled_window_set_max_content_height(
@@ -753,6 +811,14 @@ tl_popup_margins popup_view_margins(tl_popup_view *view) {
     return view->margins;
 }
 void popup_view_set_preview(tl_popup_view *view, const tl_popup_preview *preview, bool at_once) {
+    const tl_popup_row *row = preview == NULL ? NULL : preview->row;
+    view->typed_action = row != NULL && row->target_kind != POPUP_TARGET_LOCAL;
+    gtk_label_set_text(GTK_LABEL(view->open_label),
+                       row == NULL || row->target_kind == POPUP_TARGET_LOCAL ? "Open"
+                       : row->target_kind == POPUP_TARGET_WEB
+                           ? (row->web_uri[0] != 0 ? "Open website" : "Search in browser")
+                           : (row->installed ? "Manage in Software" : "Install in Software"));
+    fit_hints(view, view->width);
     if (!view->wide || preview == NULL || preview->row == NULL) {
         popup_preview_clear(view->widgets.preview);
         return;

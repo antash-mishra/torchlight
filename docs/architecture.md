@@ -2,6 +2,29 @@
 
 ## Current implementation
 
+Ordinary popup queries opt into name-based available-app suggestions when the
+daemon advertises support. The coordinator prefers named installed desktop apps,
+protects exact local matches and copies up to three suggestions for both response
+phases. The popup labels Open/Install and can select an exact available-app name
+ahead of loose local matches ([ADR 0070](adr/0070-app-discovery-without-a-prefix.md)).
+
+The GTK client pins its Web action outside the local viewport and recognizes
+website intent using pure address validation. The engine option in `web.ini`
+is loaded at startup and copied into typed actions. The launch worker uses
+GIO's current system URI handler for every Web action, ignoring old browser
+overrides ([ADR 0071](adr/0071-system-default-browser.md)).
+The settings button and popover have been removed at the user's request;
+saved engine preferences are retained.
+
+M9 adds browser actions and an independent available-software index. The popup
+parses modes and negotiates typed v2 IPC; the daemon continues to support v1.
+A separate software worker discovers configured Flatpak sources and publishes
+immutable lexical snapshots. Query/resolve stay resident; client activation
+revalidates sources off the query thread. Only the client launches a browser or
+software manager, and those actions do not enter local open history. See
+[search actions](modules/search_actions/README.md), [software](modules/software/README.md)
+and [software catalog](modules/software_catalog/README.md).
+
 M3 runs as a resident file/application daemon with a GTK4 popup. `torchlight query` uses Unix-socket IPC;
 explicit `--db` retains the M1 local query mode. Offline `index` still wires
 config -> crawl -> store, under the same database singleton lock as the daemon.

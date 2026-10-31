@@ -4,6 +4,25 @@ How Torchlight's search quality and performance are measured. Every milestone
 validates against this list; performance numbers in `PLAN.md` are targets until
 recorded here.
 
+## 2026-10-30: Web and available-software search (M9)
+
+The [M9 validation record](m9-completion.md) records functional checks, manager
+routes and measured performance. `make test` includes typed target/configuration
+tests, real subprocess boundary fixtures, installed-ref normalization, stale
+source checks, version-1 compatibility and phase-consistent Web actions.
+`tests/test_popup_actions.py` exercises the real GTK keyboard paths using inert
+browser/manager executables; `tests/test_popup_compat.py --daemon OLD_BINARY`
+checks new GTK against an older service. `tests/test_software_manager.py` is an
+explicit cloud-only app-details/install acceptance tool, outside routine tests.
+
+`make bench-software` measures construction, warm matching and peak RSS at the
+50,000-app cap. `tests/bench/bench_search_actions.py --output FILE` compares the
+same local typing corpus with features disabled/enabled, a cold catalog, a ready
+catalog and a blocked external refresh; it also records IPC/engine times and
+idle CPU/RSS. Run it on an otherwise idle Boat VM after building the optimized
+daemon and corpus exporter. Existing `make bench` measures local engine ranking
+and latency independently; interleave old/new binaries to expose host noise.
+
 Current M1/M2 acceptance and its measurements are in the
 [M3 readiness report](m3-readiness.md) and
 [3 October readiness results](#2026-10-03-m1m2-readiness-adr-0013).

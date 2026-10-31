@@ -6,6 +6,7 @@
 #include "torchlight/desktop.h"
 #include "torchlight/personal.h"
 #include "torchlight/semantic.h"
+#include "torchlight/software_catalog.h"
 #include <errno.h>
 #include <poll.h>
 #include <pthread.h>
@@ -62,6 +63,9 @@ struct client {
 struct tl_daemon {
     tl_catalog *catalog;
     tl_desktop *desktop;
+    tl_software_catalog *software;
+    tl_search_settings settings;
+    const tl_software_entry *software_results[LEXICAL_MAX_RESULTS];
     tl_writer *writer;
     tl_semantic *semantic;
     tl_ipc_listener *listener;
@@ -71,6 +75,7 @@ struct tl_daemon {
     char session[33];
     uint64_t search_sequence;
     uint64_t engine_ns;
+    bool named_application;
     /* Search-thread state: lock/wake guard every client's queue, output
      * accounting and semantic bookkeeping; cancel targets the running query. */
     pthread_mutex_t lock;
@@ -196,7 +201,11 @@ static tl_status create_services(tl_daemon *daemon, const tl_daemon_options *opt
                                         .readers = 1,
                                         .release_memory = options->release_memory,
                                         .release_context = options->release_context};
-    tl_status status = writer_create(&writer_options, &daemon->writer);
+    tl_status status = search_actions_settings(options->config, &daemon->settings);
+    if (status == TL_OK)
+        status = writer_create(&writer_options, &daemon->writer);
+    if (status == TL_OK)
+        status = software_catalog_create(daemon->settings.software, NULL, &daemon->software);
     if (status == TL_OK)
         status = desktop_create(NULL, &daemon->desktop);
     if (status == TL_OK && options->model_path != NULL) {
@@ -309,6 +318,8 @@ tl_status daemon_destroy(tl_daemon *daemon) {
     daemon->personal = NULL;
     semantic_destroy(daemon->semantic);
     daemon->semantic = NULL;
+    software_catalog_destroy(daemon->software);
+    daemon->software = NULL;
     desktop_destroy(daemon->desktop);
     daemon->desktop = NULL;
     writer_destroy(daemon->writer);
@@ -422,7 +433,9 @@ static void response_prefix(tl_json_buffer *b, const tl_ipc_request *request, ui
                             const char *search_id, const char *status, const char *reason,
                             const tl_writer_stats *stats, bool lexical_phase, uint64_t emb_gen,
                             const tl_semantic_stats *semantic, size_t personal_items) {
-    json_raw(b, "{\"version\":1,\"request_id\":");
+    json_raw(b, "{\"version\":");
+    json_number(b, ipc_version(request));
+    json_raw(b, ",\"request_id\":");
     json_quote(b, request->request_id);
     json_raw(b, ",\"phase\":");
     json_quote(b, lexical_phase ? "lexical" : "final");
@@ -582,6 +595,12 @@ static tl_status merge_applications(tl_daemon *daemon, const tl_ipc_request *req
                                   daemon->application_evidence);
     if (status != TL_OK)
         return status;
+    for (size_t i = 0; i < app_count; i++) {
+        const tl_desktop_entry *entry =
+            desktop_resolve(daemon->desktop, daemon->applications[i].id);
+        if (daemon->application_evidence[i] == DESKTOP_NAMED && entry != NULL && !entry->settings)
+            daemon->named_application = true;
+    }
     drop_fuzzy(daemon, request->query, files, count, &app_count);
     merge_exact_files(daemon, limit, *count, LEXICAL_EXACT_RAW_PATH, &file, &out);
     merge_tier(daemon, limit, app_count, DESKTOP_NAMED, RANK_NAMED, &out);
@@ -691,6 +710,31 @@ static tl_status execute(tl_daemon *daemon, const tl_ipc_request *request,
                          char search_id[IPC_HISTORY_ID_BYTES + 1], size_t *count,
                          uint64_t *catalog_gen, tl_catalog_reader **reader, bool superseded) {
     *count = 0;
+    if (request->operation == IPC_SOFTWARE_REFRESH) {
+        software_catalog_refresh(daemon->software);
+        return TL_OK;
+    }
+    if (request->software_target) {
+        const tl_software_entry *entry = software_catalog_resolve(
+            daemon->software, &request->software, request->software_revision);
+        if (entry == NULL || entry->source_revision != request->source_revision)
+            return TL_STATE;
+        daemon->software_results[0] = entry;
+        *count = 1;
+        return TL_OK;
+    }
+    if (request->operation == IPC_QUERY && request->mode != SEARCH_LOCAL) {
+        if (superseded)
+            return TL_STATE;
+        if (request->mode == SEARCH_WEB)
+            return TL_OK;
+        uint64_t start = nanoseconds();
+        tl_status status = software_catalog_query(daemon->software, request->query, &daemon->cancel,
+                                                  daemon->software_results, request->limit, count);
+        uint64_t end = nanoseconds();
+        daemon->engine_ns = end >= start ? end - start : 0;
+        return status;
+    }
     if (request->operation == IPC_QUERY) {
         if (daemon->search_sequence == UINT64_MAX)
             return TL_LIMIT;
@@ -815,9 +859,34 @@ static tl_status encode_completion(tl_daemon *daemon, const struct completion *c
          i++) {
         if (i != 0)
             json_raw(&b, ",");
-        encode_result(daemon, completion->reader, &b, &daemon->results[i]);
+        if (completion->request->mode == SEARCH_SOFTWARE || completion->request->software_target)
+            ipc_software_result(&b, daemon->software_results[i]);
+        else
+            encode_result(daemon, completion->reader, &b, &daemon->results[i]);
     }
-    json_raw(&b, "],\"timing\":{\"engine_us\":");
+    json_raw(&b, "]");
+    if (completion->request->operation == IPC_STATUS)
+        json_raw(&b, ",\"capabilities\":{\"search_actions\":2,\"software_suggestions\":1}");
+    if (ipc_version(completion->request) == IPC_ACTION_VERSION) {
+        const tl_ipc_request *request = completion->request;
+        search_actions_encode(&b, &daemon->settings, request->query,
+                              completion->status == TL_OK && request->operation == IPC_QUERY &&
+                                  (request->mode == SEARCH_WEB ||
+                                   (request->mode == SEARCH_LOCAL && request->web_fallback)));
+        ipc_suggestions_result(&b, request, completion->status == TL_OK);
+    }
+    if (completion->request->operation == IPC_STATUS ||
+        completion->request->mode == SEARCH_SOFTWARE ||
+        completion->request->operation == IPC_SOFTWARE_REFRESH) {
+        json_raw(&b, ",\"software\":{\"state\":");
+        json_quote(&b, software_catalog_state_name(software_catalog_state(daemon->software)));
+        json_raw(&b, ",\"count\":");
+        json_number(&b, software_catalog_count(daemon->software));
+        json_raw(&b, ",\"catalog_gen\":");
+        json_number(&b, software_catalog_gen(daemon->software));
+        json_raw(&b, "}");
+    }
+    json_raw(&b, ",\"timing\":{\"engine_us\":");
     json_number(&b, daemon->engine_ns / 1000);
     json_raw(&b, "}}\n");
     if (b.status != TL_OK) {
@@ -831,6 +900,43 @@ static tl_status encode_completion(tl_daemon *daemon, const struct completion *c
     *length = b.status == TL_OK ? b.length : 0;
     return b.status;
 }
+/* Snapshot ordinary app suggestions while both catalogs are leased. Never join
+ * native and Flatpak identities by display name: a named installed app instead
+ * suppresses installation suggestions for this query altogether. */
+static tl_status prepare_suggestions(tl_daemon *daemon, tl_ipc_request *request,
+                                     size_t local_count) {
+    request->suggestions = (tl_ipc_suggestions){0};
+    if (!request->software_suggestions || daemon->named_application ||
+        strpbrk(request->query, "/\\:.@") != NULL)
+        return TL_OK;
+    size_t count = 0;
+    bool exact = false;
+    uint64_t start = nanoseconds();
+    tl_status status = software_catalog_suggest(daemon->software, request->query, &daemon->cancel,
+                                                daemon->software_results, IPC_SOFTWARE_SUGGESTIONS,
+                                                &count, &exact);
+    uint64_t end = nanoseconds();
+    daemon->engine_ns += end >= start ? end - start : 0;
+    if (status != TL_OK)
+        return status;
+    for (size_t i = 0; i < local_count; i++)
+        if (daemon->results_tier[i] >= RANK_EXACT_BASENAME ||
+            (desktop_resolve(daemon->desktop, daemon->results[i].id) == NULL &&
+             lexical_exactness(&daemon->results[i]) != LEXICAL_ORDINARY))
+            exact = false;
+    request->suggestions.count = count;
+    request->suggestions.preferred = exact && count != 0;
+    for (size_t i = 0; i < count; i++) {
+        const tl_software_entry *entry = daemon->software_results[i];
+        tl_ipc_suggestion *copy = &request->suggestions.entries[i];
+        copy->ref = entry->ref;
+        copy->revision = entry->revision;
+        copy->source_revision = entry->source_revision;
+        memcpy(copy->name, entry->name, strlen(entry->name) + 1);
+        memcpy(copy->summary, entry->summary, strlen(entry->summary) + 1);
+    }
+    return TL_OK;
+}
 static bool take_final(tl_daemon *daemon, struct client *client, bool cancel);
 /* Under the daemon lock, before encoding: the lexical frame's reason depends on
  * whether the semantic worker accepted the job. */
@@ -838,7 +944,7 @@ static void queue_semantic(tl_daemon *daemon, struct client *client,
                            struct completion *completion) {
     const tl_ipc_request *request = completion->request;
     if (daemon->semantic == NULL || request->operation != IPC_QUERY ||
-        completion->status != TL_OK || completion->superseded ||
+        request->mode != SEARCH_LOCAL || completion->status != TL_OK || completion->superseded ||
         client->semantic_token == UINT64_MAX)
         return;
     /* A job still pending here belongs to an older query whose cancellation
@@ -891,7 +997,9 @@ static void deliver(tl_daemon *daemon, struct client *client, const struct pendi
 }
 static void serve(tl_daemon *daemon, struct client *client, const struct pending *job,
                   uint64_t generation) {
-    struct completion completion = {.request = &job->request, .superseded = job->superseded};
+    tl_ipc_request effective = job->request;
+    effective.action_settings = daemon->settings;
+    struct completion completion = {.request = &effective, .superseded = job->superseded};
     tl_catalog_stats catalog = {0};
     completion.status = writer_stats(daemon->writer, &completion.stats);
     if (completion.status == TL_OK && daemon->semantic != NULL) {
@@ -908,14 +1016,20 @@ static void serve(tl_daemon *daemon, struct client *client, const struct pending
     completion.catalog_gen = catalog.catalog_gen;
     tl_catalog_reader *reader = NULL;
     daemon->engine_ns = 0;
+    daemon->named_application = false;
     adopt_usage(daemon);
     desktop_acquire(daemon->desktop);
-    tl_ipc_request pooled = job->request;
-    if (daemon->semantic != NULL && job->request.operation == IPC_QUERY)
+    software_catalog_acquire(daemon->software);
+    tl_ipc_request pooled = effective;
+    if (daemon->semantic != NULL && job->request.operation == IPC_QUERY &&
+        job->request.mode == SEARCH_LOCAL)
         pooled.limit = LEXICAL_MAX_RESULTS;
     if (completion.status == TL_OK)
         completion.status = execute(daemon, &pooled, completion.search_id, &completion.count,
                                     &completion.catalog_gen, &reader, job->superseded);
+    if (completion.status == TL_OK && effective.operation == IPC_QUERY &&
+        effective.mode == SEARCH_LOCAL)
+        completion.status = prepare_suggestions(daemon, &effective, completion.count);
     if (completion.status == TL_CANCELLED) {
         /* A newer query arrived mid-search: answer like a queued supersession. */
         completion.status = TL_STATE;
@@ -924,6 +1038,12 @@ static void serve(tl_daemon *daemon, struct client *client, const struct pending
     completion.reader = reader;
     completion.reason = response_reason(&job->request, completion.status, job->decoded,
                                         job->repeated, completion.superseded);
+    if (completion.status == TL_OK && effective.operation == IPC_QUERY &&
+        effective.mode == SEARCH_WEB)
+        completion.reason = daemon->settings.web ? "web_search" : "web_disabled";
+    if (completion.status == TL_OK && effective.operation == IPC_QUERY &&
+        effective.mode == SEARCH_SOFTWARE)
+        completion.reason = software_catalog_state_name(software_catalog_state(daemon->software));
     lock_daemon(daemon);
     if (client->generation == generation && client->fd >= 0)
         queue_semantic(daemon, client, &completion);
@@ -932,6 +1052,7 @@ static void serve(tl_daemon *daemon, struct client *client, const struct pending
     bool overflow = false;
     tl_status encoded = encode_completion(daemon, &completion, &length, &overflow);
     catalog_release(reader);
+    software_catalog_release(daemon->software);
     desktop_release(daemon->desktop);
     lock_daemon(daemon);
     deliver(daemon, client, job, generation, encoded == TL_OK ? length : 0, overflow);

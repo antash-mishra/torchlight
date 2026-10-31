@@ -122,10 +122,12 @@ static const char *kind_colour(const tl_popup_row *row) {
     return row->settings ? "magenta" : row->application ? "cyan" : row->folder ? "yellow" : "blue";
 }
 static const char *kind_word(const tl_popup_row *row) {
-    return row->settings      ? "Settings panel"
-           : row->application ? "Application"
-           : row->folder      ? "Folder"
-                              : "File";
+    return row->target_kind == POPUP_TARGET_WEB ? (row->web_uri[0] != 0 ? "Website" : "Web search")
+           : row->target_kind == POPUP_TARGET_SOFTWARE ? "Available app"
+           : row->settings                             ? "Settings panel"
+           : row->application                          ? "Application"
+           : row->folder                               ? "Folder"
+                                                       : "File";
 }
 /* The icon, then the name over its kind; a file's kind becomes its type once read. */
 static GtkWidget *head(TlPopupPreviewPanel *self) {
@@ -182,6 +184,23 @@ static GtkWidget *facts(TlPopupPreviewPanel *self) {
     const tl_popup_row *row = &self->shown->row;
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, LIST_SPACING);
     gtk_widget_add_css_class(box, "preview-facts");
+    if (row->target_kind != POPUP_TARGET_LOCAL) {
+        if (row->target_kind == POPUP_TARGET_WEB) {
+            gtk_box_append(GTK_BOX(box),
+                           fact(self, "Browser", "preview-browser", DETAILS,
+                                row->display[0] != 0 ? row->display : "Default browser"));
+        } else {
+            gtk_box_append(GTK_BOX(box), wrapping(row->summary, "preview-description"));
+            gtk_box_append(GTK_BOX(box),
+                           fact(self, "Source", "preview-source", DETAILS, row->display));
+            gtk_box_append(GTK_BOX(box),
+                           fact(self, "App ID", "preview-app-id", DETAILS, row->software.app_id));
+            gtk_box_append(GTK_BOX(box),
+                           wrapping("Choose the source and confirm installation in Software.",
+                                    "preview-description"));
+        }
+        return box;
+    }
     if (row->folder) {
         gtk_box_append(GTK_BOX(box), fact(self, "Items", "preview-items", DETAIL_ITEMS, NULL));
         gtk_box_append(GTK_BOX(box),
@@ -231,6 +250,15 @@ static size_t item_actions(const content *shown, action out[3]) {
                           : shown->kind == POPUP_ITEM_MORE_WINDOWS ? "Show more windows"
                                                                    : "Open a new window",
                           "Enter"};
+        return 1;
+    }
+    if (shown->row.target_kind != POPUP_TARGET_LOCAL) {
+        out[0] =
+            (action){"red",
+                     shown->row.target_kind == POPUP_TARGET_WEB
+                         ? (shown->row.web_uri[0] != 0 ? "Open website" : "Search in browser")
+                         : (shown->row.installed ? "Manage in Software" : "Install in Software"),
+                     "Enter"};
         return 1;
     }
     out[0] = (action){"red", "Open", "Enter"};
@@ -446,7 +474,7 @@ static void start_reading(TlPopupPreviewPanel *self) {
     stop_reading(self);
     forget_details(self);
     const tl_popup_row *row = &self->shown->row;
-    if (row->path[0] == 0) {
+    if (row->target_kind != POPUP_TARGET_LOCAL || row->path[0] == 0) {
         self->read = true;
         return;
     }
@@ -480,8 +508,8 @@ static gboolean rested(gpointer context) {
     return G_SOURCE_REMOVE;
 }
 static bool same_result(const tl_popup_row *a, const tl_popup_row *b) {
-    return a->id == b->id && a->desktop_revision == b->desktop_revision &&
-           strcmp(a->path, b->path) == 0;
+    return popup_row_same(a, b) && a->software_revision == b->software_revision &&
+           a->desktop_revision == b->desktop_revision && strcmp(a->path, b->path) == 0;
 }
 /* Whether a and b describe the same item of the same result with the same windows. */
 static bool same_content(const content *a, const content *b) {

@@ -13,7 +13,8 @@ struct launch {
 /** GTask worker: task_data is borrowed launch data until completion. Returns
  * accepted boolean through task; checks cancellation before launch. Performs
  * desktop validation, argv spawn and cancellable file-manager DBus outside main
- * context. A new window runs the entry's new-window (or new-empty-window)
+ * context. Web actions use the current system URI handler, ignoring legacy browser
+ * overrides. A new window runs the entry's new-window (or new-empty-window)
  * desktop action, or a normal launch when it has neither. Cancellation prevents
  * an unaccepted fallback; accepted actions retain their result for asynchronous
  * history even if later canceled. */

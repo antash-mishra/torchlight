@@ -1,9 +1,23 @@
 # ui
 
-> **Status:** Implemented (M3 + Tekst look, motion, grouped results and preview panel + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, a clear window under user stylesheets and a steady X11 height under GNOME's mutter (ADR 0064), tooltips without pointer round trips, the first edit after a pause searching at once (ADR 0065), light and dark palettes, preview details read off the main thread, Wayland sizing (headless Weston), window switching on Wayland desktops and repeated showing on Cinnamon's Wayland session (`tests/test_windows_desktops.py`)
+> **Status:** Implemented (M3 + Tekst look, motion, grouped results and preview panel + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, a clear window under user stylesheets and a steady X11 height under GNOME's mutter (ADR 0064), tooltips without pointer round trips, the first edit after a pause searching at once (ADR 0065), light and dark palettes, preview details read off the main thread, Wayland sizing (headless Weston), window switching on Wayland desktops and repeated showing on Cinnamon's Wayland session (`tests/test_windows_desktops.py`); required X11/GNOME/KDE/Cinnamon Boat checks passed on 2026-10-30 ([verification](../../desktop-test-matrix.md#verification))
+> **M9 status:** Implemented typed Web/software groups, mode hints, previews, source-aware activation and older-daemon fallback; see [validation](../../m9-completion.md).
+> **Browser status:** Web searches and website visits always use the current system default browser, including with legacy saved overrides (ADR 0071).
 > **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track,header,index_strip,preview,wayland_globals}.c`, `ui/gtk/popup.css`, `ui/gtk/palette-{light,dark}.css`, `src/bin/torchlight-gtk.c`; fonts in `third_party/fonts`; open windows in [windows](../windows/README.md)
 > **Headers:** `include/torchlight/{launcher,popup,async,windows}.h`
-> **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/unit/test_windows.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/test_popup_wayland.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`
+> **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/unit/test_windows.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/test_popup_wayland.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`, `tests/test_environment_runner.py`; required cloud matrix in `tests/environments/`
+
+Desktop acceptance now has a [required Boat matrix](../../desktop-test-matrix.md)
+for X11, GNOME, KDE and Cinnamon. `desktop_support.py` makes missing requirements
+fail in matrix jobs and preserves diagnostics even after a test raises; native
+GTK view captures/assertions also run inside the Wayland sessions when requested.
+Ordinary developer checks retain optional skips. Matrix verification status and
+its coverage limits are recorded in that document ([ADR 0068](../../adr/0068-isolated-desktop-test-matrix.md)).
+The native search-time width regression measures the header within the styled
+popup, avoiding an assumption about the desktop's default label font.
+X11 anchor comparisons use the settled frame after the opening animation, and
+the GNOME fixture waits for Shell startup before asking the launcher to enable
+its extension.
 
 The thin executable owns an opaque launcher. GtkApplication enforces one instance;
 `torchlight-gtk --toggle` shows/focuses or dismisses its window. Showing clears the
@@ -307,3 +321,71 @@ See [desktop setup](../../desktop-setup.md), [M3 verification](../../m3-completi
 [IPC](../ipc/README.md), [desktop](../desktop/README.md) and
 [ADR 0015](../../adr/0015-m3-desktop-catalog-and-launcher.md) and
 [review fixes](../../adr/0017-m3-snapshot-cancellation-and-acceptance.md).
+
+## M9 typed actions
+
+`tests/test_popup_actions.py` verifies keyboard activation and failures with
+inert browser/manager fixtures. `tests/test_popup_compat.py` covers a pre-M9
+daemon; `tests/test_software_manager.py` is an explicit cloud-only manager
+acceptance check. Native view tests cover both typed previews on every desktop.
+Local launch failures retain the existing short open/reveal message; typed
+Web/software actions show their actionable browser or source/manager error.
+`tests/test_popup.py` covers the local failure and preserved popup focus.
+
+The model separates local, Web and software identities. Ten local slots, one Web slot, three software suggestions and one deliberately retained selection fit independently; Web occupies a fixed row below the query, outside the local scroll area. Software identity comparisons use every source field, never a display name or numeric hash alone. Typed previews show browser/source details and avoid filesystem reads; copy/reveal and local history apply only to local targets. The popup probes v1 status before v2 and keeps local support with an older daemon. Explicit modes, loading/stale/unsupported hints, Retry and catalog-generation polling complete the workflow. Software manager activation revalidates the source in its cancellable worker before opening details. The manager owns installation confirmation and progress.
+
+### Ordinary app discovery (ADR 0070)
+
+Status: implemented. The popup opts into automatic software suggestions only
+when the daemon advertises the separate capability. Typing an app name can show
+**Open** for an installed application or **Install** for an available one;
+the footer and preview describe **Install in Software**. An exact available-app
+name selects the software group before loose local matches, while exact local
+names/paths and installed named apps retain priority. Other suggestions follow
+the local groups. Web stays pinned. The optional `local` prefix disables both
+extras; `install` still browses all source variants, with **Manage** on installed
+software. Catalog generation polling refreshes normal searches as well.
+
+The status capability gates the request field so the new popup continues to
+work with older v2 servers. Model tests cover all fourteen rows, group ordering
+and selected-identity preservation; real GTK checks exercise Enter for ordinary
+available names and a native launcher whose desktop ID differs from Flatpak.
+
+
+### Pinned Web action and preferences (ADR 0069)
+
+Status: implemented. Website addresses select **Open website**; ordinary text
+keeps the best local item selected. Web is the first logical item and lives in
+its own list/selection track; list rows carry their logical model index so
+headers, mouse activation and keyboard selection agree across both lists.
+Alt+Enter always searches the current query; Ctrl+Enter still reveals local
+items. Pending replies invalidate both lists before any activation.
+
+Status update, 2026-10-30: the user requested removal of the settings gear.
+The search area no longer creates a settings button or popover, and its menu
+focus handling has been removed. Switching applications dismisses the launcher.
+
+Status update, 2026-11-01 ([ADR 0071](../../adr/0071-system-default-browser.md)):
+`web_preferences.c` reads only the engine from `web.ini`; legacy browser keys
+are ignored and never rewritten. A valid engine works without a browser key
+and overrides the daemon engine for the popup only. Engine edits take effect
+after restarting the popup. Web activation always resolves the system's current
+URI handler, even if a legacy row carries a browser ID. The row says **System
+default**, so its label cannot name an outdated browser. Missing handlers leave
+the query visible with an error. No browser lookup occurs during typing.
+
+Unit checks cover address validation and selection preservation. Native checks
+assert that the Web row remains above a scrolled viewport; keyboard checks cover
+direct visits, Alt+Enter, filenames, saved preference loading and restart
+persistence, pointer activation, focus dismissal, and absence of a settings
+control in the widget tree.
+The browser regression also checks ignored Chrome overrides, engine-only
+settings, a changed system default without a popup restart, and missing handlers.
+The 2026-11-01 change passed `make test`, `make lint` and native action checks
+in Boat `bx_vafb9xwy`: the debug popup at 1280×800 and optimized popup at
+800×600 both passed browser and software handoffs. Source checksums, logs,
+results and the previous local popup/settings are in `build/default-browser/`.
+The removal passed `make test`, `make lint`, compact/wide action checks and
+AT-SPI acceptance in Boat `bx_fys5aszs` on 2026-10-30. The optimized popup was
+installed without restarting the daemon; saved web preferences were preserved.
+Logs, native captures and the previous binary are in `build/remove-gear/`.

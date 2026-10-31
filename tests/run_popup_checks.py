@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
+from desktop_support import session_directory
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--xvfb", default="Xvfb")
@@ -14,10 +14,11 @@ parser.add_argument("--screen", default="800x600x24")
 parser.add_argument("--matrix", action="store_true")
 parser.add_argument("--a11y", action="store_true")
 parser.add_argument("--bench", action="store_true")
+parser.add_argument("--actions", action="store_true", help="Exercise M9 browser and software actions")
 parser.add_argument("--output", help="JSON file for acceptance or benchmark measurements")
 args = parser.parse_args()
 
-with tempfile.TemporaryDirectory(prefix="torchlight-gtk-session-") as temporary:
+with session_directory(prefix="torchlight-gtk-session-") as temporary:
     base = Path(temporary)
     runtime = base / "runtime"
     runtime.mkdir(mode=0o700)
@@ -50,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix="torchlight-gtk-session-") as temporary:
             number = server.stdout.readline().strip()
             assert number.isdigit(), (base / "xserver.log").read_text()
             env["DISPLAY"] = ":" + number
-            script = "tests/bench/bench_popup.py" if args.bench else "tests/test_popup.py"
+            script = "tests/bench/bench_popup.py" if args.bench else "tests/test_popup_actions.py" if args.actions else "tests/test_popup.py"
             command = [sys.executable, script, "--xdotool", args.xdotool]
             if args.matrix:
                 command.append("--matrix")

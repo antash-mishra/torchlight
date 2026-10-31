@@ -16,6 +16,7 @@ import sys
 import tempfile
 import time
 from popup_support import PopupDriver, wait_for
+from desktop_support import session_directory
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--launcher", default="build/torchlight-gtk")
@@ -66,7 +67,7 @@ if args.matrix:
     raise SystemExit(0)
 
 
-with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
+with session_directory(prefix="torchlight-popup-") as directory:
     base = Path(directory)
     # Run a copy of the popup, so the update check at the end can replace it.
     shutil.copy2(launcher, base / "torchlight-gtk")
@@ -81,7 +82,7 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
     with open(raw_name, "wb"):
         pass
     config = base / "config"
-    config.write_text(f"root = {root}\n")
+    config.write_text(f"root = {root}\nweb_search = false\nsoftware_search = false\n")
     apps = base / "data" / "applications"
     apps.mkdir(parents=True)
     (apps.parent / "mime").symlink_to("/usr/share/mime", target_is_directory=True)
@@ -279,6 +280,9 @@ with tempfile.TemporaryDirectory(prefix="torchlight-popup-") as directory:
         assert (left >= steady["shadow_left"] and top >= steady["shadow_top"]
                 and right <= steady["shadow_left"] + steady["surface_width"]
                 and bottom <= steady["shadow_top"] + steady["surface_height"]), steady
+        # The first empty frame can still be moving through its opening animation.
+        # Compare typing against the settled anchor, while retaining exact equality.
+        idle = steady
         empty_geometry = driver.geometry()
         # Growth follows the fixed search anchor; typing never moves or narrows it.
         # New rows' tooltips ask the X server nothing: one set with gtk_widget_set_tooltip_text

@@ -1,8 +1,8 @@
 # core
 
-> **Status:** Implemented: status/arithmetic, vectors, hash map, configuration, JSON/base64, byte scopes, in-place sort, mask bitmaps and bounded workers
-> **Source:** `src/core/` · **Headers:** `include/torchlight/{common,vec,hashmap,json,path,sort,mask,parallel}.h`
-> **Tests:** `tests/unit/test_{core,json,sort,mask,parallel}.c`
+> **Status:** Implemented: status/arithmetic, vectors, hash map, configuration, JSON/base64, byte scopes, in-place sort, mask bitmaps, bounded workers and cancellable subprocess capture
+> **Source:** `src/core/` · **Headers:** `include/torchlight/{common,vec,hashmap,json,path,sort,mask,parallel,process}.h`
+> **Tests:** `tests/unit/test_{core,json,sort,mask,parallel}.c`, process boundaries in `tests/unit/test_search_actions.c`
 
 ## Behavior and ownership
 
@@ -91,3 +91,7 @@ failure. It uses the existing pthread dependency.
 - [Implementation increment ADR](../../adr/0006-m1-prefix-subsequence-baseline.md)
 - [Query contract and scan improvements](../../adr/0013-query-contracts-and-resident-filters.md)
 - Public headers document parameters, lifetimes and error contracts.
+
+## Bounded process capture
+
+process.h provides generic background subprocess capture with fixed argv, a shared monotonic deadline/output budget, cancellation, embedded-NUL rejection and process-group cleanup. It uses posix_spawnp with a fresh process group and signal mask so a daemon that blocks termination signals can still cancel its children. It never uses a shell. Output belongs to the caller until process_output_destroy. Both stdout and stderr consume the shared budget; only stdout is retained.

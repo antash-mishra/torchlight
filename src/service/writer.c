@@ -12,6 +12,7 @@
 #include "torchlight/ledger.h"
 #include "torchlight/mounts.h"
 #include "torchlight/path.h"
+#include "torchlight/search_actions.h"
 #include "torchlight/store.h"
 #include "torchlight/usage.h"
 #include "torchlight/vec.h"
@@ -250,6 +251,10 @@ static tl_status add_path(struct paths *paths, const char *value) {
     return TL_OK;
 }
 static tl_status collect_paths(const tl_config *config, const char *wanted, struct paths *paths) {
+    tl_search_settings settings;
+    tl_status validation = search_actions_settings(config, &settings);
+    if (validation != TL_OK)
+        return validation;
     size_t capacity = config_entry_count(config) + 1;
     paths->items = calloc(capacity, sizeof(char *));
     paths->selected = calloc(capacity, sizeof(bool));
@@ -261,7 +266,7 @@ static tl_status collect_paths(const tl_config *config, const char *wanted, stru
         tl_status status = config_entry(config, i, &key, &value);
         if (status != TL_OK)
             return status;
-        if (strcmp(key, "root") != 0 && strcmp(key, "allow") != 0 && strcmp(key, "exclude") != 0)
+        if (!search_actions_key(key))
             return TL_INVALID;
         if (strcmp(key, wanted) == 0) {
             status = add_path(paths, value);

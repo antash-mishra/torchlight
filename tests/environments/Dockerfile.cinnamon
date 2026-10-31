@@ -1,0 +1,8 @@
+# Cinnamon's nested Wayland session on a private Xvfb display.
+FROM torchlight-matrix-base
+USER root
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cinnamon xvfb xauth && rm -rf /var/lib/apt/lists/*
+USER runner
+CMD ["cinnamon"]

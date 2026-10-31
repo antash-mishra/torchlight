@@ -6,11 +6,11 @@
 #include "torchlight/version.h"
 #include "view.h"
 #include "wayland_globals.h"
+#include "web_preferences.h"
 #include "windows_session.h"
 #include <gio/gdesktopappinfo.h>
 #include <gtk/gtk.h>
 #ifdef GDK_WINDOWING_X11
-#include <X11/Xlib.h>
 #include <gdk/x11/gdkx.h>
 #endif
 #include <stdio.h>
@@ -31,11 +31,16 @@
 /* A list item's identity across re-renders: its result, kind and window. */
 struct shown_item {
     uint64_t id, handle;
+    tl_popup_target_kind target_kind;
+    tl_software_ref software;
+    tl_search_engine engine;
+    char query[LEXICAL_QUERY_BYTES + 1];
     tl_popup_item_kind kind;
 };
 struct popup {
     GtkApplication *application;
-    GtkWidget *window, *entry, *list, *retry, *scroll;
+    GtkWidget *window, *entry, *list, *retry, *scroll, *web_list;
+    tl_web_preferences *web_preferences;
     tl_popup_model *model;
     tl_popup_view *view;
     /* Open windows, read once per show; NULL when unavailable. */
@@ -45,7 +50,10 @@ struct popup {
     char request_id[IPC_REQUEST_ID_BYTES + 1];
     guint debounce, pending, status_timer, windows_idle;
     tl_ipc_exchange *query, *action, *status_exchange, *history;
-    bool dirty, launching, visible;
+    bool dirty, launching, visible, capabilities_known, actions_supported, suggestions_supported;
+    tl_search_mode mode;
+    char software_state[16];
+    uint64_t software_catalog_gen;
     GCancellable *launch_cancel;
     /* Items currently on screen, so a re-render animates only rows that are new. */
     struct shown_item shown[POPUP_ITEMS];
@@ -59,6 +67,7 @@ struct popup {
     bool replaced;
 };
 static void start_query(struct popup *popup);
+static void request_status(struct popup *popup);
 static void set_status(struct popup *popup, const char *text) {
     popup_view_set_status(popup->view, text);
 }
@@ -110,17 +119,25 @@ static void child_text(const struct popup *popup, const tl_popup_item *item, cha
     if (text[0] == 0 && item->kind == POPUP_ITEM_WINDOW)
         g_strlcpy(text, "Untitled window", size);
 }
+static size_t row_index(GtkListBoxRow *row) {
+    size_t encoded =
+        row == NULL ? 0 : GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(row), "popup-item"));
+    return encoded == 0 ? SIZE_MAX : encoded - 1;
+}
+static bool has_web(const struct popup *popup) {
+    const tl_popup_item *item = popup_model_item(popup->model, 0);
+    return item != NULL &&
+           popup_model_row(popup->model, item->row)->target_kind == POPUP_TARGET_WEB;
+}
 /* The group of the result at list row index, or POPUP_GROUPS for none. */
 static tl_popup_group row_group(const struct popup *popup, GtkListBoxRow *row) {
-    int index = row == NULL ? -1 : gtk_list_box_row_get_index(row);
-    const tl_popup_item *item = index < 0 ? NULL : popup_model_item(popup->model, (size_t)index);
+    const tl_popup_item *item = popup_model_item(popup->model, row_index(row));
     return item == NULL ? POPUP_GROUPS : popup_row_group(popup_model_row(popup->model, item->row));
 }
 /* A section header above the first result of each group; children never start one. */
 static void update_header(GtkListBoxRow *row, GtkListBoxRow *before, gpointer context) {
     struct popup *popup = context;
-    int index = gtk_list_box_row_get_index(row);
-    const tl_popup_item *item = index < 0 ? NULL : popup_model_item(popup->model, (size_t)index);
+    const tl_popup_item *item = popup_model_item(popup->model, row_index(row));
     tl_popup_group group = row_group(popup, row);
     bool starts =
         item != NULL && item->kind == POPUP_ITEM_RESULT && row_group(popup, before) != group;
@@ -165,9 +182,14 @@ static void show_preview(struct popup *popup, bool at_once) {
 /* Select the model's item; a glide also lets the preview wait for the selection to rest,
  * while a jump (new results) shows it at once. */
 static void select_row(struct popup *popup, bool glide) {
-    GtkListBoxRow *row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(popup->list),
-                                                       (int)popup_model_position(popup->model));
-    gtk_list_box_select_row(GTK_LIST_BOX(popup->list), row);
+    size_t position = popup_model_position(popup->model);
+    bool web = has_web(popup) && position == 0;
+    GtkWidget *list = web ? popup->web_list : popup->list;
+    size_t offset = !web && has_web(popup) ? 1 : 0;
+    GtkListBoxRow *row =
+        gtk_list_box_get_row_at_index(GTK_LIST_BOX(list), (int)(position - offset));
+    gtk_list_box_unselect_all(GTK_LIST_BOX(web ? popup->list : popup->web_list));
+    gtk_list_box_select_row(GTK_LIST_BOX(list), row);
     popup_view_select(popup->view, row == NULL ? NULL : GTK_WIDGET(row), glide);
     show_preview(popup, !glide);
     const tl_popup_item *item = popup_model_selected_item(popup->model);
@@ -179,7 +201,7 @@ static void select_row(struct popup *popup, bool glide) {
             GTK_ACCESSIBLE(popup->list),
             item->kind == POPUP_ITEM_RESULT ? popup_model_selected(popup->model)->name : text,
             GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_MEDIUM);
-    if (row == NULL)
+    if (row == NULL || web)
         return;
     graphene_rect_t bounds, header;
     if (!gtk_widget_compute_bounds(GTK_WIDGET(row), popup->list, &bounds))
@@ -202,8 +224,13 @@ static tl_popup_entrance entrance_for(const struct popup *popup, const struct sh
     if (popup->shown_count == 0)
         return POPUP_ENTER_CASCADE;
     for (size_t i = 0; i < popup->shown_count; i++)
-        if (popup->shown[i].id == key->id && popup->shown[i].handle == key->handle &&
-            popup->shown[i].kind == key->kind)
+        if (popup->shown[i].target_kind == key->target_kind && popup->shown[i].id == key->id &&
+            popup->shown[i].handle == key->handle && popup->shown[i].kind == key->kind &&
+            (key->target_kind != POPUP_TARGET_SOFTWARE ||
+             software_ref_equal(&popup->shown[i].software, &key->software)) &&
+            (key->target_kind != POPUP_TARGET_WEB ||
+             (key->engine == popup->shown[i].engine &&
+              strcmp(key->query, popup->shown[i].query) == 0)))
             return POPUP_ENTER_NONE;
     return POPUP_ENTER_FADE;
 }
@@ -219,17 +246,31 @@ static GtkWidget *item_widget(const struct popup *popup, const tl_popup_item *it
 }
 static void render_rows(struct popup *popup) {
     gtk_list_box_remove_all(GTK_LIST_BOX(popup->list));
+    gtk_list_box_remove_all(GTK_LIST_BOX(popup->web_list));
     size_t count = popup_model_item_count(popup->model);
     struct shown_item keys[POPUP_ITEMS] = {0};
     for (size_t i = 0; i < count; i++) {
         const tl_popup_item *item = popup_model_item(popup->model, i);
-        keys[i] = (struct shown_item){popup_model_row(popup->model, item->row)->id, item->handle,
-                                      item->kind};
-        gtk_list_box_append(GTK_LIST_BOX(popup->list),
-                            item_widget(popup, item, entrance_for(popup, &keys[i]), i));
+        const tl_popup_row *row = popup_model_row(popup->model, item->row);
+        keys[i] = (struct shown_item){.id = row->id,
+                                      .handle = item->handle,
+                                      .kind = item->kind,
+                                      .target_kind = row->target_kind,
+                                      .software = row->software,
+                                      .engine = row->web_engine};
+        g_strlcpy(keys[i].query, row->web_query, sizeof(keys[i].query));
+        GtkWidget *widget = item_widget(popup, item, entrance_for(popup, &keys[i]), i);
+        GtkWidget *list_row = gtk_list_box_row_new();
+        gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(list_row), widget);
+        g_object_set_data(G_OBJECT(list_row), "popup-item", GSIZE_TO_POINTER(i + 1));
+        GtkWidget *list = row->target_kind == POPUP_TARGET_WEB ? popup->web_list : popup->list;
+        gtk_list_box_append(GTK_LIST_BOX(list), list_row);
+        if (row->target_kind == POPUP_TARGET_WEB)
+            web_preferences_inherit(popup->web_preferences, row->web_engine);
     }
     memcpy(popup->shown, keys, count * sizeof(keys[0]));
     popup->shown_count = count;
+    popup_view_set_web_visible(popup->view, has_web(popup));
 }
 /* Redraw after windows or expansion changed the list without a new response. */
 static void rerender(struct popup *popup, bool glide) {
@@ -264,11 +305,17 @@ static void render(struct popup *popup) {
                                                 : popup_model_search_us(popup->model));
     popup_view_set_searching(popup->view, false);
     gtk_widget_set_sensitive(popup->list, true);
+    gtk_widget_set_sensitive(popup->web_list, true);
     select_row(popup, !was_empty);
-    if (query_empty(popup))
+    const char *hint = popup_model_hint(popup->model);
+    if (hint[0] != 0)
+        set_status(popup, hint);
+    else if (query_empty(popup))
         set_status(popup, "");
     else if (count == 0)
-        set_status(popup, "No matches. Try a name or part of its folder path.");
+        set_status(popup, popup->mode == SEARCH_SOFTWARE
+                              ? "No available apps match this search."
+                              : "No matches. Try a name or part of its folder path.");
     else if (popup_model_degraded(popup->model))
         set_status(popup, "Some folders are unavailable");
     else if (popup_model_indexing(popup->model))
@@ -283,7 +330,7 @@ static void render(struct popup *popup) {
             gtk_accessible_announce(GTK_ACCESSIBLE(popup->list), message,
                                     GTK_ACCESSIBLE_ANNOUNCEMENT_PRIORITY_MEDIUM);
     }
-    gtk_widget_set_visible(popup->retry, false);
+    gtk_widget_set_visible(popup->retry, popup->mode == SEARCH_SOFTWARE && hint[0] != 0);
 }
 static gboolean pending_status(gpointer context) {
     struct popup *popup = context;
@@ -302,6 +349,7 @@ static void query_response(void *context, tl_status status, const char *response
     if (status == TL_OK && popup->visible)
         render(popup);
     else if (status != TL_STATE && popup->visible && !popup->dirty) {
+        popup->capabilities_known = false;
         set_status(popup, "Search service unavailable");
         popup_view_set_searching(popup->view, false);
         gtk_widget_set_visible(popup->retry, true);
@@ -324,14 +372,48 @@ static void start_query(struct popup *popup) {
         return;
     }
     const char *text = gtk_editable_get_text(GTK_EDITABLE(popup->entry));
-    if (strlen(text) > LEXICAL_QUERY_BYTES) {
+    tl_search_input parsed;
+    if (search_actions_parse(text, &parsed) != TL_OK) {
         popup->dirty = false;
         set_status(popup, "Search is limited to 256 bytes. Shorten the pasted text.");
         return;
     }
-    tl_ipc_request request = {.operation = IPC_QUERY, .limit = POPUP_RESULTS};
+    popup->mode = parsed.mode;
+    if (popup_model_set_web_options(popup->model, web_preferences_options(popup->web_preferences),
+                                    parsed.web_fallback) != TL_OK) {
+        popup->dirty = false;
+        set_status(popup, "Invalid web preferences");
+        return;
+    }
+    if (parsed.query[0] == 0) {
+        popup->dirty = false;
+        popup_model_clear(popup->model);
+        render(popup);
+        set_status(popup, parsed.mode == SEARCH_WEB        ? "Type a web search after web."
+                          : parsed.mode == SEARCH_SOFTWARE ? "Type an app name after install."
+                                                           : "Type a local search after local.");
+        return;
+    }
+    if (!popup->capabilities_known) {
+        request_status(popup);
+        return;
+    }
+    if (!popup->actions_supported && parsed.mode != SEARCH_LOCAL) {
+        popup->dirty = false;
+        popup_model_clear(popup->model);
+        render(popup);
+        set_status(popup, "This search needs an updated Torchlight service. Restart torchlightd.");
+        return;
+    }
+    tl_ipc_request request = {
+        .operation = IPC_QUERY,
+        .limit = POPUP_RESULTS,
+        .version = popup->actions_supported ? IPC_ACTION_VERSION : IPC_VERSION,
+        .mode = parsed.mode,
+        .web_fallback = popup->actions_supported && parsed.web_fallback,
+        .software_suggestions = popup->suggestions_supported && parsed.web_fallback};
     g_strlcpy(request.request_id, popup->request_id, sizeof(request.request_id));
-    g_strlcpy(request.query, text, sizeof(request.query));
+    g_strlcpy(request.query, parsed.query, sizeof(request.query));
     popup->dirty = false;
     tl_status status =
         ipc_exchange_create(popup->socket_path, &request, query_response, popup, &popup->query);
@@ -368,6 +450,7 @@ static void changed(GtkEditable *entry, gpointer context) {
     popup_view_set_launching(popup->view, false);
     popup->dirty = true;
     gtk_widget_set_sensitive(popup->list, false);
+    gtk_widget_set_sensitive(popup->web_list, false);
     /* An edit within the window after the last one, or while a query is out, waits to be
      * coalesced: a burst of keys sends its first edit, then one query for its end. */
     bool burst = popup->debounce != 0 || popup->query != NULL;
@@ -427,25 +510,43 @@ static void launched(GObject *source, GAsyncResult *result, gpointer context) {
     GError *error = NULL;
     bool accepted = g_task_propagate_boolean(task, &error);
     bool canceled = g_cancellable_is_cancelled(g_task_get_cancellable(task));
-    g_clear_error(&error);
     popup->launching = false;
     if (popup->launch_cancel != NULL)
         g_object_unref(popup->launch_cancel);
     popup->launch_cancel = NULL;
     if (!accepted) {
         popup_view_set_launching(popup->view, false);
-        if (popup->visible && !canceled)
-            set_status(popup,
-                       launch->reveal ? "Could not reveal this item" : "Could not open this item");
+        if (popup->visible && !canceled) {
+            const char *message =
+                launch->reveal ? "Could not reveal this item" : "Could not open this item";
+            if (launch->row.target_kind != POPUP_TARGET_LOCAL && error != NULL)
+                message = error->message;
+            set_status(popup, message);
+        }
+        g_clear_error(&error);
         return;
     }
-    tl_status status = record_open(popup, &launch->event);
+    g_clear_error(&error);
+    tl_status status =
+        launch->row.target_kind == POPUP_TARGET_LOCAL ? record_open(popup, &launch->event) : TL_OK;
     if (status != TL_OK && !canceled)
         set_status(popup, "Opened; history could not be recorded");
     /* An accepted action still earns history after cancellation, but its
      * completion must not dismiss a popup reopened for a newer search. */
     if (!canceled)
         close_popup(popup);
+}
+static void start_launch(struct popup *popup, struct launch *launch) {
+    GdkAppLaunchContext *launch_context =
+        gdk_display_get_app_launch_context(gtk_widget_get_display(popup->window));
+    launch->context = G_APP_LAUNCH_CONTEXT(launch_context);
+    popup->launching = true;
+    popup->launch_cancel = g_cancellable_new();
+    GTask *task = g_task_new(popup->application, popup->launch_cancel, launched, popup);
+    g_object_steal_data(G_OBJECT(popup->window), "launch");
+    g_task_set_task_data(task, launch, launch_free);
+    g_task_run_in_thread(task, actions_worker);
+    g_object_unref(task);
 }
 static void resolved(void *context, tl_status status, const char *response, size_t length,
                      bool terminal) {
@@ -455,9 +556,14 @@ static void resolved(void *context, tl_status status, const char *response, size
     struct launch *launch = g_object_get_data(G_OBJECT(popup->window), "launch");
     size_t count = 0;
     char search[IPC_HISTORY_ID_BYTES + 1];
+    tl_popup_row expected = launch->row;
     if (status == TL_OK)
         status =
             popup_model_decode(popup->model, response, length, &launch->row, 1, &count, search);
+    if (status == TL_OK && (!popup_row_same(&expected, &launch->row) ||
+                            (expected.target_kind == POPUP_TARGET_SOFTWARE &&
+                             expected.software_revision != launch->row.software_revision)))
+        status = TL_STATE;
     ipc_exchange_destroy(popup->action);
     popup->action = NULL;
     if (status != TL_OK || count != 1) {
@@ -470,16 +576,7 @@ static void resolved(void *context, tl_status status, const char *response, size
         }
         return;
     }
-    GdkAppLaunchContext *launch_context =
-        gdk_display_get_app_launch_context(gtk_widget_get_display(popup->window));
-    launch->context = G_APP_LAUNCH_CONTEXT(launch_context);
-    popup->launching = true;
-    popup->launch_cancel = g_cancellable_new();
-    GTask *task = g_task_new(popup->application, popup->launch_cancel, launched, popup);
-    g_object_steal_data(G_OBJECT(popup->window), "launch");
-    g_task_set_task_data(task, launch, launch_free);
-    g_task_run_in_thread(task, actions_worker);
-    g_object_unref(task);
+    start_launch(popup, launch);
 }
 /* Resolve row, then open, reveal or start a new window of it in the worker. */
 static void launch_row(struct popup *popup, const tl_popup_row *row, bool reveal, bool new_window) {
@@ -492,7 +589,20 @@ static void launch_row(struct popup *popup, const tl_popup_row *row, bool reveal
     launch->reveal = reveal;
     launch->new_window = new_window;
     open_event(popup, row, &launch->event);
+    if (row->target_kind == POPUP_TARGET_WEB) {
+        popup_view_set_launching(popup->view, true);
+        start_launch(popup, launch);
+        return;
+    }
     tl_ipc_request request = {.operation = IPC_RESOLVE, .file_id = row->id};
+    if (row->target_kind == POPUP_TARGET_SOFTWARE) {
+        request.version = IPC_ACTION_VERSION;
+        request.file_id = 0;
+        request.software_target = true;
+        request.software = row->software;
+        request.software_revision = row->software_revision;
+        request.source_revision = row->source_revision;
+    }
     g_strlcpy(request.request_id, launch->event.request_id, sizeof(request.request_id));
     g_object_set_data_full(G_OBJECT(popup->window), "launch", launch, launch_free);
     /* Acknowledge the choice at once; the fade-out follows an accepted launch. */
@@ -525,6 +635,8 @@ static void activate_selected(struct popup *popup, bool reveal) {
     if (item == NULL || popup->action != NULL || popup->launching)
         return;
     const tl_popup_row *row = popup_model_selected(popup->model);
+    if (reveal && row->target_kind != POPUP_TARGET_LOCAL)
+        return;
     if (item->kind == POPUP_ITEM_MORE_WINDOWS) {
         if (popup_model_expand(popup->model))
             rerender(popup, false);
@@ -569,11 +681,23 @@ static bool copy_path(struct popup *popup) {
         return false;
     const tl_popup_item *item = popup_model_selected_item(popup->model);
     const tl_popup_row *row = popup_model_selected(popup->model);
-    if (item == NULL || item->kind != POPUP_ITEM_RESULT || row->application)
+    if (item == NULL || item->kind != POPUP_ITEM_RESULT || row->application ||
+        row->target_kind != POPUP_TARGET_LOCAL)
         return false;
     gdk_clipboard_set_text(gtk_widget_get_clipboard(popup->window), row->display);
     popup_view_set_copied(popup->view);
     return true;
+}
+static void activate_web_search(struct popup *popup) {
+    if (!has_web(popup) || popup_model_selected_item(popup->model) == NULL ||
+        popup->action != NULL || popup->launching)
+        return;
+    while (popup_model_position(popup->model) > 0)
+        popup_model_move(popup->model, -1);
+    select_row(popup, false);
+    tl_popup_row row = *popup_model_selected(popup->model);
+    row.web_uri[0] = 0;
+    launch_row(popup, &row, false, false);
 }
 static gboolean key_pressed(GtkEventControllerKey *controller, guint key, guint keycode,
                             GdkModifierType modifiers, gpointer context) {
@@ -597,6 +721,10 @@ static gboolean key_pressed(GtkEventControllerKey *controller, guint key, guint 
         key == GDK_KEY_KP_Right)
         return hierarchy_key(popup, key);
     if (key == GDK_KEY_Return || key == GDK_KEY_KP_Enter) {
+        if ((modifiers & GDK_ALT_MASK) != 0 && (modifiers & GDK_CONTROL_MASK) == 0) {
+            activate_web_search(popup);
+            return true;
+        }
         if (gtk_widget_get_visible(popup->retry) && popup_model_selected(popup->model) == NULL)
             return gtk_widget_activate(popup->retry);
         activate_selected(popup, (modifiers & GDK_CONTROL_MASK) != 0);
@@ -607,9 +735,9 @@ static gboolean key_pressed(GtkEventControllerKey *controller, guint key, guint 
 static void row_activated(GtkListBox *list, GtkListBoxRow *row, gpointer context) {
     (void)list;
     struct popup *popup = context;
-    int position = gtk_list_box_row_get_index(row);
+    size_t position = row_index(row);
     size_t current = popup_model_position(popup->model);
-    if (position < 0 || popup_model_selected(popup->model) == NULL)
+    if (position == SIZE_MAX || popup_model_selected(popup->model) == NULL)
         return;
     while (current != (size_t)position) {
         popup_model_move(popup->model, current < (size_t)position ? 1 : -1);
@@ -629,11 +757,36 @@ static void active_changed(GObject *window, GParamSpec *parameter, gpointer cont
     if (popup->visible && !gtk_window_is_active(GTK_WINDOW(window)))
         close_popup(popup);
 }
+static void refreshed(void *context, tl_status status, const char *response, size_t length,
+                      bool terminal) {
+    (void)response;
+    (void)length;
+    struct popup *popup = context;
+    if (!terminal)
+        return;
+    ipc_exchange_destroy(popup->action);
+    popup->action = NULL;
+    if (status != TL_OK) {
+        set_status(popup, "Could not request software refresh");
+        return;
+    }
+    popup->dirty = true;
+    start_query(popup);
+}
 static void retry_clicked(GtkButton *button, gpointer context) {
     (void)button;
     struct popup *popup = context;
-    popup->dirty = true;
-    start_query(popup);
+    if (popup->mode == SEARCH_SOFTWARE && popup->actions_supported && popup->action == NULL) {
+        tl_ipc_request request = {.operation = IPC_SOFTWARE_REFRESH,
+                                  .version = IPC_ACTION_VERSION,
+                                  .request_id = "software-refresh"};
+        if (ipc_exchange_create(popup->socket_path, &request, refreshed, popup, &popup->action) !=
+            TL_OK)
+            set_status(popup, "Could not request software refresh");
+    } else {
+        popup->dirty = true;
+        start_query(popup);
+    }
     gtk_widget_grab_focus(popup->entry);
 }
 static bool json_true(const tl_json *json, size_t object, const char *key) {
@@ -662,21 +815,46 @@ static tl_popup_index read_index(const tl_json *json) {
 static void status_response(void *context, tl_status status, const char *response, size_t length,
                             bool terminal) {
     struct popup *popup = context;
+    bool supported = false;
+    if (status == TL_OK)
+        status = ipc_action_capability(response, length, &supported);
     if (status == TL_OK && popup->visible && response != NULL) {
-        tl_json_token tokens[256];
+        bool changed_support = popup->capabilities_known && popup->actions_supported != supported;
+        popup->capabilities_known = true;
+        popup->actions_supported = supported;
+        if (changed_support && !query_empty(popup))
+            popup->dirty = true;
+        tl_json_token tokens[512];
         tl_json json;
-        tl_status decoded = json_parse(response, length, tokens, 256, &json);
+        tl_status decoded = json_parse(response, length, tokens, 512, &json);
         if (decoded == TL_OK) {
+            size_t capabilities = json_member(&json, 0, "capabilities");
+            bool suggestions =
+                supported && json_count(&json, capabilities, "software_suggestions") >= 1;
+            if (popup->suggestions_supported != suggestions && !query_empty(popup))
+                popup->dirty = true;
+            popup->suggestions_supported = suggestions;
             tl_popup_index index = read_index(&json);
             popup_view_set_index(popup->view, &index);
-            if (index.degraded)
+            if (index.degraded && popup->mode == SEARCH_LOCAL)
                 set_status(popup, "Some folders are unavailable");
-            else if (index.updating)
+            else if (index.updating && popup->mode == SEARCH_LOCAL)
                 set_status(popup, "Updating index…");
-            if (gtk_widget_get_visible(popup->retry) && popup->query == NULL) {
-                popup->dirty = true;
-                start_query(popup);
+            size_t software = json_member(&json, 0, "software");
+            uint64_t catalog_gen = json_count(&json, software, "catalog_gen");
+            char state[16] = {0};
+            if (json_string(&json, json_member(&json, software, "state"), state, sizeof(state)) ==
+                    TL_OK &&
+                (strcmp(popup->software_state, state) != 0 ||
+                 popup->software_catalog_gen != catalog_gen)) {
+                g_strlcpy(popup->software_state, state, sizeof(popup->software_state));
+                popup->software_catalog_gen = catalog_gen;
+                if ((popup->mode == SEARCH_SOFTWARE || popup->suggestions_supported) &&
+                    !query_empty(popup))
+                    popup->dirty = true;
             }
+            if (popup->dirty && popup->query == NULL)
+                start_query(popup);
         }
     }
     if (status != TL_OK && popup->visible && popup_model_selected(popup->model) == NULL) {
@@ -885,12 +1063,17 @@ static tl_status build_window(struct popup *popup) {
     popup->list = widgets.list;
     popup->scroll = widgets.scroll;
     popup->retry = widgets.retry;
+    popup->web_list = widgets.web_list;
+    result = web_preferences_create(&popup->web_preferences);
+    if (result != TL_OK)
+        return result;
     GtkEventController *keys = gtk_event_controller_key_new();
     gtk_event_controller_set_propagation_phase(keys, GTK_PHASE_CAPTURE);
     g_signal_connect(keys, "key-pressed", G_CALLBACK(key_pressed), popup);
     gtk_widget_add_controller(popup->window, keys);
     g_signal_connect(popup->entry, "changed", G_CALLBACK(changed), popup);
     g_signal_connect(popup->list, "row-activated", G_CALLBACK(row_activated), popup);
+    g_signal_connect(popup->web_list, "row-activated", G_CALLBACK(row_activated), popup);
     gtk_list_box_set_header_func(GTK_LIST_BOX(popup->list), update_header, popup, NULL);
     g_signal_connect(popup->retry, "clicked", G_CALLBACK(retry_clicked), popup);
     g_signal_connect(popup->window, "close-request", G_CALLBACK(close_requested), popup);
@@ -1008,6 +1191,7 @@ void launcher_destroy(tl_launcher *popup) {
     popup_model_set_windows(popup->model, NULL);
     windows_destroy(popup->windows);
     popup->windows = NULL;
+    web_preferences_destroy(popup->web_preferences);
     if (popup->window != NULL)
         gtk_window_destroy(GTK_WINDOW(popup->window));
     popup_view_destroy(popup->view);

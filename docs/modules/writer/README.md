@@ -6,7 +6,7 @@
 > event passes and deferred compaction):
 > indexing and persistence threads, private
 > scan batches, scoped rescans of event directories, delta publication with compaction;
-> M2/M3 reconciliation contracts retained
+> M2/M3 reconciliation contracts retained; M9 feature settings validated by search_actions
 > **Source:** `src/service/writer.c` · **Header:** `include/torchlight/writer.h`
 > **Tests:** `tests/unit/test_writer.c`, `tests/unit/test_writer_fallback.c`, `tests/unit/test_writer_history.c`,
 > `tests/unit/test_writer_repair.c`, `tests/test_daemon.py`

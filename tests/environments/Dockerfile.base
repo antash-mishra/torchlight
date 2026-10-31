@@ -1,0 +1,30 @@
+# Shared Ubuntu toolchain and compiled fixtures for the isolated desktop matrix.
+FROM rust:1.89.0-slim-bookworm@sha256:d7fc7de78bb8c1469933aeecbf801314d30d7d6e9f0578bba4cfa285bfa37fe6 AS rust
+FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential pkg-config libsqlite3-dev libutf8proc-dev libgtk-4-dev \
+    libglib2.0-dev libx11-dev libxi-dev libwayland-dev wayland-protocols \
+    clang-tidy cppcheck git python3 python3-gi gir1.2-atspi-2.0 gir1.2-gtk-4.0 \
+    dbus-daemon dbus-session-bus-common at-spi2-core xdg-utils \
+    libgl1-mesa-dri libegl-mesa0 mesa-utils fonts-dejavu-core ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=rust /usr/local/cargo /usr/local/cargo
+COPY --from=rust /usr/local/rustup /usr/local/rustup
+ENV PATH=/usr/local/cargo/bin:$PATH RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/home/runner/.cargo LANG=C.UTF-8 LIBGL_ALWAYS_SOFTWARE=1
+RUN useradd --uid 10001 --create-home runner \
+    && mkdir /opt/torchlight && chown runner:runner /opt/torchlight
+WORKDIR /opt/torchlight
+COPY --chown=runner:runner third_party/frizbee third_party/frizbee
+COPY --chown=runner:runner third_party/frizbee-build third_party/frizbee-build
+USER runner
+ENV HOME=/home/runner
+# Keep the expensive offline Rust build cached across application/test edits.
+RUN cargo build --release --offline --locked \
+    --manifest-path third_party/frizbee-build/Cargo.toml --target-dir build/frizbee
+COPY --chown=runner:runner . .
+ARG JOBS=4
+RUN make -j${JOBS} all build/test_popup_probe.so build/test_popup_view \
+    build/test_window_app build/test_window_sources
+ENTRYPOINT ["python3", "tests/environments/suite.py"]

@@ -1,9 +1,13 @@
 # ipc
 
-> **Status:** Implemented (M2/M3/M4): strict JSON-lines, Unix sockets and asynchronous exchanges
-> **Source:** `src/ipc/ipc.c`, `src/ipc/client.c`, `src/ipc/async.c`
+> **Status:** Implemented (M2/M3/M4/M9): strict JSON-lines, Unix sockets, asynchronous exchanges and capability-gated app suggestions (ADR 0070)
+> **Source:** `src/ipc/ipc.c`, `src/ipc/targets.c`, `src/ipc/client.c`, `src/ipc/async.c`
 > **Headers:** `include/torchlight/ipc.h`, `include/torchlight/client.h`, `include/torchlight/async.h`
 > **Tests:** `tests/unit/test_ipc.c`, `tests/unit/test_json.c`, `tests/test_daemon.py`
+
+The CLI parser reserves 65,536 tokens within the existing response byte limit,
+enough for 1,000 software rows with nested source identities. The integration
+suite exercises a full-sized page; local path and NUL output retain their format.
 
 The default socket is `$XDG_RUNTIME_DIR/torchlight.sock`; its directory must be
 owned by the current user without group/other write access. Explicit socket paths
@@ -16,7 +20,7 @@ by offline indexing. Client calls have a five-second total deadline.
 Requests are flat version-1 JSON objects, at most 8 KiB including newline.
 Common fields are integer `version: 1`, string `request_id` (1–64 UTF-8 bytes)
 and `op`. Unknown/duplicate fields, invalid UTF-8, decoded NUL and wrong types
-are rejected. The generic parser bounds depth to eight and tokens to 32 here.
+are rejected. The generic parser bounds depth to eight and tokens to 64 here.
 
 | op | Additional fields |
 |---|---|
@@ -70,3 +74,40 @@ callback borrows one response; lexical frames may precede a final frame. Errors,
 EOF and the five-second overall deadline terminate it. Destroy cancels pending
 work and suppresses callbacks; internal references reclaim outstanding operations.
 `tests/unit/test_async.c` fragments frames and checks phases, EOF and wrong ids.
+
+## Version 2 typed actions
+
+Version 1 remains supported and status adds `capabilities: {search_actions: 2}`.
+New clients probe this valid v1 terminal status before using v2. A missing
+capability on a valid response means old-daemon local-only support. Invalid
+responses and timeouts remain errors. Responses match the request's version.
+
+V2 query requires `mode: local|web|software` and accepts `web_fallback: bool`
+(default false, valid only for local). Local results retain their original
+fields, order and limit; `actions` contains at most one Web action independently:
+`{kind: web, provider: duckduckgo|google, query: TEXT}`. Web mode returns no local
+results. Both semantic phases retain the frozen provider/query action.
+Software mode returns one final frame with typed results and an empty actions
+array. Software targets never carry paths, local ids or desktop ids.
+
+A software result contains kind, name, summary, installed and a target object.
+The target has kind=software, backend=flatpak, installation, remote, app_id,
+arch, branch, revision and source_revision. Revisions are decimal strings.
+V2 resolve accepts exactly one such target instead of file_id and returns
+stale_result when it no longer matches. Client action revalidation checks the
+external source before handoff. Software actions never use the open/history op.
+
+V2 software_refresh has no additional fields and enqueues bounded background
+work. Status/software queries report software.state, count and catalog_gen.
+Loading/absent/failed catalogs still return a prompt final frame. The service
+never sends unsolicited completion frames when a catalog becomes ready.
+
+Ordinary-name discovery adds `capabilities.software_suggestions: 1`. Only after
+seeing it may a client send `software_suggestions: true` on a v2 local query.
+False is omitted by the request encoder so older v2 parsers remain compatible.
+Opted-in replies include a separate `software_suggestions` array of at most
+three typed software results and a boolean `prefer_software`. Local results and
+limits remain unchanged. Frozen, owned suggestion metadata and preference are
+copied across semantic phases; errors return an empty array and false preference.
+V1 and explicit Web/software queries cannot enable the flag. See
+[ADR 0070](../../adr/0070-app-discovery-without-a-prefix.md).

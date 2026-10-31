@@ -81,6 +81,23 @@ Start here. Read in this order:
 
 ## Implementation status
 
+The [desktop test matrix](desktop-test-matrix.md) packages required X11, GNOME,
+KDE and Cinnamon checks into Docker images on separate Boat workers, with
+retained diagnostics and automatic cleanup ([ADR 0068](adr/0068-isolated-desktop-test-matrix.md)).
+
+M9 implements [web search and finding apps to install](m9-plan.md): browser
+searches and a resident catalog of available Flatpak apps, with installation
+confirmed in GNOME Software or KDE Discover. Typed targets retain version-1
+compatibility and all ten local result slots. See [validation](m9-completion.md)
+and [ADR 0067](adr/0067-web-search-and-software-discovery.md).
+The Web action now stays below the query while local results scroll. Website
+addresses open directly and Alt+Enter searches ([ADR 0069](adr/0069-visible-web-action-and-browser-preferences.md)).
+Every Web action uses the current system default browser; saved search-engine
+choices remain supported without a settings button ([ADR 0071](adr/0071-system-default-browser.md)).
+App names offer Open or Install without a prefix, with installed apps and exact
+local files taking priority ([ADR 0070](adr/0070-app-discovery-without-a-prefix.md)).
+See the [ordinary app discovery checks](app-discovery-validation.md).
+
 M3 is implemented: installed application/settings search through resident IPC,
 GTK4 keyboard popup, safe native launch/open/reveal actions, desktop integration
 and a systemd user unit. See [desktop setup](desktop-setup.md),
@@ -151,6 +168,9 @@ the root [README](../README.md) for commands, and
 | index | Path tokenizer | [tokenize](modules/tokenize/README.md) |
 | index | Lexical candidate orchestrator | [lexical](modules/lexical/README.md) |
 | index | Installed applications and settings | [desktop](modules/desktop/README.md) |
+| index | Available software identities and matching | [software](modules/software/README.md) |
+| service | Search modes, settings and Web actions | [search_actions](modules/search_actions/README.md) |
+| service | Background Flatpak discovery and refresh | [software_catalog](modules/software_catalog/README.md) |
 | index | Resident catalog snapshots | [catalog](modules/catalog/README.md) |
 | index | Exact/prefix channel | [prefix](modules/prefix/README.md) |
 | index | Trigram channel | [trigram](modules/trigram/README.md) |
@@ -356,6 +376,18 @@ the root [README](../README.md) for commands, and
 - [0066: GNOME Settings panels are listed on GNOME](adr/0066-gnome-settings-panels.md)
   keeps Settings' panels (Displays, Sound, Wi-Fi), which all say `NoDisplay`, in GNOME Shell
   sessions, as the overview's search lists them, so "display" finds Displays.
+- [0067: Web search actions and a separate available-software catalog](adr/0067-web-search-and-software-discovery.md)
+  adds browser search, explicit available-app discovery, typed targets and
+  installation through a software manager in [M9](m9-plan.md).
+- [0068: Isolated desktop test matrix](adr/0068-isolated-desktop-test-matrix.md)
+  runs required X11, GNOME, KDE and Cinnamon jobs in Docker on parallel Boat
+  workers, retaining diagnostics and cleaning up the run's sandboxes.
+- [0069: Visible Web action and browser preferences](adr/0069-visible-web-action-and-browser-preferences.md)
+  pins Web above local scrolling, opens addresses directly and saves browser choices.
+- [0070: App discovery without a prefix](adr/0070-app-discovery-without-a-prefix.md)
+  offers Open or Install from ordinary names while protecting exact local matches.
+- [0071: Always use the system default browser](adr/0071-system-default-browser.md)
+  follows each user's desktop browser on activation and ignores legacy overrides.
 
 ## Keeping docs current
 

@@ -3,6 +3,7 @@
 #include "torchlight/config.h"
 #include "torchlight/crawl.h"
 #include "torchlight/lexical.h"
+#include "torchlight/search_actions.h"
 #include "torchlight/store.h"
 #include "torchlight/tokenize.h"
 #include "torchlight/version.h"
@@ -35,6 +36,8 @@ static void usage(void) {
     fputs("Usage: torchlight index [--db PATH] [--config PATH] [ROOT...]\n"
           "       torchlight query [--db PATH] [--limit 1..1000] [--null] QUERY\n"
           "       torchlight query [--socket PATH] [--json | --null] [--limit N] QUERY\n"
+          "       torchlight web|software [--socket PATH] [--json] QUERY\n"
+          "       torchlight software-refresh [--socket PATH] [--json]\n"
           "       torchlight status|reconcile|history-clear [--socket PATH]\n"
           "       torchlight resolve [--socket PATH] [--json | --null] FILE_ID\n"
           "       torchlight record [--socket PATH] FILE_ID EVENT_ID [SEARCH_ID]\n"
@@ -57,7 +60,9 @@ static tl_status parse(int argc, char **argv, struct options *options) {
         return TL_INVALID;
     *options = (struct options){.command = argv[1], .limit = 10};
     bool index = strcmp(options->command, "index") == 0;
-    if (!index && strcmp(options->command, "query") != 0 &&
+    bool typed = strcmp(options->command, "web") == 0 || strcmp(options->command, "software") == 0;
+    bool refresh = strcmp(options->command, "software-refresh") == 0;
+    if (!index && !typed && !refresh && strcmp(options->command, "query") != 0 &&
         strcmp(options->command, "status") != 0 && strcmp(options->command, "resolve") != 0 &&
         strcmp(options->command, "record") != 0 && strcmp(options->command, "reconcile") != 0 &&
         strcmp(options->command, "history-clear") != 0)
@@ -89,7 +94,7 @@ static tl_status parse(int argc, char **argv, struct options *options) {
         else
             return TL_INVALID;
     }
-    if (options->json_output && options->null_output)
+    if ((options->json_output || typed || refresh) && options->null_output)
         return TL_INVALID;
     if (options->database != NULL && (options->socket_path != NULL || options->json_output ||
                                       (!index && strcmp(options->command, "query") != 0)))
@@ -99,14 +104,22 @@ static tl_status parse(int argc, char **argv, struct options *options) {
     if (strcmp(options->command, "record") == 0)
         return options->path_count >= 2 && options->path_count <= 3 ? TL_OK : TL_INVALID;
     size_t expected =
-        strcmp(options->command, "query") == 0 || strcmp(options->command, "resolve") == 0 ? 1U
-                                                                                           : 0U;
+        typed || strcmp(options->command, "query") == 0 || strcmp(options->command, "resolve") == 0
+            ? 1U
+            : 0U;
     return options->path_count == expected ? TL_OK : TL_INVALID;
 }
 static tl_status socket_command(const struct options *options) {
     tl_ipc_request request = {.limit = options->limit};
     memcpy(request.request_id, "cli", 4);
-    if (strcmp(options->command, "query") == 0)
+    if (strcmp(options->command, "web") == 0 || strcmp(options->command, "software") == 0) {
+        request.operation = IPC_QUERY;
+        request.version = IPC_ACTION_VERSION;
+        request.mode = strcmp(options->command, "web") == 0 ? SEARCH_WEB : SEARCH_SOFTWARE;
+    } else if (strcmp(options->command, "software-refresh") == 0) {
+        request.operation = IPC_SOFTWARE_REFRESH;
+        request.version = IPC_ACTION_VERSION;
+    } else if (strcmp(options->command, "query") == 0)
         request.operation = IPC_QUERY;
     else if (strcmp(options->command, "status") == 0)
         request.operation = IPC_STATUS;
@@ -162,6 +175,16 @@ static tl_status socket_command(const struct options *options) {
         status = ipc_default_path(&default_socket);
         socket_path = default_socket;
     }
+    if (status == TL_OK && request.version == IPC_ACTION_VERSION) {
+        bool supported = false;
+        status = client_actions_supported(socket_path, &supported);
+        if (status == TL_OK && !supported) {
+            fputs("torchlight: this daemon does not support web/software search; restart an "
+                  "updated torchlightd\n",
+                  stderr);
+            status = TL_STATE;
+        }
+    }
     if (status == TL_OK)
         status = client_request(socket_path, &request, options->json_output, options->null_output,
                                 stdout);
@@ -201,7 +224,7 @@ static tl_status allocate_paths(struct path_list *list, size_t capacity) {
     return list->paths == NULL || list->keep == NULL || list->scanned == NULL ? TL_NOMEM : TL_OK;
 }
 static bool known_key(const char *key) {
-    return strcmp(key, "root") == 0 || strcmp(key, "allow") == 0 || strcmp(key, "exclude") == 0;
+    return search_actions_key(key);
 }
 /* Collect config values of key, leaving one spare slot for a default the
  * caller adds (HOME as root, the state directory as an exclusion); reports
@@ -426,6 +449,15 @@ static tl_status open_config(const struct options *options, tl_config **config) 
     size_t line = 0;
     tl_status status =
         config_create("torchlight", options->database, options->config, &line, config);
+    tl_search_settings settings;
+    if (status == TL_OK)
+        status = search_actions_settings(*config, &settings);
+    if (status == TL_INVALID && *config != NULL)
+        for (size_t i = 0; i < config_entry_count(*config); i++) {
+            const char *key = NULL, *value = NULL;
+            if (config_entry(*config, i, &key, &value) == TL_OK && !known_key(key))
+                fprintf(stderr, "torchlight: unknown configuration key \"%s\"\n", key);
+        }
     if (status == TL_INVALID && line != 0)
         fprintf(stderr, "torchlight: invalid configuration line %zu\n", line);
     return status;

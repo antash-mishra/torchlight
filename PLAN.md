@@ -8,6 +8,25 @@ later extension.
 
 ## Implementation progress
 
+M9 implements browser web-search actions and available-app discovery with
+installation through GNOME Software or KDE Discover. Its optional Flatpak
+catalog uses configured sources and performs no package queries while typing.
+See the [implementation record](docs/m9-plan.md),
+[validation](docs/m9-completion.md) and
+[ADR 0067](docs/adr/0067-web-search-and-software-discovery.md).
+Functional checks pass; the 5 ms software-query target at the synthetic
+50,000-app cap remains open (8.010 ms p95). See the validation record for
+local-search variability and the final desktop evidence.
+The follow-up in [ADR 0069](docs/adr/0069-visible-web-action-and-browser-preferences.md)
+pins the Web action above scrolling local results, recognizes website addresses,
+and adds saved engine preferences and Alt+Enter search. Web actions now always
+follow each user's system default browser, ignoring legacy browser overrides
+([ADR 0071](docs/adr/0071-system-default-browser.md)).
+Ordinary app names now offer Open or Install without a prefix, prioritizing
+installed desktop apps and exact local files ([ADR 0070](docs/adr/0070-app-discovery-without-a-prefix.md)).
+Up to three resident name-based suggestions supplement the ten local slots;
+Software still confirms installation.
+
 M1, M2, M3 and M3 Part 2 are implemented. M4's functional opt-in semantic
 path is implemented, with acceptance gates still open. The next priority is
 **M6: worker separation → Frizbee SIMD search → incremental indexing**, grouped
@@ -825,6 +844,18 @@ tracked explicitly in the verification report.
    and fewer third-party and more own-folder results in the top 10 of 50
    everyday queries on the live catalog. See the
    [health report](docs/reports/m8-place-ranking-health-report.html).
+
+10. **M9: Web search and finding apps to install.** Implemented (2026-10-30).
+    Open browser searches through a typed Web action and an explicit `web `
+    prefix. Add `install ` mode over a resident available-app catalog, initially
+    from configured Flatpak sources, then open supported software-manager
+    details for confirmation and installation. Preserve local result slots,
+    path-only CLI output and query latency. Version-2 IPC supports new targets
+    while the daemon retains version-1 compatibility. GNOME Software and KDE
+    Discover own source choice, confirmation and installation. See the
+    [validation](docs/m9-completion.md) and [working plan](docs/m9-plan.md)
+    for evidence, boundaries and deferred direct installation/inline web results, and
+    [ADR 0067](docs/adr/0067-web-search-and-software-discovery.md).
 
 ## Evaluation
 

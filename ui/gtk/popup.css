@@ -139,3 +139,10 @@ tooltip.background { background-color: @tk_panel; color: @tk_ink; border: 1px so
 .torchlight .compact .index-strip { padding: 10px 12px 12px; }
 .torchlight .compact .footer { padding: 8px 12px; }
 .torchlight .quiet-motion .search-icon, .torchlight .quiet-motion .search-rule-ink, .torchlight .quiet-motion .selection-highlight, .torchlight .quiet-motion .result-name, .torchlight .quiet-motion .result-detail { transition: none; }
+
+/* Web stays beside the query while local results scroll independently. */
+.torchlight list.web-list { padding: 4px 10px; border-bottom: 1px solid alpha(@tk_ink, 0.12); }
+.torchlight list.web-list > row:selected .result-icon { color: @tk_sel_ink; }
+.torchlight .high-contrast list.web-list > row:selected .result-icon { color: @theme_selected_fg_color; }
+.torchlight .web-shortcut { font-size: 12px; opacity: 0.7; margin-left: 12px; }
+.torchlight .result-action { margin-left: 6px; padding: 2px 6px; border-radius: 4px; border: 1px solid alpha(currentColor, 0.3); }

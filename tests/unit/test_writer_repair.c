@@ -136,7 +136,8 @@ static void unwatched_subtree(void) {
     CHECK(snprintf(late, sizeof(late), "%s/late.txt", fixture.sub) > 0);
     touch(late);
     wait_path(&fixture, late);
-    tl_writer_stats repaired = stats(&fixture);
+    /* Publication precedes the completed-pass counters; wait for both. */
+    tl_writer_stats repaired = wait_idle(&fixture, started.reconciliations + 1);
     CHECK(full_scans(&repaired) == 1 && repaired.scoped_reconciliations >= 1);
     CHECK(repaired.last_full_reason == WRITER_FULL_STARTUP);
     const char *files[] = {late};

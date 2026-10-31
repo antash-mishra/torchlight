@@ -31,18 +31,19 @@ FRIZBEE_INPUTS = $(FRIZBEE_MANIFEST) third_party/frizbee-build/Cargo.lock \
 CPPFLAGS += -isystem $(FRIZBEE_SOURCE)/bindings/frizbee-c/include
 # Rust's standard library needs these system libraries when linked statically.
 LDLIBS += $(FRIZBEE_LIB) -lgcc_s -lutil -lrt -ldl
-SOURCES = src/core/common.c src/core/vec.c src/core/hashmap.c src/core/config.c src/core/json.c src/core/path.c src/core/sort.c src/core/mask.c src/core/parallel.c \
+SOURCES = src/core/common.c src/core/process.c src/core/vec.c src/core/hashmap.c src/core/config.c src/core/json.c src/core/path.c src/core/sort.c src/core/mask.c src/core/parallel.c src/service/web_address.c \
           src/index/tokenize.c src/index/prefix.c src/index/subseq.c src/index/fuzzy.c \
           src/index/trigram.c src/index/typo.c src/index/dirtree.c src/index/place.c src/index/lexical.c \
           src/index/embed.c src/index/potion.c src/index/vector.c src/index/rank.c src/index/usage.c \
-          src/index/desktop.c src/index/lexical_query.c src/index/catalog.c src/fs/crawl.c src/fs/watch.c src/fs/mounts.c src/storage/store.c \
-          src/ipc/ipc.c src/ipc/async.c src/ipc/client.c src/service/delta.c src/service/ledger.c src/service/personal.c src/service/writer.c src/service/semantic.c src/service/daemon.c
+          src/index/desktop.c src/index/software.c src/index/software_suggest.c src/index/lexical_query.c src/index/catalog.c src/fs/crawl.c src/fs/watch.c src/fs/mounts.c src/storage/store.c \
+          src/ipc/ipc.c src/ipc/targets.c src/ipc/async.c src/ipc/client.c src/service/search_actions.c src/service/software_backend.c src/service/software_catalog.c src/service/delta.c src/service/ledger.c src/service/personal.c src/service/writer.c src/service/semantic.c src/service/daemon.c
 BIN_SOURCES = src/bin/torchlight.c src/bin/torchlightd.c
 OBJECTS = $(SOURCES:%.c=build/%.o)
 HEADERS = $(wildcard include/torchlight/*.h) $(wildcard src/*/*.h)
 TEST_SOURCES = $(wildcard tests/unit/test_*.c)
 BENCH_SOURCES = tests/bench/bench_lexical.c tests/bench/corpus.c tests/bench/queries.c \
                 tests/bench/stats.c tests/bench/personal.c
+SOFTWARE_BENCH_SOURCE = tests/bench/bench_software.c
 VECTOR_BENCH_SOURCE = tests/bench/bench_vector.c
 VECTOR_EVAL_SOURCE = tests/bench/eval_vector.c
 FIXTURE_SOURCE = tests/bench/fixture/export.c
@@ -84,7 +85,7 @@ VIEW_SOURCES = ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c ui/gtk
 # The open-window sources, one per kind of session (ADR 0052), and how one is chosen.
 WINDOW_SOURCES = ui/gtk/windows.c ui/gtk/windows_x11.c ui/gtk/windows_shell.c ui/gtk/windows_kwin.c \
                  ui/gtk/windows_track.c ui/gtk/windows_wayland.c ui/gtk/windows_session.c
-UI_SOURCES = ui/gtk/model.c $(WINDOW_SOURCES) ui/gtk/actions.c ui/gtk/launcher.c $(VIEW_SOURCES) \
+UI_SOURCES = ui/gtk/model.c ui/gtk/web_preferences.c $(WINDOW_SOURCES) ui/gtk/actions.c ui/gtk/launcher.c $(VIEW_SOURCES) \
              ui/gtk/wayland_globals.c src/bin/torchlight-gtk.c
 POPUP_FIXTURE_SOURCE = tests/fixtures/popup_probe.c
 WINDOW_FIXTURE_SOURCE = tests/fixtures/window_app.c
@@ -108,15 +109,15 @@ build/ui/gtk/palettes.c: ui/gtk/palettes.xml ui/gtk/palette-light.css ui/gtk/pal
 	glib-compile-resources --sourcedir=ui/gtk --generate-source --target=$@ --c-name=torchlight_palettes $<
 build/torchlight-gtk: $(OBJECTS) $(UI_SOURCES) $(UI_HEADERS) $(UI_RESOURCES) $(WAYLAND_CODE) $(WAYLAND_HEADERS) $(HEADERS) $(FRIZBEE_LIB)
 	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(UI_SOURCES) $(UI_RESOURCES) $(WAYLAND_CODE) $(OBJECTS) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
-build/test_popup_view: $(VIEW_SOURCES) tests/gtk/test_view.c $(UI_HEADERS) $(UI_RESOURCES) $(FRIZBEE_LIB)
-	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(SAN_FLAGS) $(VIEW_SOURCES) tests/gtk/test_view.c $(UI_RESOURCES) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
+build/test_popup_view: $(VIEW_SOURCES) ui/gtk/wayland_globals.c tests/gtk/test_view.c $(UI_HEADERS) $(UI_RESOURCES) $(FRIZBEE_LIB)
+	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(CFLAGS) $(WARNINGS) $(SAN_FLAGS) $(VIEW_SOURCES) ui/gtk/wayland_globals.c tests/gtk/test_view.c $(UI_RESOURCES) $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
 build/test_popup_probe.so: $(POPUP_FIXTURE_SOURCE)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) -fPIC -shared $< $(GTK_LDLIBS) -ldl -o $@
 build/test_window_app: $(WINDOW_FIXTURE_SOURCE)
 	@mkdir -p build
 	$(CC) $(GTK_CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $< $(shell $(PKG_CONFIG) --libs x11) -o $@
-build/test_window_sources: $(WINDOW_SOURCES_FIXTURE) $(WINDOW_SOURCES) $(UI_HEADERS) $(HEADERS) $(WAYLAND_CODE) $(WAYLAND_HEADERS)
+build/test_window_sources: $(WINDOW_SOURCES_FIXTURE) $(WINDOW_SOURCES) $(UI_HEADERS) $(HEADERS) $(WAYLAND_CODE) $(WAYLAND_HEADERS) $(FRIZBEE_LIB)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $< $(WINDOW_SOURCES) $(WAYLAND_CODE) src/core/json.c src/core/common.c $(LDFLAGS) $(GTK_LDLIBS) $(LDLIBS) -o $@
 build/torchlight: $(OBJECTS) build/src/bin/torchlight.o $(FRIZBEE_LIB)
@@ -155,13 +156,15 @@ test: build/tests build/torchlight-sanitized build/torchlightd-sanitized build/t
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_desktop.py ./build/torchlightd-sanitized ./build/test_desktop_replace.so
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_daemon.py ./build/torchlight-sanitized ./build/torchlightd-sanitized
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_semantic.py ./build/torchlightd-sanitized ./build/test_semantic_stall.so ./build/torchlight-sanitized
+	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_search_actions.py ./build/torchlight-sanitized ./build/torchlightd-sanitized
 	python3 tests/test_headless.py $(MAKE)
 	python3 tests/test_omarchy.py
+	python3 tests/test_environment_runner.py
 lint-headless:
 	@command -v $(CLANG_TIDY) >/dev/null || { echo 'clang-tidy is required'; exit 1; }
 	@command -v $(CPPCHECK) >/dev/null || { echo 'cppcheck is required'; exit 1; }
-	$(CLANG_TIDY) $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(VECTOR_EVAL_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE) $(SAMPLER_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
-	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(VECTOR_BENCH_SOURCE) $(VECTOR_EVAL_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE) $(SAMPLER_SOURCE)
+	$(CLANG_TIDY) $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(SOFTWARE_BENCH_SOURCE) $(VECTOR_BENCH_SOURCE) $(VECTOR_EVAL_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE) $(SAMPLER_SOURCE) --warnings-as-errors='*' -- $(CPPFLAGS) -std=c17 $(WARNINGS)
+	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE -Iinclude $(SOURCES) $(BIN_SOURCES) $(TEST_SOURCES) $(BENCH_SOURCES) $(SOFTWARE_BENCH_SOURCE) $(VECTOR_BENCH_SOURCE) $(VECTOR_EVAL_SOURCE) $(FIXTURE_SOURCE) $(DESKTOP_FIXTURE_SOURCE) $(SEMANTIC_FIXTURE_SOURCE) $(ALLOC_SOURCE) $(SAMPLER_SOURCE)
 lint: lint-headless $(WAYLAND_HEADERS)
 	$(CLANG_TIDY) $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(WINDOW_FIXTURE_SOURCE) $(WINDOW_SOURCES_FIXTURE) tests/gtk/test_view.c --warnings-as-errors='*' -- $(CPPFLAGS) $(GTK_CPPFLAGS) -std=c17 $(WARNINGS)
 	$(CPPCHECK) --enable=warning,performance,portability --error-exitcode=1 --std=c17 --suppress=missingIncludeSystem -D_GNU_SOURCE --library=gtk -Iinclude $(UI_SOURCES) $(POPUP_FIXTURE_SOURCE) $(WINDOW_FIXTURE_SOURCE) $(WINDOW_SOURCES_FIXTURE) tests/gtk/test_view.c
@@ -174,6 +177,12 @@ bench: build/bench_lexical
 	./build/bench_lexical --synthetic 50000
 	./build/bench_lexical --synthetic 500000
 	$(if $(BENCH_PATHS),./build/bench_lexical --paths $(BENCH_PATHS) --limit 500000)
+build/bench_software: $(SOURCES) $(SOFTWARE_BENCH_SOURCE) tests/bench/stats.c tests/bench/stats.h $(HEADERS) $(FRIZBEE_LIB)
+	@mkdir -p build
+	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) $(SOURCES) $(SOFTWARE_BENCH_SOURCE) tests/bench/stats.c $(LDFLAGS) $(LDLIBS) -o $@
+.PHONY: bench-software
+bench-software: build/bench_software
+	./build/bench_software
 build/bench_vector: src/core/common.c src/core/sort.c src/index/vector.c src/index/rank.c $(VECTOR_BENCH_SOURCE) $(HEADERS) $(FRIZBEE_LIB)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) src/core/common.c src/core/sort.c src/index/vector.c src/index/rank.c $(VECTOR_BENCH_SOURCE) $(LDFLAGS) $(LDLIBS) -o $@
@@ -199,9 +208,9 @@ eval-vector: build/eval_vector build/semantic_queries.txt
 build/torchlightd-release: $(SOURCES) src/bin/torchlightd.c $(HEADERS) $(FRIZBEE_LIB)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) $(SOURCES) src/bin/torchlightd.c $(LDFLAGS) $(LDLIBS) -o $@
-build/bench_fixture: src/core/common.c src/core/vec.c src/core/json.c tests/bench/corpus.c tests/bench/queries.c $(FIXTURE_SOURCE) $(HEADERS) $(FRIZBEE_LIB)
+build/bench_fixture: src/core/common.c src/core/process.c src/core/vec.c src/core/json.c tests/bench/corpus.c tests/bench/queries.c $(FIXTURE_SOURCE) $(HEADERS) $(FRIZBEE_LIB)
 	@mkdir -p build
-	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) src/core/common.c src/core/vec.c src/core/json.c tests/bench/corpus.c tests/bench/queries.c $(FIXTURE_SOURCE) $(LDFLAGS) $(LDLIBS) -o $@
+	$(CC) $(CPPFLAGS) -std=c17 -O3 -DNDEBUG $(WARNINGS) src/core/common.c src/core/process.c src/core/vec.c src/core/json.c tests/bench/corpus.c tests/bench/queries.c $(FIXTURE_SOURCE) $(LDFLAGS) $(LDLIBS) -o $@
 bench-daemon: build/torchlightd-release build/bench_fixture
 	python3 tests/bench/bench_daemon.py ./build/torchlightd-release ./build/bench_fixture --sizes 50000 500000
 # M7 indexing scenarios (docs/m7-plan.md): an -O3 daemon with frame pointers
@@ -306,6 +315,11 @@ test-ui-desktops: all build/test_window_sources
 	python3 tests/test_windows_desktops.py
 bench-ui: all build/test_popup_probe.so build/torchlightd-release build/bench_fixture
 	python3 tests/run_popup_checks.py --xvfb $(XVFB) --xdotool $(XDOTOOL) --bench
+
+# Only orchestrates Boat on this machine; all builds and checks execute remotely.
+.PHONY: test-desktop-matrix
+test-desktop-matrix:
+	python3 tests/environments/boat_matrix.py $(MATRIX_ARGS)
 
 # Isolated shared engine for the labeled mixed-catalog evaluator.
 build/quality_engine.so: $(SOURCES) $(HEADERS) $(FRIZBEE_LIB)

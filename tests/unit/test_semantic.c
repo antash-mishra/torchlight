@@ -98,11 +98,26 @@ static tl_semantic_stats published(struct semantic_fixture *fixture, uint64_t ca
  * every embeddable text into one quadrant, so all embedded rows are hits. */
 static void hybrid_hello(struct semantic_fixture *fixture, const tl_semantic_stats *stats,
                          uint64_t token, const tl_result *lexical, char *output, size_t capacity) {
-    tl_ipc_request request = {
-        .operation = IPC_QUERY, .request_id = "hybrid", .query = "hello", .limit = 8};
+    tl_ipc_request request = {.operation = IPC_QUERY,
+                              .request_id = "hybrid",
+                              .query = "hello",
+                              .limit = 8,
+                              .version = IPC_ACTION_VERSION,
+                              .software_suggestions = true,
+                              .suggestions = {.count = 1,
+                                              .preferred = true,
+                                              .entries = {{.ref = {.installation = "user",
+                                                                   .remote = "flathub",
+                                                                   .app_id = "org.example.Hello",
+                                                                   .arch = "x86_64",
+                                                                   .branch = "stable"},
+                                                           .revision = 1,
+                                                           .source_revision = 2,
+                                                           .name = "Original suggestion"}}}};
     uint64_t emb_gen = 0;
     CHECK(semantic_submit(fixture->service, 1, token, &request, "search-hybrid", stats->catalog_gen,
                           stats->desktop_gen, lexical, NULL, 1, &emb_gen) == TL_OK);
+    request.suggestions = (tl_ipc_suggestions){0};
     size_t length = 0;
     for (size_t i = 0; i < SEMANTIC_WAIT_ATTEMPTS && length == 0; i++) {
         CHECK(semantic_take(fixture->service, 1, token, false, output, capacity, &length) == TL_OK);
@@ -110,6 +125,8 @@ static void hybrid_hello(struct semantic_fixture *fixture, const tl_semantic_sta
             pause_worker();
     }
     CHECK(length > 0 && strstr(output, "\"reason\":\"hybrid\"") != NULL);
+    CHECK(strstr(output, "Original suggestion") != NULL &&
+          strstr(output, "\"prefer_software\":true") != NULL);
 }
 /* Publish a view derived from the active catalog view's base. ids/paths are
  * every entry changed since that base; retired are the ids this batch touched. */
@@ -146,7 +163,7 @@ static void incremental_stage(struct semantic_fixture *fixture) {
     CHECK(stats.entries == 4 && stats.reused == 2);
     /* "hello" reuses its vector; the renamed id resolves through new metadata. */
     tl_result lexical[] = {{2, "/r/planet", 1}};
-    char output[2048];
+    char output[4096];
     hybrid_hello(fixture, &stats, 7, lexical, output, sizeof(output));
     CHECK(strstr(output, "\"path\":\"/r/hello\"") != NULL);
     CHECK(strstr(output, "\"path\":\"/r/planet\"") != NULL && strstr(output, "/r/world") == NULL);
@@ -164,7 +181,7 @@ static void derived_stage(struct semantic_fixture *fixture) {
     CHECK(stats.entries == 4 && stats.reused == 2);
     CHECK(stats.derived_stages == 1 && stats.full_stages == 2);
     tl_result planet[] = {{2, "/r/planet", 1}};
-    char output[2048];
+    char output[4096];
     hybrid_hello(fixture, &stats, 8, planet, output, sizeof(output));
     CHECK(strstr(output, "\"path\":\"/r/world\"") != NULL);
     CHECK(strstr(output, "\"path\":\"/r/cafe\"") != NULL);
@@ -219,7 +236,7 @@ void test_semantic(void) {
                           stats.desktop_gen, NULL, NULL, 0, &emb_gen) == TL_OK);
     CHECK(emb_gen == stats.emb_gen);
     wait_for_small_buffer(&fixture, 1);
-    char output[2048];
+    char output[4096];
     size_t length = 1;
     CHECK(semantic_take(fixture.service, 0, 1, false, output, 1, &length) == TL_LIMIT &&
           length == 0);

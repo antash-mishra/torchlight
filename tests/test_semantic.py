@@ -118,10 +118,11 @@ class Service:
         self.log.close()
         self.process = None
 
-    def query(self, text, limit=10, operation='query'):
+    def query(self, text, limit=10, operation='query', **fields):
         request = dict(version=1, request_id=str(next(SEQUENCE)), op=operation)
         if operation == 'query':
             request.update(query=text, limit=limit)
+        request.update(fields)
         with socket.socket(socket.AF_UNIX) as connection:
             connection.settimeout(5)
             connection.connect(str(self.path))
@@ -142,6 +143,12 @@ class Service:
         assert phases[0]['phase'] == 'lexical'
         for key in ('request_id', 'search_id', 'catalog_gen', 'emb_gen'):
             assert phases[0][key] == phases[1][key], phases
+        typed = self.query(text, version=2, mode='local', web_fallback=True, software_suggestions=True)
+        assert len(typed) == 2 and typed[-1]['reason'] == 'hybrid', typed
+        assert typed[0]['actions'] == typed[1]['actions'], typed
+        assert typed[0]['actions'][0]['query'] == text, typed
+        assert typed[0]['software_suggestions'] == typed[1]['software_suggestions'], typed
+        assert typed[0]['prefer_software'] == typed[1]['prefer_software'], typed
         return phases
 
 

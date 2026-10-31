@@ -3,24 +3,50 @@
 #define TORCHLIGHT_IPC_H
 #include "torchlight/json.h"
 #include "torchlight/lexical.h"
+#include "torchlight/search_actions.h"
+#include "torchlight/software.h"
 #define IPC_VERSION 1
+#define IPC_ACTION_VERSION 2
 #define IPC_REQUEST_BYTES 8192
-#define IPC_REQUEST_TOKENS 32
+#define IPC_REQUEST_TOKENS 64
 #define IPC_RESPONSE_BYTES (1024U * 1024U)
+/* Includes nested source identities in a 1,000-row software response. */
+#define IPC_RESPONSE_TOKENS 65536
 #define IPC_REQUEST_ID_BYTES 64
 #define IPC_HISTORY_ID_BYTES 128
 #define IPC_DESKTOP_ID_BYTES 4096
 #define IPC_DEADLINE_MS 5000
+#define IPC_SOFTWARE_SUGGESTIONS SOFTWARE_SUGGESTIONS
+/* Owned snapshot of suggestions, frozen across lexical and semantic responses. */
+typedef struct {
+    tl_software_ref ref;
+    uint64_t revision, source_revision;
+    char name[SOFTWARE_NAME_BYTES], summary[SOFTWARE_SUMMARY_BYTES];
+} tl_ipc_suggestion;
+typedef struct {
+    tl_ipc_suggestion entries[IPC_SOFTWARE_SUGGESTIONS];
+    size_t count;
+    bool preferred;
+} tl_ipc_suggestions;
 typedef enum {
     IPC_QUERY,
     IPC_STATUS,
     IPC_RESOLVE,
     IPC_OPEN,
     IPC_RECONCILE,
-    IPC_HISTORY_CLEAR
+    IPC_HISTORY_CLEAR,
+    IPC_SOFTWARE_REFRESH
 } tl_ipc_operation;
 typedef struct {
     tl_ipc_operation operation;
+    unsigned version; /* 0 selects legacy v1 for existing callers. */
+    tl_search_mode mode;
+    bool web_fallback, software_target, software_suggestions;
+    tl_software_ref software;
+    uint64_t software_revision, source_revision;
+    /* Service-only frozen settings for both lexical and semantic frames. */
+    tl_search_settings action_settings;
+    tl_ipc_suggestions suggestions; /* Service-only, never decoded from a request. */
     char request_id[IPC_REQUEST_ID_BYTES + 1], query[LEXICAL_QUERY_BYTES + 1];
     char search_id[IPC_HISTORY_ID_BYTES + 1], event_id[IPC_HISTORY_ID_BYTES + 1];
     /* Internal writer-only resolved desktop id; never accepted from the wire. */
@@ -28,6 +54,25 @@ typedef struct {
     uint64_t file_id;
     size_t limit;
 } tl_ipc_request;
+/** Effective wire version; zero-initialized requests use v1. No ownership/I/O. */
+unsigned ipc_version(const tl_ipc_request *request);
+/** Encode/decode a typed Flatpak target (including both decimal-string
+ * revisions). Inputs borrowed; decoder zeroes outputs on errors TL_INVALID/
+ * LIMIT. Strict fields, no paths or launch commands. Encoder errors in buffer. */
+void ipc_software_target(tl_json_buffer *buffer, const tl_software_ref *ref, uint64_t revision,
+                         uint64_t source_revision);
+tl_status ipc_software_decode(const tl_json *json, size_t token, tl_software_ref *ref,
+                              uint64_t *revision, uint64_t *source_revision);
+/** Encode available-app display metadata and its typed target. Borrowed inputs;
+ * no allocation/I/O. Errors retained in buffer.status. */
+void ipc_software_result(tl_json_buffer *buffer, const tl_software_entry *entry);
+/** Append frozen ordinary-query software suggestions, only when requested.
+ * Borrowed request; include=false emits an empty array. No allocation/I/O;
+ * malformed count is retained as TL_INVALID in buffer.status. */
+void ipc_suggestions_result(tl_json_buffer *buffer, const tl_ipc_request *request, bool include);
+/** Parse an additive status capability. A valid v1 status without capabilities
+ * returns supported=false; malformed/error/nonfinal status fails. No I/O. */
+tl_status ipc_action_capability(const char *response, size_t length, bool *supported);
 typedef struct tl_ipc_listener tl_ipc_listener;
 /** Decode a bounded JSON object (newline excluded), rejecting unknown/duplicate
  * fields, wrong types, non-string file ids, decoded NUL and unsupported versions.

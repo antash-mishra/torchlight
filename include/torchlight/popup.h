@@ -3,7 +3,10 @@
 #define TORCHLIGHT_POPUP_H
 #include "torchlight/ipc.h"
 #include "torchlight/windows.h"
+#include <string.h>
 #define POPUP_RESULTS 10
+#define POPUP_ACTIONS 1
+#define POPUP_ROWS (POPUP_RESULTS + POPUP_ACTIONS + IPC_SOFTWARE_SUGGESTIONS)
 #define POPUP_PATH_BYTES 8192
 #define POPUP_TEXT_BYTES 4096
 /* Trailing parent folders a file or folder row shows; earlier ones become "…". */
@@ -12,11 +15,19 @@
  * enough that several running applications still leave room for files. */
 #define POPUP_WINDOWS_SHOWN 3
 /* Every result (plus one retained row), each window once and two other children per result. */
-#define POPUP_ITEMS (3 * (POPUP_RESULTS + 1) + WINDOWS_MAX)
+#define POPUP_ITEMS (3 * (POPUP_ROWS + 1) + WINDOWS_MAX)
 /* popup_model_search_us when no response has said how long its search took. */
 #define POPUP_SEARCH_TIME_UNKNOWN UINT64_MAX
 typedef struct tl_popup_model tl_popup_model;
+typedef enum { POPUP_TARGET_LOCAL, POPUP_TARGET_WEB, POPUP_TARGET_SOFTWARE } tl_popup_target_kind;
 typedef struct {
+    tl_popup_target_kind target_kind;
+    tl_software_ref software;
+    uint64_t software_revision, source_revision;
+    tl_search_engine web_engine;
+    char web_uri[SEARCH_ACTION_URI_BYTES], web_browser[SEARCH_BROWSER_BYTES];
+    char web_query[LEXICAL_QUERY_BYTES + 1], summary[SOFTWARE_SUMMARY_BYTES * 4];
+    bool installed;
     uint64_t id, desktop_revision;
     char path[POPUP_PATH_BYTES], display[POPUP_PATH_BYTES];
     char name[POPUP_TEXT_BYTES], icon[POPUP_TEXT_BYTES], desktop_id[POPUP_TEXT_BYTES];
@@ -29,8 +40,25 @@ typedef enum {
     POPUP_GROUP_SETTINGS,
     POPUP_GROUP_FOLDERS,
     POPUP_GROUP_FILES,
+    POPUP_GROUP_SOFTWARE,
+    POPUP_GROUP_WEB,
     POPUP_GROUPS
 } tl_popup_group;
+/** Compare typed identity, never hashes/display labels. Revisions are checked
+ * again at activation. Borrowed rows; false for NULL, no I/O/allocation. */
+static inline bool popup_row_same(const tl_popup_row *a, const tl_popup_row *b) {
+    if (a == NULL || b == NULL || a->target_kind != b->target_kind)
+        return false;
+    if (a->target_kind == POPUP_TARGET_SOFTWARE)
+        return software_ref_equal(&a->software, &b->software);
+    if (a->target_kind == POPUP_TARGET_WEB)
+        return a->web_engine == b->web_engine && strcmp(a->web_query, b->web_query) == 0 &&
+               strcmp(a->web_uri, b->web_uri) == 0 && strcmp(a->web_browser, b->web_browser) == 0;
+    return a->id == b->id;
+}
+/** Static readiness/help message for the latest response, empty for ordinary
+ * local results. NULL-safe; no ownership transfer or errors. */
+const char *popup_model_hint(const tl_popup_model *model);
 /** What a list item shows: a result, or a child listed beneath an application. */
 typedef enum {
     POPUP_ITEM_RESULT,
@@ -50,6 +78,11 @@ typedef struct {
 tl_status popup_model_create(tl_popup_model **out);
 /** Free model; borrowed row pointers expire. NULL allowed. */
 void popup_model_destroy(tl_popup_model *model);
+/** Copy client web preferences for subsequent responses. allow_visit recognizes
+ * addresses only for ordinary queries; explicit web mode stays a search.
+ * Borrowed options; TL_INVALID for invalid browser/engine, no I/O/allocation. */
+tl_status popup_model_set_web_options(tl_popup_model *model, const tl_web_options *options,
+                                      bool allow_visit);
 /** Set latest request id, invalidate activation, and reset deliberate selection
  * and expand/collapse choices. id borrowed/copied (<=IPC_REQUEST_ID_BYTES).
  * TL_INVALID/LIMIT. */
@@ -90,7 +123,9 @@ void popup_model_set_windows(tl_popup_model *model, const tl_windows *windows);
 /** Count list items: results and the children of expanded applications, in
  * display order. Results are grouped (apps, settings, folders, files), groups in
  * the order of their best-ranked row and rows in rank order within a group, so
- * the strongest result stays first; each expanded application is followed by
+ * the strongest local result stays first. A Web item precedes local items for
+ * the separate pinned action; ordinary queries select the first local item,
+ * addresses/explicit Web/no local matches select Web. Each application is followed by
  * its windows (most recent first), then more windows, then new window. Zero for
  * NULL; no errors. */
 size_t popup_model_item_count(const tl_popup_model *model);

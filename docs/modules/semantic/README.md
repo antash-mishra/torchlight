@@ -3,8 +3,14 @@
 > **Status:** Implemented M4 opt-in two-phase execution, M6 derived
 > (segmented) snapshots and the prefix-shortlist vector search; parked as opt-in ([ADR 0032](../../adr/0032-park-semantic-search.md)); large-catalog final-phase latency acceptance is deferred. Buffer retries and per-phase status are regression-tested.
 > Cache BEGIN failures retain staged progress. Enable with `torchlightd --model PATH.tlm`.
+> M9 preserves typed Web actions and owned ordinary-name app suggestions across lexical/final responses; explicit Web/software modes bypass semantic work.
 
 Public contract: [semantic.h](../../../include/torchlight/semantic.h).
+
+Version-2 local queries carry the validated action settings with the copied
+request so a final response constructs the same optional Web action as the
+lexical response. `tests/test_semantic.py` verifies this alongside the existing
+two-phase identities. Web and software actions never enter personal ranking.
 
 One worker serializes model inference, searches and background embedding. Up to
 16 jobs (one per connection slot) use preallocated buffers and immutable copied

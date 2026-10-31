@@ -9,6 +9,7 @@
 #include "torchlight/fuzzy.h"
 #include "torchlight/lexical.h"
 #include "torchlight/rank.h"
+#include "torchlight/software.h"
 #include "torchlight/vector.h"
 #include <stdatomic.h>
 #include <stdio.h>
@@ -309,6 +310,53 @@ static tl_status check_prefix_shortlist(void) {
     return status;
 }
 
+/* Software shares the lexical matcher cache, but adds no allocations itself. */
+static tl_status check_software(void) {
+    tl_software *index = NULL;
+    tl_software_reader *reader = NULL;
+    tl_status status = software_create(&index);
+    for (size_t i = 0; i < 64 && status == TL_OK; i++) {
+        tl_software_entry entry = {.ref = {.installation = "user",
+                                           .remote = "flathub",
+                                           .arch = "x86_64",
+                                           .branch = "stable"},
+                                   .name = "Code Editor",
+                                   .summary = "Edit text"};
+        int written =
+            snprintf(entry.ref.app_id, sizeof(entry.ref.app_id), "org.example.Editor%zu", i);
+        status = written > 0 && (size_t)written < sizeof(entry.ref.app_id)
+                     ? software_add(index, &entry)
+                     : TL_LIMIT;
+    }
+    if (status == TL_OK)
+        status = software_finish(index);
+    if (status == TL_OK)
+        status = software_reader_create(index, &reader);
+    const tl_software_entry *hits[10] = {0};
+    size_t count = 0;
+    if (status == TL_OK)
+        status = software_query(reader, "code editor", NULL, hits, 10, &count);
+    atomic_store(&allocations, 0);
+    atomic_store(&probing, true);
+    for (size_t i = 0; i < 100 && status == TL_OK; i++)
+        status = software_query(reader, "code editor", NULL, hits, 10, &count);
+    atomic_store(&probing, false);
+    if (status == TL_OK && (atomic_load(&allocations) != 0 || count != 10))
+        status = TL_STATE;
+    bool exact = false;
+    if (status == TL_OK)
+        status = software_suggest(reader, "code editor", NULL, hits, 3, &count, &exact);
+    atomic_store(&allocations, 0);
+    atomic_store(&probing, true);
+    for (size_t i = 0; i < 100 && status == TL_OK; i++)
+        status = software_suggest(reader, "code editor", NULL, hits, 3, &count, &exact);
+    atomic_store(&probing, false);
+    if (status == TL_OK && (atomic_load(&allocations) != 0 || count != 3))
+        status = TL_STATE;
+    software_reader_destroy(reader);
+    software_destroy(index);
+    return status;
+}
 int main(void) {
     calibrate();
     if (matcher_allocations == 0) {
@@ -337,6 +385,8 @@ int main(void) {
         status = check_hybrid();
     if (status == TL_OK)
         status = check_prefix_shortlist();
+    if (status == TL_OK)
+        status = check_software();
     if (status == TL_OK)
         puts("Allocation-free query checks passed.");
     return status == TL_OK ? 0 : 1;

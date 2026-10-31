@@ -3,10 +3,10 @@
 > **Status:** Implemented (M6 step 1; M5 personal ranking): dedicated search thread with per-client
 > request queues, supersession and cancellation, over the M4 two-phase service; named
 > applications before files (ADR 0058); word matches first, near matches only as a
-> fallback (ADR 0061)
+> fallback (ADR 0061); M9 typed Web actions and independent resident software queries (ADR 0067), ordinary-name app suggestions (ADR 0070)
 > **Source:** `src/service/daemon.c`, `src/bin/torchlightd.c`
 > **Header:** `include/torchlight/daemon.h`
-> **Tests:** `tests/test_daemon.py`, `tests/test_semantic.py`,
+> **Tests:** `tests/test_daemon.py`, `tests/test_semantic.py`, `tests/test_search_actions.py`,
 > `tests/unit/test_catalog.c`, `tests/unit/test_writer.c`
 
 `torchlightd` loads the saved catalog and begins serving before its worker's
@@ -170,3 +170,15 @@ state ([ADR 0033](../../adr/0033-m5-personal-ranking.md)):
 - **Startup.** The writer's summary is adopted at the next job once offered.
 - **Status.** `history.personal_items` reports the live item count from
   either thread.
+
+## M9 action routing
+
+The daemon validates shared feature settings, owns the separate background software catalog, and routes v2 web/software queries before local ranking and personal history. Software queries bypass semantic inference. Local Web fallback is encoded separately from ranked results and copied into both semantic phases. Status advertises the additive v2 capability and software readiness. See [software catalog](../software_catalog/README.md).
+
+Opted-in ordinary queries append at most three name-based software suggestions.
+A named installed desktop application suppresses them, regardless of its package
+format; this never merges identities by display name. Exact local files/paths
+and named settings retain selection ahead of available software. Otherwise an
+exact app name can select Install ahead of loosely matching files. The search
+worker copies the bounded metadata before releasing software leases, so the
+semantic final preserves the same suggestions and preference (ADR 0070).

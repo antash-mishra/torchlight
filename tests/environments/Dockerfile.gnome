@@ -1,0 +1,9 @@
+# A real headless GNOME Shell, including its extension and accessibility services.
+FROM torchlight-matrix-base
+USER root
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gnome-shell gnome-settings-daemon gsettings-desktop-schemas \
+    && rm -rf /var/lib/apt/lists/*
+USER runner
+CMD ["gnome"]

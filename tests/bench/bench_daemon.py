@@ -66,7 +66,8 @@ class Resident:
 
     def call(self, operation="query", **fields):
         self.sequence += 1
-        request = dict(version=1, request_id=str(self.sequence), op=operation, **fields)
+        request = dict(version=1, request_id=str(self.sequence), op=operation)
+        request.update(fields)
         start = time.perf_counter_ns()
         self.connection.sendall(json.dumps(request).encode() + b"\n")
         response = json.loads(self.stream.readline(1024 * 1024))

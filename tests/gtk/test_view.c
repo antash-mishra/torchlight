@@ -5,6 +5,7 @@
 #include "../../ui/gtk/path_label.h"
 #include "../../ui/gtk/tooltip.h"
 #include "../../ui/gtk/view.h"
+#include "../../ui/gtk/wayland_globals.h"
 #include "../unit/test.h"
 #include <glib/gstdio.h>
 #include <stdint.h>
@@ -16,6 +17,8 @@
 #define WIDE_WIDTH POPUP_VIEW_PREVIEW_WIDTH
 /* The preview test's file: about the size of a page of notes. */
 #define PREVIEW_BYTES 4215
+/* As in the launcher: older gtk_shell1 cannot release a hidden GTK surface. */
+#define GTK_SHELL_RELEASE_VERSION 4
 static void settle(int milliseconds) {
     gint64 deadline = g_get_monotonic_time() + (gint64)milliseconds * 1000;
     do {
@@ -195,9 +198,9 @@ static void test_children(void) {
     g_strlcpy(app.display, "/apps/google-chrome.desktop", sizeof(app.display));
     g_strlcpy(app.icon, "google-chrome", sizeof(app.icon));
     GtkWidget *plain = g_object_ref_sink(popup_view_result(&app, 0, POPUP_ENTER_NONE, 0));
-    /* An application row is its icon and name alone: no subtitle, count or tooltip. */
-    CHECK(label_text(plain, "result-detail") == NULL && popup_tooltip_text(plain) == NULL &&
-          !gtk_widget_get_has_tooltip(plain));
+    /* The row makes its Open action explicit without showing desktop-file metadata. */
+    CHECK(strcmp(label_text(plain, "result-action"), "Open") == 0 &&
+          popup_tooltip_text(plain) == NULL && !gtk_widget_get_has_tooltip(plain));
     CHECK(gtk_widget_has_css_class(plain, "kind-app"));
     app.settings = true;
     GtkWidget *panel = g_object_ref_sink(popup_view_result(&app, 0, POPUP_ENTER_NONE, 0));
@@ -205,7 +208,7 @@ static void test_children(void) {
           !gtk_widget_has_css_class(panel, "kind-app"));
     g_object_unref(panel);
     app.settings = false;
-    GtkWidget *name = gtk_widget_get_last_child(plain);
+    GtkWidget *name = class_label(plain, "result-name");
     CHECK(GTK_IS_LABEL(name) && strcmp(gtk_label_get_text(GTK_LABEL(name)), "Google Chrome") == 0);
     GtkWidget *window = g_object_ref_sink(
         popup_view_child(&app, POPUP_ITEM_WINDOW, "Docs", POPUP_ENTER_CASCADE, 1));
@@ -241,8 +244,10 @@ static GtkWidget *class_child(GtkWidget *parent, const char *class) {
 }
 /* The header's search time: rounded, and as wide for "0.4ms" as for "<0.1ms" or "140ms",
  * so the header never shifts as it changes; empty when unknown. */
-static void test_search_time(void) {
-    GtkWidget *header = g_object_ref_sink(popup_header_new());
+static void check_search_time(tl_popup_widgets widgets) {
+    /* Measure with the popup's actual font and CSS, not an unstyled desktop label. */
+    GtkWidget *header = find_named(widgets.root, "popup-header");
+    CHECK(header != NULL);
     GtkWidget *field = class_child(header, "search-time");
     CHECK(field != NULL && strcmp(popup_header_search_time(header), "") == 0);
     static const struct {
@@ -262,7 +267,6 @@ static void test_search_time(void) {
     }
     popup_header_set_search_time(header, POPUP_SEARCH_TIME_UNKNOWN);
     CHECK(strcmp(popup_header_search_time(header), "") == 0);
-    g_object_unref(header);
 }
 /* A section header: its color block, name and count, hidden from screen readers. */
 static void test_group_header(void) {
@@ -279,6 +283,7 @@ static void test_group_header(void) {
     g_object_unref(header);
 }
 static void check_editing(tl_popup_widgets widgets) {
+    CHECK(find_named(widgets.root, "popup-web-preferences") == NULL);
     /* The first show offers the plain prompt; later shows rotate through tips. */
     CHECK(strcmp(gtk_entry_get_placeholder_text(GTK_ENTRY(widgets.entry)),
                  "Search apps, files and settings") == 0);
@@ -293,6 +298,15 @@ static void check_editing(tl_popup_widgets widgets) {
 }
 static void check_feedback(tl_popup_view *view, tl_popup_widgets widgets) {
     GtkWidget *field = find_named(widgets.root, "popup-search");
+    GtkWidget *text = GTK_WIDGET(gtk_editable_get_delegate(GTK_EDITABLE(widgets.entry)));
+    /* Wayland grants window focus asynchronously; establish it before timing feedback. */
+    gtk_widget_grab_focus(widgets.entry);
+    for (int waited = 0; waited < 2000 && !gtk_widget_has_focus(text); waited += 10)
+        settle(10);
+    if (!gtk_widget_has_focus(text))
+        fprintf(stderr, "entry focus missing: window active=%d\n",
+                gtk_window_is_active(GTK_WINDOW(gtk_widget_get_root(widgets.root))));
+    CHECK(gtk_widget_has_focus(text));
     gtk_editable_set_text(GTK_EDITABLE(widgets.entry), "c");
     settle(400);
     gtk_editable_set_text(GTK_EDITABLE(widgets.entry), "co");
@@ -549,11 +563,20 @@ static void check_shadow(tl_popup_view *view, tl_popup_widgets widgets) {
 static GtkWidget *new_window(void) {
     GtkWidget *window = gtk_window_new();
     g_object_ref_sink(window);
+    gtk_window_set_title(GTK_WINDOW(window), "Torchlight native view");
     gtk_window_set_decorated(GTK_WINDOW(window), false);
     gtk_window_set_resizable(GTK_WINDOW(window), false);
     gtk_widget_add_css_class(window, "torchlight");
     gtk_window_set_default_size(GTK_WINDOW(window), SURFACE_WIDTH, -1);
     return window;
+}
+/* Use the launcher's compositor configuration when exercising hide/show behavior. */
+static tl_popup_view *new_view(GtkWidget *window) {
+    tl_popup_view *view = NULL;
+    CHECK(popup_view_create(window, &view) == TL_OK);
+    uint32_t shell = wayland_global_version(gtk_widget_get_display(window), "gtk_shell1");
+    popup_view_set_fresh_surfaces(view, shell != 0 && shell < GTK_SHELL_RELEASE_VERSION);
+    return view;
 }
 /* The idle strip: unknown, then known states, and one line however large the font. */
 static void test_index_strip(void) {
@@ -610,8 +633,7 @@ static void test_user_stylesheet(void) {
     gtk_style_context_add_provider_for_display(display, GTK_STYLE_PROVIDER(user),
                                                GTK_STYLE_PROVIDER_PRIORITY_USER);
     GtkWidget *window = new_window();
-    tl_popup_view *view = NULL;
-    CHECK(popup_view_create(window, &view) == TL_OK);
+    tl_popup_view *view = new_view(window);
     gtk_widget_realize(window);
     popup_view_configure(view, SURFACE_WIDTH, 800);
     tl_popup_margins margins = popup_view_margins(view);
@@ -634,8 +656,7 @@ static void test_user_stylesheet(void) {
 static void test_forced_dark(void) {
     g_setenv("GTK_THEME", "Adwaita:dark", true);
     GtkWidget *window = new_window();
-    tl_popup_view *view = NULL;
-    CHECK(popup_view_create(window, &view) == TL_OK);
+    tl_popup_view *view = new_view(window);
     tl_popup_widgets widgets = popup_view_widgets(view);
     CHECK(gtk_widget_has_css_class(widgets.root, "dark") &&
           !gtk_widget_has_css_class(widgets.root, "light"));
@@ -649,8 +670,7 @@ static void test_forced_dark(void) {
 static void test_forced_contrast(void) {
     g_setenv("GTK_THEME", "HighContrast", true);
     GtkWidget *window = new_window();
-    tl_popup_view *view = NULL;
-    CHECK(popup_view_create(window, &view) == TL_OK);
+    tl_popup_view *view = new_view(window);
     tl_popup_widgets widgets = popup_view_widgets(view);
     popup_view_configure(view, SURFACE_WIDTH, 800);
     tl_popup_margins margins = popup_view_margins(view);
@@ -666,7 +686,7 @@ static void test_view(void) {
     GtkWidget *window = new_window();
     tl_popup_view *view = NULL;
     CHECK(popup_view_create(NULL, &view) == TL_INVALID && view == NULL);
-    CHECK(popup_view_create(window, &view) == TL_OK);
+    view = new_view(window);
     tl_popup_widgets widgets = popup_view_widgets(view);
     /* As the launcher does: realize, fit hints and the viewport to the work area, then
      * size the window for the surface and its shadow margin. */
@@ -683,6 +703,7 @@ static void test_view(void) {
     CHECK(!gtk_widget_has_css_class(widgets.root, "opening"));
     settle(100);
     /* Empty: the header with its clock, the query line and the idle strip, nothing else. */
+    check_search_time(widgets);
     GtkWidget *header = find_named(widgets.root, "popup-header");
     CHECK(gtk_widget_get_visible(header) && strchr(popup_header_clock(header), '/') != NULL);
     /* The search time keeps its place at the usual width, and gives way where the header
@@ -889,8 +910,7 @@ static void remove_preview_files(char *directory, char *file, char *desktop) {
 static void test_preview(void) {
     char *file = NULL, *desktop = NULL, *directory = preview_files(&file, &desktop);
     GtkWidget *window = new_window();
-    tl_popup_view *view = NULL;
-    CHECK(popup_view_create(window, &view) == TL_OK);
+    tl_popup_view *view = new_view(window);
     tl_popup_widgets widgets = popup_view_widgets(view);
     gtk_widget_realize(window);
     popup_view_configure(view, WIDE_WIDTH, 800);
@@ -910,6 +930,125 @@ static void test_preview(void) {
     settle(300);
     remove_preview_files(directory, file, desktop);
 }
+/* Typed previews never ask the filesystem for a Web or repository result. */
+static void test_action_previews(void) {
+    GtkWidget *window = new_window();
+    tl_popup_view *view = new_view(window);
+    tl_popup_widgets widgets = popup_view_widgets(view);
+    gtk_widget_realize(window);
+    popup_view_configure(view, WIDE_WIDTH, 800);
+    tl_popup_margins margins = popup_view_margins(view);
+    gtk_window_set_default_size(GTK_WINDOW(window), WIDE_WIDTH + margins.left + margins.right, -1);
+    gtk_window_present(GTK_WINDOW(window));
+    popup_view_set_active(view, true);
+    tl_popup_row rows[] = {{.target_kind = POPUP_TARGET_WEB,
+                            .name = "Search DuckDuckGo for “linux tips”",
+                            .display = "Open in your default browser",
+                            .icon = "web-browser-symbolic"},
+                           {.target_kind = POPUP_TARGET_SOFTWARE,
+                            .name = "VLC",
+                            .summary = "Play videos and music",
+                            .display = "flathub • user • x86_64/stable",
+                            .icon = "system-software-install-symbolic",
+                            .software = {.installation = "user",
+                                         .remote = "flathub",
+                                         .app_id = "org.videolan.VLC",
+                                         .arch = "x86_64",
+                                         .branch = "stable"}}};
+    for (size_t i = 0; i < G_N_ELEMENTS(rows); i++) {
+        gtk_editable_set_text(GTK_EDITABLE(widgets.entry), i == 0 ? "web linux tips" : "vlc");
+        gtk_list_box_append(GTK_LIST_BOX(widgets.list),
+                            popup_view_result(&rows[i], 0, POPUP_ENTER_NONE, 0));
+        if (i == 1) {
+            tl_popup_row web = {.target_kind = POPUP_TARGET_WEB,
+                                .name = "Search Google for “vlc”",
+                                .display = "Google Chrome",
+                                .icon = "web-browser-symbolic"};
+            gtk_list_box_append(GTK_LIST_BOX(widgets.web_list),
+                                popup_view_result(&web, 0, POPUP_ENTER_NONE, 0));
+            popup_view_set_web_visible(view, true);
+            for (size_t j = 0; j < POPUP_RESULTS; j++) {
+                tl_popup_row file = {.name = "vlc-notes.txt",
+                                     .path = "/home/user/vlc-notes.txt",
+                                     .display = "/home/user/vlc-notes.txt"};
+                gtk_list_box_append(GTK_LIST_BOX(widgets.list),
+                                    popup_view_result(&file, 0, POPUP_ENTER_NONE, j + 1));
+            }
+            CHECK(strcmp(label_text(widgets.list, "result-action"), "Install") == 0);
+        }
+        popup_view_set_results(view, i == 0 ? 1 : POPUP_RESULTS + 2);
+        select_index(view, widgets, 0, false);
+        popup_view_set_preview(view, &(tl_popup_preview){.row = &rows[i]}, true);
+        settle(400);
+        CHECK(strcmp(label_text(widgets.preview, "preview-type"),
+                     i == 0 ? "Web search" : "Available app") == 0);
+        CHECK(label_text(widgets.preview, "preview-size") == NULL);
+        CHECK(label_text(widgets.preview, "preview-folder") == NULL);
+        capture(widgets, i == 0 ? "web-search" : "software-search");
+        clear_capture(view, widgets);
+    }
+    rows[1].installed = true;
+    GtkWidget *installed = g_object_ref_sink(popup_view_result(&rows[1], 0, POPUP_ENTER_NONE, 0));
+    CHECK(strcmp(label_text(installed, "result-action"), "Manage") == 0);
+    g_object_unref(installed);
+    gtk_window_destroy(GTK_WINDOW(window));
+    popup_view_destroy(view);
+    g_object_unref(window);
+    settle(100);
+}
+/* The Web action stays above the viewport even when local results scroll. */
+static void test_pinned_web(void) {
+    GtkWidget *window = new_window();
+    tl_popup_view *view = new_view(window);
+    tl_popup_widgets widgets = popup_view_widgets(view);
+    gtk_widget_realize(window);
+    popup_view_configure(view, WIDE_WIDTH, 560);
+    gtk_window_set_default_size(GTK_WINDOW(window), WIDE_WIDTH, -1);
+    gtk_window_present(GTK_WINDOW(window));
+    popup_view_set_active(view, true);
+    gtk_editable_set_text(GTK_EDITABLE(widgets.entry), "google.com");
+    tl_popup_row web = {.target_kind = POPUP_TARGET_WEB,
+                        .name = "Open google.com",
+                        .web_uri = "https://google.com",
+                        .display = "Google Chrome",
+                        .icon = "web-browser-symbolic"};
+    GtkWidget *action = popup_view_result(&web, 0, POPUP_ENTER_NONE, 0);
+    gtk_list_box_append(GTK_LIST_BOX(widgets.web_list), action);
+    for (size_t i = 0; i < POPUP_RESULTS; i++) {
+        tl_popup_row local = {.name = "google-notes.txt",
+                              .path = "/home/user/google-notes.txt",
+                              .display = "/home/user/google-notes.txt"};
+        gtk_list_box_append(GTK_LIST_BOX(widgets.list),
+                            popup_view_result(&local, 0, POPUP_ENTER_NONE, i));
+    }
+    popup_view_set_web_visible(view, true);
+    popup_view_set_results(view, POPUP_RESULTS + 1);
+    GtkListBoxRow *selected = gtk_list_box_get_row_at_index(GTK_LIST_BOX(widgets.web_list), 0);
+    gtk_list_box_select_row(GTK_LIST_BOX(widgets.web_list), selected);
+    popup_view_select(view, GTK_WIDGET(selected), false);
+    popup_view_set_preview(view, &(tl_popup_preview){.row = &web}, true);
+    settle(500);
+    GdkRGBA name, shortcut, browser;
+    gtk_widget_get_color(class_label(action, "result-name"), &name);
+    gtk_widget_get_color(class_label(action, "web-shortcut"), &shortcut);
+    gtk_widget_get_color(class_label(action, "result-location"), &browser);
+    CHECK(name.red == shortcut.red && name.green == shortcut.green && name.blue == shortcut.blue);
+    CHECK(name.red == browser.red && name.green == browser.green && name.blue == browser.blue);
+    graphene_rect_t before = bounds(widgets.web_list), viewport = bounds(widgets.scroll);
+    CHECK(before.origin.y + before.size.height <= viewport.origin.y + 1.0F);
+    GtkAdjustment *scroll =
+        gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(widgets.scroll));
+    gtk_adjustment_set_value(scroll, gtk_adjustment_get_upper(scroll));
+    settle(200);
+    graphene_rect_t after = bounds(widgets.web_list);
+    CHECK(before.origin.y == after.origin.y && after.size.height > 0);
+    CHECK(strcmp(label_text(widgets.preview, "preview-type"), "Website") == 0);
+    capture(widgets, "pinned-website");
+    gtk_window_destroy(GTK_WINDOW(window));
+    popup_view_destroy(view);
+    g_object_unref(window);
+    settle(100);
+}
 int main(void) {
     gtk_init();
     test_paths();
@@ -917,10 +1056,11 @@ int main(void) {
     test_tooltips();
     test_children();
     test_group_header();
-    test_search_time();
     test_index_strip();
     test_view();
     test_preview();
+    test_action_previews();
+    test_pinned_web();
     test_user_stylesheet();
     test_forced_dark();
     test_forced_contrast();

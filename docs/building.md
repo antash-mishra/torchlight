@@ -16,9 +16,16 @@ You also need Rust 1.89 or newer (for example from [rustup](https://rustup.rs)) 
 compile the vendored [Frizbee](../third_party/README.md) fuzzy matcher. GTK 4.14 or
 newer is required.
 
+Web search uses the session's default browser. Available-app discovery is an
+optional runtime feature: install Flatpak and configure the desired repositories
+yourself, plus GNOME Software or KDE Discover with its Flatpak plugin for the
+installation handoff. None is a new compiler dependency; a build without Flatpak
+still searches local items and the web. See [configuration](configuration.md).
+
 ```sh
 make                             # debug build: build/torchlight, torchlightd, torchlight-gtk
 make build/torchlightd-release   # optimized daemon, about half the tail latency
+make bench-software             # 50k available-app build/memory/query benchmark
 make deb                         # optimized .deb in build/deb (needs dpkg-dev)
 make tarball                     # portable archive with install.sh in build/portable
 ```
@@ -82,6 +89,11 @@ Then, in another terminal, open the popup or search from the command line:
 [The command line](configuration.md#the-command-line) lists what else `torchlight` does.
 
 ## Development
+
+Run the four-environment desktop matrix on Boat with `make test-desktop-matrix`.
+It builds and checks in cloud sandboxes, then tests X11, GNOME, KDE and Cinnamon
+in parallel and collects diagnostics. See [Desktop tests on Boat](desktop-test-matrix.md)
+for prerequisites, concurrency controls and the limits of headless coverage.
 
 ```sh
 make test               # unit, CLI and daemon tests under ASan, UBSan and leak checks

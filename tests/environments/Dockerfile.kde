@@ -1,0 +1,11 @@
+# KWin's virtual Wayland backend and the QML modules its scripting service uses.
+FROM torchlight-matrix-base
+USER root
+ARG DEBIAN_FRONTEND=noninteractive
+# The virtual backend needs no realtime privilege; file capabilities prevent exec with cap-drop=ALL.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    kwin-wayland kwin-wayland-backend-virtual plasma-workspace libcap2-bin \
+    && setcap -r /usr/bin/kwin_wayland \
+    && rm -rf /var/lib/apt/lists/*
+USER runner
+CMD ["kde"]

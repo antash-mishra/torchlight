@@ -12,7 +12,7 @@
 #define POPUP_VIEW_PREVIEW_WIDTH 880
 typedef struct popup_view tl_popup_view;
 typedef struct {
-    GtkWidget *root, *entry, *list, *scroll, *status, *retry, *preview;
+    GtkWidget *root, *entry, *list, *scroll, *status, *retry, *preview, *web_list;
 } tl_popup_widgets;
 /** How a result row appears: first results cascade in, later new rows fade. */
 typedef enum { POPUP_ENTER_NONE, POPUP_ENTER_CASCADE, POPUP_ENTER_FADE } tl_popup_entrance;
@@ -36,6 +36,9 @@ void popup_view_set_status(tl_popup_view *view, const char *text);
 /** Update result/empty visibility from model count. Main thread; live view.
  * No ownership transfer or errors. Does not alter the entry's text. */
 void popup_view_set_results(tl_popup_view *view, size_t count);
+/** Show or hide the separately pinned Web list and reserve its height outside
+ * the results scroll area. Main thread; borrowed view, no ownership changes. */
+void popup_view_set_web_visible(tl_popup_view *view, bool visible);
 /** Show in the page header how long the search took, in microseconds, or nothing for
  * POPUP_SEARCH_TIME_UNKNOWN (popup_header_set_search_time). Main thread; live view. No
  * ownership transfer or errors. */

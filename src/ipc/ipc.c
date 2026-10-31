@@ -11,14 +11,13 @@
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
-#define IPC_CLIENT_JSON_TOKENS 16384
 struct tl_ipc_listener {
     int fd, lock;
     char *path;
     bool bound;
 };
-static const char *const OPERATIONS[] = {"query", "status",    "resolve",
-                                         "open",  "reconcile", "history_clear"};
+static const char *const OPERATIONS[] = {"query",     "status",        "resolve",         "open",
+                                         "reconcile", "history_clear", "software_refresh"};
 static tl_status string_member(const tl_json *json, const char *key, char *out, size_t capacity,
                                bool required) {
     size_t token = json_member(json, 0, key);
@@ -27,7 +26,15 @@ static tl_status string_member(const tl_json *json, const char *key, char *out, 
     tl_status status = json_string(json, token, out, capacity);
     return status == TL_OK && required && out[0] == 0 ? TL_INVALID : status;
 }
-static bool allowed_key(tl_ipc_operation op, const char *key) {
+static bool allowed_key(const tl_ipc_request *request, const char *key) {
+    tl_ipc_operation op = request->operation;
+    if (request->version == IPC_ACTION_VERSION) {
+        if (op == IPC_QUERY && (strcmp(key, "mode") == 0 || strcmp(key, "web_fallback") == 0 ||
+                                strcmp(key, "software_suggestions") == 0))
+            return true;
+        if (op == IPC_RESOLVE && strcmp(key, "target") == 0)
+            return true;
+    }
     if (strcmp(key, "version") == 0 || strcmp(key, "request_id") == 0 || strcmp(key, "op") == 0)
         return true;
     if (op == IPC_QUERY)
@@ -55,6 +62,46 @@ static tl_status decode_fields(const tl_json *json, tl_ipc_request *request) {
                 count > LEXICAL_MAX_RESULTS)
                 return TL_INVALID;
             request->limit = (size_t)count;
+        }
+    }
+    if (status == TL_OK && request->version == IPC_ACTION_VERSION) {
+        if (request->operation == IPC_QUERY) {
+            char mode[16];
+            status = string_member(json, "mode", mode, sizeof(mode), true);
+            if (status != TL_OK)
+                return status;
+            if (strcmp(mode, "local") == 0)
+                request->mode = SEARCH_LOCAL;
+            else if (strcmp(mode, "web") == 0)
+                request->mode = SEARCH_WEB;
+            else if (strcmp(mode, "software") == 0)
+                request->mode = SEARCH_SOFTWARE;
+            else
+                return TL_INVALID;
+            size_t fallback = json_member(json, 0, "web_fallback");
+            if (fallback != SIZE_MAX) {
+                if (json->tokens[fallback].type != JSON_BOOL)
+                    return TL_INVALID;
+                request->web_fallback = json->text[json->tokens[fallback].start] == 't';
+            }
+            size_t suggestions = json_member(json, 0, "software_suggestions");
+            if (suggestions != SIZE_MAX) {
+                if (json->tokens[suggestions].type != JSON_BOOL)
+                    return TL_INVALID;
+                request->software_suggestions = json->text[json->tokens[suggestions].start] == 't';
+            }
+            if (request->mode != SEARCH_LOCAL &&
+                (request->web_fallback || request->software_suggestions))
+                return TL_INVALID;
+        }
+        size_t target = json_member(json, 0, "target");
+        if (request->operation == IPC_RESOLVE && target != SIZE_MAX) {
+            if (json_member(json, 0, "file_id") != SIZE_MAX)
+                return TL_INVALID;
+            status = ipc_software_decode(json, target, &request->software,
+                                         &request->software_revision, &request->source_revision);
+            request->software_target = status == TL_OK;
+            return status;
         }
     }
     if (status == TL_OK && (request->operation == IPC_RESOLVE || request->operation == IPC_OPEN)) {
@@ -86,10 +133,11 @@ tl_status ipc_decode(const char *line, size_t length, tl_ipc_request *out) {
     uint64_t version = 0;
     size_t version_token = json_member(&json, 0, "version");
     if (version_token == SIZE_MAX || tokens[version_token].type != JSON_NUMBER ||
-        json_uint(&json, version_token, &version) != TL_OK || version != IPC_VERSION)
+        json_uint(&json, version_token, &version) != TL_OK ||
+        (version != IPC_VERSION && version != IPC_ACTION_VERSION))
         return TL_INVALID;
     char operation[32];
-    tl_ipc_request request = {.limit = 10};
+    tl_ipc_request request = {.limit = 10, .version = (unsigned)version};
     status = string_member(&json, "op", operation, sizeof(operation), true);
     if (status != TL_OK)
         return status;
@@ -100,10 +148,12 @@ tl_status ipc_decode(const char *line, size_t length, tl_ipc_request *out) {
     if (op == sizeof(OPERATIONS) / sizeof(OPERATIONS[0]))
         return TL_INVALID;
     request.operation = (tl_ipc_operation)op;
+    if (request.operation == IPC_SOFTWARE_REFRESH && version != IPC_ACTION_VERSION)
+        return TL_INVALID;
     for (size_t i = 1; i < tokens[0].next;) {
         char key[JSON_KEY_BYTES + 1];
         status = json_string(&json, i, key, sizeof(key));
-        if (status != TL_OK || !allowed_key(request.operation, key))
+        if (status != TL_OK || !allowed_key(&request, key))
             return TL_INVALID;
         i = tokens[i + 1].next;
     }
@@ -138,21 +188,52 @@ tl_status ipc_encode(const tl_ipc_request *request, char *out, size_t capacity,
         (request->limit == 0 || request->limit > LEXICAL_MAX_RESULTS))
         return TL_INVALID;
     if ((request->operation == IPC_OPEN || request->operation == IPC_RESOLVE) &&
-        (request->file_id == 0 || request->file_id > INT64_MAX))
+        !request->software_target && (request->file_id == 0 || request->file_id > INT64_MAX))
         return TL_INVALID;
     if (request->operation == IPC_OPEN && request->event_id[0] == 0)
         return TL_INVALID;
+    unsigned version = ipc_version(request);
+    if (version != IPC_VERSION && version != IPC_ACTION_VERSION)
+        return TL_INVALID;
+    if (version == IPC_VERSION &&
+        (request->mode != SEARCH_LOCAL || request->web_fallback || request->software_target ||
+         request->software_suggestions || request->operation == IPC_SOFTWARE_REFRESH))
+        return TL_INVALID;
+    if ((unsigned)request->mode > SEARCH_SOFTWARE ||
+        (request->mode != SEARCH_LOCAL &&
+         (request->web_fallback || request->software_suggestions)) ||
+        (request->operation != IPC_QUERY && request->software_suggestions))
+        return TL_INVALID;
+    if (request->software_target &&
+        (request->operation != IPC_RESOLVE || !software_ref_valid(&request->software)))
+        return TL_INVALID;
     tl_json_buffer b;
     json_buffer_init(&b, out, capacity);
-    json_raw(&b, "{\"version\":1");
+    json_raw(&b, "{\"version\":");
+    json_number(&b, version);
     field(&b, "request_id", request->request_id);
     field(&b, "op", OPERATIONS[request->operation]);
     if (request->operation == IPC_QUERY) {
         field(&b, "query", request->query);
         json_raw(&b, ",\"limit\":");
         json_number(&b, request->limit);
+        if (version == IPC_ACTION_VERSION) {
+            field(&b, "mode",
+                  request->mode == SEARCH_LOCAL ? "local"
+                  : request->mode == SEARCH_WEB ? "web"
+                                                : "software");
+            json_raw(&b, ",\"web_fallback\":");
+            json_raw(&b, request->web_fallback ? "true" : "false");
+            /* Omit the extension entirely for older servers with strict field parsing. */
+            if (request->software_suggestions)
+                json_raw(&b, ",\"software_suggestions\":true");
+        }
     }
-    if (request->operation == IPC_RESOLVE || request->operation == IPC_OPEN) {
+    if (request->software_target) {
+        json_raw(&b, ",\"target\":");
+        ipc_software_target(&b, &request->software, request->software_revision,
+                            request->source_revision);
+    } else if (request->operation == IPC_RESOLVE || request->operation == IPC_OPEN) {
         json_raw(&b, ",\"file_id\":\"");
         json_number(&b, request->file_id);
         json_raw(&b, "\"");
@@ -393,15 +474,15 @@ static tl_status connect_client(const char *path, int *out, int64_t deadline) {
 /* Validate intermediate envelopes before discarding their borrowed bytes. */
 static tl_status response_phase(const char *response, size_t length, const tl_ipc_request *request,
                                 bool *final) {
-    tl_json_token tokens[IPC_CLIENT_JSON_TOKENS];
+    tl_json_token tokens[IPC_RESPONSE_TOKENS];
     tl_json json;
-    tl_status status = json_parse(response, length, tokens, IPC_CLIENT_JSON_TOKENS, &json);
+    tl_status status = json_parse(response, length, tokens, IPC_RESPONSE_TOKENS, &json);
     uint64_t version = 0;
     char id[IPC_REQUEST_ID_BYTES + 1], phase[16];
     if (status != TL_OK)
         return status;
     if (json_uint(&json, json_member(&json, 0, "version"), &version) != TL_OK ||
-        version != IPC_VERSION ||
+        version != ipc_version(request) ||
         string_member(&json, "request_id", id, sizeof(id), true) != TL_OK ||
         strcmp(id, request->request_id) != 0 ||
         string_member(&json, "phase", phase, sizeof(phase), true) != TL_OK)

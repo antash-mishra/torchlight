@@ -123,6 +123,26 @@
 - **Desktop id:** XDG application identity derived from its relative `.desktop`
   path, replacing directory separators with hyphens; user entries mask system
   entries with the same id.
+- **Web action (M9):** A typed action that opens an encoded query in the
+  chosen search engine through the default browser; constructing it makes no
+  web request. See the [M9 plan](m9-plan.md).
+- **Desktop matrix:** Required functional tests across X11, GNOME, KDE and
+  Cinnamon, each in its own Docker image and Boat worker. It records dependency
+  versions and fails when a required environment cannot run; see
+  [the matrix guide](desktop-test-matrix.md).
+- **Software catalog (M9):** A separate resident index of applications
+  available from configured repositories, refreshed by a background worker.
+  The installed desktop catalog remains responsible for application launching.
+- **Software identity (M9):** The backend, installation scope, remote,
+  app id, architecture and branch identifying one available source variant;
+  display names are not installation targets.
+- **Software-manager handoff (M9):** Opening an application's details
+  in a supported software manager, which owns confirmation and installation.
+  An accepted handoff does not establish that installation completed.
+- **Automatic app suggestion:** One of up to three available apps matched by name
+  during an ordinary popup search. Installed desktop matches suppress these
+  suggestions; exact local names/paths retain priority. This query preference
+  does not equate native and Flatpak package identities (ADR 0070).
 - **Desktop result id:** Session-scoped numeric IPC identity for an unchanged,
   visible desktop entry. Changes/removal/restart invalidate it; it is distinct
   from a durable SQLite file id.
@@ -212,3 +232,9 @@
 - **Tekst:** The popup's look (ADR 0048): teletext's information design (a page
   header, color blocks, inverse video, Fastext links) on Nordic light and dark
   palettes.
+
+
+- **Pinned Web action**: the browser action below the popup query, outside the
+  scrolling local results. It searches text or visits a recognized website.
+- **Popup web preferences**: per-user browser and search-engine choices in
+  `torchlight/web.ini`, applied by the GTK client without restarting the daemon.

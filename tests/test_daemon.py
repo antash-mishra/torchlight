@@ -260,7 +260,7 @@ def live_catalog(service):
         assert service.indexed(rollback_target) == rollback_id
 
         # Malformed framing and duplicate active ids are rejected per connection.
-        for invalid in [b'{"version":2,"request_id":"bad","op":"status"}\n',
+        for invalid in [b'{"version":3,"request_id":"bad","op":"status"}\n',
                         b'{"version":1,"request_id":"bad","op":"query","query":"\\u0000"}\n',
                         b'{"version":1,"request_id":"bad","op":"query","query":"x","query":"y"}\n']:
             with service.connect() as connection:

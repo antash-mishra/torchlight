@@ -1,0 +1,5 @@
+# Source snapshots exclude ignored files; also keep remote build artifacts out of layers.
+.git
+build
+**/__pycache__
+**/*.pyc

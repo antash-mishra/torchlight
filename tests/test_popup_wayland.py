@@ -15,8 +15,8 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
+from desktop_support import capture_view, session_directory, unavailable
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--launcher", default="build/torchlight-gtk")
@@ -77,7 +77,7 @@ def fixture(base):
         "[Desktop Entry]\nType=Application\nName=Sound\nComment=Change sound levels and devices\n"
         "Exec=true\nCategories=Settings;\nKeywords=audio;volume;\nIcon=preferences-desktop-sound\n")
     config = base / "config"
-    config.write_text(f"root = {files}\n")
+    config.write_text(f"root = {files}\nweb_search = false\nsoftware_search = false\n")
     return apps.parent, config
 
 
@@ -133,6 +133,7 @@ def inside(base, out):
                                        if node.get_role() == Atspi.Role.FRAME
                                        and node.get_name() == "Torchlight"), None))
         extents = check_popup(frame, Atspi)
+        capture_view(client)
     finally:
         if gui is not None:
             gui.terminate()
@@ -150,15 +151,15 @@ if args.inside:
     inside(Path(args.inside[0]), Path(args.inside[1]))
     raise SystemExit(0)
 if weston_command() is None:
-    print("Wayland popup check skipped: weston is not installed")
+    unavailable("weston is not installed")
     raise SystemExit(0)
 try:
     import gi
     gi.require_version("Atspi", "2.0")
 except (ImportError, ValueError):
-    print("Wayland popup check skipped: the AT-SPI Python bindings are not installed")
+    unavailable("the AT-SPI Python bindings are not installed")
     raise SystemExit(0)
-with tempfile.TemporaryDirectory(prefix="torchlight-wayland-") as temporary:
+with session_directory(prefix="torchlight-wayland-") as temporary:
     base = Path(temporary)
     runtime = base / "runtime"
     runtime.mkdir(mode=0o700)

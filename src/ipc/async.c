@@ -67,7 +67,7 @@ static tl_status validate(tl_ipc_exchange *exchange, bool *terminal) {
     char id[IPC_REQUEST_ID_BYTES + 1], phase[16];
     uint64_t version = 0;
     if (json_uint(&json, json_member(&json, 0, "version"), &version) != TL_OK ||
-        version != IPC_VERSION ||
+        version != ipc_version(&exchange->request) ||
         json_string(&json, json_member(&json, 0, "request_id"), id, sizeof(id)) != TL_OK ||
         strcmp(id, exchange->request.request_id) != 0 ||
         json_string(&json, json_member(&json, 0, "phase"), phase, sizeof(phase)) != TL_OK)

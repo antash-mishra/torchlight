@@ -22,7 +22,7 @@ static void protocol(void) {
         "{}",
         "[]",
         "{\"version\":\"1\",\"op\":\"status\",\"request_id\":\"r\"}",
-        "{\"version\":2,\"op\":\"status\",\"request_id\":\"r\"}",
+        "{\"version\":3,\"op\":\"status\",\"request_id\":\"r\"}",
         "{\"version\":1,\"op\":\"status\",\"request_id\":\"\"}",
         "{\"version\":1,\"op\":\"query\",\"request_id\":\"r\"}",
         "{\"version\":1,\"op\":\"query\",\"request_id\":\"r\",\"query\":null}",

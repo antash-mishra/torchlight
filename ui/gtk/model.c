@@ -1,6 +1,7 @@
 /* Strict copied IPC results, open windows beneath applications and stable
  * deliberate selection across response phases. */
 #include "torchlight/popup.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #define POPUP_JSON_TOKENS 16384
@@ -15,12 +16,14 @@ struct expansion {
 };
 /* Item identity that survives reordering: its result, kind and window. */
 struct item_key {
-    uint64_t id, handle;
+    tl_popup_row row;
+    uint64_t handle;
     tl_popup_item_kind kind;
 };
 struct tl_popup_model {
     char request_id[IPC_REQUEST_ID_BYTES + 1], search_id[IPC_HISTORY_ID_BYTES + 1];
-    tl_popup_row rows[POPUP_RESULTS + 1], incoming[POPUP_RESULTS];
+    tl_popup_row rows[POPUP_ROWS + 1], incoming[POPUP_ROWS];
+    char reason[64];
     tl_popup_item items[POPUP_ITEMS];
     /* position indexes items; count is the number of rows. */
     size_t count, item_count, position;
@@ -30,6 +33,8 @@ struct tl_popup_model {
     struct expansion choices[POPUP_CHOICES];
     size_t choice_count;
     bool deliberate, ready, indexing, degraded;
+    bool allow_visit, prefer_software;
+    tl_web_options web_options;
     /* The last response's search time; POPUP_SEARCH_TIME_UNKNOWN when it gave none. */
     uint64_t search_us;
     tl_json_token tokens[POPUP_JSON_TOKENS];
@@ -63,9 +68,82 @@ static tl_status single_line(const char *input, char *out, size_t capacity) {
     out[length] = 0;
     return TL_OK;
 }
+static tl_status decode_web(tl_popup_model *model, const tl_json *json, size_t token,
+                            tl_popup_row *row) {
+    row->target_kind = POPUP_TARGET_WEB;
+    char provider[32], uri[SEARCH_ACTION_URI_BYTES];
+    if (string_field(json, token, "provider", provider, sizeof(provider), false) != TL_OK ||
+        search_actions_engine_parse(provider, &row->web_engine) != TL_OK ||
+        string_field(json, token, "query", row->web_query, sizeof(row->web_query), false) !=
+            TL_OK ||
+        search_actions_uri(row->web_engine, row->web_query, uri, sizeof(uri)) != TL_OK)
+        return TL_INVALID;
+    if (model->web_options.override_engine)
+        row->web_engine = model->web_options.engine;
+    memcpy(row->web_browser, model->web_options.browser, sizeof(row->web_browser));
+    tl_status status = single_line(row->web_query, model->scratch, sizeof(model->scratch));
+    if (status != TL_OK)
+        return status;
+    bool visit = model->allow_visit && search_actions_address(row->web_query, row->web_uri,
+                                                              sizeof(row->web_uri)) == TL_OK;
+    int size = visit ? snprintf(row->name, sizeof(row->name), "Open %s", model->scratch)
+                     : snprintf(row->name, sizeof(row->name), "Search %s for “%s”",
+                                row->web_engine == SEARCH_GOOGLE ? "Google" : "DuckDuckGo",
+                                model->scratch);
+    if (size < 0 || (size_t)size >= sizeof(row->name))
+        return TL_LIMIT;
+    memcpy(row->icon, "web-browser-symbolic", sizeof("web-browser-symbolic"));
+    const char *browser = model->web_options.browser_name[0] == 0 ? "Default browser"
+                                                                  : model->web_options.browser_name;
+    return single_line(browser, row->display, sizeof(row->display));
+}
+static tl_status decode_action(tl_popup_model *model, const tl_json *json, size_t token,
+                               tl_popup_row *row, const char *kind) {
+    if (json_member(json, token, "path") != SIZE_MAX ||
+        json_member(json, token, "path_b64") != SIZE_MAX ||
+        json_member(json, token, "id") != SIZE_MAX ||
+        json_member(json, token, "desktop_id") != SIZE_MAX)
+        return TL_INVALID;
+    if (strcmp(kind, "web") == 0)
+        return decode_web(model, json, token, row);
+    row->target_kind = POPUP_TARGET_SOFTWARE;
+    tl_status status = ipc_software_decode(json, json_member(json, token, "target"), &row->software,
+                                           &row->software_revision, &row->source_revision);
+    if (status != TL_OK)
+        return status;
+    size_t installed = json_member(json, token, "installed");
+    if (installed == SIZE_MAX || json->tokens[installed].type != JSON_BOOL)
+        return TL_INVALID;
+    row->installed = json->text[json->tokens[installed].start] == 't';
+    status = string_field(json, token, "name", model->scratch, SOFTWARE_NAME_BYTES, false);
+    if (status == TL_OK)
+        status = single_line(model->scratch, row->name, sizeof(row->name));
+    if (status == TL_OK)
+        status =
+            string_field(json, token, "summary", model->scratch, SOFTWARE_SUMMARY_BYTES, false);
+    if (status == TL_OK)
+        status = single_line(model->scratch, row->summary, sizeof(row->summary));
+    if (row->name[0] == 0)
+        return TL_INVALID;
+    int size = snprintf(row->display, sizeof(row->display), "%s • %s • %s/%s%s",
+                        row->software.remote, row->software.installation, row->software.arch,
+                        row->software.branch, row->installed ? " • Installed" : "");
+    if (size < 0 || (size_t)size >= sizeof(row->display))
+        return TL_LIMIT;
+    memcpy(row->icon, "system-software-install-symbolic",
+           sizeof("system-software-install-symbolic"));
+    return status;
+}
 static tl_status decode_row(tl_popup_model *model, const tl_json *json, size_t token,
                             tl_popup_row *row) {
     *row = (tl_popup_row){0};
+    char action_kind[32];
+    tl_status action_status =
+        string_field(json, token, "kind", action_kind, sizeof(action_kind), true);
+    if (action_status != TL_OK)
+        return action_status;
+    if (strcmp(action_kind, "web") == 0 || strcmp(action_kind, "software") == 0)
+        return decode_action(model, json, token, row, action_kind);
     size_t id = json_member(json, token, "id");
     if (id == SIZE_MAX || json->tokens[id].type != JSON_STRING ||
         json_uint(json, id, &row->id) != TL_OK || row->id == 0 || row->id > INT64_MAX)
@@ -206,6 +284,17 @@ static void append_result(tl_popup_model *model, size_t r) {
 /* Groups in the order of their best row, so the strongest result stays first. */
 static size_t group_order(const tl_popup_model *model, tl_popup_group order[POPUP_GROUPS]) {
     size_t count = 0;
+    for (size_t r = 0; r < model->count; r++)
+        if (model->rows[r].target_kind == POPUP_TARGET_WEB) {
+            order[count++] = POPUP_GROUP_WEB;
+            break;
+        }
+    if (model->prefer_software)
+        for (size_t r = 0; r < model->count; r++)
+            if (model->rows[r].target_kind == POPUP_TARGET_SOFTWARE) {
+                order[count++] = POPUP_GROUP_SOFTWARE;
+                break;
+            }
     for (size_t r = 0; r < model->count; r++) {
         tl_popup_group group = popup_row_group(&model->rows[r]);
         bool seen = false;
@@ -228,14 +317,14 @@ static void build_items(tl_popup_model *model) {
 }
 static struct item_key item_key(const tl_popup_model *model, size_t index) {
     const tl_popup_item *item = &model->items[index];
-    return (struct item_key){model->rows[item->row].id, item->handle, item->kind};
+    return (struct item_key){model->rows[item->row], item->handle, item->kind};
 }
 /* Index of the item with key, else its result's item, else the first item. */
 static size_t find_item(const tl_popup_model *model, const struct item_key *key) {
     size_t fallback = 0;
     for (size_t i = 0; i < model->item_count; i++) {
         const tl_popup_item *item = &model->items[i];
-        if (model->rows[item->row].id != key->id)
+        if (!popup_row_same(&model->rows[item->row], &key->row))
             continue;
         if (item->kind == key->kind && item->handle == key->handle)
             return i;
@@ -264,6 +353,24 @@ tl_status popup_model_create(tl_popup_model **out) {
     (*out)->search_us = POPUP_SEARCH_TIME_UNKNOWN;
     return TL_OK;
 }
+tl_status popup_model_set_web_options(tl_popup_model *model, const tl_web_options *options,
+                                      bool allow_visit) {
+    if (model == NULL || options == NULL ||
+        memchr(options->browser, 0, sizeof(options->browser)) == NULL ||
+        memchr(options->browser_name, 0, sizeof(options->browser_name)) == NULL ||
+        !json_utf8(options->browser_name) || !search_actions_browser(options->browser) ||
+        (options->override_engine && search_actions_engine(options->engine) == NULL))
+        return TL_INVALID;
+    model->web_options = *options;
+    model->allow_visit = allow_visit;
+    return TL_OK;
+}
+static size_t initial_position(const tl_popup_model *model) {
+    if (model->item_count < 2)
+        return 0;
+    const tl_popup_row *first = &model->rows[model->items[0].row];
+    return first->target_kind == POPUP_TARGET_WEB && first->web_uri[0] == 0 ? 1 : 0;
+}
 void popup_model_destroy(tl_popup_model *model) {
     free(model);
 }
@@ -272,6 +379,7 @@ void popup_model_clear(tl_popup_model *model) {
         return;
     model->request_id[0] = 0;
     model->search_id[0] = 0;
+    model->reason[0] = 0;
     model->count = 0;
     model->item_count = 0;
     model->choice_count = 0;
@@ -295,6 +403,32 @@ tl_status popup_model_begin(tl_popup_model *model, const char *id) {
     model->position = 0;
     return TL_OK;
 }
+static tl_status decode_suggestions(tl_popup_model *model, const tl_json *json, tl_popup_row *rows,
+                                    size_t capacity, size_t *count) {
+    size_t array = json_member(json, 0, "software_suggestions");
+    size_t preference = json_member(json, 0, "prefer_software");
+    if (preference != SIZE_MAX && json->tokens[preference].type != JSON_BOOL)
+        return TL_INVALID;
+    if (array == SIZE_MAX)
+        return TL_OK;
+    if (json->tokens[array].type != JSON_ARRAY)
+        return TL_INVALID;
+    size_t found = 0;
+    for (size_t i = array + 1; i < json->tokens[array].next; i = json->tokens[i].next) {
+        if (found++ == IPC_SOFTWARE_SUGGESTIONS || *count == capacity)
+            return TL_LIMIT;
+        tl_status status = decode_row(model, json, i, &rows[*count]);
+        if (status != TL_OK)
+            return status;
+        if (rows[*count].target_kind != POPUP_TARGET_SOFTWARE)
+            return TL_INVALID;
+        for (size_t j = 0; j < *count; j++)
+            if (popup_row_same(&rows[j], &rows[*count]))
+                return TL_INVALID;
+        (*count)++;
+    }
+    return TL_OK;
+}
 static bool boolean_field(const tl_json *json, size_t object, const char *key) {
     size_t token = json_member(json, object, key);
     return token != SIZE_MAX && json->tokens[token].type == JSON_BOOL &&
@@ -314,7 +448,7 @@ tl_status popup_model_decode(tl_popup_model *model, const char *response, size_t
     uint64_t version = 0;
     char state[32], phase[16];
     if (json_uint(&json, json_member(&json, 0, "version"), &version) != TL_OK ||
-        version != IPC_VERSION ||
+        (version != IPC_VERSION && version != IPC_ACTION_VERSION) ||
         string_field(&json, 0, "status", state, sizeof(state), false) != TL_OK ||
         string_field(&json, 0, "phase", phase, sizeof(phase), false) != TL_OK ||
         (strcmp(phase, "final") != 0 && strcmp(phase, "lexical") != 0))
@@ -336,15 +470,37 @@ tl_status popup_model_decode(tl_popup_model *model, const char *response, size_t
         return TL_INVALID;
     size_t found = 0;
     for (size_t i = results + 1; i < json.tokens[results].next; i = json.tokens[i].next) {
-        if (found == capacity)
+        if (found == capacity || found == POPUP_RESULTS)
             return TL_LIMIT;
         status = decode_row(model, &json, i, &rows[found]);
         if (status != TL_OK)
             return status;
+        if (rows[found].target_kind == POPUP_TARGET_WEB ||
+            (version == IPC_VERSION && rows[found].target_kind != POPUP_TARGET_LOCAL))
+            return TL_INVALID;
         for (size_t j = 0; j < found; j++)
-            if (rows[j].id == rows[found].id)
+            if (popup_row_same(&rows[j], &rows[found]))
                 return TL_INVALID;
         found++;
+    }
+    if (version == IPC_ACTION_VERSION) {
+        size_t actions = json_member(&json, 0, "actions");
+        if (actions == SIZE_MAX || json.tokens[actions].type != JSON_ARRAY)
+            return TL_INVALID;
+        size_t action_count = 0;
+        for (size_t i = actions + 1; i < json.tokens[actions].next; i = json.tokens[i].next) {
+            if (action_count++ == POPUP_ACTIONS || found == capacity)
+                return TL_LIMIT;
+            status = decode_row(model, &json, i, &rows[found]);
+            if (status != TL_OK)
+                return status;
+            if (rows[found].target_kind != POPUP_TARGET_WEB)
+                return TL_INVALID;
+            found++;
+        }
+        status = decode_suggestions(model, &json, rows, capacity, &found);
+        if (status != TL_OK)
+            return status;
     }
     *count = found;
     return TL_OK;
@@ -363,7 +519,7 @@ static void replace_rows(tl_popup_model *model, size_t count) {
     }
     model->count = 0;
     for (size_t i = 0; i < count; i++)
-        if (!retain || model->incoming[i].id != selected.id)
+        if (!retain || !popup_row_same(&model->incoming[i], &selected))
             model->rows[model->count++] = model->incoming[i];
     if (retain) {
         if (row > model->count)
@@ -374,7 +530,7 @@ static void replace_rows(tl_popup_model *model, size_t count) {
         model->count++;
     }
     build_items(model);
-    model->position = retain ? find_item(model, &key) : 0;
+    model->position = retain ? find_item(model, &key) : initial_position(model);
 }
 tl_status popup_model_apply(tl_popup_model *model, const char *response, size_t length) {
     if (model == NULL)
@@ -388,14 +544,18 @@ tl_status popup_model_apply(tl_popup_model *model, const char *response, size_t 
         return TL_STATE;
     size_t count = 0;
     char search_id[IPC_HISTORY_ID_BYTES + 1];
-    status = popup_model_decode(model, response, length, model->incoming, POPUP_RESULTS, &count,
-                                search_id);
+    status =
+        popup_model_decode(model, response, length, model->incoming, POPUP_ROWS, &count, search_id);
     if (status != TL_OK)
         return status;
-    replace_rows(model, count);
-    memcpy(model->search_id, search_id, strlen(search_id) + 1);
     /* decode reused token scratch; parse again for supplementary index state. */
     status = json_parse(response, length, model->tokens, POPUP_JSON_TOKENS, &json);
+    if (status != TL_OK)
+        return status;
+    model->prefer_software = boolean_field(&json, 0, "prefer_software");
+    replace_rows(model, count);
+    memcpy(model->search_id, search_id, strlen(search_id) + 1);
+    status = string_field(&json, 0, "reason", model->reason, sizeof(model->reason), true);
     if (status != TL_OK)
         return status;
     size_t indexing = json_member(&json, 0, "indexing");
@@ -466,8 +626,8 @@ bool popup_model_collapse(tl_popup_model *model) {
     const tl_popup_item *item = popup_model_selected_item(model);
     if (item == NULL || (item->kind == POPUP_ITEM_RESULT && !item->expanded))
         return false;
-    struct item_key key = {model->rows[item->row].id, 0, POPUP_ITEM_RESULT};
-    if (!set_expansion(model, key.id, EXPANSION_COLLAPSED))
+    struct item_key key = {model->rows[item->row], 0, POPUP_ITEM_RESULT};
+    if (!set_expansion(model, key.row.id, EXPANSION_COLLAPSED))
         return false;
     build_items(model);
     model->position = find_item(model, &key);
@@ -475,10 +635,12 @@ bool popup_model_collapse(tl_popup_model *model) {
     return true;
 }
 tl_popup_group popup_row_group(const tl_popup_row *row) {
-    return row->settings      ? POPUP_GROUP_SETTINGS
-           : row->application ? POPUP_GROUP_APPS
-           : row->folder      ? POPUP_GROUP_FOLDERS
-                              : POPUP_GROUP_FILES;
+    return row->target_kind == POPUP_TARGET_WEB        ? POPUP_GROUP_WEB
+           : row->target_kind == POPUP_TARGET_SOFTWARE ? POPUP_GROUP_SOFTWARE
+           : row->settings                             ? POPUP_GROUP_SETTINGS
+           : row->application                          ? POPUP_GROUP_APPS
+           : row->folder                               ? POPUP_GROUP_FOLDERS
+                                                       : POPUP_GROUP_FILES;
 }
 size_t popup_model_group_count(const tl_popup_model *model, tl_popup_group group) {
     size_t count = 0;
@@ -522,14 +684,14 @@ static const char *short_tail(const char *display, size_t length, size_t *tail_l
 }
 size_t popup_model_distinct_prefix(const tl_popup_model *model, size_t index) {
     const tl_popup_row *row = popup_model_row(model, index);
-    if (row == NULL || row->application)
+    if (row == NULL || row->application || row->target_kind != POPUP_TARGET_LOCAL)
         return 0;
     size_t length = parent_length(row->display), keep = 0;
     for (size_t i = 0; i < model->count; i++) {
         const tl_popup_row *other = &model->rows[i];
         /* Icons already tell folders from files, so only same-kind names can collide. */
-        if (i == index || other->application || other->folder != row->folder ||
-            strcmp(other->name, row->name) != 0)
+        if (i == index || other->target_kind != POPUP_TARGET_LOCAL || other->application ||
+            other->folder != row->folder || strcmp(other->name, row->name) != 0)
             continue;
         size_t other_length = parent_length(other->display), tail_length, other_tail_length;
         const char *tail = short_tail(row->display, length, &tail_length);
@@ -559,4 +721,22 @@ const char *popup_model_search_id(const tl_popup_model *model) {
 }
 uint64_t popup_model_search_us(const tl_popup_model *model) {
     return model == NULL ? POPUP_SEARCH_TIME_UNKNOWN : model->search_us;
+}
+
+const char *popup_model_hint(const tl_popup_model *model) {
+    if (model == NULL)
+        return "";
+    if (strcmp(model->reason, "web_disabled") == 0)
+        return "Web search is disabled in Torchlight’s configuration.";
+    if (strcmp(model->reason, "loading") == 0)
+        return "Loading available apps… Retry shortly.";
+    if (strcmp(model->reason, "unavailable") == 0)
+        return "Software search needs Flatpak and an enabled remote.";
+    if (strcmp(model->reason, "disabled") == 0)
+        return "Software search is disabled in Torchlight’s configuration.";
+    if (strcmp(model->reason, "failed") == 0)
+        return "Could not refresh available apps. Retry to try again.";
+    if (strcmp(model->reason, "stale") == 0)
+        return "Showing cached apps. Refresh failed; Retry to try again.";
+    return "";
 }

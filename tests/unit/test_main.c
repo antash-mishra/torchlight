@@ -1,6 +1,7 @@
 /* Sanitizer-enabled test runner for every module. */
 #include "test.h"
 int main(void) {
+    test_search_actions();
     test_desktop();
     test_popup();
     test_windows();

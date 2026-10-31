@@ -22,8 +22,8 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
+from desktop_support import capture_view, session_directory, unavailable
 
 DESKTOPS = ["sway", "labwc", "cosmic", "kwin", "cinnamon"]
 parser = argparse.ArgumentParser()
@@ -143,7 +143,7 @@ def user_dirs(base, desktop):
     (base / "data/icons").symlink_to("/usr/share/icons", target_is_directory=True)
     if desktop == "cinnamon":
         shutil.copytree(repo / "ui/cinnamon" / UUID, base / "data/cinnamon/extensions" / UUID)
-    (base / "daemon.conf").write_text(f"root = {base / 'files'}\n")
+    (base / "daemon.conf").write_text(f"root = {base / 'files'}\nweb_search = false\nsoftware_search = false\n")
     return dict(XDG_CONFIG_HOME=str(base / "config"), XDG_DATA_HOME=str(base / "data"),
                 XDG_CACHE_HOME=str(base / "cache"), XDG_STATE_HOME=str(base / "state"),
                 HOME=str(base))
@@ -258,6 +258,7 @@ def run(desktop, found, base):
         assert sorted(before) == sorted(TITLES) and after == TITLES, (before, after)
         shown = wait_for(lambda: (lambda order: order if order == TITLES else None)(
             popup_order(Atspi, client)))
+        capture_view(client)
         print(f"{desktop}: the popup listed {newest_first}; switching to {older!r} made it the "
               f"most recent, and the popup then listed {shown}")
     finally:
@@ -281,14 +282,14 @@ try:
     gi.require_version("Atspi", "2.0")
     gi.require_version("Gtk", "4.0")
 except (ImportError, ValueError):
-    print("Desktop windows check skipped: the AT-SPI or GTK 4 Python bindings are not installed")
+    unavailable("the AT-SPI or GTK 4 Python bindings are not installed")
     raise SystemExit(0)
 failed = []
 for desktop in args.desktop or DESKTOPS:
     if available(desktop) is None:
-        print(f"{desktop}: skipped, not installed (see this file's header)")
+        unavailable(f"{desktop} is not installed (see this file's header)")
         continue
-    with tempfile.TemporaryDirectory(prefix=f"torchlight-{desktop}-") as temporary:
+    with session_directory(prefix=f"torchlight-{desktop}-") as temporary:
         base = Path(temporary)
         runtime = base / "runtime"
         runtime.mkdir(mode=0o700)

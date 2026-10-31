@@ -1,6 +1,6 @@
 # config
 
-> **Status:** Implemented (M1/M2): XDG paths, configuration and canonical database identity
+> **Status:** Implemented (M1/M2/M9): XDG paths, configuration and canonical database identity; feature policy validated by search_actions
 > **Source:** `src/core/config.c` · **Header:** `include/torchlight/config.h`
 > **Tests:** `tests/unit/test_config.c`, `tests/test_cli.py`
 
@@ -42,3 +42,7 @@ and reject any other key. Getters borrow until destruction.
 - [M1 completion ADR](../../adr/0008-m1-completion-channels-directories-config.md)
 - [cli](../cli/README.md), [crawl](../crawl/README.md)
 - Public headers document parameters, lifetimes and error contracts.
+
+## M9 feature settings
+
+The generic parser remains unaware of Torchlight policy. The search_actions domain helper validates web_search, web_engine and software_search alongside root/allow/exclude; both the daemon writer and offline CLI call it. See [configuration](../../configuration.md).

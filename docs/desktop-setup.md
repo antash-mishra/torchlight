@@ -25,6 +25,22 @@ reveals files through the file manager. For non-UTF-8 filenames, reveal also
 opens their parent folder because Nemo can acknowledge the item without showing
 it. Opening or clearing the popup shows `Type to search` with no default results.
 
+## Web search and available apps
+
+Web searches and website addresses use the system's current default browser.
+Set that browser in your desktop's default-applications settings; old Torchlight
+browser overrides are ignored. The search engine uses a saved `web.ini` choice
+or the daemon's engine. There is no settings gear. Website addresses open
+directly, and Alt+Enter searches the text. The Web action stays visible above
+scrolling local results.
+`install QUERY` needs Flatpak
+with an existing enabled repository, plus GNOME Software or KDE Discover with
+Flatpak support. Torchlight never configures repositories. The manager owns
+source selection and installation confirmation; Cinnamon can use either of
+these managers, while Mint Software Manager's importer is not enabled. After an
+external install, the software badge and normal installed-app results refresh
+in the background. See [feature settings](configuration.md).
+
 ## Per-user installation and service
 
 ```sh

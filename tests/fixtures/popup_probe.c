@@ -13,7 +13,8 @@
 #include <sys/types.h>
 struct popup_probe {
     char *filename;
-    GtkWidget *entry, *list, *status, *retry, *search, *footer, *scroll, *surface, *preview;
+    GtkWidget *entry, *list, *status, *retry, *search, *footer, *scroll, *surface, *preview,
+        *web_list, *preferences;
     gint64 changed;
     unsigned retry_clicks;
     bool painted;
@@ -249,6 +250,28 @@ static void write_frame(struct popup_probe *probe, bool ready) {
         if (GTK_IS_LIST_BOX_ROW(child))
             rows++;
     GtkListBoxRow *selected = gtk_list_box_get_selected_row(GTK_LIST_BOX(probe->list));
+    if (probe->web_list != NULL) {
+        for (GtkWidget *child = gtk_widget_get_first_child(probe->web_list); child != NULL;
+             child = gtk_widget_get_next_sibling(child))
+            if (GTK_IS_LIST_BOX_ROW(child))
+                rows++;
+        GtkListBoxRow *web_selected = gtk_list_box_get_selected_row(GTK_LIST_BOX(probe->web_list));
+        if (web_selected != NULL)
+            selected = web_selected;
+    }
+    size_t encoded_position =
+        selected == NULL ? 0
+                         : GPOINTER_TO_SIZE(g_object_get_data(G_OBJECT(selected), "popup-item"));
+    int position = encoded_position != 0 ? (int)(encoded_position - 1)
+                   : selected == NULL    ? -1
+                                         : gtk_list_box_row_get_index(selected);
+    GtkWidget *action = selected == NULL ? NULL : find_label(GTK_WIDGET(selected), "result-action");
+    bool install_selected =
+        action != NULL && strcmp(gtk_label_get_text(GTK_LABEL(action)), "Install") == 0;
+    graphene_rect_t web_bounds = GRAPHENE_RECT_INIT(0, 0, 0, 0);
+    bool web_visible = probe->web_list != NULL && gtk_widget_get_mapped(probe->web_list);
+    if (web_visible && !gtk_widget_compute_bounds(probe->web_list, probe->surface, &web_bounds))
+        return;
     GtkWidget *window = GTK_WIDGET(gtk_widget_get_root(probe->entry));
     graphene_rect_t bounds = GRAPHENE_RECT_INIT(0, 0, 0, 0), surface = bounds;
     if (!gtk_widget_compute_bounds(probe->entry, window, &bounds) ||
@@ -270,13 +293,14 @@ static void write_frame(struct popup_probe *probe, bool ready) {
             "\"entry_x\":%.1f,\"entry_y\":%.1f,\"entry_width\":%.1f,\"clear_icon\":%s,"
             "\"shadow_left\":%d,\"shadow_top\":%d,\"preview_visible\":%s,"
             "\"preview_name_b64\":\"%s\",\"surface_width\":%.1f,\"surface_height\":%.1f,"
-            "\"clear\":%s,\"opaque\":[%d,%d,%d,%d],\"tooltip_queries\":%u,\"query_sent_us\":%lld}"
+            "\"clear\":%s,\"opaque\":[%d,%d,%d,%d],\"tooltip_queries\":%u,\"query_sent_us\":%lld,"
+            "\"web_visible\":%s,\"web_y\":%.1f,\"web_height\":%.1f,\"preferences_present\":%s,"
+            "\"install_selected\":%s}"
             "\n",
             (long long)painted, (long long)probe->changed, probe->painted ? "false" : "true",
             ready ? "true" : "false", rows, encoded_query, encoded_status,
             gtk_widget_get_visible(probe->retry) ? "true" : "false",
-            gtk_widget_has_focus(probe->retry) ? "true" : "false", probe->retry_clicks,
-            selected == NULL ? -1 : gtk_list_box_row_get_index(selected),
+            gtk_widget_has_focus(probe->retry) ? "true" : "false", probe->retry_clicks, position,
             gtk_widget_get_visible(probe->scroll) ? "true" : "false",
             gtk_widget_get_visible(probe->footer) ? "true" : "false",
             gtk_widget_has_css_class(probe->search, "typing") ? "true" : "false",
@@ -288,7 +312,10 @@ static void write_frame(struct popup_probe *probe, bool ready) {
             gtk_widget_get_margin_start(probe->surface), gtk_widget_get_margin_top(probe->surface),
             gtk_widget_get_visible(probe->preview) ? "true" : "false", encoded_name,
             (double)surface.size.width, (double)surface.size.height, clear ? "true" : "false",
-            opaque[0], opaque[1], opaque[2], opaque[3], tooltip_queries, (long long)query_sent_us);
+            opaque[0], opaque[1], opaque[2], opaque[3], tooltip_queries, (long long)query_sent_us,
+            web_visible ? "true" : "false", (double)web_bounds.origin.y,
+            (double)web_bounds.size.height, probe->preferences != NULL ? "true" : "false",
+            install_selected ? "true" : "false");
         if (written < 0)
             fputs("Could not record popup frame\n", stderr);
         if (fclose(file) != 0)
@@ -326,7 +353,11 @@ void gtk_window_present(GtkWindow *window) {
     struct popup_probe *probe = g_new0(struct popup_probe, 1);
     probe->filename = g_strdup(filename);
     probe->entry = find_widget(GTK_WIDGET(window), GTK_TYPE_ENTRY);
-    probe->list = find_widget(GTK_WIDGET(window), GTK_TYPE_LIST_BOX);
+    probe->list = find_named(GTK_WIDGET(window), "popup-local-list");
+    if (probe->list == NULL)
+        probe->list = find_widget(GTK_WIDGET(window), GTK_TYPE_LIST_BOX);
+    probe->web_list = find_named(GTK_WIDGET(window), "popup-web-list");
+    probe->preferences = find_named(GTK_WIDGET(window), "popup-web-preferences");
     probe->status = find_named(GTK_WIDGET(window), "popup-status");
     probe->retry = find_named(GTK_WIDGET(window), "popup-retry");
     probe->search = find_named(GTK_WIDGET(window), "popup-search");
