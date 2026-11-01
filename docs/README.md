@@ -81,6 +81,11 @@ Start here. Read in this order:
 
 ## Implementation status
 
+The standalone [footprint optimization report](reports/footprint-optimization.html)
+explains the recent disk/cache and popup-memory changes with before/after charts,
+an interactive process-lifetime diagram, validation results and measured limits.
+It works offline and includes a print/PDF layout.
+
 The [footprint plan](footprint-plan.md) and
 [implementation record](footprint-implementation.md) cover smaller release
 binaries, explicit semantic-cache maintenance, improved vector storage,
