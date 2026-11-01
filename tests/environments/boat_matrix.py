@@ -204,7 +204,7 @@ def collect(boat, sandbox, pid, lane, output):
     try:
         boat.transfer(f"{sandbox}:/home/user/matrix-results/{lane}", output / lane)
         report = json.loads((output / lane / "result.json").read_text())
-        expected = 3 if lane == "x11" else 1
+        expected = 4 if lane == "x11" else 1
         valid = (report.get("lane") == lane and len(report.get("cases", [])) == expected and
                  all(case.get("status") == "passed" and case.get("skipped") == 0
                      for case in report["cases"]))

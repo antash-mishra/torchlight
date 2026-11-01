@@ -1,5 +1,13 @@
 # Configuration
 
+The GTK popup stays warm for 60 seconds after hiding, then exits when its service
+lifetime permits. Its next shortcut press starts it again; the search daemon
+keeps running. Use `torchlight-gtk --idle-exit-seconds=0 --toggle` for permanent
+residency, or a value from 1 to 86400 for another delay. The option also updates
+an already-running popup. Add the option to the desktop shortcut command to
+keep that choice on future launches. See [ADR 0074](adr/0074-idle-popup-exit.md) for custom
+systemd-service compatibility and the [comparison](idle-popup-comparison.md).
+
 ## Folders
 
 Torchlight indexes your home folder by default. To choose folders, create

@@ -17,7 +17,9 @@ def commands(lane, output):
     if lane == "checks":
         return [("test", ["make", "test"]), ("lint", ["make", "lint"])]
     if lane == "x11":
-        return [("popup-actions", ["python3", "tests/run_popup_checks.py", "--actions",
+        return [("popup-idle", ["python3", "tests/run_popup_checks.py", "--idle",
+                                 "--output", str(output / "popup-idle.json")]),
+                ("popup-actions", ["python3", "tests/run_popup_checks.py", "--actions",
                                     "--screen", "1280x800x24", "--output", str(output / "popup-actions.json")]),
                 ("popup-matrix", ["python3", "tests/run_popup_checks.py", "--matrix",
                                    "--output", str(output / "popup-matrix.json")]),

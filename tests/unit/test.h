@@ -22,6 +22,7 @@ static inline tl_tokenized *test_text(const char *path) {
 void test_search_actions(void);
 /** Run exact-byte file and revision-checked desktop launch regressions. */
 void test_actions(void);
+void test_lifecycle(void);
 /** Run asynchronous IPC framing and request identity regressions. */
 void test_async(void);
 /** Run desktop discovery precedence and removal regressions. */

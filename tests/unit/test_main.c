@@ -9,6 +9,7 @@ int main(void) {
     test_windows_track();
     test_windows_kwin();
     test_actions();
+    test_lifecycle();
     test_config();
     test_core();
     test_sort();

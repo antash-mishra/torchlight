@@ -85,7 +85,7 @@ VIEW_SOURCES = ui/gtk/view.c ui/gtk/path_label.c ui/gtk/selection_track.c ui/gtk
 # The open-window sources, one per kind of session (ADR 0052), and how one is chosen.
 WINDOW_SOURCES = ui/gtk/windows.c ui/gtk/windows_x11.c ui/gtk/windows_shell.c ui/gtk/windows_kwin.c \
                  ui/gtk/windows_track.c ui/gtk/windows_wayland.c ui/gtk/windows_session.c
-UI_SOURCES = ui/gtk/model.c ui/gtk/web_preferences.c $(WINDOW_SOURCES) ui/gtk/actions.c ui/gtk/launcher.c $(VIEW_SOURCES) \
+UI_SOURCES = ui/gtk/model.c ui/gtk/web_preferences.c $(WINDOW_SOURCES) ui/gtk/actions.c ui/gtk/lifecycle.c ui/gtk/launcher.c $(VIEW_SOURCES) \
              ui/gtk/wayland_globals.c src/bin/torchlight-gtk.c
 POPUP_FIXTURE_SOURCE = tests/fixtures/popup_probe.c
 WINDOW_FIXTURE_SOURCE = tests/fixtures/window_app.c
@@ -129,8 +129,8 @@ build/%.o: %.c $(HEADERS)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -MMD -MP -c $< -o $@
 # The popup's GTK-free parts, unit-tested with the engine.
 UNIT_UI_SOURCES = ui/gtk/model.c ui/gtk/windows.c ui/gtk/windows_shell.c ui/gtk/windows_kwin.c \
-                  ui/gtk/windows_track.c ui/gtk/actions.c
-UNIT_UI_HEADERS = ui/gtk/actions.h ui/gtk/windows_shell.h ui/gtk/windows_kwin.h ui/gtk/windows_track.h
+                  ui/gtk/windows_track.c ui/gtk/actions.c ui/gtk/lifecycle.c
+UNIT_UI_HEADERS = ui/gtk/actions.h ui/gtk/lifecycle.h ui/gtk/windows_shell.h ui/gtk/windows_kwin.h ui/gtk/windows_track.h
 build/tests: $(SOURCES) $(UNIT_UI_SOURCES) $(TEST_SOURCES) $(HEADERS) $(UNIT_UI_HEADERS) tests/unit/test.h $(FRIZBEE_LIB)
 	@mkdir -p build
 	$(CC) $(CPPFLAGS) -std=c17 -O1 -g $(WARNINGS) $(SAN_FLAGS) $(SOURCES) $(UNIT_UI_SOURCES) $(TEST_SOURCES) $(LDFLAGS) $(LDLIBS) -o $@

@@ -13,7 +13,10 @@ tl_status launcher_create(tl_launcher **out);
  * NULL release disables the hook. The callback must not touch GTK or fail. */
 tl_status launcher_set_memory_release(tl_launcher *launcher, void (*release)(void *context),
                                       void *context);
-/** Run desktop main loop with borrowed argv, writing process exit code. Requires
+/** Run desktop main loop with borrowed argv, writing process exit code. Hidden
+ * popups exit after 60 seconds when service lifetime permits; the command-line
+ * --idle-exit-seconds option accepts 0..86400 (0 keeps the process resident).
+ * Reopening cancels idle exit; pending launches/history complete first. Requires
  * owned application on creating/main thread. TL_INVALID on invalid arguments. */
 tl_status launcher_run(tl_launcher *launcher, int argc, char **argv, int *exit_code);
 /** Cancel IPC/timers, drain launch worker and free context; call after run.

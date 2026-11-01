@@ -2,6 +2,14 @@
 
 ## Current implementation
 
+The popup stays warm for a minute after dismissal, then exits if its service
+lifetime permits. Its desktop shortcut starts a fresh GTK process after idle;
+the daemon, indexes and available-app catalog remain resident. Reopening cancels
+exit, and pending launches/history postpone it. A worker checks custom systemd
+service policies to preserve launched children and avoid restart loops. See
+[ADR 0074](adr/0074-idle-popup-exit.md) and the
+[comparison](idle-popup-comparison.md).
+
 Schema v5 stores semantic vectors in an ordinary rowid table to avoid mostly
 empty overflow pages. Explicit offline maintenance purges optional semantic data
 and compacts under the database singleton lock; read-only storage reporting does

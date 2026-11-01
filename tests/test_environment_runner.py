@@ -235,8 +235,9 @@ class EnvironmentTests(unittest.TestCase):
             self.assertEqual(report["reason"], "status unavailable")
             self.assertTrue((output / "x11/result.json").exists())
 
-    def test_collection_requires_all_three_x11_groups(self):
-        for count, expected in ((2, "failed"), (3, "passed"), (4, "failed")):
+    def test_collection_requires_all_four_x11_groups(self):
+        self.assertEqual(len(suite.commands("x11", Path("unused"))), 4)
+        for count, expected in ((3, "failed"), (4, "passed"), (5, "failed")):
             with self.subTest(count=count), tempfile.TemporaryDirectory() as directory:
                 output = Path(directory)
                 boat = matrix.Boat("unused", output)

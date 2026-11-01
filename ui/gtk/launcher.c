@@ -1,6 +1,7 @@
 /* Native GTK4 single-instance launcher; all IPC and launch I/O are asynchronous. */
 #include "torchlight/launcher.h"
 #include "actions.h"
+#include "lifecycle.h"
 #include "torchlight/async.h"
 #include "torchlight/popup.h"
 #include "torchlight/version.h"
@@ -21,6 +22,9 @@
 #define POPUP_STATUS_MS 2000
 /* Give deferred renderer/preview frees time to finish; quick reopen cancels. */
 #define POPUP_MEMORY_IDLE_MS 500
+/* Keep short breaks warm; long hidden periods release GTK and driver mappings. */
+#define POPUP_IDLE_EXIT_SECONDS 60
+#define POPUP_MAX_IDLE_EXIT_SECONDS 86400
 /* Usable width the popup leaves free, so it never touches the monitor's edges. */
 #define POPUP_SIDE_ROOM 48
 /* The narrowest surface, for tiny or heavily scaled screens. */
@@ -49,6 +53,9 @@ struct popup {
     char request_id[IPC_REQUEST_ID_BYTES + 1];
     guint debounce, pending, status_timer, windows_idle;
     guint memory_idle;
+    guint exit_idle, idle_seconds;
+    GCancellable *idle_cancel;
+    bool checking_exit;
     void (*release_memory)(void *context);
     void *release_context;
     bool destroying;
@@ -71,6 +78,7 @@ struct popup {
 };
 static void start_query(struct popup *popup);
 static void request_status(struct popup *popup);
+static gboolean exit_hidden_popup(gpointer context);
 static void set_status(struct popup *popup, const char *text) {
     popup_view_set_status(popup->view, text);
 }
@@ -102,6 +110,9 @@ static void close_popup(struct popup *popup) {
         g_cancellable_cancel(popup->launch_cancel);
     /* Work is canceled above at once; only the window's fade-out remains. */
     popup_view_dismiss(popup->view);
+    remove_timer(&popup->exit_idle);
+    if (!popup->destroying && popup->idle_seconds != 0)
+        popup->exit_idle = g_timeout_add_seconds(popup->idle_seconds, exit_hidden_popup, popup);
     if (popup->replaced)
         g_application_quit(G_APPLICATION(popup->application));
 }
@@ -999,6 +1010,38 @@ static gboolean release_hidden_memory(gpointer context) {
         popup->release_memory(popup->release_context);
     return G_SOURCE_REMOVE;
 }
+static void check_exit(GTask *task, gpointer source, gpointer data, GCancellable *cancel) {
+    (void)source;
+    (void)data;
+    bool allowed = false;
+    tl_status status = lifecycle_can_exit(cancel, &allowed);
+    g_task_return_boolean(task, status == TL_OK && allowed);
+}
+static void exit_checked(GObject *source, GAsyncResult *result, gpointer context) {
+    (void)source;
+    struct popup *popup = context;
+    bool allowed = g_task_propagate_boolean(G_TASK(result), NULL);
+    popup->checking_exit = false;
+    g_clear_object(&popup->idle_cancel);
+    if (allowed && !popup->visible && !popup->destroying && !popup->launching &&
+        popup->history == NULL)
+        g_application_quit(G_APPLICATION(popup->application));
+}
+static gboolean exit_hidden_popup(gpointer context) {
+    struct popup *popup = context;
+    if (popup->launching || popup->history != NULL || popup->checking_exit)
+        return G_SOURCE_CONTINUE;
+    popup->exit_idle = 0;
+    if (popup->visible || popup->destroying)
+        return G_SOURCE_REMOVE;
+    /* Service policy can require D-Bus I/O; never block a new shortcut press. */
+    popup->checking_exit = true;
+    popup->idle_cancel = g_cancellable_new();
+    GTask *task = g_task_new(popup->application, popup->idle_cancel, exit_checked, popup);
+    g_task_run_in_thread(task, check_exit);
+    g_object_unref(task);
+    return G_SOURCE_REMOVE;
+}
 static void window_unrealized(GtkWidget *window, gpointer context) {
     (void)window;
     struct popup *popup = context;
@@ -1108,6 +1151,14 @@ static int command_line(GApplication *application, GApplicationCommandLine *comm
     (void)application;
     struct popup *popup = context;
     GVariantDict *options = g_application_command_line_get_options_dict(command);
+    gint idle_seconds = 0;
+    if (g_variant_dict_lookup(options, "idle-exit-seconds", "i", &idle_seconds)) {
+        if (idle_seconds < 0 || idle_seconds > POPUP_MAX_IDLE_EXIT_SECONDS) {
+            g_application_command_line_printerr(command, "Idle timeout must be 0..86400 seconds\n");
+            return 1;
+        }
+        popup->idle_seconds = (guint)idle_seconds;
+    }
     char *path = NULL;
     if (g_variant_dict_lookup(options, "socket", "s", &path)) {
         if (popup->window == NULL) {
@@ -1136,6 +1187,9 @@ static int command_line(GApplication *application, GApplicationCommandLine *comm
         return 0;
     }
     remove_timer(&popup->memory_idle);
+    remove_timer(&popup->exit_idle);
+    if (popup->idle_cancel != NULL)
+        g_cancellable_cancel(popup->idle_cancel);
     popup->visible = true;
     popup_view_set_active(popup->view, false);
     gtk_editable_set_text(GTK_EDITABLE(popup->entry), "");
@@ -1169,6 +1223,11 @@ tl_status launcher_create(tl_launcher **out) {
     popup->application =
         gtk_application_new("org.torchlight.Launcher", G_APPLICATION_HANDLES_COMMAND_LINE);
     g_application_set_version(G_APPLICATION(popup->application), TORCHLIGHT_VERSION);
+    popup->idle_seconds = POPUP_IDLE_EXIT_SECONDS;
+    g_application_add_main_option(G_APPLICATION(popup->application), "idle-exit-seconds", 0,
+                                  G_OPTION_FLAG_NONE, G_OPTION_ARG_INT,
+                                  "Exit after hidden idle seconds (default 60; 0 stays resident)",
+                                  "SECONDS");
     g_application_add_main_option(G_APPLICATION(popup->application), "toggle", 0,
                                   G_OPTION_FLAG_NONE, G_OPTION_ARG_NONE,
                                   "Show or hide the launcher", NULL);
@@ -1199,6 +1258,9 @@ void launcher_destroy(tl_launcher *popup) {
     if (popup == NULL)
         return;
     popup->destroying = true;
+    remove_timer(&popup->exit_idle);
+    if (popup->idle_cancel != NULL)
+        g_cancellable_cancel(popup->idle_cancel);
     remove_timer(&popup->memory_idle);
     if (popup->view != NULL)
         close_popup(popup);
@@ -1213,7 +1275,7 @@ void launcher_destroy(tl_launcher *popup) {
     if (popup->launch_cancel != NULL)
         g_cancellable_cancel(popup->launch_cancel);
     /* GTask keeps its application source alive; finish callbacks before context free. */
-    while (popup->launching)
+    while (popup->launching || popup->checking_exit)
         g_main_context_iteration(NULL, true);
     if (popup->launch_cancel != NULL)
         g_object_unref(popup->launch_cancel);

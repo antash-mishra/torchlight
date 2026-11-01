@@ -86,6 +86,9 @@ The [footprint plan](footprint-plan.md) and
 binaries, explicit semantic-cache maintenance, improved vector storage,
 hidden-popup resource release and daemon allocation profiles. The record
 distinguishes measured disk/RAM savings from remaining memory targets.
+The [idle-popup comparison](idle-popup-comparison.md) measures the next step:
+retain a warm popup for one minute, then release its process while the daemon
+keeps searching ([ADR 0074](adr/0074-idle-popup-exit.md)).
 
 The [desktop test matrix](desktop-test-matrix.md) packages required X11, GNOME,
 KDE and Cinnamon checks into Docker images on separate Boat workers, with

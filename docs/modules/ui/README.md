@@ -4,8 +4,8 @@
 > **M9 status:** Implemented typed Web/software groups, mode hints, previews, source-aware activation and older-daemon fallback; see [validation](../../m9-completion.md).
 > **Browser status:** Web searches and website visits always use the current system default browser, including with legacy saved overrides (ADR 0071).
 > **Header status:** Starts with the application name, followed by search time and the clock; the decorative page-number label has been removed.
-> **Footprint status:** Hidden popups release their native surface/renderer and preview details; repeated-show memory/paint validation is recorded in the [implementation record](../../footprint-implementation.md).
-> **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track,header,index_strip,preview,wayland_globals}.c`, `ui/gtk/popup.css`, `ui/gtk/palette-{light,dark}.css`, `src/bin/torchlight-gtk.c`; fonts in `third_party/fonts`; open windows in [windows](../windows/README.md)
+> **Footprint status:** Hidden popups release their surface/preview, then exit after 60 seconds when service lifetime permits. Quick reopening cancels exit; `--idle-exit-seconds=0` stays resident. See [ADR 0074](../../adr/0074-idle-popup-exit.md) and the [comparison](../../idle-popup-comparison.md).
+> **Source:** `ui/gtk/{launcher,lifecycle,model,actions,view,path_label,selection_track,header,index_strip,preview,wayland_globals}.c`, `ui/gtk/popup.css`, `ui/gtk/palette-{light,dark}.css`, `src/bin/torchlight-gtk.c`; fonts in `third_party/fonts`; open windows in [windows](../windows/README.md)
 > **Headers:** `include/torchlight/{launcher,popup,async,windows}.h`
 > **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/unit/test_windows.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/test_popup_wayland.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`, `tests/test_environment_runner.py`; required cloud matrix in `tests/environments/`
 
@@ -23,10 +23,23 @@ its extension.
 
 After dismissal finishes, the popup unrealizes its window on every desktop,
 releasing the renderer and surface, and clears pending preview work/details.
-The GTK application/widgets stay alive for reopening. Each new surface gets its
+The GTK application/widgets stay alive during short breaks. Each new surface gets its
 own placement, input region and layout callbacks; old surface callbacks detach
-even if the graphics driver retains that object. No automatic process exit or
-renderer override is introduced ([ADR 0073](../../adr/0073-release-hidden-popup-surfaces.md)).
+even if the graphics driver retains that object ([ADR 0073](../../adr/0073-release-hidden-popup-surfaces.md)).
+After 60 seconds hidden, the popup checks its service lifetime on a worker and
+exits cleanly. Reopening cancels both the timer and an in-flight check. Launch
+completion and pending history postpone exit. The daemon keeps indexing and the
+desktop shortcut starts a fresh popup after idle; no renderer override is used.
+`--idle-exit-seconds=0` keeps the popup resident; 1..86400 changes the delay.
+An unsafe or unknown service policy keeps the process resident. In particular,
+the main process of a custom service needs `ExitType=cgroup`, no restart on
+successful exit, no forced restart exit codes, no watchdog and a non-D-Bus type.
+The launcher never changes service settings or moves other applications.
+`tests/unit/test_lifecycle.c`, `tests/test_popup_idle.py` and the real-manager
+Boat check `tests/test_popup_service.py` cover lifecycle and child survival.
+`tests/run_popup_checks.py --idle-bench --launcher PATH` measures fresh-process
+paint, quick reopening and memory after the actual default timeout; add
+`--baseline` for an older resident build. See [ADR 0074](../../adr/0074-idle-popup-exit.md).
 `tests/bench/bench_popup_memory.py`, run through `tests/run_popup_checks.py --memory`,
 warms the complete 100-query workload, then measures 100 repeated show/query/hide
 cycles, settled visible/hidden PSS and native paint latency. `--launcher PATH`

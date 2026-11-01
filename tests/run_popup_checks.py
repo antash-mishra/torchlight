@@ -19,8 +19,13 @@ parser.add_argument("--hidden-ms", type=int, default=1000, help="Hidden interval
 parser.add_argument("--launcher", help="Popup executable override")
 parser.add_argument("--renderer", default="cairo", choices=("cairo", "ngl"))
 parser.add_argument("--actions", action="store_true", help="Exercise M9 browser and software actions")
+parser.add_argument("--idle", action="store_true", help="Check idle exit and launched-app survival")
+parser.add_argument("--idle-bench", action="store_true", help="Compare warm and idle reopening")
+parser.add_argument("--baseline", action="store_true", help="Idle benchmark expects a resident build")
 parser.add_argument("--output", help="JSON file for acceptance or benchmark measurements")
 args = parser.parse_args()
+if args.baseline and not args.idle_bench:
+    parser.error("--baseline requires --idle-bench")
 
 with session_directory(prefix="torchlight-gtk-session-") as temporary:
     base = Path(temporary)
@@ -55,8 +60,10 @@ with session_directory(prefix="torchlight-gtk-session-") as temporary:
             number = server.stdout.readline().strip()
             assert number.isdigit(), (base / "xserver.log").read_text()
             env["DISPLAY"] = ":" + number
-            script = "tests/bench/bench_popup_memory.py" if args.memory else "tests/bench/bench_popup.py" if args.bench else "tests/test_popup_actions.py" if args.actions else "tests/test_popup.py"
+            script = "tests/bench/bench_popup_idle.py" if args.idle_bench else "tests/test_popup_idle.py" if args.idle else "tests/bench/bench_popup_memory.py" if args.memory else "tests/bench/bench_popup.py" if args.bench else "tests/test_popup_actions.py" if args.actions else "tests/test_popup.py"
             command = [sys.executable, script, "--xdotool", args.xdotool]
+            if args.baseline:
+                command.append("--baseline")
             if args.memory:
                 command.extend(["--hidden-ms", str(args.hidden_ms)])
             if args.launcher:

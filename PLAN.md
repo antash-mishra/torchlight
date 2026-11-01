@@ -8,6 +8,11 @@ later extension.
 
 ## Implementation progress
 
+The next footprint step gives the popup a 60-second hidden idle lifetime while
+retaining the daemon. [ADR 0074](docs/adr/0074-idle-popup-exit.md) records service
+compatibility and the resident option; the [comparison](docs/idle-popup-comparison.md)
+separates fresh-process and warm reopening from native background RAM.
+
 The [footprint plan](docs/footprint-plan.md) now has an
 [implementation record](docs/footprint-implementation.md): stripped release
 installs, unused semantic-cache maintenance, a compact vector-cache layout,

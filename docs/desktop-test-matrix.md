@@ -43,7 +43,7 @@ match. A template containing images alone still needs a cold build.
 | Job | Image/session | Required checks |
 |---|---|---|
 | Base | Ubuntu 24.04, Rust 1.89.0, GTK 4.14+ | Debug build and native fixtures, `make test`, `make lint` |
-| X11 | Xvfb and Metacity | Web/software keyboard actions, theme/font/scale matrix, local keyboard/mouse actions, window children, wide preview and AT-SPI |
+| X11 | Xvfb and Metacity | Idle exit and child survival, Web/software keyboard actions, theme/font/scale matrix, local keyboard/mouse actions, window children, wide preview and AT-SPI |
 | GNOME | GNOME Shell's headless Wayland session | Enable the extension, list/switch windows, real popup plus native GTK view assertions |
 | KDE | KWin's virtual Wayland session | KWin scripts, list/switch windows, real popup plus native GTK view assertions |
 | Cinnamon | Cinnamon Wayland nested on Xvfb | Enable the extension, list/switch windows, repeated showing and native GTK view assertions |
@@ -155,8 +155,8 @@ requirements, false success from skipped tests, process-group timeout cleanup,
 failure diagnostics, dirty source transfer and cloud cleanup ownership.
 It also checks the private system bus lifecycle, portable image restoration and
 retrying a transient failure while polling a running cloud job.
-The collector requires all three X11 groups; regression coverage rejects a
-missing group and accepts the complete Web/software, matrix and AT-SPI run.
+The collector requires all four X11 groups; regression coverage rejects a
+missing group and accepts the complete idle, Web/software, matrix and AT-SPI run.
 The bus lifecycle check is optional on ordinary headless developer environments
 without D-Bus tools; matrix jobs require those tools and execute the check.
 The clean parallel build also exposed a missing Frizbee prerequisite on
@@ -175,6 +175,16 @@ Keep performance benchmarks on quiet workers. This matrix establishes functional
 compatibility, not comparable latency while several workloads share a VM.
 
 ## Verification
+
+The 2026-11-01 idle-popup change passed four X11 groups (idle lifecycle,
+Web/software actions, themes/scales and wide AT-SPI) plus GNOME, KDE and Cinnamon
+Wayland: seven groups, zero skips, all with native view captures. The desktop
+lanes ran sequentially on a separate Boat VM from the controlled performance
+comparison. Unit/sanitizer tests and lint passed on the comparison VM; all 19
+runner regressions passed again after updating the collector to require four
+X11 groups. Artifacts are in `build/idle-comparison/idle-matrix/`; see the
+[idle-popup comparison](idle-popup-comparison.md) for exact measurements and
+the separate real-systemd and release lifecycle checks.
 
 The M9 run adds typed Web/software previews and a third X11 group for browser
 and software-manager activation. An existing writer-repair assertion raced the

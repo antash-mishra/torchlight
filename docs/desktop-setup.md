@@ -112,6 +112,10 @@ with command `/home/YOUR_USER/.local/bin/torchlight-gtk --toggle`, then bind an
 available shortcut such as Super+Space. Use the absolute executable path so the
 binding works regardless of the desktop's PATH. Repeated invocation toggles the
 focused popup; invoking it while hidden shows and focuses the search entry.
+After about a minute hidden, the popup exits to release RAM while the daemon
+keeps indexing. The same shortcut starts it again. To keep the popup resident,
+add `--idle-exit-seconds=0` to the shortcut command. See the
+[measured comparison](idle-popup-comparison.md) for reopening time and RAM.
 
 The target is Cinnamon X11. On Wayland, bind the same command in the desktop's own
 shortcut settings. The popup sizes itself for its monitor, but the compositor decides
