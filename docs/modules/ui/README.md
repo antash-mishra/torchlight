@@ -3,6 +3,7 @@
 > **Status:** Implemented (M3 + Tekst look, motion, grouped results and preview panel + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, a clear window under user stylesheets and a steady X11 height under GNOME's mutter (ADR 0064), tooltips without pointer round trips, the first edit after a pause searching at once (ADR 0065), light and dark palettes, preview details read off the main thread, Wayland sizing (headless Weston), window switching on Wayland desktops and repeated showing on Cinnamon's Wayland session (`tests/test_windows_desktops.py`); required X11/GNOME/KDE/Cinnamon Boat checks passed on 2026-10-30 ([verification](../../desktop-test-matrix.md#verification))
 > **M9 status:** Implemented typed Web/software groups, mode hints, previews, source-aware activation and older-daemon fallback; see [validation](../../m9-completion.md).
 > **Browser status:** Web searches and website visits always use the current system default browser, including with legacy saved overrides (ADR 0071).
+> **Header status:** Starts with the application name, followed by search time and the clock; the decorative page-number label has been removed.
 > **Footprint status:** Hidden popups release their native surface/renderer and preview details; repeated-show memory/paint validation is recorded in the [implementation record](../../footprint-implementation.md).
 > **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track,header,index_strip,preview,wayland_globals}.c`, `ui/gtk/popup.css`, `ui/gtk/palette-{light,dark}.css`, `src/bin/torchlight-gtk.c`; fonts in `third_party/fonts`; open windows in [windows](../windows/README.md)
 > **Headers:** `include/torchlight/{launcher,popup,async,windows}.h`
@@ -85,7 +86,7 @@ refusal, settings visibility/launch/removal and light/dark palette generation ar
 covered by `tests/test_omarchy.py`. See [setup](../../desktop-setup.md#omarchy-4-optional)
 and [ADR 0063](../../adr/0063-opt-in-omarchy-integration.md).
 
-The surface stacks a page header (`header.c`: `P100`, `Torchlight`, how long the
+The surface stacks a page header (`header.c`: `Torchlight`, how long the
 search took in cyan ([ADR 0055](../../adr/0055-search-time-in-the-page-header.md): the
 daemon's `timing.engine_us`, "3.2ms", fixed width, changed only when results land, and
 left out of popups too narrow for it; the header shows no result count, which the group

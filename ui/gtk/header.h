@@ -1,4 +1,4 @@
-/* Private GTK widget: Tekst's teletext page header (page number, name, search time and
+/* Private GTK widget: Tekst's teletext page header (name, search time and
  * clock). */
 #ifndef TORCHLIGHT_GTK_HEADER_H
 #define TORCHLIGHT_GTK_HEADER_H
@@ -6,7 +6,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-/** Create a floating header: "P100", "Torchlight", how long the search took and a clock in
+/** Create a floating header: "Torchlight", how long the search took and a clock in
  * teletext's slash-seconds format. Main thread; the caller parents it. It is hidden from
  * assistive technology, which hears the result count through announcements. */
 GtkWidget *popup_header_new(void);

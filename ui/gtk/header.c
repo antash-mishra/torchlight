@@ -1,4 +1,4 @@
-/* Teletext page header: the page number, the service name, how long the search took and a
+/* Teletext page header: the service name, how long the search took and a
  * clock that ticks with slash seconds while the popup is shown (ADR 0048, ADR 0055). */
 #include "header.h"
 #include "torchlight/popup.h"
@@ -23,7 +23,7 @@
 #define WHOLE_MS_BELOW 999500
 typedef struct {
     GtkWidget parent;
-    GtkWidget *page, *service, *time, *clock;
+    GtkWidget *service, *time, *clock;
     guint tick;
     /* The clock's own text while it shows its widest (set_widest). */
     char *saved_clock;
@@ -97,7 +97,6 @@ static void tl_popup_header_init(TlPopupHeader *self) {
     gtk_widget_set_name(GTK_WIDGET(self), "popup-header");
     gtk_box_layout_set_spacing(GTK_BOX_LAYOUT(gtk_widget_get_layout_manager(GTK_WIDGET(self))),
                                HEADER_SPACING);
-    self->page = part(self, "P100", "page-number");
     self->service = part(self, "Torchlight", "service");
     /* The time takes the free width, its text kept beside the clock. */
     self->time = part(self, "", "search-time");

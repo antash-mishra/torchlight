@@ -12,7 +12,7 @@
 #include <string.h>
 #define SURFACE_WIDTH POPUP_VIEW_LIST_WIDTH
 /* Narrower than the header with every part: as on a 400-pixel screen at scale 2. */
-#define NARROW_WIDTH 300
+#define NARROW_WIDTH 200
 #define WIDE_WIDTH POPUP_VIEW_PREVIEW_WIDTH
 /* The preview test's file: about the size of a page of notes. */
 #define PREVIEW_BYTES 4215
@@ -705,7 +705,7 @@ static void test_view(void) {
     GtkWidget *header = find_named(widgets.root, "popup-header");
     CHECK(gtk_widget_get_visible(header) && strchr(popup_header_clock(header), '/') != NULL);
     /* The search time keeps its place at the usual width, and gives way where the header
-     * would not fit beside the widest count, rather than widening the popup (ADR 0055). */
+     * would not fit beside the widest clock, rather than widening the popup (ADR 0055). */
     GtkWidget *search_time = class_child(header, "search-time");
     CHECK(search_time != NULL && gtk_widget_get_visible(search_time));
     popup_view_configure(view, NARROW_WIDTH, 800);
