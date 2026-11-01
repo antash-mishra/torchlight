@@ -13,8 +13,9 @@ from test_search_actions import Service, fake_flatpak
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--xdotool", default="xdotool")
 parser.add_argument("--output")
+parser.add_argument("--launcher", default="build/torchlight-gtk")
 args = parser.parse_args()
-launcher = str(Path("build/torchlight-gtk").resolve())
+launcher = str(Path(args.launcher).resolve())
 
 with session_directory(prefix="torchlight-popup-actions-") as directory:
     base = Path(directory)

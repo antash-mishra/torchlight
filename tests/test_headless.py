@@ -42,7 +42,7 @@ def headless_targets_skip_the_popup(temporary):
     """Build, install and lint the daemon and CLI without touching GTK."""
     output, queries = dry_run(temporary, "headless", "install-headless", "lint-headless")
     assert gui_queries(queries) == [], gui_queries(queries)
-    assert "build/torchlightd " in output and "build/torchlight " in output
+    assert "-o build/torchlightd\n" in output and "-o build/torchlight\n" in output
     assert "torchlight-gtk" not in output and "ui/gtk/" not in output
     assert "org.torchlight.Launcher.desktop" not in output
     # The headless unit replaces the graphical one under the same name.
@@ -59,6 +59,9 @@ def units_go_where_systemd_looks(temporary):
         assert str(unit) in output, output
         assert "lib/systemd/user" not in output, output
         assert "ExecStart=/opt/torchlight/bin/torchlightd" in output, output
+        assert "install -s -m 755 build/release/torchlight build/release/torchlightd" in output
+        assert "-ffunction-sections -fdata-sections" in output
+        assert "--gc-sections" in output
 
 def full_build_still_uses_gtk(temporary):
     """Control case: the probe does see the popup's GTK lookups."""

@@ -323,12 +323,15 @@ with session_directory(prefix="torchlight-popup-") as directory:
         single = driver.frame(lambda f: f["query"] == "s" and f["query_sent_us"] >= f["changed_us"])
         assert single["query_sent_us"] - single["changed_us"] < 12000, single
         empty_entry()
-        # Escape dismisses; the next invocation reuses the first process/window.
+        # Escape releases the native surface; reopening keeps the application
+        # process but focuses a newly created window (ADR 0073).
         xdo("key", "Escape")
         wait_for(lambda: not focused())
         repeat_focus = toggle()
         assert gui.poll() is None
-        assert xdo("getactivewindow") == window
+        reopened = xdo("getactivewindow")
+        assert reopened != window
+        assert int(xdo("getwindowpid", reopened)) == gui.pid
         # Clearing existing results and whitespace-only input must be inert.
         type_query("display")
         empty_entry()

@@ -2,6 +2,17 @@
 
 Each release's notes are taken from its section here (docs/release.md).
 
+## Unreleased
+
+- Source installs use stripped release executables, and release linking discards
+  unused code. The three installed executables total about 7.2 MiB.
+- `torchlight storage` reports catalog usage. Offline
+  `torchlight maintenance --purge-semantic` removes unused semantic data and
+  compacts the database while retaining file identities, roots and history.
+- Retained semantic caches migrate to a storage layout with less vector overhead.
+- Hidden popups release their renderer and preview resources; glibc builds also
+  return freed heap pages after a short hidden idle period.
+
 ## 0.1.6 (2026-10-21)
 
 Searches show what you meant instead of software internals: SDKs, virtual environments and

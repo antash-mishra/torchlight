@@ -81,6 +81,12 @@ Start here. Read in this order:
 
 ## Implementation status
 
+The [footprint plan](footprint-plan.md) and
+[implementation record](footprint-implementation.md) cover smaller release
+binaries, explicit semantic-cache maintenance, improved vector storage,
+hidden-popup resource release and daemon allocation profiles. The record
+distinguishes measured disk/RAM savings from remaining memory targets.
+
 The [desktop test matrix](desktop-test-matrix.md) packages required X11, GNOME,
 KDE and Cinnamon checks into Docker images on separate Boat workers, with
 retained diagnostics and automatic cleanup ([ADR 0068](adr/0068-isolated-desktop-test-matrix.md)).
@@ -388,6 +394,12 @@ the root [README](../README.md) for commands, and
   offers Open or Install from ordinary names while protecting exact local matches.
 - [0071: Always use the system default browser](adr/0071-system-default-browser.md)
   follows each user's desktop browser on activation and ignores legacy overrides.
+- [0072: Smaller builds and explicit storage maintenance](adr/0072-smaller-builds-and-storage-maintenance.md)
+  strips release installations, removes unused linked code, improves vector-cache
+  storage and provides offline semantic cleanup and compaction.
+- [0073: Release hidden popup surfaces](adr/0073-release-hidden-popup-surfaces.md)
+  releases rendering resources and preview work after dismissal while retaining
+  the application for reopening.
 
 ## Keeping docs current
 

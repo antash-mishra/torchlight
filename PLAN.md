@@ -8,6 +8,12 @@ later extension.
 
 ## Implementation progress
 
+The [footprint plan](docs/footprint-plan.md) now has an
+[implementation record](docs/footprint-implementation.md): stripped release
+installs, unused semantic-cache maintenance, a compact vector-cache layout,
+hidden-popup resource release, and daemon allocation profiles. Query algorithms
+remain unchanged; the record separates measured savings from remaining RAM goals.
+
 M9 implements browser web-search actions and available-app discovery with
 installation through GNOME Software or KDE Discover. Its optional Flatpak
 catalog uses configured sources and performs no package queries while typing.

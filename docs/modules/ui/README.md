@@ -3,6 +3,7 @@
 > **Status:** Implemented (M3 + Tekst look, motion, grouped results and preview panel + open windows under applications), verified: GTK4 popup, asynchronous IPC, native desktop actions, X11 window switching, shadow margin and its input region, a clear window under user stylesheets and a steady X11 height under GNOME's mutter (ADR 0064), tooltips without pointer round trips, the first edit after a pause searching at once (ADR 0065), light and dark palettes, preview details read off the main thread, Wayland sizing (headless Weston), window switching on Wayland desktops and repeated showing on Cinnamon's Wayland session (`tests/test_windows_desktops.py`); required X11/GNOME/KDE/Cinnamon Boat checks passed on 2026-10-30 ([verification](../../desktop-test-matrix.md#verification))
 > **M9 status:** Implemented typed Web/software groups, mode hints, previews, source-aware activation and older-daemon fallback; see [validation](../../m9-completion.md).
 > **Browser status:** Web searches and website visits always use the current system default browser, including with legacy saved overrides (ADR 0071).
+> **Footprint status:** Hidden popups release their native surface/renderer and preview details; repeated-show memory/paint validation is recorded in the [implementation record](../../footprint-implementation.md).
 > **Source:** `ui/gtk/{launcher,model,actions,view,path_label,selection_track,header,index_strip,preview,wayland_globals}.c`, `ui/gtk/popup.css`, `ui/gtk/palette-{light,dark}.css`, `src/bin/torchlight-gtk.c`; fonts in `third_party/fonts`; open windows in [windows](../windows/README.md)
 > **Headers:** `include/torchlight/{launcher,popup,async,windows}.h`
 > **Tests:** `tests/gtk/test_view.c`, `tests/unit/test_popup.c`, `tests/unit/test_async.c`, `tests/unit/test_actions.c`, `tests/unit/test_windows.c`, `tests/test_popup.py`, `tests/run_popup_checks.py`, `tests/test_popup_wayland.py`, `tests/bench/bench_popup.py`, `tests/test_popup_native.py`, `tests/test_environment_runner.py`; required cloud matrix in `tests/environments/`
@@ -18,6 +19,25 @@ popup, avoiding an assumption about the desktop's default label font.
 X11 anchor comparisons use the settled frame after the opening animation, and
 the GNOME fixture waits for Shell startup before asking the launcher to enable
 its extension.
+
+After dismissal finishes, the popup unrealizes its window on every desktop,
+releasing the renderer and surface, and clears pending preview work/details.
+The GTK application/widgets stay alive for reopening. Each new surface gets its
+own placement, input region and layout callbacks; old surface callbacks detach
+even if the graphics driver retains that object. No automatic process exit or
+renderer override is introduced ([ADR 0073](../../adr/0073-release-hidden-popup-surfaces.md)).
+`tests/bench/bench_popup_memory.py`, run through `tests/run_popup_checks.py --memory`,
+warms the complete 100-query workload, then measures 100 repeated show/query/hide
+cycles, settled visible/hidden PSS and native paint latency. `--launcher PATH`
+compares another build; `--renderer ngl` measures GL
+on the private display. Cloud renderer results do not establish NVIDIA savings.
+The default hidden interval is one second so the allocator hook runs;
+`--hidden-ms 300` separately stresses quick reopening, which cancels that hook.
+
+The executable also supplies an allocator-release hook through
+`launcher_set_memory_release`. After 500 ms of hidden/unrealized time, it returns
+freed glibc arena pages to the OS. A quick reopen or destruction cancels it;
+normal typing and rendering never invoke it. Other C libraries keep their policy.
 
 The thin executable owns an opaque launcher. GtkApplication enforces one instance;
 `torchlight-gtk --toggle` shows/focuses or dismisses its window. Showing clears the
@@ -266,10 +286,10 @@ launcher builds its window ([windows](../windows/README.md), ADRs
 [0051](../../adr/0051-open-windows-on-gnome-wayland.md) to
 [0054](../../adr/0054-open-windows-on-cinnamon-wayland.md)). Where the compositor's
 `gtk_shell1` is older than version 4 (Cinnamon's), GTK 4 cannot release a hidden window's
-`gtk_surface1`, and showing it again was a protocol error that disconnected the popup. There
-`popup_view_set_fresh_surfaces` unrealizes the window on each hide, so each show starts a
-new surface ([ADR 0054](../../adr/0054-open-windows-on-cinnamon-wayland.md);
-`wayland_global_version` in `ui/gtk/wayland_globals.c` reads the version).
+`gtk_surface1`, and showing it again was a protocol error that disconnected the popup.
+`popup_view_set_fresh_surfaces` unrealizes the window on each hide, so each show
+starts a new surface ([ADR 0054](../../adr/0054-open-windows-on-cinnamon-wayland.md)).
+This behavior now applies on every desktop to release hidden rendering resources.
 
 The resident popup picks up updates by itself
 ([ADR 0050](../../adr/0050-deb-and-signed-apt-repository.md)): the primary instance

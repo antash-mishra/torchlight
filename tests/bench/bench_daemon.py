@@ -249,6 +249,7 @@ if __name__ == "__main__":
     parser.add_argument("fixture")
     parser.add_argument("--sizes", nargs="+", type=int, default=[50000, 500000])
     parser.add_argument("--model")
+    parser.add_argument("--build-label", default="unspecified; executable supplied by caller")
     # The first (cold-cache) semantic stage at 500k takes minutes; slow disks need longer.
     parser.add_argument("--semantic-timeout-s", type=int, default=600)
     args = parser.parse_args()
@@ -256,7 +257,8 @@ if __name__ == "__main__":
                 if line.startswith("model name")), "unknown")
     print(json.dumps(dict(cpu=cpu, platform=platform.platform(), load_average=os.getloadavg(),
                           ram_kib=os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") // 1024,
-                          build="C17 -O3 -DNDEBUG", corpus="M1 synthetic seed 42, deduplicated; held-out query seed 2")), flush=True)
+                          build=args.build_label, executable=str(Path(args.daemon).resolve()),
+                          corpus="M1 synthetic seed 42, deduplicated; held-out query seed 2")), flush=True)
     for size in args.sizes:
         benchmark(str(Path(args.daemon).resolve()), str(Path(args.fixture).resolve()), size,
                   str(Path(args.model).resolve()) if args.model else None, args.semantic_timeout_s)

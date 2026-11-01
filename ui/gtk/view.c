@@ -429,6 +429,17 @@ static void window_realized(GtkWidget *window, gpointer context) {
     g_object_add_weak_pointer(G_OBJECT(view->surface), (gpointer *)&view->surface);
     g_signal_connect(view->surface, "layout", G_CALLBACK(surface_layout), view);
 }
+/* A driver may retain the destroyed surface briefly. Detach now so the next
+ * realization always observes its own surface instead of the old weak pointer. */
+static void window_unrealized(GtkWidget *window, gpointer context) {
+    (void)window;
+    tl_popup_view *view = context;
+    if (view->surface == NULL)
+        return;
+    g_signal_handlers_disconnect_by_data(view->surface, view);
+    g_object_remove_weak_pointer(G_OBJECT(view->surface), (gpointer *)&view->surface);
+    view->surface = NULL;
+}
 /* The shadow needs a transparent window, so a compositor and an RGBA visual, and a GPU
  * renderer: GTK's software renderer blurs and uploads each shadow on every full
  * redraw, which added about 20ms to a results paint on a private X server. High
@@ -475,6 +486,7 @@ static void connect_signals(tl_popup_view *view) {
     g_signal_connect(view->settings, "notify::gtk-application-prefer-dark-theme",
                      G_CALLBACK(settings_changed), view);
     g_signal_connect(view->window, "realize", G_CALLBACK(window_realized), view);
+    g_signal_connect(view->window, "unrealize", G_CALLBACK(window_unrealized), view);
     if (gtk_widget_get_realized(view->window))
         window_realized(view->window, view);
 }
@@ -881,6 +893,8 @@ void popup_view_set_active(tl_popup_view *view, bool active) {
 /* Hide the window, dropping its surface too when the next show needs a fresh one. */
 static void hide_window(tl_popup_view *view) {
     gtk_widget_set_visible(view->window, false);
+    /* Pending file reads and icon/detail references have no use while hidden. */
+    popup_preview_clear(view->widgets.preview);
     if (view->fresh_surfaces)
         gtk_widget_unrealize(view->window);
 }

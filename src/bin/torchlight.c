@@ -8,6 +8,7 @@
 #include "torchlight/tokenize.h"
 #include "torchlight/version.h"
 #include <errno.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,7 +16,7 @@ struct options {
     const char *command, *database, *config, *socket_path;
     const char **paths; /* positional arguments, borrowed from argv */
     size_t path_count, limit;
-    bool null_output, json_output;
+    bool null_output, json_output, purge_semantic;
 };
 /* Owned root/allow paths; unresolved absolute spellings are not canonical. */
 struct path_list {
@@ -39,6 +40,8 @@ static void usage(void) {
           "       torchlight web|software [--socket PATH] [--json] QUERY\n"
           "       torchlight software-refresh [--socket PATH] [--json]\n"
           "       torchlight status|reconcile|history-clear [--socket PATH]\n"
+          "       torchlight storage [--db PATH]\n"
+          "       torchlight maintenance [--db PATH] [--purge-semantic]\n"
           "       torchlight resolve [--socket PATH] [--json | --null] FILE_ID\n"
           "       torchlight record [--socket PATH] FILE_ID EVENT_ID [SEARCH_ID]\n"
           "       torchlight --version\n"
@@ -62,9 +65,12 @@ static tl_status parse(int argc, char **argv, struct options *options) {
     bool index = strcmp(options->command, "index") == 0;
     bool typed = strcmp(options->command, "web") == 0 || strcmp(options->command, "software") == 0;
     bool refresh = strcmp(options->command, "software-refresh") == 0;
-    if (!index && !typed && !refresh && strcmp(options->command, "query") != 0 &&
-        strcmp(options->command, "status") != 0 && strcmp(options->command, "resolve") != 0 &&
-        strcmp(options->command, "record") != 0 && strcmp(options->command, "reconcile") != 0 &&
+    bool storage = strcmp(options->command, "storage") == 0;
+    bool maintenance = strcmp(options->command, "maintenance") == 0;
+    if (!index && !typed && !refresh && !storage && !maintenance &&
+        strcmp(options->command, "query") != 0 && strcmp(options->command, "status") != 0 &&
+        strcmp(options->command, "resolve") != 0 && strcmp(options->command, "record") != 0 &&
+        strcmp(options->command, "reconcile") != 0 &&
         strcmp(options->command, "history-clear") != 0)
         return TL_INVALID;
     options->paths = calloc((size_t)argc, sizeof(char *));
@@ -78,15 +84,19 @@ static tl_status parse(int argc, char **argv, struct options *options) {
             positional = true;
         else if (!positional && strcmp(arg, "--db") == 0 && has_value)
             options->database = argv[++i];
+        else if (!positional && maintenance && strcmp(arg, "--purge-semantic") == 0)
+            options->purge_semantic = true;
         else if (!positional && index && strcmp(arg, "--config") == 0 && has_value)
             options->config = argv[++i];
-        else if (!positional && !index && strcmp(arg, "--null") == 0)
+        else if (!positional && !index && !storage && !maintenance && strcmp(arg, "--null") == 0)
             options->null_output = true;
-        else if (!positional && !index && strcmp(arg, "--json") == 0)
+        else if (!positional && !index && !storage && !maintenance && strcmp(arg, "--json") == 0)
             options->json_output = true;
-        else if (!positional && !index && strcmp(arg, "--socket") == 0 && has_value)
+        else if (!positional && !index && !storage && !maintenance &&
+                 strcmp(arg, "--socket") == 0 && has_value)
             options->socket_path = argv[++i];
-        else if (!positional && !index && strcmp(arg, "--limit") == 0 && has_value) {
+        else if (!positional && !index && !storage && !maintenance && strcmp(arg, "--limit") == 0 &&
+                 has_value) {
             if (!parse_limit(argv[++i], &options->limit))
                 return TL_INVALID;
         } else if (positional || arg[0] != '-')
@@ -96,6 +106,11 @@ static tl_status parse(int argc, char **argv, struct options *options) {
     }
     if ((options->json_output || typed || refresh) && options->null_output)
         return TL_INVALID;
+    if (storage || maintenance)
+        return options->path_count == 0 && !options->null_output && !options->json_output &&
+                       options->socket_path == NULL && options->limit == 10
+                   ? TL_OK
+                   : TL_INVALID;
     if (options->database != NULL && (options->socket_path != NULL || options->json_output ||
                                       (!index && strcmp(options->command, "query") != 0)))
         return TL_INVALID;
@@ -462,6 +477,35 @@ static tl_status open_config(const struct options *options, tl_config **config) 
         fprintf(stderr, "torchlight: invalid configuration line %zu\n", line);
     return status;
 }
+static tl_status storage_command(const struct options *options, const tl_config *config) {
+    const char *path = config_database(config);
+    tl_status status = TL_OK;
+    if (strcmp(options->command, "maintenance") == 0) {
+        int lock = -1;
+        status = ipc_database_lock(path, &lock);
+        if (status != TL_OK)
+            fputs("torchlight: stop torchlightd before maintenance\n", stderr);
+        else {
+            status = store_maintain(path, options->purge_semantic);
+            if (status != TL_OK)
+                fputs("torchlight: maintenance failed; purge may have committed. "
+                      "Close database readers, check free disk space, and retry.\n",
+                      stderr);
+        }
+        ipc_unlock(lock);
+    }
+    tl_store_storage usage = {0};
+    if (status == TL_OK)
+        status = store_storage(path, &usage);
+    if (status == TL_OK &&
+        printf("Database bytes: %" PRIu64 "\nFree database bytes: %" PRIu64
+               "\nEmbedding payload bytes: %" PRIu64 "\nCached embeddings: %" PRIu64
+               "\nCached models: %" PRIu64 "\nIndexed entries: %" PRIu64 "\n",
+               usage.database_bytes, usage.free_bytes, usage.embedding_bytes, usage.embeddings,
+               usage.models, usage.files) < 0)
+        status = TL_IO;
+    return status;
+}
 int main(int argc, char **argv) {
     if (argc == 2 && strcmp(argv[1], "--version") == 0) {
         printf("torchlight %s\n", TORCHLIGHT_VERSION);
@@ -476,7 +520,10 @@ int main(int argc, char **argv) {
     }
     tl_config *config = NULL;
     tl_store *store = NULL;
-    bool socket_mode = strcmp(options.command, "index") != 0 && options.database == NULL;
+    bool storage =
+        strcmp(options.command, "storage") == 0 || strcmp(options.command, "maintenance") == 0;
+    bool socket_mode =
+        !storage && strcmp(options.command, "index") != 0 && options.database == NULL;
     int database_lock = -1;
     if (socket_mode)
         status = socket_command(&options);
@@ -484,9 +531,11 @@ int main(int argc, char **argv) {
         status = open_config(&options, &config);
     if (!socket_mode && status == TL_OK && strcmp(options.command, "index") == 0)
         status = ipc_database_lock(config_database(config), &database_lock);
-    if (!socket_mode && status == TL_OK)
+    if (storage && status == TL_OK)
+        status = storage_command(&options, config);
+    if (!socket_mode && !storage && status == TL_OK)
         status = store_create(config_database(config), &store);
-    if (!socket_mode && status == TL_OK)
+    if (!socket_mode && !storage && status == TL_OK)
         status = strcmp(options.command, "index") == 0 ? index_roots(store, &options, config)
                                                        : query_catalog(store, &options);
     store_destroy(store);

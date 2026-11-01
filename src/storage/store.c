@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#define STORE_SCHEMA_VERSION 4
+#define STORE_SCHEMA_VERSION 5
 #define IDENTITY_BYTES 29
 #define IDENTITY_OBJECT_BYTES 16
 #define IDENTITY_RENAMED 2
@@ -180,6 +180,25 @@ static tl_status migrate_desktop_history(tl_store *store) {
     }
     return TL_OK;
 }
+/* A 1 KiB vector overflows 4 KiB index B-tree pages. Rowid table leaf pages
+ * hold these records locally; the unique index contains only their keys. */
+static tl_status migrate_embedding_layout(tl_store *store) {
+    const char *steps[] = {
+        "ALTER TABLE embedding_cache RENAME TO embedding_cache_v4",
+        "CREATE TABLE embedding_cache(emb_gen TEXT NOT NULL REFERENCES "
+        "embedding_models(emb_gen) ON DELETE CASCADE,text BLOB NOT NULL,"
+        "payload BLOB NOT NULL,touched INTEGER NOT NULL DEFAULT 1,PRIMARY KEY(emb_gen,text))",
+        "INSERT INTO embedding_cache SELECT emb_gen,text,payload,touched FROM embedding_cache_v4",
+        "DROP TABLE embedding_cache_v4",
+        "UPDATE meta SET value='5' WHERE key='schema_version'",
+        "PRAGMA user_version=5"};
+    for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
+        tl_status status = execute(store, steps[i]);
+        if (status != TL_OK)
+            return status;
+    }
+    return TL_OK;
+}
 static tl_status migrate(tl_store *store) {
     int version = 0;
     tl_status status = schema_version(store, &version);
@@ -216,7 +235,10 @@ static tl_status migrate(tl_store *store) {
                                "PRAGMA user_version=4"};
         for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]) && status == TL_OK; i++)
             status = execute(store, steps[i]);
+        version = 4;
     }
+    if (status == TL_OK && version == 4)
+        status = migrate_embedding_layout(store);
     if (status == TL_OK)
         status = execute(store, "COMMIT");
     if (status == TL_OK)
@@ -1695,5 +1717,114 @@ tl_status store_embedding_batch_end(tl_store *store, bool commit) {
             status = rollback;
     }
     store->embedding_batch = false;
+    return status;
+}
+
+/* Maintenance never creates or migrates a database: purging a v4 cache should
+ * not first copy its unwanted vectors into the new layout. */
+static tl_status storage_open(const char *path, bool writable, tl_store *store) {
+    if (path == NULL || path[0] == 0)
+        return TL_INVALID;
+    int flags = writable ? SQLITE_OPEN_READWRITE : SQLITE_OPEN_READONLY;
+    if (sqlite3_open_v2(path, &store->db, flags, NULL) != SQLITE_OK)
+        return TL_IO;
+    int version = 0;
+    tl_status status = schema_version(store, &version);
+    if (status == TL_OK && version != 4 && version != STORE_SCHEMA_VERSION)
+        status = TL_STATE;
+    return status;
+}
+static tl_status storage_read(tl_store *store, tl_store_storage *out) {
+    const char *sql =
+        "SELECT (SELECT page_count FROM pragma_page_count)*page_size,"
+        "(SELECT freelist_count FROM pragma_freelist_count)*page_size,"
+        "(SELECT coalesce(sum(length(payload)),0) FROM embedding_cache),"
+        "(SELECT count(*) FROM embedding_cache),(SELECT count(*) FROM embedding_models),"
+        "(SELECT count(*) FROM files) FROM pragma_page_size";
+    sqlite3_stmt *statement = NULL;
+    if (sqlite3_prepare_v2(store->db, sql, -1, &statement, NULL) != SQLITE_OK)
+        return TL_IO;
+    tl_status status = sqlite3_step(statement) == SQLITE_ROW ? TL_OK : TL_IO;
+    uint64_t *fields[] = {&out->database_bytes, &out->free_bytes, &out->embedding_bytes,
+                          &out->embeddings,     &out->models,     &out->files};
+    for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]) && status == TL_OK; i++) {
+        sqlite3_int64 value = sqlite3_column_int64(statement, (int)i);
+        if (sqlite3_column_type(statement, (int)i) != SQLITE_INTEGER || value < 0)
+            status = TL_IO;
+        else
+            *fields[i] = (uint64_t)value;
+    }
+    return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
+}
+tl_status store_storage(const char *path, tl_store_storage *out) {
+    if (out == NULL)
+        return TL_INVALID;
+    *out = (tl_store_storage){0};
+    tl_store store = {0};
+    tl_status status = storage_open(path, false, &store);
+    if (status == TL_OK)
+        status = storage_read(&store, out);
+    if (sqlite3_close(store.db) != SQLITE_OK)
+        status = TL_IO;
+    if (status != TL_OK)
+        *out = (tl_store_storage){0};
+    return status;
+}
+static tl_status storage_integrity(tl_store *store) {
+    sqlite3_stmt *statement = NULL;
+    if (sqlite3_prepare_v2(store->db, "PRAGMA integrity_check", -1, &statement, NULL) != SQLITE_OK)
+        return TL_IO;
+    tl_status status = TL_IO;
+    if (sqlite3_step(statement) == SQLITE_ROW) {
+        const unsigned char *result = sqlite3_column_text(statement, 0);
+        if (result != NULL && strcmp((const char *)result, "ok") == 0 &&
+            sqlite3_step(statement) == SQLITE_DONE)
+            status = TL_OK;
+    }
+    if (sqlite3_finalize(statement) != SQLITE_OK || status != TL_OK)
+        return TL_IO;
+    if (sqlite3_prepare_v2(store->db, "PRAGMA foreign_key_check", -1, &statement, NULL) !=
+        SQLITE_OK)
+        return TL_IO;
+    status = sqlite3_step(statement) == SQLITE_DONE ? TL_OK : TL_IO;
+    return sqlite3_finalize(statement) == SQLITE_OK ? status : TL_IO;
+}
+static tl_status storage_purge(tl_store *store) {
+    const char *steps[] = {
+        "DELETE FROM embedding_cache", "DELETE FROM embedding_models",
+        "UPDATE files SET emb_version=NULL,emb_bin=NULL,emb_i8=NULL,emb_scale=NULL "
+        "WHERE emb_version IS NOT NULL OR emb_bin IS NOT NULL OR emb_i8 IS NOT NULL "
+        "OR emb_scale IS NOT NULL"};
+    for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]); i++) {
+        tl_status status = execute(store, steps[i]);
+        if (status != TL_OK)
+            return status;
+    }
+    return TL_OK;
+}
+tl_status store_maintain(const char *path, bool purge_semantic) {
+    tl_store store = {0};
+    tl_status status = storage_open(path, true, &store);
+    const char *steps[] = {"PRAGMA foreign_keys=ON", "PRAGMA synchronous=FULL",
+                           "PRAGMA locking_mode=EXCLUSIVE", "BEGIN EXCLUSIVE"};
+    for (size_t i = 0; i < sizeof(steps) / sizeof(steps[0]) && status == TL_OK; i++)
+        status = execute(&store, steps[i]);
+    if (status == TL_OK)
+        status = storage_integrity(&store);
+    if (status == TL_OK && purge_semantic)
+        status = storage_purge(&store);
+    if (status == TL_OK)
+        status = execute(&store, "COMMIT");
+    if (status == TL_OK)
+        status = execute(&store, "VACUUM");
+    if (status == TL_OK)
+        status = storage_integrity(&store);
+    /* Reclaim the compaction journal too; the exclusive connection still owns
+     * the database, so no reader can pin an earlier WAL snapshot. */
+    if (status == TL_OK && sqlite3_wal_checkpoint_v2(store.db, NULL, SQLITE_CHECKPOINT_TRUNCATE,
+                                                     NULL, NULL) != SQLITE_OK)
+        status = TL_IO;
+    if (sqlite3_close(store.db) != SQLITE_OK)
+        status = TL_IO;
     return status;
 }

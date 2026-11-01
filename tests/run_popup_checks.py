@@ -14,6 +14,10 @@ parser.add_argument("--screen", default="800x600x24")
 parser.add_argument("--matrix", action="store_true")
 parser.add_argument("--a11y", action="store_true")
 parser.add_argument("--bench", action="store_true")
+parser.add_argument("--memory", action="store_true", help="Measure 100 popup cycles")
+parser.add_argument("--hidden-ms", type=int, default=1000, help="Hidden interval for --memory")
+parser.add_argument("--launcher", help="Popup executable override")
+parser.add_argument("--renderer", default="cairo", choices=("cairo", "ngl"))
 parser.add_argument("--actions", action="store_true", help="Exercise M9 browser and software actions")
 parser.add_argument("--output", help="JSON file for acceptance or benchmark measurements")
 args = parser.parse_args()
@@ -40,7 +44,7 @@ with session_directory(prefix="torchlight-gtk-session-") as temporary:
     config = base / "config"
     config.mkdir()
     env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime), XDG_CONFIG_HOME=str(config),
-               GDK_BACKEND="x11", GSK_RENDERER="cairo")
+               GDK_BACKEND="x11", GSK_RENDERER=args.renderer)
     if not args.a11y:
         env["GTK_A11Y"] = "none"
     with (base / "xserver.log").open("w") as server_log:
@@ -51,8 +55,12 @@ with session_directory(prefix="torchlight-gtk-session-") as temporary:
             number = server.stdout.readline().strip()
             assert number.isdigit(), (base / "xserver.log").read_text()
             env["DISPLAY"] = ":" + number
-            script = "tests/bench/bench_popup.py" if args.bench else "tests/test_popup_actions.py" if args.actions else "tests/test_popup.py"
+            script = "tests/bench/bench_popup_memory.py" if args.memory else "tests/bench/bench_popup.py" if args.bench else "tests/test_popup_actions.py" if args.actions else "tests/test_popup.py"
             command = [sys.executable, script, "--xdotool", args.xdotool]
+            if args.memory:
+                command.extend(["--hidden-ms", str(args.hidden_ms)])
+            if args.launcher:
+                command.extend(["--launcher", args.launcher])
             if args.matrix:
                 command.append("--matrix")
             if args.a11y:
@@ -67,7 +75,7 @@ from pathlib import Path
 wm = subprocess.Popen([sys.argv[1], '--sm-disable'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 try:
     time.sleep(.5)
-    if 'tests/bench/bench_popup.py' not in sys.argv and Path('build/test_popup_view').exists():
+    if not any(arg.startswith('tests/bench/') for arg in sys.argv) and Path('build/test_popup_view').exists():
         # Software rendering has no shadow margin and GL rendering has one; check both.
         for renderer in ['cairo', 'ngl']:
             subprocess.run(['build/test_popup_view'], check=True, env=dict(os.environ, ASAN_OPTIONS='detect_leaks=0', G_DEBUG='fatal-warnings', GSK_RENDERER=renderer))

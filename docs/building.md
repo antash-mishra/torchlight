@@ -44,6 +44,11 @@ systemctl --user import-environment DISPLAY XDG_CURRENT_DESKTOP DBUS_SESSION_BUS
 systemctl --user enable --now torchlightd.service
 ```
 
+`make install` builds optimized release programs and strips only the installed
+copies. Debug information remains in `build/release/` for diagnostics. Release
+linking removes unreachable code from each executable; ordinary `make` still
+produces the debug build. `DESTDIR` stages an install for inspection.
+
 This installs the three programs, a desktop entry, the popup's fonts, the GNOME Shell and
 Cinnamon extensions and a systemd user service for the daemon (in
 `~/.local/share/systemd/user`). On Cinnamon, Xfce, MATE and LXQt the service does not start
@@ -67,6 +72,7 @@ systemctl --user enable --now torchlightd.service
 loginctl enable-linger "$USER"   # optional: keep it running while you are logged out
 ```
 
+`install-headless` also uses stripped release programs, without requiring GTK.
 Rust is still needed for Frizbee. Search with `torchlight query`, or talk to the
 daemon's socket from your own front end ([IPC protocol](modules/ipc/README.md)).
 See [ADR 0037](adr/0037-headless-build.md).

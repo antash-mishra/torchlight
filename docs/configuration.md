@@ -163,6 +163,30 @@ Every word of a query must match the file name or one of its folders; a word
 containing `/` can match across the whole path. Put `--` before a query that
 starts with a dash.
 
+Storage usage can be inspected while the daemon runs:
+
+```sh
+torchlight storage                 # database bytes, free pages and semantic payload/counts
+```
+
+To reclaim database space, stop the daemon and close other SQLite readers first:
+
+```sh
+systemctl --user stop torchlightd
+torchlight maintenance --purge-semantic
+systemctl --user start torchlightd
+```
+
+This removes cached vectors/model descriptors and compacts the database while
+preserving file IDs, indexed roots and history. Omit `--purge-semantic` to compact
+while keeping semantics. Both commands accept `--db PATH` for another existing
+catalog. Maintenance never runs automatically; allow temporary free space of up
+to twice the database size. A failed compaction may follow a successful purge;
+close readers/free space and retry. SQLite journals the operation for recovery.
+External `.tlm` model files are separate: remove only a model you no longer use,
+and remove its `--model` service argument before restarting. Otherwise semantic
+search can recreate its cache. See [ADR 0072](adr/0072-smaller-builds-and-storage-maintenance.md).
+
 With the daemon stopped, you can index and search directly:
 
 ```sh

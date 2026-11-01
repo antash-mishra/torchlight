@@ -35,13 +35,33 @@ typedef tl_status (*tl_store_open_callback)(void *context, uint64_t file_id, con
                                             const char *query, int64_t timestamp);
 /** Receive one registered root path, borrowed until the callback returns. */
 typedef tl_status (*tl_store_root_callback)(void *context, const char *root);
-/** Open/create owned catalog at path, enabling WAL/foreign keys and schema v3.
+/** Open/create owned catalog at path, enabling WAL/foreign keys and schema v5.
  * Migrate v1 atomically, retaining ids/history; legacy identities start unknown.
  * out NULL on error: TL_INVALID, TL_NOMEM, TL_IO or TL_STATE (unknown schema).
  * Parent directory must exist. Connections are serialized by their caller. */
 tl_status store_create(const char *path, tl_store **out);
 /** Close catalog, rolling back unfinished work; NULL allowed, no errors. */
 void store_destroy(tl_store *store);
+/* Database page usage excludes WAL/SHM sidecars and external model files.
+ * Payload bytes count saved vector contents, not their allocation overhead. */
+typedef struct {
+    uint64_t database_bytes, free_bytes, embedding_bytes, embeddings, models, files;
+} tl_store_storage;
+/** Read existing v4/v5 database usage without creating or migrating it. path is
+ * borrowed; out is cleared on error. Safe alongside the daemon. Returns
+ * TL_INVALID for NULL/empty input, TL_STATE for unsupported schema, TL_IO for
+ * open/read failure. Owns and closes its temporary read-only connection. */
+tl_status store_storage(const char *path, tl_store_storage *out);
+/** Compact an existing v4/v5 database, optionally deleting semantic cache,
+ * model descriptors and legacy file vectors. Keeps file IDs, roots, history
+ * and catalog_gen. Does not delete external model files or migrate the schema.
+ * Caller must hold the database singleton lock and stop the daemon. SQLite's
+ * exclusive connection lock excludes other database users during maintenance.
+ * Purge commits atomically before VACUUM; if compaction fails, purge may already
+ * be durable and retry is safe. SQLite journals compaction, preserving the
+ * catalog on interruption/disk-full. Temporary disk space may approach twice
+ * the database size. path borrowed; no output ownership. TL_INVALID/STATE/IO. */
+tl_status store_maintain(const char *path, bool purge_semantic);
 /** Start a full-scope scan transaction with empty seen membership. TL_STATE if
  * active; TL_INVALID for NULL, TL_IO on SQL error. */
 tl_status store_begin(tl_store *store);

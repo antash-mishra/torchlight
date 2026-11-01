@@ -153,6 +153,7 @@ test: build/tests build/torchlight-sanitized build/torchlightd-sanitized build/t
 	ASAN_OPTIONS=detect_leaks=1 ./build/tests
 	./build/test_query_alloc
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_cli.py ./build/torchlight-sanitized
+	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_storage.py ./build/torchlight-sanitized
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_desktop.py ./build/torchlightd-sanitized ./build/test_desktop_replace.so
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_daemon.py ./build/torchlight-sanitized ./build/torchlightd-sanitized
 	ASAN_OPTIONS=detect_leaks=1 python3 tests/test_semantic.py ./build/torchlightd-sanitized ./build/test_semantic_stall.so ./build/torchlight-sanitized
@@ -249,9 +250,9 @@ USER_UNIT_DIR = $(PREFIX)/share/systemd/user
 .PHONY: install install-headless test-ui test-ui-isolated test-ui-wayland test-ui-gnome test-ui-desktops bench-ui
 XVFB ?= Xvfb
 XDOTOOL ?= xdotool
-install: all
+install: release
 	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/applications $(DESTDIR)$(USER_UNIT_DIR)
-	install -m 755 build/torchlight build/torchlightd build/torchlight-gtk $(DESTDIR)$(PREFIX)/bin/
+	install -s -m 755 build/release/torchlight build/release/torchlightd build/release/torchlight-gtk $(DESTDIR)$(PREFIX)/bin/
 	install -m 644 packaging/org.torchlight.Launcher.desktop $(DESTDIR)$(PREFIX)/share/applications/
 	sed 's|^ExecStart=.*|ExecStart=$(PREFIX)/bin/torchlightd|' packaging/torchlightd.service > $(DESTDIR)$(USER_UNIT_DIR)/torchlightd.service
 	install -d $(DESTDIR)$(PREFIX)/share/fonts/torchlight
@@ -261,23 +262,26 @@ install: all
 	install -d $(DESTDIR)$(PREFIX)/share/cinnamon/extensions/$(GNOME_EXTENSION)
 	install -m 644 ui/cinnamon/$(GNOME_EXTENSION)/metadata.json ui/cinnamon/$(GNOME_EXTENSION)/extension.js $(DESTDIR)$(PREFIX)/share/cinnamon/extensions/$(GNOME_EXTENSION)/
 # Same unit name, but started with the user manager instead of a graphical session.
-install-headless: headless
+install-headless: release-headless
 	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(USER_UNIT_DIR)
-	install -m 755 build/torchlight build/torchlightd $(DESTDIR)$(PREFIX)/bin/
+	install -s -m 755 build/release/torchlight build/release/torchlightd $(DESTDIR)$(PREFIX)/bin/
 	sed 's|^ExecStart=.*|ExecStart=$(PREFIX)/bin/torchlightd|' packaging/torchlightd-headless.service > $(DESTDIR)$(USER_UNIT_DIR)/torchlightd.service
 # Optimized, hardened binaries for packages (docs/release.md); `make` stays a debug build.
 # Ubuntu's hardening flags, without link-time optimization. SQLite and utf8proc are linked
 # in, so the same binaries run on distributions that lack them (ADR 0056).
 RELEASE_CFLAGS = -std=c17 -O2 -g -pthread -fno-omit-frame-pointer -fstack-protector-strong \
-                 -fstack-clash-protection -fcf-protection -D_FORTIFY_SOURCE=3 -DNDEBUG
-RELEASE_LDFLAGS = -Wl,-z,relro,-z,now
+                 -fstack-clash-protection -fcf-protection -D_FORTIFY_SOURCE=3 -DNDEBUG \
+                 -ffunction-sections -fdata-sections
+# Each program keeps only reachable code, including the static Rust archive.
+RELEASE_LDFLAGS = -Wl,-z,relro,-z,now,--gc-sections
 RELEASE_LDLIBS = $(subst -lsqlite3,-l:libsqlite3.a,$(subst -lutf8proc,-l:libutf8proc.a,$(LDLIBS)))
-.PHONY: release deb tarball
-release: build/release/torchlight build/release/torchlightd build/release/torchlight-gtk
-build/release/torchlight build/release/torchlightd: build/release/%: $(SOURCES) src/bin/%.c $(HEADERS) $(FRIZBEE_LIB)
+.PHONY: release release-headless deb tarball
+release: release-headless build/release/torchlight-gtk
+release-headless: build/release/torchlight build/release/torchlightd
+build/release/torchlight build/release/torchlightd: build/release/%: $(SOURCES) src/bin/%.c $(HEADERS) $(FRIZBEE_LIB) Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(RELEASE_CFLAGS) $(WARNINGS) $(SOURCES) src/bin/$*.c $(LDFLAGS) $(RELEASE_LDFLAGS) $(RELEASE_LDLIBS) -o $@
-build/release/torchlight-gtk: $(SOURCES) $(UI_SOURCES) $(UI_HEADERS) $(UI_RESOURCES) $(WAYLAND_CODE) $(WAYLAND_HEADERS) $(HEADERS) $(FRIZBEE_LIB)
+build/release/torchlight-gtk: $(SOURCES) $(UI_SOURCES) $(UI_HEADERS) $(UI_RESOURCES) $(WAYLAND_CODE) $(WAYLAND_HEADERS) $(HEADERS) $(FRIZBEE_LIB) Makefile
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(GTK_CPPFLAGS) $(RELEASE_CFLAGS) $(WARNINGS) $(UI_SOURCES) $(UI_RESOURCES) $(WAYLAND_CODE) $(SOURCES) $(LDFLAGS) $(RELEASE_LDFLAGS) $(GTK_LDLIBS) $(RELEASE_LDLIBS) -o $@
 # build/deb/torchlight_VERSION_ARCH.deb; needs dpkg-dev.

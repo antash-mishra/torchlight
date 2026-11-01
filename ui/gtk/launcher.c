@@ -5,7 +5,6 @@
 #include "torchlight/popup.h"
 #include "torchlight/version.h"
 #include "view.h"
-#include "wayland_globals.h"
 #include "web_preferences.h"
 #include "windows_session.h"
 #include <gio/gdesktopappinfo.h>
@@ -16,12 +15,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
-/* The gtk_shell1 version from which GTK 4 can release a hidden window's gtk_surface1. */
-#define GTK_SHELL_RELEASE_VERSION 4
 /* Edits within this long of the one before are coalesced into one query (ADR 0065). */
 #define POPUP_DEBOUNCE_MS 16
 #define POPUP_PENDING_MS 120
 #define POPUP_STATUS_MS 2000
+/* Give deferred renderer/preview frees time to finish; quick reopen cancels. */
+#define POPUP_MEMORY_IDLE_MS 500
 /* Usable width the popup leaves free, so it never touches the monitor's edges. */
 #define POPUP_SIDE_ROOM 48
 /* The narrowest surface, for tiny or heavily scaled screens. */
@@ -49,6 +48,10 @@ struct popup {
     uint64_t sequence;
     char request_id[IPC_REQUEST_ID_BYTES + 1];
     guint debounce, pending, status_timer, windows_idle;
+    guint memory_idle;
+    void (*release_memory)(void *context);
+    void *release_context;
+    bool destroying;
     tl_ipc_exchange *query, *action, *status_exchange, *history;
     bool dirty, launching, visible, capabilities_known, actions_supported, suggestions_supported;
     tl_search_mode mode;
@@ -989,6 +992,21 @@ static void window_realized(GtkWidget *window, gpointer context) {
     g_signal_connect(gtk_native_get_surface(GTK_NATIVE(window)), "enter-monitor",
                      G_CALLBACK(entered_monitor), context);
 }
+static gboolean release_hidden_memory(gpointer context) {
+    struct popup *popup = context;
+    popup->memory_idle = 0;
+    if (!popup->visible && !popup->destroying && popup->release_memory != NULL)
+        popup->release_memory(popup->release_context);
+    return G_SOURCE_REMOVE;
+}
+static void window_unrealized(GtkWidget *window, gpointer context) {
+    (void)window;
+    struct popup *popup = context;
+    if (popup->visible || popup->destroying || popup->release_memory == NULL)
+        return;
+    remove_timer(&popup->memory_idle);
+    popup->memory_idle = g_timeout_add(POPUP_MEMORY_IDLE_MS, release_hidden_memory, popup);
+}
 /* Whether the file this instance was started from has been replaced, as a package update
  * or a rebuild does: its path now names another file, or none. */
 static bool binary_replaced(const struct popup *popup) {
@@ -1054,10 +1072,9 @@ static tl_status build_window(struct popup *popup) {
     tl_status result = popup_view_create(popup->window, &popup->view);
     if (result != TL_OK)
         return result;
-    /* GTK 4 releases a hidden window's gtk_surface1 only from gtk_shell1 version 4 on;
-     * Cinnamon's compositor offers version 3. */
-    uint32_t shell = wayland_global_version(gtk_widget_get_display(popup->window), "gtk_shell1");
-    popup_view_set_fresh_surfaces(popup->view, shell != 0 && shell < GTK_SHELL_RELEASE_VERSION);
+    /* Release the renderer/surface while hidden, keeping the application and
+     * widgets ready for the next show. Also handles older gtk_shell1 sessions. */
+    popup_view_set_fresh_surfaces(popup->view, true);
     tl_popup_widgets widgets = popup_view_widgets(popup->view);
     popup->entry = widgets.entry;
     popup->list = widgets.list;
@@ -1080,6 +1097,7 @@ static tl_status build_window(struct popup *popup) {
     g_signal_connect(popup->window, "notify::is-active", G_CALLBACK(active_changed), popup);
     g_signal_connect(popup->window, "map", G_CALLBACK(place_window), popup);
     g_signal_connect(popup->window, "realize", G_CALLBACK(window_realized), popup);
+    g_signal_connect(popup->window, "unrealize", G_CALLBACK(window_unrealized), popup);
     popup->status_timer = g_timeout_add(POPUP_STATUS_MS, poll_status, popup);
     watch_binary(popup);
     create_windows(popup);
@@ -1117,6 +1135,7 @@ static int command_line(GApplication *application, GApplicationCommandLine *comm
         close_popup(popup);
         return 0;
     }
+    remove_timer(&popup->memory_idle);
     popup->visible = true;
     popup_view_set_active(popup->view, false);
     gtk_editable_set_text(GTK_EDITABLE(popup->entry), "");
@@ -1160,6 +1179,16 @@ tl_status launcher_create(tl_launcher **out) {
     *out = popup;
     return TL_OK;
 }
+tl_status launcher_set_memory_release(tl_launcher *launcher, void (*release)(void *context),
+                                      void *context) {
+    if (launcher == NULL)
+        return TL_INVALID;
+    if (launcher->window != NULL)
+        return TL_STATE;
+    launcher->release_memory = release;
+    launcher->release_context = context;
+    return TL_OK;
+}
 tl_status launcher_run(tl_launcher *launcher, int argc, char **argv, int *exit_code) {
     if (launcher == NULL || argv == NULL || exit_code == NULL)
         return TL_INVALID;
@@ -1169,6 +1198,8 @@ tl_status launcher_run(tl_launcher *launcher, int argc, char **argv, int *exit_c
 void launcher_destroy(tl_launcher *popup) {
     if (popup == NULL)
         return;
+    popup->destroying = true;
+    remove_timer(&popup->memory_idle);
     if (popup->view != NULL)
         close_popup(popup);
     remove_timer(&popup->debounce);

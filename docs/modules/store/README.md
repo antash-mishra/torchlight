@@ -2,9 +2,37 @@
 
 > **Status:** Implemented (M4; M5 history batches; M7 metadata refresh commits verified; M7 Phase 2
 > signatures, mark-seen and exact prunes; M7 Phase 3 children walks and one-pass signatures):
-> schema v4, versioned embedding cache plus catalog/history
+> schema v5, compact vector layout and explicit offline maintenance plus catalog/history
 > **Source:** `src/storage/store.c` · **Header:** `include/torchlight/store.h`
-> **Tests:** `tests/unit/test_store.c`, `tests/unit/test_store_prune.c`, `tests/unit/test_identity.c`, CLI/daemon integration
+> **Tests:** `tests/unit/test_store.c`, `tests/unit/test_store_prune.c`, `tests/unit/test_identity.c`, `tests/test_storage.py`, CLI/daemon integration
+
+## Footprint and maintenance
+
+Schema v5 copies embedding records into an ordinary rowid table with the same
+unique `(emb_gen,text)` key. Large vector payloads fit its leaf pages rather
+than spilling into mostly empty index overflow pages. Migration is transactional,
+preserves payload bytes, touched flags and model descriptors, and does not change
+file IDs, roots, history or catalog_gen. Existing generation activation still
+retires other models and untouched texts. See [ADR 0072](../../adr/0072-smaller-builds-and-storage-maintenance.md).
+
+`store_storage` opens an existing v4/v5 database read-only and reports logical
+database size, free-page space, vector payload size and entry/model counts. It
+does not migrate or create a database. WAL/SHM and external model files are separate.
+
+`store_maintain` is an explicit offline operation whose caller owns the database
+singleton lock. It requires an exclusive SQLite connection, checks integrity and
+foreign keys, optionally deletes semantic data in one transaction, then runs
+SQLite's journaled VACUUM and checkpoints the WAL. It supports v4 directly so
+unwanted vectors need not be migrated before removal. It preserves catalog_gen,
+file IDs, raw paths, roots and history. It never removes external model files.
+SQLite provides rollback/recovery for interrupted or disk-full compaction; no
+application-level database replacement is used. Purge may commit before a failed
+compaction, so a reported error can require a retry to reclaim disk space.
+
+Regression fixtures exercise exact payload preservation, uniqueness, migration
+rollback, raw paths/history/IDs, read-only reporting, singleton/reader contention,
+purge rollback, file-size exhaustion and SIGKILL during compaction, followed by
+integrity checks and a successful retry.
 
 ## Behavior and ownership
 

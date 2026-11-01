@@ -2,6 +2,15 @@
 
 ## Current implementation
 
+Schema v5 stores semantic vectors in an ordinary rowid table to avoid mostly
+empty overflow pages. Explicit offline maintenance purges optional semantic data
+and compacts under the database singleton lock; read-only storage reporting does
+not migrate a catalog. The popup releases its renderer and preview on dismissal,
+with allocator release supplied by the executable after hidden idle time. See
+[the footprint implementation](footprint-implementation.md) and ADRs
+[0072](adr/0072-smaller-builds-and-storage-maintenance.md) and
+[0073](adr/0073-release-hidden-popup-surfaces.md).
+
 Ordinary popup queries opt into name-based available-app suggestions when the
 daemon advertises support. The coordinator prefers named installed desktop apps,
 protects exact local matches and copies up to three suggestions for both response

@@ -111,7 +111,8 @@ void popup_view_dismiss(tl_popup_view *view);
  * show creates a new one. Compositors whose gtk_shell1 is older than version 4, such as
  * Cinnamon's, need it: GTK 4 cannot release a hidden window's gtk_surface1 there, and asking
  * for one again on the same surface is a protocol error that disconnects the popup. Off by
- * default. Main thread; live view. No errors. */
+ * default in a standalone view; the launcher enables it on every desktop to
+ * release hidden rendering resources. Main thread; live view. No errors. */
 void popup_view_set_fresh_surfaces(tl_popup_view *view, bool fresh);
 /** Cancel timers/signals and free owned view; NULL allowed. Main thread, call
  * after destroying its window. All borrowed widget handles expire. */

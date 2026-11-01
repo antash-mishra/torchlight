@@ -5,7 +5,6 @@
 #include "../../ui/gtk/path_label.h"
 #include "../../ui/gtk/tooltip.h"
 #include "../../ui/gtk/view.h"
-#include "../../ui/gtk/wayland_globals.h"
 #include "../unit/test.h"
 #include <glib/gstdio.h>
 #include <stdint.h>
@@ -17,8 +16,6 @@
 #define WIDE_WIDTH POPUP_VIEW_PREVIEW_WIDTH
 /* The preview test's file: about the size of a page of notes. */
 #define PREVIEW_BYTES 4215
-/* As in the launcher: older gtk_shell1 cannot release a hidden GTK surface. */
-#define GTK_SHELL_RELEASE_VERSION 4
 static void settle(int milliseconds) {
     gint64 deadline = g_get_monotonic_time() + (gint64)milliseconds * 1000;
     do {
@@ -447,6 +444,7 @@ static void check_motion(tl_popup_view *view, tl_popup_widgets widgets, GtkWidge
     CHECK(gtk_widget_get_visible(window) && gtk_widget_has_css_class(widgets.root, "closing"));
     settle(300);
     CHECK(!gtk_widget_get_visible(window) && !gtk_widget_has_css_class(widgets.root, "closing"));
+    CHECK(!gtk_widget_get_realized(window));
     gtk_window_present(GTK_WINDOW(window));
     popup_view_set_active(view, true);
     settle(100);
@@ -456,6 +454,7 @@ static void check_motion(tl_popup_view *view, tl_popup_widgets widgets, GtkWidge
     popup_view_set_active(view, true);
     settle(300);
     CHECK(gtk_widget_get_visible(window) && !gtk_widget_has_css_class(widgets.root, "closing"));
+    CHECK(gtk_widget_get_realized(window));
 }
 /* Section headers for the capture's rows, as the launcher sets them: Apps above the
  * application, Files above the two files and Folders above the folder. */
@@ -574,8 +573,7 @@ static GtkWidget *new_window(void) {
 static tl_popup_view *new_view(GtkWidget *window) {
     tl_popup_view *view = NULL;
     CHECK(popup_view_create(window, &view) == TL_OK);
-    uint32_t shell = wayland_global_version(gtk_widget_get_display(window), "gtk_shell1");
-    popup_view_set_fresh_surfaces(view, shell != 0 && shell < GTK_SHELL_RELEASE_VERSION);
+    popup_view_set_fresh_surfaces(view, true);
     return view;
 }
 /* The idle strip: unknown, then known states, and one line however large the font. */
@@ -739,6 +737,7 @@ static void test_view(void) {
     check_searching(view, widgets);
     popup_view_dismiss(view);
     CHECK(!gtk_widget_get_visible(window)); /* Without animations, dismissal is immediate. */
+    CHECK(!gtk_widget_get_realized(window));
     g_object_set(settings, "gtk-enable-animations", true, NULL);
     gtk_window_present(GTK_WINDOW(window));
     gtk_widget_grab_focus(widgets.entry);

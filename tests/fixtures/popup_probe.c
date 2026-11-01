@@ -335,6 +335,15 @@ static void after_paint(GdkFrameClock *clock, gpointer context) {
     write_frame(probe, ready);
     probe->painted = true;
 }
+/* Unrealizing a hidden popup replaces its frame clock. Observe each new clock
+ * once; its signal connection ends with that clock or the window. */
+static void observe_clock(GtkWindow *window) {
+    GdkFrameClock *clock = gtk_widget_get_frame_clock(GTK_WIDGET(window));
+    if (clock == NULL || g_object_get_data(G_OBJECT(clock), "torchlight-test-clock") != NULL)
+        return;
+    g_object_set_data(G_OBJECT(clock), "torchlight-test-clock", window);
+    g_signal_connect_object(clock, "after-paint", G_CALLBACK(after_paint), window, 0);
+}
 /** Present a caller-owned window, attaching an observer only when the fixture
  * log environment variable is set. Keeps native behavior and ownership; a failed
  * observer allocation/read never becomes a production launch dependency. */
@@ -348,8 +357,12 @@ void gtk_window_present(GtkWindow *window) {
         return;
     present(window);
     const char *filename = getenv("TORCHLIGHT_TEST_POPUP_FRAMES");
-    if (filename == NULL || g_object_get_data(G_OBJECT(window), "torchlight-test-probe") != NULL)
+    if (filename == NULL)
         return;
+    if (g_object_get_data(G_OBJECT(window), "torchlight-test-probe") != NULL) {
+        observe_clock(window);
+        return;
+    }
     struct popup_probe *probe = g_new0(struct popup_probe, 1);
     probe->filename = g_strdup(filename);
     probe->entry = find_widget(GTK_WIDGET(window), GTK_TYPE_ENTRY);
@@ -376,5 +389,5 @@ void gtk_window_present(GtkWindow *window) {
     g_object_set_data_full(G_OBJECT(window), "torchlight-test-probe", probe, probe_destroy);
     g_signal_connect(probe->entry, "changed", G_CALLBACK(entry_changed), probe);
     g_signal_connect(probe->retry, "clicked", G_CALLBACK(retry_clicked), probe);
-    g_signal_connect_object(clock, "after-paint", G_CALLBACK(after_paint), window, 0);
+    observe_clock(window);
 }

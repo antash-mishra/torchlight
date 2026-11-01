@@ -74,6 +74,8 @@
 | **Exact pass** | A scan that compares with a complete persisted-state map: a full one skips unchanged entries and names the rows it did not find (`store_unseen`); a scoped one only marks unchanged entries seen. |
 | **Scan generation** | One full scan's confirmation round in the watcher: `watch_begin` starts it, `watch_add` confirms directories and `watch_sweep` removes the watches nothing confirmed. |
 | **Warm steady state** | Daemon RSS after startup, idle, once a query workload has touched the search scratch pages that every searched daemon touches. The baseline of the M7 memory gates (ADR 0044). |
+| **PSS (proportional set size)** | Resident RAM attributed to a process after dividing shared pages among their users. Useful for a combined daemon/popup memory budget; measured separately from disk size and GPU VRAM. |
+| **Database compaction** | Explicitly rewriting SQLite pages with its journaled VACUUM operation to reclaim free space. Torchlight performs this only in offline maintenance, preserving file identities and history. |
 | **Deleted-entry retention** | Base-engine memory still held by entries deleted since the last full rebuild (tombstoned, not compacted). Bounded by the catalog's size at that rebuild and released by the next one (ADR 0041, ADR 0044). |
 | **Fuzzy matcher** | A word compiled for Frizbee's SIMD Smith-Waterman (`fuzzy_matcher_create`), weighted to score on the portable scorer's scale; one per word and scoring thread (M6 step 2). |
 | **Word evidence cache** | Per-workspace cache of one word's channel hits, directory scores and matchers, keyed by the word's symbols and reused across queries (M6 step 2). |
